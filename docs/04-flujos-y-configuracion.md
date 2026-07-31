@@ -1,0 +1,130 @@
+# Flujos y configuración
+
+## El flujo del que se une (el caso Santiago)
+
+Objetivo: menos de 3 minutos desde recibir el link del instalador hasta estar dentro de la partida, con cero preguntas en el grupo.
+
+1. Descarga `kanpachi-setup.exe` del link del grupo.
+2. Siguiente, siguiente. Un solo UAC. La barra termina y Kanpachi abre solo.
+3. La app ya muestra sus juegos detectados arriba, con la biblioteca completa un click más abajo.
+4. Pega el código que le pasaron por Telegram: `KANP-7X4M-B2QF`. El campo acepta cualquier formato, con o sin guiones, en minúsculas o mayúsculas.
+5. En segundos aparece la sala: los panas en verde (directo) o ámbar (relay).
+6. Abre el juego:
+   - Juegos con `lan_discovery` (Minecraft, los clásicos): la partida aparece sola en el menú de LAN.
+   - Juegos por IP directa (Zomboid): la UI muestra "Conéctate a 100.87.3.1, puerto 16261" con botón de copiar.
+7. Juega. Al salir de la sala o apagar la máquina, todo se cierra solo.
+
+Lo que nunca ve: una terminal, un archivo de configuración, una pregunta del firewall de Windows, una cuenta.
+
+## El flujo del host
+
+1. Abre Kanpachi, botón **Crear sala**.
+2. Elige el juego. Arriba aparecen los detectados como instalados, abajo la biblioteca completa del catálogo con buscador. Si la detección no encontró el juego, se elige de la biblioteca y funciona igual. Kanpachi abre los puertos del perfil, solo en la interfaz virtual, solo hacia los miembros presentes.
+3. Copia el código con un click y lo pega en Telegram.
+4. Arranca el servidor del juego como siempre: el dedicado de Zomboid, "Open to LAN" en Minecraft, lo que el juego pida.
+5. La UI dice en texto plano qué está expuesto: "Abierto solo dentro de Kanpachi: 16261-16262 UDP, visible para 4 personas. Tu router sigue cerrado".
+6. Si el instalador del juego dejó una regla que lo hace visible en la red de casa, aparece el aviso con la opción de desactivarla mientras dure la sala. Se restaura sola al salir.
+7. Al salir de la sala, los puertos se cierran, las reglas ajenas suspendidas vuelven a su estado previo y la interfaz regresa a deny all.
+
+**Nada de esto toca el router.** Todas las conexiones se inician desde adentro hacia afuera, por eso el NAT deja pasar la respuesta sin reenvío de puertos ni UPnP. Nadie escucha en la IP pública de nadie.
+
+Nota de rol: "host" es quien corre el servidor del juego. Cualquier miembro puede crear la sala, las aperturas del perfil aplican en la máquina que declara hospedar.
+
+## Qué hace el instalador, paso a paso
+
+1. Manifiesto `requireAdministrator`: el único UAC de la vida del producto.
+2. Copia a `Program Files\Kanpachi\`: daemon, UI, `wintun.dll`, perfiles.
+3. Crea `ProgramData\Kanpachi\` con ACL: escritura solo SYSTEM y Administradores.
+4. Registra el servicio `kanpachi-daemon`, arranque automático retrasado.
+5. Política de recuperación del servicio: reiniciar a los 5 s, 10 s, 30 s.
+6. Crea el adaptador Wintun `kanpachi0`, fija su categoría de red en **Privada** y escribe `Category=1` en su perfil del registro. Hacerlo aquí evita el diálogo de "¿quieres que este equipo sea detectable?" a mitad de una partida.
+7. Fija la métrica del adaptador: IPv4 en 1, IPv6 en 20, `AutomaticMetric` desactivado en ambas pilas.
+8. Aplica el grupo base de reglas: deny all sobre la IP del adaptador, ICMP echo permitido, en los tres perfiles de firewall.
+9. Genera el token de la API local en ProgramData.
+10. Accesos directos en Menú Inicio y escritorio.
+11. Arranca el servicio y abre la UI.
+
+**Ninguno de los pasos 6 a 8 es definitivo.** Windows revierte la métrica, la categoría y las rutas en cada evento de identificación de red, que se dispara al cambiar una IP, conectar o desconectar un adaptador, o en eventos de DHCP. Por eso el servicio se suscribe al Event ID 10000 de `Microsoft-Windows-NetworkProfile/Operational` y reaplica todo cada vez. El instalador solo deja el estado inicial correcto para que la primera sesión funcione sin esperar un evento.
+
+Distribución silenciosa para el grupo: `kanpachi-setup.exe /VERYSILENT /NORESTART`.
+
+**Lo que el instalador jamás hace:** agregar exclusiones de Windows Defender, ni habilitar los grupos de reglas de Detección de redes o Compartir archivos e impresoras. Lo primero es lo que hace el malware, y si el binario necesitara una exclusión el problema sería el binario. Lo segundo abriría SMB en la LAN doméstica del usuario, porque esos grupos se habilitan por perfil de firewall y no por adaptador.
+
+## Qué queda instalado
+
+| Artefacto | Ubicación |
+|---|---|
+| Binarios y wintun.dll | `Program Files\Kanpachi\` |
+| Servicio | `kanpachi-daemon`, automático retrasado |
+| Adaptador de red | `kanpachi0` (Wintun), categoría Privada |
+| Reglas de firewall | Grupo "Kanpachi", los tres perfiles |
+| Datos y logs | `ProgramData\Kanpachi\` |
+
+## Desinstalación
+
+En orden: detener y borrar el servicio, purgar todas las reglas del grupo "Kanpachi", eliminar el adaptador Wintun, borrar ProgramData, borrar Program Files. Criterio de calidad: instalar y desinstalar veinte veces seguidas en una VM sin dejar rastro.
+
+## Configuración del droplet (kanpachi-seed)
+
+Contexto: droplet DigitalOcean NYC3 ya existente, Docker sobre Ubuntu, con Reserved IP. El seed convive con las cargas de Accentio, aislado en su propia red de contenedores.
+
+`docker-compose.yml`:
+
+```yaml
+services:
+  kanpachi-seed:
+    image: easytier/easytier:latest
+    container_name: kanpachi-seed
+    restart: unless-stopped
+    command:
+      - "-l"
+      - "tcp://0.0.0.0:11010"
+      - "-l"
+      - "udp://0.0.0.0:11010"
+    ports:
+      - "11010:11010/tcp"
+      - "11010:11010/udp"
+    networks:
+      - kanpachi-net          # red propia, sin ver otros contenedores
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  kanpachi-net:
+    driver: bridge
+```
+
+Checklist del droplet:
+
+1. **Cloud Firewall de DigitalOcean:** abrir 11010 TCP y UDP entrantes. Ningún otro puerto nuevo.
+2. **Semilla en el cliente:** compilar la **Reserved IP**, nunca la IP pública directa del droplet. La reservada se mueve de máquina sin releasear el cliente.
+3. **DNS opcional:** un registro tipo `_seeds.kanpachi.dev` como fuente primaria de semillas, con la IP compilada de respaldo. Dos fuentes siempre.
+4. **Actualización manual:** `docker compose pull && docker compose up -d`. Sin automatismos que sorprendan.
+5. **Vigilancia:** una mirada mensual al consumo de transferencia en el panel de DO. El plan del droplet incluye 4000 GiB salientes al mes, el rendezvous consume kilobytes, cualquier número grande delata relay intensivo.
+6. **Endurecimiento futuro:** el día que el producto sea público, limitar qué redes puede relevar el seed (EasyTier trae flags para eso, verificar contra la versión instalada) y mover el relay de datos a un VPS dedicado.
+
+## Diagnóstico cuando algo falla
+
+Botón **Copiar reporte** en la UI. Genera texto sin datos sensibles: versión, Windows, tipo de NAT, UDP bloqueado o no, RTT a semillas, estado de cada peer. Se pega en el grupo y quien ayuda ve el problema sin veinte preguntas de ida y vuelta.
+
+Lectura rápida:
+
+| Síntoma | Causa probable |
+|---|---|
+| Peer en ámbar (relay) con lag | NAT simétrico o CGNAT en una de las puntas. El juego funciona, con más latencia |
+| "Sin conexión con el servidor de encuentro" | Droplet caído o 11010 bloqueado. Revisar el contenedor y el Cloud Firewall |
+| Sala vacía tras pegar el código | Código mal copiado, o versiones de esquema distintas entre clientes |
+| Todo en verde y el juego no ve la partida | Perfil del juego: falta `lan_discovery`, falta `broadcast_route`, o el juego usa puertos distintos a los del perfil |
+| **Conecta y se cuelga al cargar el mundo** | **MTU.** Los paquetes chicos pasan y los grandes desaparecen en silencio. Típico en PPPoE (1492) o móvil. `Diagnostics` muestra el MTU efectivo |
+| **Ayer funcionaba y hoy no, sin cambiar nada** | Windows revirtió métrica o categoría en un evento de identificación de red y el servicio no estaba corriendo para reaplicar |
+| **El juego sale por la LAN física en vez de la virtual** | Métrica del adaptador revertida. Debe ser 1 en IPv4 con `AutomaticMetric` desactivado |
+| **Nada resuelve y el usuario tiene otra VPN** | Conflicto de rango. `Diagnostics` reporta el `/24` elegido, revisar colisión con `100.64.0.0/10` |
+| **El instalador desaparece al descargarlo** | Falso positivo de Defender sobre un binario Go sin firmar, ver `07-futuro.md` |

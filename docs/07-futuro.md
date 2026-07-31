@@ -1,0 +1,120 @@
+# Futuro
+
+Formato: cada bloque dice qué lo activa, qué implica y qué ya quedó preparado. Nada de esto entra al código antes de su disparador. Esta lista es la defensa contra el scope creep.
+
+## 1. Lanzamiento público
+
+**Disparador:** decisión explícita de abrirlo fuera del grupo.
+
+Lo que se activa, en orden:
+
+1. **Firma de código.** Certificado de una CA tradicional a nombre de Accentio, del orden de 400 a 900 USD al año. Azure Trusted Signing quedó descartado: la elegibilidad se limita a EE. UU., Canadá, UE y Reino Unido, Brasil queda fuera. Sin firma, SmartScreen mata la conversión de desconocidos.
+
+   **El problema empieza antes que SmartScreen.** Los binarios compilados en Go sin firmar disparan falsos positivos del modelo de aprendizaje automático de Defender con frecuencia, típicamente como `Trojan:Win32/Wacatac.*!ml`, y el archivo se pone en cuarentena solo. Es un problema conocido y reportado por el propio equipo de Go de Microsoft. Un daemon Go que además crea adaptadores de red y toca el firewall es un candidato de manual.
+
+   Mitigaciones, en orden de efectividad:
+   - Firmar. Es la única solución de fondo.
+   - **Evitar `-ldflags="-s -w"`.** Quitar la tabla de símbolos aumenta mucho la probabilidad de detección; el binario queda más grande y deja de parecer empaquetado.
+   - Enviar el binario al portal de análisis de malware de Microsoft antes de cada release, para que la detección se retire.
+   - Publicar hashes y el enlace al repositorio desde la misma página de descarga.
+
+   **MSIX y Microsoft Store quedan descartados, por técnica y no por política.** El premio habría sido grande: las apps publicadas en la Store las firma Microsoft, así que SmartScreen y los falsos positivos de Defender desaparecen de un plumazo. El bloqueo es que **MSIX no soporta drivers**, es una limitación oficial de Microsoft, y Kanpachi necesita crear un adaptador de red virtual, o sea Wintun, o sea un driver. Sin adaptador no hay interfaz que el juego pueda usar. Los servicios sí se soportan en MSIX desde Windows 10 2004, el driver no. El camino híbrido que existe (driver por MSI, aplicación por MSIX) deja dos empaquetados, dos firmas y el doble de superficie de fallo para llegar al mismo sitio. Anotado aquí para que no reaparezca como idea nueva en seis meses.
+   Para el modo privado con el grupo, el falso positivo de Defender ya aplica hoy: si el instalador desaparece al descargarlo, la causa es esa y no un error del instalador.
+
+2. **Página de invitación.** La forma URL del código (`kanpachi.accentio.dev/#KANP-7X4M-B2QF`) tiene que resolver a una página real, con el patrón de Discord: botón "Abrir en Kanpachi" que dispara el manejador de protocolo, mensaje de "si no pasó nada es que falta instalarlo", enlace de descarga y hash. Diseño completo en `05-ui.md`. Sin esa página, la forma URL es peor que el código pelado, porque promete algo que no existe. Con público es además la puerta de entrada de todo el que reciba un código sin tener la app, así que deja de ser opcional.
+
+   **Aplica antes de lo público.** Para el grupo la página también conviene, porque es lo que convierte un link pegado en Telegram en un click. Es HTML estático, cabe en el droplet junto al seed y no agrega costo. Vale la pena hacerla en la semana del instalador.
+
+3. **Relay dedicado.** El relay de datos se muda del droplet de Accentio a un VPS aparte (~5 USD/mes). Razones: reputación de IP ante abuso, aislamiento del trabajo de clientes, y que el riesgo pase a ser una línea de gasto separada. Límite de banda por sala desde el primer día (~2 Mbps: sobra para juegos, mata el uso como túnel de archivos).
+4. **Autoupdate firmado.** Obligatorio con público: un fallo de seguridad no se corrige pidiéndole a desconocidos que reinstalen.
+5. **Checksums publicados** en la landing y enlace visible al repositorio, para que el binario sin firmar sea verificable.
+6. **Licencia formal.** Cliente en AGPL o GPLv3 (nadie lo toma y lo cierra), catálogo en CC0 (la comunidad manda perfiles por PR, ese es el foso real del producto).
+7. **Endurecer el seed:** limitar qué redes puede relevar, métricas de consumo por red, rotación de la lista de semillas vía DNS.
+
+## 2. Identidad remota y salas persistentes
+
+**Disparador:** el grupo quiere salas con nombre que sobrevivan reinicios, o hace falta moderación.
+
+Ya está preparado: la interfaz `IdentityProvider` en core. Se implementa un `RemoteRoomProvider` contra un backend pequeño (el kanpachi-rooms que se eliminó de la v1 renace aquí, con propósito real). Las cuentas siguen sin ser obligatorias: una sala persistente puede ser un código reservado, nada más.
+
+## 3. Más plataformas
+
+| Plataforma | Costo real | Nota |
+|---|---|---|
+| Linux cliente | Bajo: implementación nftables de `netfw` (~150 líneas), paquete deb, unidad systemd, matriz de pruebas propia | La interfaz ya existe. Steam Deck cuenta como Linux |
+| macOS | Alto: cuenta Apple Developer, notarización, System Extension para el TUN | Solo con demanda real |
+| Móvil | Muy alto y dudoso: VpnService en Android es viable, el caso de uso gamer casi no existe | Revisar solo si el producto cambia de naturaleza |
+
+## 4. Catálogo v3
+
+**Disparador:** juegos que el esquema v2 no describe.
+
+El v2 ya cubre capas, creador de perfiles, verificación por uso e intercambio por `.json` (ver `06-catalogo.md`). Lo que queda para más adelante:
+
+- Variantes por modo de juego: server dedicado y "Open to LAN" con puertos distintos dentro del mismo perfil.
+- Fuentes fuera de Steam: Epic, GOG, Xbox PC. Cada una con su detección propia.
+- Catálogo comunitario por PR, con `verified` obligatorio y prueba documentada. Es la única parte del proyecto donde alguien puede aportar sin tocar código privilegiado.
+- Índice remoto opcional de perfiles, con actualización sin releasear la app.
+
+## 5. Motor
+
+**Disparador:** EasyTier limita algo concreto (rendimiento, una plataforma, un bug estructural).
+
+El puerto `EnginePort` deja tres salidas sin tocar el producto: actualizar EasyTier, migrar a un control plane Headscale envuelto, o motor propio sobre wireguard-go (solo con recursos de sobra, es el camino de meses). Peer relays propios e IPv6 entran en esta misma conversación.
+
+## 6. La sinergia con Statio
+
+La más valiosa de esta lista. Statio hoy depende de Tailscale como canal exclusivo entre GitHub Actions y el agente: un tercero controla el plano de control, los precios y las cuentas de los clientes. Las piezas de Kanpachi son exactamente las que quitan esa dependencia:
+
+- `identity/` con derivación local: enrollment de agentes sin cuentas de terceros.
+- El seed: rendezvous propio sobre infraestructura propia.
+- El puerto `EnginePort`: el mismo túnel, con Tailscale vía tsnet hoy en Statio, con motor propio mañana.
+
+Si un día Kanpachi se archiva como juguete, este es el valor que queda.
+
+## 7. Métricas
+
+Solo con lanzamiento público, siempre opt-in, nunca en el modo privado. Lo mínimo que responde preguntas reales: tasa de directo contra relay, versión, tipo de NAT agregado. Jamás qué juega quién ni con quién.
+
+## 8. Host headless en Linux, con asistente de terminal
+
+**Disparador:** alguien del grupo quiere hospedar desde un VPS que ya paga, en vez de desde su PC. El caso típico es un servidor de Minecraft que ya corre ahí de todos modos.
+
+**Qué es:** un binario de Kanpachi para Linux, sin interfaz gráfica, con un asistente interactivo en la terminal que hace el mismo recorrido que la UI de Flutter. Se abre, elige el juego de la biblioteca, y muestra el código. Ese código se pasa por Telegram y lo usan clientes Windows normales, que no se enteran de nada. Para ellos la sala es idéntica a una creada desde Windows.
+
+**Por qué es barato, y es la prueba de que la arquitectura sirve.** Si `core/` se mantiene puro, este caso reusa sin tocar nada: `identity/`, `catalog/`, `policy/` y `EnginePort`. Lo que cambia es la periferia, que es justo donde debe estar el costo:
+
+| Pieza | Qué hay que escribir |
+|---|---|
+| `netfw` | Implementación nftables del mismo puerto, ver punto 3 |
+| `netcfg` | Equivalente con `iproute2`, sin los problemas de reidentificación de Windows |
+| Entrada | Asistente de terminal en vez de Flutter, sobre el mismo protocolo JSON-RPC |
+| Transporte | Socket Unix en vez de named pipe |
+
+**Una decisión que se toma hoy y lo habilita gratis:** el protocolo de la API local se define aparte de su transporte. El named pipe es una implementación, no el contrato. Eso ya está reflejado en `03-arquitectura.md` y no cuesta nada mientras solo exista Windows.
+
+**Es la excepción explícita a "el usuario nunca abre una terminal".** Esa regla protege al jugador, que no tiene por qué saber qué es una terminal. Quien administra un VPS ya vive en una, y para esa persona la terminal es la interfaz natural. Personas distintas, contextos distintos. La regla sigue intacta para el cliente Windows, que es el producto.
+
+**Lo que NO cambia:** el modelo de identidad, el catálogo, las invariantes de puertos, el rol de host de la decisión 20. Un host en Linux es un host, con las mismas reglas.
+
+## 9. Fijar la clave pública del seed
+
+**Disparador:** preocupación concreta por un intermediario en la conexión al servidor de encuentro, o el lanzamiento público.
+
+El modo seguro del motor permite que el cliente fije la clave pública del seed, o sea comprobar que se está hablando con el servidor esperado y no con un impostor en el medio. Refuerza la decisión 16, donde hoy la mitigación de "pegar un código puede conectarte al servidor de un desconocido" es únicamente la tarjeta de confirmación en pantalla.
+
+**Por qué no entra ya.** El seed solo ve networkIDs opacos e IPs públicas, así que un intermediario ahí no descifra tráfico ni entra a la sala. El beneficio es real y acotado, y el costo es distribuir y rotar una clave fijada, que es infraestructura que hoy no existe.
+
+Nota: **las credenciales temporales ya no viven en este documento.** Se probaron contra los binarios y pasaron a ser el mecanismo central de la decisión 2, con la expulsión de la decisión 22 y el canal de la decisión 23 encima.
+
+## 10. Lo que se decidió NO hacer
+
+Escrito para resistir la tentación:
+
+- **Detectar la ejecución de juegos:** ni para aplicar perfiles solo, ni para sugerirlos con un banner. Las dos variantes exigen un servicio elevado vigilando qué programas abre el usuario, y abrir puertos sin que nadie lo pida contradice la promesa del producto. Descartado en firme, ver decisión 13.
+- **Compartir archivos:** cambia el perfil de riesgo del producto entero y el consumo del relay.
+- **Chat y voz:** Telegram y Discord existen y ya están abiertos al lado del juego.
+- **Panel web de administración:** una superficie de ataque a cambio de nada, en un producto sin cuentas.
+- **Exit node / enrutar internet:** convierte una LAN de juegos en una VPN de anonimato, otro producto, otros problemas legales.
+
+Cada "y si también..." nuevo se anota aquí con fecha y se evalúa contra tres preguntas: ¿mueve la aguja del caso de uso central?, ¿quién lo mantiene?, ¿qué superficie agrega?
