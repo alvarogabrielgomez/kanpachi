@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Corre en Linux a propósito, y no es una economía de minutos.
+  # docs/CLAUDE.md define la métrica de la arquitectura así: "los tests de core
+  # corren sin admin, sin red y sin Windows". Ejecutarlos en Ubuntu es lo que
+  # convierte esa frase en algo comprobable. Si un día core deja de compilar
+  # acá, la arquitectura se rompió y este job es quien lo dice.
+  core:
+    name: core en Linux, sin privilegios
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./core/... ./internal/...
+
+      - name: Test de pureza de imports
+        # Se ejecuta aparte y primero para que su fallo sea inconfundible en el
+        # log. Es una violación de arquitectura, no un test más que se rompió.
+        run: go test -v -count=1 ./internal/arch/...
+
+      - name: Tests de core
+        run: go test -race -count=1 ./core/...
+
+      - name: gofmt
+        run: |
+          sin_formato=$(gofmt -l ./core ./internal)
+          if [ -n "$sin_formato" ]; then
+            echo "Estos archivos no están formateados:"
+            echo "$sin_formato"
+            exit 1
+          fi
+
+  # El daemon es solo Windows, así que se compila donde va a correr. No se
+  # ejecutan sus tests todavía porque el paquete no existe; el job queda
+  # declarado para que exista el día que se agregue y nadie tenga que
+  # acordarse.
+  daemon:
+    name: daemon en Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Sin -ldflags="-s -w". Quitar la tabla de símbolos dispara falsos
+      # positivos del modelo de Defender sobre binarios Go, y este daemon crea
+      # adaptadores de red y toca el firewall, o sea es candidato de manual.
+      # Ver docs/07-futuro.md.
+      - name: Compilar todo
+        run: go build ./...
