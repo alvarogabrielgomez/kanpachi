@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kanpachi</title>
+<!--
+  Página de invitación. HTML estático puro, sin backend y sin dependencias
+  externas. Implementa las decisiones 16 y 17 de docs/02 y el diseño de docs/05.
+
+  Las tres propiedades que la definen, y ninguna es cosmética:
+
+  1. EL CÓDIGO VA EN EL FRAGMENTO. Los navegadores no mandan lo que va después
+     del # en la petición HTTP, así que este servidor NUNCA recibe un código de
+     sala. No se puede filtrar lo que no se conoce, y eso es verificable por
+     cualquiera que mire el tráfico. Por eso el código se lee acá con
+     JavaScript y jamás se pone en la ruta ni en un query string.
+
+  2. EL INTENT SOLO SE DISPARA CON UN CLICK. Nunca al cargar. Los navegadores
+     penalizan la navegación a esquemas externos sin gesto del usuario, y una
+     página que abre programas sola es exactamente lo que alguien desconfiado
+     espera de un link sospechoso.
+
+  3. NO SE INTENTA DETECTAR SI LA APP ESTÁ INSTALADA. No hay forma confiable, y
+     el truco del temporizador falla distinto en cada navegador. El mensaje de
+     "si no pasó nada" cubre el caso sin adivinar y sin equivocarse.
+
+  Sin analítica, sin cookies, sin fuentes remotas, sin peticiones salientes.
+-->
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfaf8;
+    --surface: #ffffff;
+    --border: #e6e2dc;
+    --text: #1c1a17;
+    --muted: #6b655c;
+    --accent: #b4451f;
+    --accent-text: #ffffff;
+    --code-bg: #f4f1ec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171614;
+      --surface: #201e1b;
+      --border: #35322d;
+      --text: #f0ede8;
+      --muted: #a19a8f;
+      --accent: #e0703f;
+      --accent-text: #1c1a17;
+      --code-bg: #2a2724;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main {
+    width: 100%;
+    max-width: 27rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 2rem 1.75rem;
+  }
+  h1 { margin: 0 0 .25rem; font-size: 1.6rem; letter-spacing: -.02em; }
+  .tagline { margin: 0 0 1.75rem; color: var(--muted); }
+  .label { font-size: .8rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: .4rem; }
+
+  .code-row { display: flex; gap: .5rem; align-items: stretch; margin-bottom: 1.5rem; }
+  .code {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: .7rem .85rem;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 1.05rem;
+    letter-spacing: .06em;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    padding: .7rem 1rem;
+    white-space: nowrap;
+  }
+  button:hover { border-color: var(--muted); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .primary {
+    display: block;
+    width: 100%;
+    background: var(--accent);
+    color: var(--accent-text);
+    border-color: transparent;
+    font-weight: 600;
+    padding: .85rem 1rem;
+    font-size: 1.05rem;
+  }
+  .primary:hover { filter: brightness(1.08); }
+
+  .server { font-size: .85rem; color: var(--muted); margin: -.9rem 0 1.5rem; }
+  .fallback { margin: 1.5rem 0 0; color: var(--muted); font-size: .92rem; }
+  .fallback a, footer a { color: var(--accent); }
+  footer {
+    margin-top: 1.75rem; padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    font-size: .78rem; color: var(--muted);
+    display: flex; flex-wrap: wrap; gap: .5rem 1rem;
+  }
+  footer code { font-family: ui-monospace, Consolas, monospace; }
+  .hidden { display: none; }
+  .notice {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: .85rem;
+    color: var(--muted);
+    font-size: .92rem;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Kanpachi</h1>
+  <p class="tagline">Jugar en LAN con tus panas, sin abrir puertos ni crear cuentas.</p>
+
+  <!-- Con código válido en el fragmento -->
+  <section id="invite" class="hidden">
+    <div class="label">Sala</div>
+    <div class="code-row">
+      <div class="code" id="code"></div>
+      <button id="copy" type="button">Copiar</button>
+    </div>
+    <p class="server" id="server"></p>
+
+    <button class="primary" id="open" type="button">Abrir en Kanpachi</button>
+
+    <p class="fallback">
+      ¿No pasó nada? Es que no lo tienes instalado todavía.<br>
+      <a href="/descargar" id="download">→ Descargar Kanpachi para Windows</a>
+    </p>
+  </section>
+
+  <!-- Sin código, o con uno que no tiene forma de código -->
+  <section id="nocode" class="hidden">
+    <p class="notice" id="nocode-text"></p>
+    <p class="fallback">
+      <a href="/descargar">→ Descargar Kanpachi para Windows</a>
+    </p>
+  </section>
+
+  <footer>
+    <span>SHA256: <code id="hash">pendiente</code></span>
+    <span>·</span>
+    <a href="https://github.com/accentiostudios/kanpachi">Código fuente</a>
+  </footer>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  // Mismo alfabeto que core/domain/code.go: los 36 alfanuméricos menos
+  // 0, O, 1 e I. Son 32 exactos, o sea 5 bits por carácter y 60 bits en 12.
+  // Si esto se desincroniza del cliente, la página aceptaría códigos que la
+  // app rechaza, que es la peor forma de fallar: el usuario cree que el
+  // problema es la app.
+  var ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+  var CODE_LEN = 12;
+  var DEFAULT_SEED = "kanpachi.accentio.dev";
+
+  // Tope antes de mirar el contenido. El fragmento lo controla quien manda el
+  // link, así que se trata como entrada hostil igual que en el cliente.
+  var MAX_INPUT = 64;
+
+  function normalize(raw) {
+    return raw.replace(/[-_\s]/g, "").toUpperCase();
+  }
+
+  function parseCode(raw) {
+    if (typeof raw !== "string" || raw.length > MAX_INPUT) return null;
+    var n = normalize(raw);
+    if (n.length !== CODE_LEN) return null;
+    for (var i = 0; i < n.length; i++) {
+      if (ALPHABET.indexOf(n.charAt(i)) === -1) return null;
+    }
+    return n;
+  }
+
+  function format(code) {
+    return code.slice(0, 4) + "-" + code.slice(4, 8) + "-" + code.slice(8, 12);
+  }
+
+  function show(id) { document.getElementById(id).classList.remove("hidden"); }
+
+  // El fragmento se lee acá y nunca sale de este navegador.
+  // decodeURIComponent puede lanzar con secuencias mal formadas, y un throw
+  // dejaría la página en blanco, así que se atrapa.
+  var fragment = "";
+  try {
+    fragment = decodeURIComponent(window.location.hash.replace(/^#/, ""));
+  } catch (e) {
+    fragment = "";
+  }
+
+  var code = parseCode(fragment);
+
+  if (!code) {
+    // Dos casos distintos merecen dos textos distintos: no traer código no es
+    // un error del usuario, traer uno roto sí necesita explicación.
+    document.getElementById("nocode-text").textContent = fragment
+      ? "Ese código no parece completo. Son 12 caracteres, revisa que el enlace se copió entero."
+      : "Este enlace abre una sala de Kanpachi. Pide el código a quien te invitó, o descarga la app.";
+    show("nocode");
+    return;
+  }
+
+  var pretty = format(code);
+  // textContent y jamás innerHTML: el fragmento lo controla quien manda el
+  // enlace. Ya está validado contra el alfabeto, y aun así no se construye
+  // HTML con él. Defensa en profundidad, no confianza en una validación.
+  document.getElementById("code").textContent = pretty;
+
+  // El seed es el dominio desde el que se sirve esta página. Sale directo de
+  // la decisión 16: quien se autohospeda sube esta misma página a su servidor
+  // y los enlaces que genere llevan su host solos, sin que él edite nada y sin
+  // que sus invitados configuren nada.
+  var host = window.location.hostname;
+  var isDefault = (host === DEFAULT_SEED);
+  document.getElementById("server").textContent = isDefault
+    ? "Servidor: " + DEFAULT_SEED
+    : "Servidor: " + host + " (de otra persona, no el de Accentio)";
+
+  // Un código pelado significa "seed por defecto". Para cualquier otro host se
+  // agrega explícitamente, porque el cliente jamás asume el último usado.
+  var target = isDefault ? "kanpachi://" + pretty : "kanpachi://" + pretty + "@" + host;
+
+  // SOLO con click. Nunca al cargar.
+  document.getElementById("open").addEventListener("click", function () {
+    window.location.href = target;
+  });
+
+  document.getElementById("copy").addEventListener("click", function (ev) {
+    var btn = ev.currentTarget;
+    var done = function () {
+      btn.textContent = "Copiado";
+      setTimeout(function () { btn.textContent = "Copiar"; }, 1600);
+    };
+    // El portapapeles moderno exige contexto seguro y puede ser denegado. El
+    // respaldo mantiene viva la tercera salida: copiar el código a mano es la
+    // vía que funciona pase lo que pase.
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(pretty).then(done, function () { selectCode(); });
+    } else {
+      selectCode();
+    }
+  });
+
+  function selectCode() {
+    var el = document.getElementById("code");
+    var range = document.createRange();
+    range.selectNodeContents(el);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  show("invite");
+})();
+</script>
+</body>
+</html>
