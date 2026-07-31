@@ -68,48 +68,29 @@ En orden: detener y borrar el servicio, purgar todas las reglas del grupo "Kanpa
 
 Contexto: droplet DigitalOcean NYC3 ya existente, Docker sobre Ubuntu, con Reserved IP. El seed convive con las cargas de Accentio, aislado en su propia red de contenedores.
 
-`docker-compose.yml`:
+El archivo vive en `seed/docker-compose.yml` del repositorio y se despliega en `~/apps/kanpachi-seed/`, siguiendo la convención del droplet. **Desplegado y verificado el 2026-07-31.**
 
-```yaml
-services:
-  kanpachi-seed:
-    image: easytier/easytier:latest
-    container_name: kanpachi-seed
-    restart: unless-stopped
-    command:
-      - "-l"
-      - "tcp://0.0.0.0:11010"
-      - "-l"
-      - "udp://0.0.0.0:11010"
-    ports:
-      - "11010:11010/tcp"
-      - "11010:11010/udp"
-    networks:
-      - kanpachi-net          # red propia, sin ver otros contenedores
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 256M
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+El contenido está en el repositorio. Lo que hay que entender de él, que es lo que no se deduce leyendo el YAML:
 
-networks:
-  kanpachi-net:
-    driver: bridge
-```
+| Ajuste | Por qué |
+|---|---|
+| `image: easytier/easytier:v2.6.4` | Versión fijada, jamás `latest`. Una actualización sorpresa del motor cambia el comportamiento de la red de todo el grupo sin que nadie lo haya pedido |
+| `--disable-upnp true` | El motor mapea puertos por defecto. Acá no hay router que tocar, y es una invariante del producto |
+| `--stun-servers` y `--stun-servers-v6` vacíos | STUN sirve para descubrir el propio NAT, y este nodo tiene IP pública directa. Con los valores por defecto, el droplet **estaba mandando tráfico saliente a servidores STUN de terceros**. Detectado en los logs al desplegar |
+| `--no-tun true` | El seed presenta peers, no necesita interfaz virtual. Así el contenedor no pide `NET_ADMIN` ni `/dev/net/tun` |
+| `--rpc-portal 127.0.0.1:15888` | Es el panel de control del motor. Queda en el loopback del contenedor y no se publica, o sea solo se alcanza por `docker exec` |
+| Sin `--network-name` ni `--network-secret` | **El seed no se une a ninguna sala.** Es lo que garantiza que jamás vea el secreto de una red |
+| `cpu_period` y `cpu_quota` explícitos | `cpus: 0.5` se acepta sin error en Compose v2.17 y **no llega al contenedor**: `docker inspect` mostraba `CpuQuota: 0`. Verificado tras el primer despliegue |
 
 Checklist del droplet:
 
-1. **Cloud Firewall de DigitalOcean:** abrir 11010 TCP y UDP entrantes. Ningún otro puerto nuevo.
-2. **Semilla en el cliente:** compilar la **Reserved IP**, nunca la IP pública directa del droplet. La reservada se mueve de máquina sin releasear el cliente.
+1. **Cloud Firewall de DigitalOcean:** 11010 TCP y UDP entrantes. Verificado alcanzable desde una máquina externa. Ningún otro puerto nuevo.
+2. **Semilla en el cliente:** compilar la **Reserved IP**, nunca la IP pública directa del droplet. La reservada se mueve de máquina sin releasear el cliente. Pendiente confirmar cuál de las dos es la reservada.
 3. **DNS opcional:** un registro tipo `_seeds.kanpachi.dev` como fuente primaria de semillas, con la IP compilada de respaldo. Dos fuentes siempre.
-4. **Actualización manual:** `docker compose pull && docker compose up -d`. Sin automatismos que sorprendan.
-5. **Vigilancia:** una mirada mensual al consumo de transferencia en el panel de DO. El plan del droplet incluye 4000 GiB salientes al mes, el rendezvous consume kilobytes, cualquier número grande delata relay intensivo.
-6. **Endurecimiento futuro:** el día que el producto sea público, limitar qué redes puede relevar el seed (EasyTier trae flags para eso, verificar contra la versión instalada) y mover el relay de datos a un VPS dedicado.
+4. **Actualización manual y deliberada:** subir la versión fijada en el compose, luego `docker compose up -d`. Nada de `pull` a `latest`.
+5. **Vigilancia:** una mirada mensual al consumo de transferencia en el panel de DO. El plan incluye 4000 GiB salientes al mes, el rendezvous consume kilobytes, cualquier número grande delata relay intensivo.
+6. **Convive con producción.** El droplet corre Vaultwarden, Logto, el blog y varias bases de datos, con el disco al 87% y poca RAM libre. Por eso los límites de memoria y CPU no son opcionales, y por eso el seed vive en su propia red de contenedores sin ver a los demás.
+7. **Endurecimiento futuro:** con público, limitar qué redes puede relevar con `--relay-network-whitelist`, poner techo con `--foreign-relay-bps-limit`, y mover el relay de datos a un VPS dedicado.
 
 ## Diagnóstico cuando algo falla
 

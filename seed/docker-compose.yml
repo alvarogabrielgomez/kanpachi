@@ -1,0 +1,69 @@
+# kanpachi-seed: nodo de rendezvous.
+#
+# Presenta a los peers entre sí y coordina el hole punch. NO se une a ninguna
+# sala: no lleva --network-name ni --network-secret, así que jamás ve el
+# secreto de una red y no puede descifrar nada. Lo único que observa son
+# networkIDs opacos y las IPs públicas de quienes los anuncian.
+#
+# Convive con las cargas de Accentio en el mismo droplet, aislado en su propia
+# red de contenedores.
+services:
+  kanpachi-seed:
+    image: easytier/easytier:v2.6.4
+    container_name: kanpachi-seed
+    restart: unless-stopped
+    command:
+      - "--listeners"
+      - "tcp://0.0.0.0:11010"
+      - "--listeners"
+      - "udp://0.0.0.0:11010"
+      # El seed corre en una VM con IP pública directa. No hay NAT que
+      # perforar ni router que mapear, así que UPnP no aporta nada y sí
+      # contradice la invariante de que el router de nadie se toca. Viene
+      # ENCENDIDO por defecto en el motor, hay que apagarlo a mano.
+      - "--disable-upnp"
+      - "true"
+      # El portal RPC es el panel de control del motor. Queda en el loopback
+      # del contenedor y no se publica, así que solo se alcanza por docker exec.
+      - "--rpc-portal"
+      - "127.0.0.1:15888"
+      - "--rpc-portal-whitelist"
+      - "127.0.0.1"
+      # Sin TUN: el seed no necesita una interfaz virtual para presentar peers,
+      # y así el contenedor no requiere NET_ADMIN ni /dev/net/tun.
+      - "--no-tun"
+      - "true"
+      # STUN sirve para descubrir el propio NAT. Este nodo tiene IP pública
+      # directa, así que no tiene NAT que descubrir. Con la lista vacía deja
+      # de hablar con los servidores STUN por defecto del motor, que son de
+      # terceros y estaban recibiendo tráfico saliente desde el droplet de
+      # producción sin que nadie lo hubiera decidido.
+      - "--stun-servers"
+      - "--stun-servers-v6"
+      - "--console-log-level"
+      - "info"
+    ports:
+      - "11010:11010/tcp"
+      - "11010:11010/udp"
+    networks:
+      - kanpachi-net
+    # El droplet tiene 2 núcleos y poca RAM libre, y comparte casa con
+    # Vaultwarden, Logto y varias bases de datos. Un relay sin techo es el
+    # único costo variable del proyecto y el único vector de abuso, así que
+    # el límite no es opcional.
+    mem_limit: 256m
+    # cpu_quota y cpu_period explícitos en vez de `cpus: 0.5`. Con Compose
+    # v2.17 esa forma se acepta sin error y NO llega al contenedor: docker
+    # inspect mostraba CpuQuota 0, o sea sin techo. Verificado tras desplegar.
+    cpu_period: 100000
+    cpu_quota: 50000
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  kanpachi-net:
+    driver: bridge
+    name: kanpachi-net
