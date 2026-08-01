@@ -192,8 +192,12 @@ class _AccountMenu extends StatelessWidget {
           border: Border.all(color: colors.border, width: AppStroke.hairline),
           boxShadow: <BoxShadow>[
             BoxShadow(
-              color: colors.shadow,
-              blurRadius: 40,
+              // Sombra propia y no el token global: el del tema es la sombra
+              // de la ventana flotando en la maqueta, mucho más densa que la
+              // de un menú. 34 de blur es el equivalente exacto del 40px de
+              // CSS, que mide sigma y no radio.
+              color: colors.shadowMenu,
+              blurRadius: 34,
               offset: const Offset(0, 16),
             ),
           ],
@@ -237,17 +241,27 @@ class _WindowButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Row(
       children: <Widget>[
         AppIconButton(
-          icon: Icons.remove,
           tooltip: 'Minimizar',
+          glyph: Container(width: 11, height: AppStroke.hairline, color: colors.textMuted),
           onPressed: windowManager.minimize,
         ),
         AppIconButton(
-          icon: Icons.crop_square,
           tooltip: 'Maximizar',
-          iconSize: 11,
+          glyph: Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: colors.textMuted,
+                width: AppStroke.hairline,
+              ),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
           onPressed: () async {
             if (await windowManager.isMaximized()) {
               await windowManager.unmaximize();
@@ -257,8 +271,8 @@ class _WindowButtons extends StatelessWidget {
           },
         ),
         AppIconButton(
-          icon: Icons.close,
           tooltip: 'Cerrar a la bandeja',
+          glyph: _CloseGlyph(color: colors.textMuted),
           // Cerrar NO cierra la sala. `close()` no mata el proceso: la ventana
           // tiene puesto `preventClose`, así que dispara `onWindowClose` y el
           // TrayBridge la esconde dejando el icono en la bandeja. Matarla sería
@@ -266,6 +280,35 @@ class _WindowButtons extends StatelessWidget {
           onPressed: windowManager.close,
         ),
       ],
+    );
+  }
+}
+
+/// La cruz: dos rayas de un píxel cruzadas.
+class _CloseGlyph extends StatelessWidget {
+  const _CloseGlyph({required this.color});
+
+  final Color color;
+
+  static const double _quarterTurn = 3.141592653589793 / 4;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget raya = Container(
+      width: 12,
+      height: AppStroke.hairline,
+      color: color,
+    );
+    return SizedBox(
+      width: 12,
+      height: 12,
+      child: Stack(
+        alignment: Alignment.center,
+        children: <Widget>[
+          Transform.rotate(angle: _quarterTurn, child: raya),
+          Transform.rotate(angle: -_quarterTurn, child: raya),
+        ],
+      ),
     );
   }
 }
@@ -296,15 +339,12 @@ class ShellStatusBar extends StatelessWidget {
           const SizedBox(width: AppSpacing.md),
           Text(
             'Servicio activo',
-            style: context.type.labelSm.copyWith(
-              color: colors.textMuted,
-              fontWeight: FontWeight.w400,
-            ),
+            style: context.type.statusLabel.copyWith(color: colors.textMuted),
           ),
           const Spacer(),
           Text(
             right,
-            style: context.type.monoSm.copyWith(color: colors.textMuted),
+            style: context.type.statusMono.copyWith(color: colors.textMuted),
           ),
         ],
       ),

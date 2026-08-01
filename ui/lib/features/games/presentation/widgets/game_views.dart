@@ -36,12 +36,14 @@ class GameArtToggle extends StatelessWidget {
       segments: const <AppSegment<GameArtMode>>[
         AppSegment<GameArtMode>(
           value: GameArtMode.cover,
-          icon: Icons.grid_view,
+          icon: Icons.grid_view_outlined,
           tooltip: 'Portadas',
         ),
         AppSegment<GameArtMode>(
           value: GameArtMode.list,
-          icon: Icons.notes,
+          // `menu` y no `notes`: el diseño dibuja tres rayas IGUALES, y
+          // `notes` las hace desiguales.
+          icon: Icons.menu,
           tooltip: 'Lista',
         ),
       ],

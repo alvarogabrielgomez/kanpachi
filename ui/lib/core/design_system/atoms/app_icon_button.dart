@@ -8,18 +8,31 @@ import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 /// señal que necesita algo tan pequeño.
 class AppIconButton extends StatefulWidget {
   const AppIconButton({
-    required this.icon,
     required this.onPressed,
     required this.tooltip,
+    this.icon,
+    this.glyph,
     this.width = 42,
     this.height = 32,
     this.iconSize = 13,
     this.danger = false,
     this.outlined = false,
     super.key,
-  });
+  }) : assert(
+          (icon == null) != (glyph == null),
+          'Un botón de icono lleva un icono O un dibujo propio',
+        );
 
-  final IconData icon;
+  final IconData? icon;
+
+  /// Un dibujo propio en vez de un icono de la tipografía.
+  ///
+  /// Los tres de la barra de título son primitivas de un píxel de grosor, y en
+  /// MaterialIcons el trazo engorda con el tamaño: subir el `iconSize` para
+  /// que la raya de minimizar mida lo que toca la deja además tres veces más
+  /// gruesa. Con un `Container` se pide exactamente lo que el diseño dibuja.
+  final Widget? glyph;
+
   final VoidCallback? onPressed;
 
   /// Obligatorio. Un icono suelto sin nombre es una adivinanza, y estos
@@ -84,11 +97,14 @@ class _AppIconButtonState extends State<AppIconButton> {
                     )
                   : null,
             ),
-            child: Icon(
-              widget.icon,
-              size: widget.iconSize,
-              color: _hovered && widget.danger ? colors.accent : colors.textMuted,
-            ),
+            child: widget.glyph ??
+                Icon(
+                  widget.icon,
+                  size: widget.iconSize,
+                  color: _hovered && widget.danger
+                      ? colors.accent
+                      : colors.textMuted,
+                ),
           ),
         ),
       ),

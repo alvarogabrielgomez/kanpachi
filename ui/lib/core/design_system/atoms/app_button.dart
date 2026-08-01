@@ -39,6 +39,8 @@ class AppButton extends StatefulWidget {
     this.width,
     this.height,
     this.horizontalPadding,
+    this.textStyle,
+    this.emphasis = false,
     this.icon,
     super.key,
   });
@@ -59,6 +61,21 @@ class AppButton extends StatefulWidget {
   /// sala y 20 en un diálogo. Un valor por variante queda tan mal como la
   /// constante única que había antes.
   final double? horizontalPadding;
+
+  /// La letra, cuando el sitio pide otra escala que la del arquetipo.
+  ///
+  /// El mismo `primaryFlat` es el CTA de 14,5 px en «Unirse» y de 12,5 en
+  /// «Copiar enlace»; el mismo ghost va a 13,5 en un diálogo y a 11,5 en la
+  /// fila de un miembro. Cambiar el mapeo de la variante arreglaría uno y
+  /// rompería el otro.
+  final TextStyle? textStyle;
+
+  /// Un ghost que va en color de texto pleno en vez de apagado.
+  ///
+  /// Es la excepción y no la regla: el diseño pinta los ghost en `--kp-muted`
+  /// en todas partes menos en el «Cancelar» del alta manual, donde compite con
+  /// un «Guardar juego» al lado y tiene que pesar lo mismo.
+  final bool emphasis;
 
   final Widget? icon;
 
@@ -101,9 +118,15 @@ class _AppButtonState extends State<AppButton> {
       AppButtonVariant.primary || AppButtonVariant.primaryFlat => _enabled
           ? (colors.accent, colors.accentInk, null)
           : (colors.chip, colors.textMuted, null),
+      // Apagado en reposo. El diseño pinta TODOS los ghost en `--kp-muted`
+      // menos uno, así que el default correcto es ese y la excepción se pide
+      // por `emphasis`. Al revés, con siete sitios pidiendo lo apagado, la
+      // excepción sería la regla.
       AppButtonVariant.ghost => (
           _hovered ? colors.chip : Colors.transparent,
-          _hovered && _enabled ? colors.accent : colors.text,
+          _hovered && _enabled
+              ? colors.accent
+              : (widget.emphasis ? colors.text : colors.textMuted),
           _hovered && _enabled ? colors.accent : colors.border,
         ),
       AppButtonVariant.quiet => (
@@ -113,11 +136,12 @@ class _AppButtonState extends State<AppButton> {
         ),
     };
 
-    final TextStyle textStyle = switch (widget.variant) {
-      AppButtonVariant.primary => type.buttonLg,
-      AppButtonVariant.primaryFlat => type.button,
-      AppButtonVariant.ghost || AppButtonVariant.quiet => type.label,
-    };
+    final TextStyle textStyle = widget.textStyle ??
+        switch (widget.variant) {
+          AppButtonVariant.primary => type.buttonLg,
+          AppButtonVariant.primaryFlat => type.button,
+          AppButtonVariant.ghost || AppButtonVariant.quiet => type.label,
+        };
 
     return MouseRegion(
       cursor: _enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,

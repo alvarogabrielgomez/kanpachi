@@ -81,7 +81,14 @@ class _ManualGameScreenState extends State<ManualGameScreen> {
             leading: AppBackButton(onPressed: () => shell.go(AppScreen.catalog)),
           ),
           const SizedBox(height: AppSpacing.x7l),
-          LayoutBuilder(
+          // El `Align` no es decorativo: la Column padre estira a lo ancho con
+          // constraints TIRANTES, así que un ConstrainedBox pelado se iría a
+          // los 940 igual y el tope no haría nada.
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 860),
+              child: LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
               final Widget form = _Form(
                 name: _name,
@@ -113,12 +120,14 @@ class _ManualGameScreenState extends State<ManualGameScreen> {
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Expanded(flex: 3, child: form),
+                  Expanded(child: form),
                   const SizedBox(width: AppSpacing.x8l),
-                  Expanded(flex: 2, child: preview),
+                  Expanded(child: preview),
                 ],
               );
             },
+              ),
+            ),
           ),
         ],
       ),
@@ -190,6 +199,8 @@ class _Form extends StatelessWidget {
             label: 'Añadir otro rango',
             variant: AppButtonVariant.ghost,
             height: 36,
+            horizontalPadding: AppSpacing.x3l,
+            textStyle: context.type.label.copyWith(fontSize: 13, height: 1),
             icon: const Icon(Icons.add),
             onPressed: onAddRule,
           ),
@@ -220,6 +231,11 @@ class _Form extends StatelessWidget {
               label: 'Cancelar',
               variant: AppButtonVariant.ghost,
               height: 46,
+              // El único ghost que el diseño pinta en color de texto pleno:
+              // acá compite con «Guardar juego» al lado y tiene que pesar lo
+              // mismo. En los otros siete sitios va apagado.
+              emphasis: true,
+              textStyle: context.type.label.copyWith(fontSize: 14),
               onPressed: onCancel,
             ),
             const SizedBox(width: AppSpacing.lg),

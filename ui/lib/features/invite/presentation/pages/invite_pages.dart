@@ -61,21 +61,27 @@ class InviteScreen extends StatelessWidget {
             'sala. Nada de tu PC queda expuesto hasta que se elija un juego.',
           ),
           const SizedBox(height: AppSpacing.x7l),
+          // 5:7, que es el 1:1,4 del diseño, y el MISMO alto en los dos. Con
+          // 1:2 el «Cancelar» quedaba estrecho de más, y sin alto explícito
+          // cada uno medía por su interlínea y salían desnivelados.
           Row(
             children: <Widget>[
               Expanded(
+                flex: 5,
                 child: AppButton(
                   label: 'Cancelar',
                   variant: AppButtonVariant.ghost,
-                  height: 48,
+                  height: 46,
+                  textStyle: context.type.label.copyWith(fontSize: 14.5),
                   onPressed: () => shell.go(AppScreen.home),
                 ),
               ),
               const SizedBox(width: AppSpacing.lg),
               Expanded(
-                flex: 2,
+                flex: 7,
                 child: AppButton(
                   label: 'Entrar a la sala',
+                  height: 46,
                   onPressed: () {
                     context.read<SessionCubit>().joinRoom(code);
                     shell.go(AppScreen.room);

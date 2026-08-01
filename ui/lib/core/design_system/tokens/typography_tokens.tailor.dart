@@ -30,6 +30,8 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
   TextStyle get buttonSm;
   TextStyle get kicker;
   TextStyle get kickerSm;
+  TextStyle get statusLabel;
+  TextStyle get statusMono;
   TextStyle get mono;
   TextStyle get monoSm;
   TextStyle get monoXs;
@@ -57,6 +59,8 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
     TextStyle? buttonSm,
     TextStyle? kicker,
     TextStyle? kickerSm,
+    TextStyle? statusLabel,
+    TextStyle? statusMono,
     TextStyle? mono,
     TextStyle? monoSm,
     TextStyle? monoXs,
@@ -83,6 +87,8 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
       buttonSm: buttonSm ?? this.buttonSm,
       kicker: kicker ?? this.kicker,
       kickerSm: kickerSm ?? this.kickerSm,
+      statusLabel: statusLabel ?? this.statusLabel,
+      statusMono: statusMono ?? this.statusMono,
       mono: mono ?? this.mono,
       monoSm: monoSm ?? this.monoSm,
       monoXs: monoXs ?? this.monoXs,
@@ -117,6 +123,8 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
       buttonSm: TextStyle.lerp(buttonSm, other.buttonSm, t)!,
       kicker: TextStyle.lerp(kicker, other.kicker, t)!,
       kickerSm: TextStyle.lerp(kickerSm, other.kickerSm, t)!,
+      statusLabel: TextStyle.lerp(statusLabel, other.statusLabel, t)!,
+      statusMono: TextStyle.lerp(statusMono, other.statusMono, t)!,
       mono: TextStyle.lerp(mono, other.mono, t)!,
       monoSm: TextStyle.lerp(monoSm, other.monoSm, t)!,
       monoXs: TextStyle.lerp(monoXs, other.monoXs, t)!,
@@ -152,6 +160,14 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
             const DeepCollectionEquality().equals(buttonSm, other.buttonSm) &&
             const DeepCollectionEquality().equals(kicker, other.kicker) &&
             const DeepCollectionEquality().equals(kickerSm, other.kickerSm) &&
+            const DeepCollectionEquality().equals(
+              statusLabel,
+              other.statusLabel,
+            ) &&
+            const DeepCollectionEquality().equals(
+              statusMono,
+              other.statusMono,
+            ) &&
             const DeepCollectionEquality().equals(mono, other.mono) &&
             const DeepCollectionEquality().equals(monoSm, other.monoSm) &&
             const DeepCollectionEquality().equals(monoXs, other.monoXs) &&
@@ -182,6 +198,8 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
       const DeepCollectionEquality().hash(buttonSm),
       const DeepCollectionEquality().hash(kicker),
       const DeepCollectionEquality().hash(kickerSm),
+      const DeepCollectionEquality().hash(statusLabel),
+      const DeepCollectionEquality().hash(statusMono),
       const DeepCollectionEquality().hash(mono),
       const DeepCollectionEquality().hash(monoSm),
       const DeepCollectionEquality().hash(monoXs),
@@ -228,6 +246,14 @@ extension TypographyTokensBuildContextProps on BuildContext {
   /// CÓDIGO DE SALA, TUS JUEGOS, EN LA SALA · 4.
   TextStyle get kicker => typographyTokens.kicker;
   TextStyle get kickerSm => typographyTokens.kickerSm;
+
+  /// La barra de estado del pie, sans y mono.
+  ///
+  /// Es un escalón por debajo de `labelSm`/`monoSm` y con peso normal: la
+  /// barra acompaña, no compite. Con la escala de al lado iba un punto más
+  /// grande y se leía como contenido.
+  TextStyle get statusLabel => typographyTokens.statusLabel;
+  TextStyle get statusMono => typographyTokens.statusMono;
 
   /// Datos literales: código, dirección, puertos.
   TextStyle get mono => typographyTokens.mono;

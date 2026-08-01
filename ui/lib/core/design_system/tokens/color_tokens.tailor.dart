@@ -21,7 +21,9 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
   Color get accentInk;
   Color get accentShadow;
   Color get border;
+  Color get shadowMenu;
   Color get ok;
+  Color get okInk;
   Color get warn;
   Color get warnSurface;
   Color get shapeOne;
@@ -46,7 +48,9 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
     Color? accentInk,
     Color? accentShadow,
     Color? border,
+    Color? shadowMenu,
     Color? ok,
+    Color? okInk,
     Color? warn,
     Color? warnSurface,
     Color? shapeOne,
@@ -70,7 +74,9 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
       accentInk: accentInk ?? this.accentInk,
       accentShadow: accentShadow ?? this.accentShadow,
       border: border ?? this.border,
+      shadowMenu: shadowMenu ?? this.shadowMenu,
       ok: ok ?? this.ok,
+      okInk: okInk ?? this.okInk,
       warn: warn ?? this.warn,
       warnSurface: warnSurface ?? this.warnSurface,
       shapeOne: shapeOne ?? this.shapeOne,
@@ -99,7 +105,9 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
       accentInk: Color.lerp(accentInk, other.accentInk, t)!,
       accentShadow: Color.lerp(accentShadow, other.accentShadow, t)!,
       border: Color.lerp(border, other.border, t)!,
+      shadowMenu: Color.lerp(shadowMenu, other.shadowMenu, t)!,
       ok: Color.lerp(ok, other.ok, t)!,
+      okInk: Color.lerp(okInk, other.okInk, t)!,
       warn: Color.lerp(warn, other.warn, t)!,
       warnSurface: Color.lerp(warnSurface, other.warnSurface, t)!,
       shapeOne: Color.lerp(shapeOne, other.shapeOne, t)!,
@@ -141,7 +149,12 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
               other.accentShadow,
             ) &&
             const DeepCollectionEquality().equals(border, other.border) &&
+            const DeepCollectionEquality().equals(
+              shadowMenu,
+              other.shadowMenu,
+            ) &&
             const DeepCollectionEquality().equals(ok, other.ok) &&
+            const DeepCollectionEquality().equals(okInk, other.okInk) &&
             const DeepCollectionEquality().equals(warn, other.warn) &&
             const DeepCollectionEquality().equals(
               warnSurface,
@@ -178,7 +191,9 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
       const DeepCollectionEquality().hash(accentInk),
       const DeepCollectionEquality().hash(accentShadow),
       const DeepCollectionEquality().hash(border),
+      const DeepCollectionEquality().hash(shadowMenu),
       const DeepCollectionEquality().hash(ok),
+      const DeepCollectionEquality().hash(okInk),
       const DeepCollectionEquality().hash(warn),
       const DeepCollectionEquality().hash(warnSurface),
       const DeepCollectionEquality().hash(shapeOne),
@@ -230,8 +245,21 @@ extension ColorTokensBuildContextProps on BuildContext {
   Color get accentShadow => colorTokens.accentShadow;
   Color get border => colorTokens.border;
 
+  /// La sombra de un menú flotante, más ligera que la de la ventana.
+  ///
+  /// Igual en los dos temas: es negro al 28%, y lo que la hace legible en
+  /// claro y en oscuro es la superficie que tiene debajo, no el color.
+  Color get shadowMenu => colorTokens.shadowMenu;
+
   /// Verde de "esto está bien": el punto del servicio activo, un peer directo.
   Color get ok => colorTokens.ok;
+
+  /// La tinta que va ENCIMA del verde: la etiqueta INSTALADO.
+  ///
+  /// Blanca en los dos temas, y por eso tiene token propio en vez de reciclar
+  /// `surface`: en tema oscuro `surface` es casi negro, y la etiqueta salía
+  /// negra sobre verde.
+  Color get okInk => colorTokens.okInk;
 
   /// Ámbar de "mira esto": nunca rojo. Kanpachi avisa de cosas que el usuario
   /// puede arreglar, no de errores fatales, y el rojo pide una urgencia que

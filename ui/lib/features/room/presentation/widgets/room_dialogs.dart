@@ -50,8 +50,16 @@ class ConfirmGameDialog extends StatelessWidget {
           const SizedBox(height: AppSpacing.lg),
           Row(
             children: <Widget>[
-              const AppCover.dialog(),
-              const SizedBox(width: AppSpacing.xxl),
+              // El hueco de portada sólo cuando se están viendo portadas.
+              // Quien eligió la vista de lista dijo que no quiere portadas, y
+              // el diálogo no es sitio para discutírselo.
+              if (context.select<ShellCubit, GameArtMode>(
+                    (ShellCubit c) => c.state.artMode,
+                  ) ==
+                  GameArtMode.cover) ...<Widget>[
+                const AppCover.dialog(),
+                const SizedBox(width: AppSpacing.xxl),
+              ],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

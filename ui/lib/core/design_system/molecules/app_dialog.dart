@@ -99,6 +99,10 @@ class AppModalActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Alto explícito y el MISMO en los dos: el diseño los estira a la altura
+    // de la fila, y dejando que cada uno midiera por su padding salían
+    // desnivelados — el ghost lleva `label` (13,5 con interlínea 1,3) y el
+    // relleno `button` (13,5 con 1), así que la misma caja da dos alturas.
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: <Widget>[
@@ -106,12 +110,20 @@ class AppModalActions extends StatelessWidget {
           label: cancelLabel,
           onPressed: onCancel,
           variant: AppButtonVariant.ghost,
+          height: 39.5,
+          horizontalPadding: AppSpacing.x5l,
         ),
         const SizedBox(width: AppSpacing.lg),
         AppButton(
           label: confirmLabel,
           onPressed: onConfirm,
           variant: AppButtonVariant.primaryFlat,
+          height: 39.5,
+          horizontalPadding: AppSpacing.x6l,
+          // `primaryFlat` mapea al CTA de 14,5 px de «Unirse» y «Crear sala»;
+          // acá el diseño pide 13,5, así que se pide por sitio y no se toca
+          // el arquetipo.
+          textStyle: context.type.buttonSm,
         ),
       ],
     );

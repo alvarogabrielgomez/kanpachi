@@ -56,6 +56,8 @@ class TypographyTokens extends ThemeExtension<TypographyTokens>
     required this.kicker,
     required this.kickerSm,
     required this.mono,
+    required this.statusLabel,
+    required this.statusMono,
     required this.monoSm,
     required this.monoXs,
     required this.monoXxs,
@@ -118,6 +120,16 @@ class TypographyTokens extends ThemeExtension<TypographyTokens>
   final TextStyle kicker;
   @override
   final TextStyle kickerSm;
+
+  /// La barra de estado del pie, sans y mono.
+  ///
+  /// Es un escalón por debajo de `labelSm`/`monoSm` y con peso normal: la
+  /// barra acompaña, no compite. Con la escala de al lado iba un punto más
+  /// grande y se leía como contenido.
+  @override
+  final TextStyle statusLabel;
+  @override
+  final TextStyle statusMono;
 
   /// Datos literales: código, dirección, puertos.
   @override
@@ -206,6 +218,8 @@ abstract final class AppTypography {
       fontWeight: FontWeight.w600,
       letterSpacing: 1.54,
     ),
+    statusLabel: _sans.copyWith(fontSize: 11.5, height: 1),
+    statusMono: _mono.copyWith(fontSize: 11.5, height: 1),
     mono: _mono.copyWith(fontSize: 15, height: 1),
     monoSm: _mono.copyWith(fontSize: 12.5, height: 1),
     monoXs: _mono.copyWith(fontSize: 11, height: 1.3),

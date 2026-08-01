@@ -43,20 +43,29 @@ class AppCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    // La miniatura de 46 px es la única por debajo de 50, y es la que el
+    // diseño trata distinto: radio más cerrado, dos palabras cortas y menos
+    // tracking. En un hueco de ese tamaño "PORTADA STEAMDB" no cabe sin
+    // apretarse contra los bordes.
+    final bool mini = height < 50;
     final Widget box = SizedBox(
       width: width,
       height: height,
       child: AppCard(
         dashed: true,
-        radius: AppRadius.allSm,
+        // Con relleno hundido: las seis portadas del diseño lo llevan. Sin él
+        // el hueco se confunde con el fondo de la tarjeta que lo contiene.
+        filled: true,
+        radius: mini ? AppRadius.allXs : AppRadius.allSm,
         child: Center(
           child: Text(
-            'PORTADA\nSTEAMDB',
+            mini ? 'STEAM\nDB' : 'PORTADA\nSTEAMDB',
             textAlign: TextAlign.center,
             style: context.type.monoXxs.copyWith(
               color: colors.textMuted,
-              fontSize: height < 50 ? 7 : 8.5,
-              letterSpacing: 0.5,
+              fontSize: mini ? 7 : 8.5,
+              height: mini ? 1.2 : 1.4,
+              letterSpacing: mini ? 0.28 : 0.5,
             ),
           ),
         ),
@@ -88,7 +97,7 @@ class AppInstalledBadge extends StatelessWidget {
       child: Text(
         'INSTALADO',
         style: context.type.monoXxs.copyWith(
-          color: colors.surface,
+          color: colors.okInk,
           fontSize: 8,
           fontWeight: FontWeight.w600,
           letterSpacing: 0.48,

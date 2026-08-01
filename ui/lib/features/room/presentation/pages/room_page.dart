@@ -160,6 +160,8 @@ class _RoomHeaderState extends State<_RoomHeader> {
                 label: 'Copiar enlace',
                 height: 36,
                 horizontalPadding: AppSpacing.x3l,
+                textStyle: context.type.labelSm
+                    .copyWith(fontWeight: FontWeight.w600),
                 value: 'https://kanpachi.accentio.dev/${room.code}',
               ),
               if (room.selfIsHost)
@@ -168,6 +170,7 @@ class _RoomHeaderState extends State<_RoomHeader> {
                   variant: AppButtonVariant.ghost,
                   height: 36,
                   horizontalPadding: AppSpacing.x3l,
+                  textStyle: context.type.labelSm,
                   onPressed: () => context
                       .read<ShellCubit>()
                       .showDialog(AppDialog.confirmRenew),
@@ -412,25 +415,38 @@ class _GameCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          // La X va arriba (es el `align-self:flex-start` del diseño) pero la
+          // portada y sus dos líneas van centradas entre sí. Por eso el par va
+          // en su propio Row centrado dentro del Row externo, en vez de un
+          // `Align`: un Align aquí cuelga de un scroll sin alto acotado, hace
+          // shrink-wrap y su alineación no se nota.
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              const AppCover.room(),
-              const SizedBox(width: AppSpacing.xl),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: <Widget>[
-                    Text(
-                      room.game!.name,
-                      style: context.type.gameName.copyWith(color: colors.text),
-                    ),
-                    Text(
-                      host
-                          ? 'Juego activo · lo hospedas tú'
-                          : 'Juego activo · host: ${room.hostName ?? '—'}',
-                      style:
-                          context.type.bodySm.copyWith(color: colors.textMuted),
+                    const AppCover.room(),
+                    const SizedBox(width: AppSpacing.xl),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            room.game!.name,
+                            style: context.type.gameName
+                                .copyWith(color: colors.text),
+                          ),
+                          Text(
+                            host
+                                ? 'Juego activo · lo hospedas tú'
+                                : 'Juego activo · host: ${room.hostName ?? '—'}',
+                            style: context.type.bodySm
+                                .copyWith(color: colors.textMuted),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -459,6 +475,7 @@ class _GameCard extends StatelessWidget {
                 variant: AppButtonVariant.ghost,
                 height: 34,
                 horizontalPadding: 15,
+                textStyle: context.type.labelSm,
                 onPressed: () =>
                     context.read<ShellCubit>().openGamePicker(fromRoom: true),
               ),
@@ -516,6 +533,7 @@ class _AddressBox extends StatelessWidget {
             variant: AppButtonVariant.quiet,
             height: 34,
             horizontalPadding: 15,
+            textStyle: context.type.labelSm,
           ),
         ],
       ),
@@ -708,7 +726,8 @@ class _RoomMembers extends StatelessWidget {
         AppButton(
           label: 'Salir de la sala',
           variant: AppButtonVariant.quiet,
-          height: 46,
+          height: 44,
+          textStyle: context.type.strong,
           onPressed: () {
             context.read<SessionCubit>().leave();
             context.read<ShellCubit>().go(AppScreen.home);
@@ -761,6 +780,7 @@ class _MemberRow extends StatelessWidget {
             variant: AppButtonVariant.ghost,
             height: 28,
             horizontalPadding: 11,
+            textStyle: context.type.labelSm.copyWith(fontSize: 11.5),
             onPressed: () => context.read<ShellCubit>().askKick(member),
           ),
       ],

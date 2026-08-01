@@ -27,7 +27,9 @@ class ColorTokens extends ThemeExtension<ColorTokens> with _$ColorTokensTailorMi
     required this.accentInk,
     required this.accentShadow,
     required this.border,
+    required this.shadowMenu,
     required this.ok,
+    required this.okInk,
     required this.warn,
     required this.warnSurface,
     required this.shapeOne,
@@ -87,9 +89,24 @@ class ColorTokens extends ThemeExtension<ColorTokens> with _$ColorTokensTailorMi
   @override
   final Color border;
 
+  /// La sombra de un menú flotante, más ligera que la de la ventana.
+  ///
+  /// Igual en los dos temas: es negro al 28%, y lo que la hace legible en
+  /// claro y en oscuro es la superficie que tiene debajo, no el color.
+  @override
+  final Color shadowMenu;
+
   /// Verde de "esto está bien": el punto del servicio activo, un peer directo.
   @override
   final Color ok;
+
+  /// La tinta que va ENCIMA del verde: la etiqueta INSTALADO.
+  ///
+  /// Blanca en los dos temas, y por eso tiene token propio en vez de reciclar
+  /// `surface`: en tema oscuro `surface` es casi negro, y la etiqueta salía
+  /// negra sobre verde.
+  @override
+  final Color okInk;
 
   /// Ámbar de "mira esto": nunca rojo. Kanpachi avisa de cosas que el usuario
   /// puede arreglar, no de errores fatales, y el rojo pide una urgencia que
@@ -144,6 +161,8 @@ abstract final class AppPalette {
     accentShadow: Color(0xFF6D2810),
     border: Color(0xFFD8D2C8),
     ok: Color(0xFF3D7A2A),
+    okInk: Color(0xFFFFFFFF),
+    shadowMenu: Color(0x47000000),
     warn: Color(0xFF8A6112),
     warnSurface: Color(0xFFF7E9C9),
     shapeOne: Color(0xFFF3B98A),
@@ -169,6 +188,8 @@ abstract final class AppPalette {
     accentShadow: Color(0xFFA94B26),
     border: Color(0xFF35322D),
     ok: Color(0xFF7FAE6B),
+    okInk: Color(0xFFFFFFFF),
+    shadowMenu: Color(0x47000000),
     warn: Color(0xFFD9A441),
     warnSurface: Color(0xFF2C2418),
     shapeOne: Color(0xFFE0703F),

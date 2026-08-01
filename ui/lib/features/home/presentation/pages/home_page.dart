@@ -6,7 +6,7 @@ import 'package:kanpachi_ui/core/design_system/atoms/app_cover.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_divider.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_field.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_kicker.dart';
-import 'package:kanpachi_ui/core/design_system/atoms/app_segmented.dart';
+import 'package:kanpachi_ui/features/games/presentation/widgets/game_views.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_list.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_notice.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
@@ -285,22 +285,10 @@ class _MyGames extends StatelessWidget {
           children: <Widget>[
             const AppKicker('Tus juegos'),
             const Spacer(),
-            AppSegmented<GameArtMode>(
-              value: artMode,
-              onChanged: shell.setArtMode,
-              segments: const <AppSegment<GameArtMode>>[
-                AppSegment<GameArtMode>(
-                  value: GameArtMode.cover,
-                  icon: Icons.grid_view,
-                  tooltip: 'Portadas',
-                ),
-                AppSegment<GameArtMode>(
-                  value: GameArtMode.list,
-                  icon: Icons.notes,
-                  tooltip: 'Lista',
-                ),
-              ],
-            ),
+            // El mismo widget que usan el selector y la biblioteca. Estaba
+            // duplicado en línea, así que arreglar los iconos en un sitio
+            // dejaba los otros dos atrás.
+            GameArtToggle(value: artMode, onChanged: shell.setArtMode),
           ],
         ),
         const SizedBox(height: 9),
