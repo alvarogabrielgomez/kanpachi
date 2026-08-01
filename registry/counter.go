@@ -1,8 +1,12 @@
 package registry
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
 	"os/exec"
 	"sync"
 	"time"
@@ -85,12 +89,54 @@ type respuesta map[string]struct {
 	} `json:"peers"`
 }
 
+// portalResuelto convierte lo que se configuró en algo que easytier-cli acepta.
+//
+// El CLI exige una dirección literal y rechaza los nombres: pasarle
+// `kanpachi-seed:15888` falla con "invalid socket address syntax". En el
+// compose el motor vive en otro contenedor y se le llama por su nombre de
+// servicio, así que la resolución la hace este proceso.
+//
+// Se resuelve en cada sondeo y no una vez al arrancar: al recrear el
+// contenedor del motor, Docker le puede dar otra IP, y cachearla dejaría el
+// contador muerto hasta el siguiente reinicio del registro.
+func (c *Counter) portalResuelto(ctx context.Context) (string, error) {
+	host, puerto, err := net.SplitHostPort(c.portal)
+	if err != nil {
+		return "", fmt.Errorf("rpc-portal %q no tiene forma de host:puerto: %w", c.portal, err)
+	}
+	if net.ParseIP(host) != nil {
+		return c.portal, nil
+	}
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip4", host)
+	if err != nil {
+		return "", fmt.Errorf("resolviendo %q: %w", host, err)
+	}
+	if len(ips) == 0 {
+		return "", fmt.Errorf("%q no resolvió a ninguna IPv4", host)
+	}
+	return net.JoinHostPort(ips[0].String(), puerto), nil
+}
+
 func (c *Counter) refrescar(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	salida, err := exec.CommandContext(ctx, c.cli, "-p", c.portal, "-o", "json", "peer", "list-foreign").Output()
+	portal, err := c.portalResuelto(ctx)
 	if err != nil {
+		c.mu.Lock()
+		c.err = err
+		c.mu.Unlock()
+		return
+	}
+
+	salida, err := exec.CommandContext(ctx, c.cli, "-p", portal, "-o", "json", "peer", "list-foreign").Output()
+	if err != nil {
+		// El error del CLI trae el motivo en stderr, y sin él "exit status 2"
+		// no dice nada. Se adjunta para que /healthz sea diagnosticable.
+		var salioMal *exec.ExitError
+		if errors.As(err, &salioMal) && len(salioMal.Stderr) > 0 {
+			err = fmt.Errorf("%w: %s", err, bytes.TrimSpace(salioMal.Stderr))
+		}
 		c.mu.Lock()
 		c.err = err
 		c.mu.Unlock()

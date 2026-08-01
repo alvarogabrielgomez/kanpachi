@@ -29,13 +29,22 @@ services:
       # ENCENDIDO por defecto en el motor, hay que apagarlo a mano.
       - "--disable-upnp"
       - "true"
-      # El portal RPC es el panel de control del motor. Queda en el loopback
-      # del espacio de red compartido: lo alcanza el registro, que vive ahí
-      # dentro, y nadie más. No se publica a ninguna red.
+      # El portal RPC es el panel de control del motor. NO se publica al host:
+      # solo es alcanzable desde dentro de kanpachi-net, o sea desde el
+      # registro y nadie más, y encima con lista blanca a esa subred.
+      #
+      # OJO, esto se aparta a propósito del invariante "el portal RPC va fijado
+      # a 127.0.0.1" de docs/CLAUDE.md. Ese invariante es del CLIENTE, donde el
+      # portal convive con el escritorio del usuario y cualquier proceso suyo
+      # podría hablarle. Acá el motor está solo en un contenedor y quien
+      # necesita leerlo vive en otro, así que atarlo al loopback exigía
+      # compartir espacio de red, y eso resultó peor: al reiniciarse el motor,
+      # el registro se quedaba con el espacio de red destruido y la página de
+      # invitación moría en silencio. Comprobado, no supuesto.
       - "--rpc-portal"
-      - "127.0.0.1:15888"
+      - "0.0.0.0:15888"
       - "--rpc-portal-whitelist"
-      - "127.0.0.1"
+      - "127.0.0.1,10.77.7.0/24"
       # Sin TUN: el seed no necesita una interfaz virtual para presentar peers,
       # y así el contenedor no requiere NET_ADMIN ni /dev/net/tun.
       - "--no-tun"
@@ -52,10 +61,6 @@ services:
     ports:
       - "11010:11010/tcp"
       - "11010:11010/udp"
-      # El registro vive en el MISMO espacio de red, así que su puerto se
-      # publica desde acá. Atado al loopback del host: solo el nginx del
-      # droplet llega, igual que Vaultwarden.
-      - "127.0.0.1:8010:8010"
     networks:
       - kanpachi-net
     # El droplet tiene 2 núcleos y poca RAM libre, y comparte casa con
@@ -83,15 +88,34 @@ services:
     image: kanpachi-registry:local
     container_name: kanpachi-registry
     restart: unless-stopped
-    # Comparte el espacio de red de EasyTier. Es lo que permite alcanzar su
-    # portal RPC en 127.0.0.1:15888 sin publicarlo a ninguna red, o sea sin
-    # convertir el panel de control del motor en superficie de ataque.
-    #
-    # Consecuencia: este servicio NO declara ports ni networks, los suyos son
-    # los del seed, y por eso el 8010 se publica allá arriba.
-    network_mode: "service:kanpachi-seed"
+    command:
+      - "--addr"
+      - "0.0.0.0:8010"
+      - "--page"
+      - "/srv/index.html"
+      # Por nombre de servicio, no por localhost. Cada contenedor tiene su
+      # propio espacio de red, y llegar al motor por la red del compose es lo
+      # que hace que reiniciar el motor no rompa el registro.
+      - "--rpc-portal"
+      - "kanpachi-seed:15888"
+    ports:
+      # Atado al loopback del host: solo el nginx del droplet llega, igual que
+      # Vaultwarden. Dentro del contenedor escucha en 0.0.0.0 porque publicar
+      # un puerto hace DNAT hacia la IP del contenedor y no hacia su loopback.
+      - "127.0.0.1:8010:8010"
+    networks:
+      - kanpachi-net
     depends_on:
       - kanpachi-seed
+    healthcheck:
+      # /healthz devuelve 503 si el motor dejó de contestar, así que esto
+      # detecta también el caso en que el registro sigue en pie sirviendo
+      # páginas sin contador. Docker lo marca unhealthy y se ve en `ps`.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8010/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     # Es un servidor HTTP con un mapa en memoria y sin disco. El techo existe
     # para que una avalancha de registros no le quite RAM al resto del droplet.
     mem_limit: 96m
@@ -107,3 +131,11 @@ networks:
   kanpachi-net:
     driver: bridge
     name: kanpachi-net
+    ipam:
+      config:
+        # Subred fijada a propósito: la lista blanca del portal RPC la nombra,
+        # así que no puede depender de lo que Docker asigne ese día. Fuera del
+        # pool por defecto de Docker (172.17-172.31) para no chocar con las
+        # otras once redes del droplet, y fuera de 100.64.0.0/10, que es el
+        # rango que Kanpachi usa para las salas.
+        - subnet: 10.77.7.0/24

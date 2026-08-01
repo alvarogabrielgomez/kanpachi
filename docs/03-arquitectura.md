@@ -491,24 +491,33 @@ Del lado del invitado no hay servidor, solo un cliente que reconecta con backoff
 Dos procesos en el droplet, en la misma imagen y el mismo compose.
 
 ```
-kanpachi-seed          dos contenedores, UN espacio de red
+kanpachi-seed          dos contenedores en kanpachi-net (10.77.7.0/24)
 ├── easytier-core      upstream v2.6.4, sin modificar
-│     listeners 11010 TCP y UDP
-│     rpc 127.0.0.1:15888, whitelist de loopback
+│     listeners 11010 TCP y UDP, publicados
+│     rpc :15888, NO publicado, whitelist a la subred del compose
 │           ▲
 │           │ easytier-cli, solo lectura, sondeo cada 3 s
 │           │
-└── kanpachi-registry  binario Go nuestro, network_mode: service:kanpachi-seed
+└── kanpachi-registry  binario Go nuestro
       POST /api/rooms         el host abre sala: el registro emite el invite ID
       GET  /api/i/A7K2M9QX    resuelve: tarjeta cifrada, llave del host, contador
       PUT  /api/i/A7K2M9QX    el host actualiza su tarjeta, o reabre la sala
       GET  /healthz           salas vivas, y si EasyTier contesta
       GET  /cualquier-cosa    la página, con el estado ya incrustado
+      publicado como 127.0.0.1:8010 en el host
 ```
 
 **El registro es lo que hace que `kanpachi-seed` sea distinto de una instalación plana de EasyTier.** Habla con el motor invocando `easytier-cli`, o sea como proceso hijo y jamás vinculado, igual que hace el cliente. Eso mantiene la licencia de Kanpachi libre de la LGPL-3.0 de EasyTier.
 
-**Comparten espacio de red a propósito.** El portal RPC del motor es su panel de control y sigue atado a `127.0.0.1`; compartir el espacio permite que el registro lo alcance sin publicarlo a ninguna red. La consecuencia es que el `8010` del registro se publica desde el servicio del seed, y que dentro del contenedor escucha en `0.0.0.0`: publicar un puerto hace DNAT hacia la IP del contenedor, no hacia su loopback, así que un bind a `127.0.0.1` ahí dentro no recibiría nada. Quien restringe es el `127.0.0.1:8010:8010` del host.
+### El portal RPC del seed no va en loopback, y ese cambio se ganó a golpes
+
+El primer intento compartía espacio de red entre los dos contenedores (`network_mode: service:`), que es la forma de dejar el portal RPC atado a `127.0.0.1` y aun así alcanzable desde el registro. **Falla de una manera que no se ve.** Al reiniciarse el contenedor del motor, su espacio de red se destruye y se crea otro; el registro sigue "Up" para Docker, con su socket en un espacio que ya no existe, y la página de invitación deja de responder sin un solo error en los logs. Con `restart: unless-stopped` en el motor, un crash suyo produce exactamente eso. Comprobado, no supuesto.
+
+La forma que sí aguanta: cada contenedor con su espacio de red, el portal RPC escuchando en `0.0.0.0:15888` **sin publicar al host**, y lista blanca a `10.77.7.0/24`, la subred del compose. Reiniciar o recrear el motor deja de romper nada, verificado en ambos casos.
+
+**Esto se aparta a propósito del invariante "el portal RPC va fijado a `127.0.0.1`" de `CLAUDE.md`, y solo en el seed.** Ese invariante es del cliente, donde el portal convive con el escritorio del usuario y cualquier proceso suyo podría hablarle. Acá el motor está solo en un contenedor, quien necesita leerlo vive en otro, y el portal no sale de una red privada del compose. En el cliente la regla sigue intacta.
+
+**Dos detalles que costaron un rato cada uno.** `easytier-cli` rechaza nombres de host (`invalid socket address syntax`), así que el registro resuelve el nombre de servicio a IP antes de invocarlo, y lo hace en cada sondeo para que recrear el motor no lo deje muerto. Y dentro del contenedor el registro escucha en `0.0.0.0`, porque publicar un puerto hace DNAT hacia la IP del contenedor y no hacia su loopback: quien restringe es el `127.0.0.1:8010:8010` del lado del host.
 
 ### Lo que el registro decidió, y por qué
 

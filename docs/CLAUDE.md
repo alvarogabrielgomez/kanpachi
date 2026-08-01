@@ -60,7 +60,7 @@ Están en los docs con su razón. Se listan aquí porque romperlas es el error m
 - El router del usuario no se toca nunca. Sin port forwarding, sin UPnP. **Ojo: el motor mapea puertos por defecto.** Todo arranque de `easytier-core` lleva `--disable-upnp true`, con un test que falla si alguien lo saca. La única lectura permitida al router es la consulta al IGD del módulo de alertas, que jamás escribe.
 - **El cliente nunca escucha en un puerto público.** Arranca con `--no-listener`. Solo el seed escucha.
 - **El canal de control solo escucha en el host.** Los invitados marcan hacia afuera y no abren nada. Ese código corre como SYSTEM y parsea entrada de la sala: tope de tamaño, esquema cerrado, solo IPs de miembros presentes.
-- Flags del motor que expresan capacidades prohibidas y van siempre apagadas: `--enable-exit-node`, `--exit-nodes`, `--proxy-networks`, `--vpn-portal`, `--socks5`, `--accept-dns`. El portal RPC va fijado a `127.0.0.1`.
+- Flags del motor que expresan capacidades prohibidas y van siempre apagadas: `--enable-exit-node`, `--exit-nodes`, `--proxy-networks`, `--vpn-portal`, `--socks5`, `--accept-dns`. **En el cliente** el portal RPC va fijado a `127.0.0.1`, porque ahí convive con el escritorio del usuario. En el seed escucha en la red privada del compose, con lista blanca a su subred y sin publicar al host: atarlo al loopback allá exigía compartir espacio de red entre contenedores, y eso rompe el registro cada vez que el motor se reinicia. El razonamiento completo está en `03-arquitectura.md`.
 
 **Privilegios y canales**
 

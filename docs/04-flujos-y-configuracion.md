@@ -81,7 +81,11 @@ kanpachi-registry   nuestro. Invoca easytier-cli contra ese rpc, sirve / y /api
 
 El registro es lo que hace que esto sea `kanpachi-seed` y no una instalación plana de EasyTier, ver decisión 24. Habla con el motor invocando su CLI, o sea como proceso hijo y jamás vinculado, así que no arrastra su LGPL-3.0.
 
-**Los dos contenedores comparten espacio de red** (`network_mode: service:kanpachi-seed`). Es lo que deja alcanzar el portal RPC sin publicarlo a ninguna red. Por eso el `8010` se declara en el servicio del seed y no en el del registro, y por eso el registro escucha en `0.0.0.0` dentro del contenedor: publicar un puerto hace DNAT hacia la IP del contenedor y no hacia su loopback, así que un bind a `127.0.0.1` ahí dentro no recibiría nada. Quien restringe es el `127.0.0.1:` del lado del host.
+**Cada contenedor con su propio espacio de red**, los dos en `kanpachi-net` con subred fijada en `10.77.7.0/24`. La subred se fija porque la lista blanca del portal RPC la nombra, y no puede depender de lo que Docker asigne ese día.
+
+Compartir espacio de red entre ambos (`network_mode: service:`) fue el primer intento y **hay que no repetirlo**: al reiniciarse el motor, su espacio se destruye y el registro se queda con un socket en un espacio muerto, "Up" para Docker y sin responder, sin un error en los logs. Ver `03-arquitectura.md` para el razonamiento completo.
+
+El registro escucha en `0.0.0.0` dentro del contenedor: publicar un puerto hace DNAT hacia la IP del contenedor y no hacia su loopback, así que un bind a `127.0.0.1` ahí dentro no recibiría nada. Quien restringe es el `127.0.0.1:` del lado del host.
 
 **La imagen del registro se construye SOBRE la de EasyTier.** El registro necesita `easytier-cli` y necesita que corra; copiarlo a una base cualquiera es apostar a que coincidan libc y versión, y partir de su imagen elimina la apuesta. Sigue siendo agregación y no vinculación: son ejecutables que conviven y se invocan como procesos.
 
