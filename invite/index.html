@@ -439,6 +439,16 @@
   </span>
 </footer>
 
+<!--
+  Hueco que kanpachi-registry rellena con la sala ya resuelta. Queda en null
+  cuando el archivo se sirve estático o cuando la ruta no es una sala viva, y
+  entonces la página lo pide por su cuenta.
+
+  Un solo archivo para las dos formas de servirlo, a propósito: una copia "de
+  servidor" aparte se desincroniza de la que se prueba en local, y el bug se
+  descubre en producción.
+-->
+<script type="application/json" id="ssr">null</script>
 <script>
 (function () {
   "use strict";
@@ -725,10 +735,27 @@
 
   // ---- El registro ---------------------------------------------------------
 
-  // Una sola petición, al MISMO origen. Si falla, la página se queda como está:
-  // tarjeta genérica, contador oculto, y el botón de entrar intacto. Que el
-  // registro esté caído no puede impedir que alguien entre a una sala.
+  // Lee el estado que el servidor incrustó. Devuelve null cuando la página se
+  // sirvió estática, o cuando la ruta no era una sala viva.
+  function estadoDelServidor() {
+    var nodo = document.getElementById("ssr");
+    if (!nodo) return null;
+    try {
+      var v = JSON.parse(nodo.textContent);
+      return (v && typeof v === "object") ? v : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Una sola petición, al MISMO origen, y solo si el servidor no resolvió ya.
+  // Si falla, la página se queda como está: tarjeta genérica, contador oculto,
+  // y el botón de entrar intacto. Que el registro esté caído no puede impedir
+  // que alguien entre a una sala, porque entrar no pasa por él.
   function loadCard(id, eyebrowID, nameID) {
+    var ya = estadoDelServidor();
+    if (ya) { applyCard(ya, eyebrowID, nameID); return; }
+
     fetch("/api/i/" + encodeURIComponent(id), { cache: "no-store" })
       .then(function (res) {
         if (res.status === 404) throw { notFound: true };

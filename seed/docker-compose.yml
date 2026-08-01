@@ -1,9 +1,15 @@
-# kanpachi-seed: nodo de rendezvous.
+# kanpachi-seed: nodo de rendezvous + registro de salas.
 #
-# Presenta a los peers entre sí y coordina el hole punch. NO se une a ninguna
+# Dos procesos, dos contenedores, un solo espacio de red. El de EasyTier
+# presenta a los peers entre sí y coordina el hole punch, y NO se une a ninguna
 # sala: no lleva --network-name ni --network-secret, así que jamás ve el
 # secreto de una red y no puede descifrar nada. Lo único que observa son
 # networkIDs opacos y las IPs públicas de quienes los anuncian.
+#
+# El registro es código nuestro, y es lo que hace que esto sea kanpachi-seed y
+# no una instalación plana de EasyTier: emite invite IDs, guarda una tarjeta de
+# presentación que no puede leer, y publica cuánta gente hay en cada sala. Ver
+# la decisión 24 de docs/02-decisiones-de-diseno.md.
 #
 # Convive con las cargas de Accentio en el mismo droplet, aislado en su propia
 # red de contenedores.
@@ -24,7 +30,8 @@ services:
       - "--disable-upnp"
       - "true"
       # El portal RPC es el panel de control del motor. Queda en el loopback
-      # del contenedor y no se publica, así que solo se alcanza por docker exec.
+      # del espacio de red compartido: lo alcanza el registro, que vive ahí
+      # dentro, y nadie más. No se publica a ninguna red.
       - "--rpc-portal"
       - "127.0.0.1:15888"
       - "--rpc-portal-whitelist"
@@ -45,6 +52,10 @@ services:
     ports:
       - "11010:11010/tcp"
       - "11010:11010/udp"
+      # El registro vive en el MISMO espacio de red, así que su puerto se
+      # publica desde acá. Atado al loopback del host: solo el nginx del
+      # droplet llega, igual que Vaultwarden.
+      - "127.0.0.1:8010:8010"
     networks:
       - kanpachi-net
     # El droplet tiene 2 núcleos y poca RAM libre, y comparte casa con
@@ -62,6 +73,35 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  kanpachi-registry:
+    build:
+      # El contexto es la raíz del repositorio: el registro necesita el módulo
+      # Go entero y la página de invitación.
+      context: ..
+      dockerfile: registry/Dockerfile
+    image: kanpachi-registry:local
+    container_name: kanpachi-registry
+    restart: unless-stopped
+    # Comparte el espacio de red de EasyTier. Es lo que permite alcanzar su
+    # portal RPC en 127.0.0.1:15888 sin publicarlo a ninguna red, o sea sin
+    # convertir el panel de control del motor en superficie de ataque.
+    #
+    # Consecuencia: este servicio NO declara ports ni networks, los suyos son
+    # los del seed, y por eso el 8010 se publica allá arriba.
+    network_mode: "service:kanpachi-seed"
+    depends_on:
+      - kanpachi-seed
+    # Es un servidor HTTP con un mapa en memoria y sin disco. El techo existe
+    # para que una avalancha de registros no le quite RAM al resto del droplet.
+    mem_limit: 96m
+    cpu_period: 100000
+    cpu_quota: 25000
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
 
 networks:
   kanpachi-net:

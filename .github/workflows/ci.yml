@@ -26,7 +26,7 @@ jobs:
           cache: true
 
       - name: go vet
-        run: go vet ./core/... ./internal/...
+        run: go vet ./core/... ./internal/... ./registry/...
 
       - name: Test de pureza de imports
         # Se ejecuta aparte y primero para que su fallo sea inconfundible en el
@@ -35,6 +35,12 @@ jobs:
 
       - name: Tests de core
         run: go test -race -count=1 ./core/...
+
+      # El registro es el seed, o sea Linux por definición. Va en este job y no
+      # en el de Windows. Con -race porque atiende peticiones concurrentes
+      # contra un mapa compartido, que es justo donde una carrera se esconde.
+      - name: Tests del registro del seed
+        run: go test -race -count=1 ./registry/...
 
       - name: gofmt
         run: |

@@ -491,22 +491,38 @@ Del lado del invitado no hay servidor, solo un cliente que reconecta con backoff
 Dos procesos en el droplet, en la misma imagen y el mismo compose.
 
 ```
-kanpachi-seed
-├── easytier-core        upstream v2.6.4, sin modificar
+kanpachi-seed          dos contenedores, UN espacio de red
+├── easytier-core      upstream v2.6.4, sin modificar
 │     listeners 11010 TCP y UDP
 │     rpc 127.0.0.1:15888, whitelist de loopback
 │           ▲
-│           │ RPC local, solo lectura
+│           │ easytier-cli, solo lectura, sondeo cada 3 s
 │           │
-└── kanpachi-registry    binario Go nuestro
-      GET  /A7K2M9QX          la página, renderizada en el servidor
-      GET  /api/i/A7K2M9QX    resuelve: red de encuentro, llave del host,
-                              tarjeta cifrada, contador de miembros
-      PUT  /api/i/A7K2M9QX    el host registra su tarjeta firmada
-      escucha en loopback, detrás del nginx del droplet
+└── kanpachi-registry  binario Go nuestro, network_mode: service:kanpachi-seed
+      POST /api/rooms         el host abre sala: el registro emite el invite ID
+      GET  /api/i/A7K2M9QX    resuelve: tarjeta cifrada, llave del host, contador
+      PUT  /api/i/A7K2M9QX    el host actualiza su tarjeta, o reabre la sala
+      GET  /healthz           salas vivas, y si EasyTier contesta
+      GET  /cualquier-cosa    la página, con el estado ya incrustado
 ```
 
-**El registro es lo que hace que `kanpachi-seed` sea distinto de una instalación plana de EasyTier.** Es proceso aparte que solo habla RPC por loopback, así que no vincula con EasyTier y no hereda su LGPL-3.0.
+**El registro es lo que hace que `kanpachi-seed` sea distinto de una instalación plana de EasyTier.** Habla con el motor invocando `easytier-cli`, o sea como proceso hijo y jamás vinculado, igual que hace el cliente. Eso mantiene la licencia de Kanpachi libre de la LGPL-3.0 de EasyTier.
+
+**Comparten espacio de red a propósito.** El portal RPC del motor es su panel de control y sigue atado a `127.0.0.1`; compartir el espacio permite que el registro lo alcance sin publicarlo a ninguna red. La consecuencia es que el `8010` del registro se publica desde el servicio del seed, y que dentro del contenedor escucha en `0.0.0.0`: publicar un puerto hace DNAT hacia la IP del contenedor, no hacia su loopback, así que un bind a `127.0.0.1` ahí dentro no recibiría nada. Quien restringe es el `127.0.0.1:8010:8010` del host.
+
+### Lo que el registro decidió, y por qué
+
+**Emite el invite ID en vez de aceptarlo.** Quien tiene que garantizar unicidad es el registro, así que emitir evita el ida y vuelta de proponer y ser rechazado. Y no hay nada que filtrar: un invite ID no deriva material criptográfico de la sala real.
+
+**Deriva la red de encuentro él mismo**, con el mismo Argon2id del cliente, en vez de creerle al host. Si la aceptara del host, cualquiera podría hacer que el contador de su sala reflejara la de otra.
+
+**Omite el contador si nunca pudo hablar con EasyTier.** Un cero es la afirmación "no hay nadie", y sería falsa; ausente dice la verdad, "no lo sé". La página se comporta distinto en cada caso.
+
+**Dos vencimientos distintos, y la diferencia es el corazón de la reapertura.** La tarjeta vive 6 horas, porque describe una sala que quizá ya no existe. El **fijado** de la llave del host vive 21 días, porque es lo único que impide que un ex miembro, que conserva el invite ID, se adelante al host cuando reabre. Sin esa asimetría, reabrir con el mismo código sería una carrera que gana el que esté más atento.
+
+**Límite de tasa de 30 peticiones por minuto y por IP.** Es la defensa que reemplazó a los 60 bits de entropía del diseño anterior: 40 bits son enumerables sin freno y seguros con freno. Lee `X-Forwarded-For`, lo cual solo es sensato porque el proceso vive detrás del proxy inverso del droplet. Exponerlo directo a internet permitiría falsificar esa cabecera y anular el límite entero.
+
+**Todo en memoria, sin base de datos y sin disco.** Reiniciar el registro cuesta que los invitados vean la tarjeta genérica hasta que el host vuelva a publicar, y jamás impide entrar, porque entrar no pasa por él.
 
 **Qué ve el seed:** invite IDs vivos, networkIDs de encuentro, llaves públicas de hosts, tarjetas que no puede descifrar, e IPs públicas de quienes están en cada red.
 

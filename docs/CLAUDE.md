@@ -97,9 +97,11 @@ El proyecto usa **Clean Architecture**, aplicada como regla de dependencia con p
 core/       domain/ port/ usecase/         sin I/O, sin syscalls, sin API de Windows
 daemon/     adapter/ transport/ service/   Go, servicio de Windows, elevado
 ui/         Flutter desktop, sin privilegios
-seed/       Docker sobre el droplet: easytier-core + kanpachi-registry
-registry/   El binario Go del seed. Linux. Resuelve invite IDs y sirve la página
-invite/     Plantilla de la página de invitación, que sirve el registry
+seed/       El compose del droplet: easytier-core + kanpachi-registry
+registry/   El binario Go del seed y su Dockerfile. Resuelve invite IDs,
+            guarda tarjetas que no puede leer, cuenta miembros, sirve la página
+invite/     index.html. Un solo archivo: el registry lo sirve con el estado
+            incrustado, y abierto desde el disco funciona igual pidiéndolo
 docs/       Los siete documentos
 ```
 

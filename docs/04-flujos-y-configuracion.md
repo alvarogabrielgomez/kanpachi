@@ -75,11 +75,21 @@ El archivo vive en `seed/docker-compose.yml` del repositorio y se despliega en `
 ```
 easytier-core       upstream sin modificar, 11010 TCP y UDP
                     rpc en 127.0.0.1:15888
-kanpachi-registry   nuestro. Lee ese rpc, sirve / y /api
-                    escucha en 127.0.0.1:8010, detrás del nginx del droplet
+kanpachi-registry   nuestro. Invoca easytier-cli contra ese rpc, sirve / y /api
+                    publicado como 127.0.0.1:8010 en el host
 ```
 
-El registro es lo que hace que esto sea `kanpachi-seed` y no una instalación plana de EasyTier, ver decisión 24. Es proceso aparte que solo habla RPC por loopback, así que no vincula con EasyTier y no arrastra su LGPL-3.0.
+El registro es lo que hace que esto sea `kanpachi-seed` y no una instalación plana de EasyTier, ver decisión 24. Habla con el motor invocando su CLI, o sea como proceso hijo y jamás vinculado, así que no arrastra su LGPL-3.0.
+
+**Los dos contenedores comparten espacio de red** (`network_mode: service:kanpachi-seed`). Es lo que deja alcanzar el portal RPC sin publicarlo a ninguna red. Por eso el `8010` se declara en el servicio del seed y no en el del registro, y por eso el registro escucha en `0.0.0.0` dentro del contenedor: publicar un puerto hace DNAT hacia la IP del contenedor y no hacia su loopback, así que un bind a `127.0.0.1` ahí dentro no recibiría nada. Quien restringe es el `127.0.0.1:` del lado del host.
+
+**La imagen del registro se construye SOBRE la de EasyTier.** El registro necesita `easytier-cli` y necesita que corra; copiarlo a una base cualquiera es apostar a que coincidan libc y versión, y partir de su imagen elimina la apuesta. Sigue siendo agregación y no vinculación: son ejecutables que conviven y se invocan como procesos.
+
+```bash
+docker compose build          # el contexto es la raíz del repo, no seed/
+docker compose up -d
+curl -s localhost:8010/healthz
+```
 
 El nginx del droplet apunta a `127.0.0.1:8010` con esquema **`http`**: TLS termina en el proxy y hacia atrás va plano por loopback. Público en `https` con Let's Encrypt y Force SSL. Esto último no es cosmético, la página usa `navigator.clipboard` para el botón de copiar y esa API solo existe en contexto seguro.
 
