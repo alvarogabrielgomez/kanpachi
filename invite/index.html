@@ -377,7 +377,7 @@
     <label class="cap" for="code-input">¿Te pasaron un código?</label>
     <div class="entry">
       <input id="code-input" type="text" inputmode="latin" autocomplete="off"
-             autocapitalize="characters" spellcheck="false" maxlength="24"
+             autocapitalize="characters" spellcheck="false" maxlength="64"
              placeholder="A7K2-M9QX" aria-describedby="entry-note">
       <a class="chipbtn" id="enter" href="#" aria-disabled="true">Entrar</a>
     </div>
@@ -494,6 +494,66 @@
     return id.slice(0, 4) + "-" + id.slice(4, 8);
   }
 
+  // El alfabeto no tiene 0, 1, I ni O, para que no haya pareja ambigua que
+  // adivinar cuando alguien dicta un código en voz alta. Descartar al vuelo lo
+  // que no pertenece es lo que hace que esa decisión sirva de algo: aceptar la
+  // letra y rechazarla al final deja al que escribe buscando cuál de los ocho
+  // caracteres estaba mal.
+  function soloDelAlfabeto(s) {
+    var up = String(s).toUpperCase();
+    var out = "";
+    for (var i = 0; i < up.length; i++) {
+      if (ALPHABET.indexOf(up.charAt(i)) !== -1) out += up.charAt(i);
+    }
+    return out;
+  }
+
+  // Lo más común es pegar el enlace entero, no el código suelto.
+  //
+  // Sin esto, el filtro convertiría "kanpachi.accentio.dev/A7K2-M9QX" en
+  // KANPACHIA: nueve caracteres del alfabeto, forma impecable y un código que
+  // no existe. Un código inventado que PARECE válido es peor que un campo
+  // vacío, porque manda a buscar el fallo al otro lado.
+  function codigoDeLoPegado(s) {
+    var v = String(s);
+    // El fragmento lleva la clave de la tarjeta y la query no lleva nada:
+    // ninguno de los dos es el código.
+    var corte = v.indexOf("#");
+    if (corte !== -1) v = v.slice(0, corte);
+    corte = v.indexOf("?");
+    if (corte !== -1) v = v.slice(0, corte);
+    var barra = v.lastIndexOf("/");
+    return barra === -1 ? v : v.slice(barra + 1);
+  }
+
+  // Máscara del campo: el guion aparece solo y en su sitio mientras se escribe.
+  //
+  // Quien teclea ocho caracteres seguidos ve la misma forma que quien pega el
+  // enlace, así que el placeholder deja de prometer un formato que el campo no
+  // aplicaba.
+  function enmascarar(campo) {
+    var antes = campo.value;
+    if (antes.length > MAX_INPUT) antes = antes.slice(0, MAX_INPUT);
+    var caret = campo.selectionStart;
+
+    // Los caracteres válidos a la izquierda del cursor son lo único estable
+    // entre el texto viejo y el nuevo: el guion se mueve, así que las
+    // posiciones absolutas no dicen nada.
+    var validosAntes = soloDelAlfabeto(codigoDeLoPegado(antes.slice(0, caret))).length;
+
+    var limpio = soloDelAlfabeto(codigoDeLoPegado(antes)).slice(0, CODE_LEN);
+    var salida = limpio.length > 4 ? format(limpio) : limpio;
+    if (salida === campo.value) return;
+
+    campo.value = salida;
+    var pos = 0, vistos = 0;
+    while (pos < salida.length && vistos < validosAntes) {
+      if (salida.charAt(pos) !== "-") vistos++;
+      pos++;
+    }
+    try { campo.setSelectionRange(pos, pos); } catch (e) {}
+  }
+
   // Limpia texto que viene de la tarjeta. Ya se descifró con una clave que solo
   // tiene quien recibió el link, y aun así se recorta y se filtra: quien abrió
   // la sala eligió estas cadenas, y no es necesariamente quien te invitó.
@@ -602,12 +662,28 @@
       return id;
     };
 
-    campo.addEventListener("input", revisar);
+    campo.addEventListener("input", function () {
+      enmascarar(campo);
+      revisar();
+    });
     campo.addEventListener("keydown", function (ev) {
-      if (ev.key !== "Enter") return;
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        if (revisar()) boton.click();
+        else marcarMal();
+        return;
+      }
+      // Borrar justo detrás del guion tiene que comerse el CARÁCTER, no el
+      // guion: la máscara lo repondría al instante y la tecla parecería rota.
+      if (ev.key !== "Backspace") return;
+      var p = campo.selectionStart;
+      if (p !== campo.selectionEnd || p < 2) return;
+      if (campo.value.charAt(p - 1) !== "-") return;
       ev.preventDefault();
-      if (revisar()) boton.click();
-      else marcarMal();
+      campo.value = campo.value.slice(0, p - 2) + campo.value.slice(p);
+      try { campo.setSelectionRange(p - 2, p - 2); } catch (e) {}
+      enmascarar(campo);
+      revisar();
     });
     boton.addEventListener("click", function (ev) {
       if (boton.getAttribute("aria-disabled") === "true") {

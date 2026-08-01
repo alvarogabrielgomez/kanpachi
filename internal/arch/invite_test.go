@@ -235,6 +235,30 @@ func TestPaginaDeInvitacionRespetaSusInvariantes(t *testing.T) {
 		}
 	})
 
+	t.Run("el campo del código lleva máscara", func(t *testing.T) {
+		// El guion tiene que aparecer solo mientras se escribe. Sin eso, el
+		// placeholder "A7K2-M9QX" promete una forma que el campo no aplica, y
+		// quien escribe los ocho seguidos no sabe si le falta algo.
+		if !strings.Contains(html, "enmascarar(campo)") {
+			t.Error("el campo no aplica la máscara: el guion del placeholder sería una promesa vacía")
+		}
+
+		// Y la máscara tiene que descartar el enlace antes de filtrar, no
+		// después. Pegar "kanpachi.accentio.dev/A7K2-M9QX" y quedarse con los
+		// caracteres del alfabeto produce KANPACHIA: ocho de forma impecable y
+		// un código que no existe. Un código falso que parece válido manda a
+		// buscar el fallo al otro lado.
+		if !strings.Contains(html, "codigoDeLoPegado") {
+			t.Error("la máscara no aísla el último tramo del enlace: pegar la URL produciría un código inventado con forma válida")
+		}
+
+		// El tope del campo tiene que dejar entrar un enlace entero, o el
+		// navegador lo recorta antes de que la máscara pueda verlo.
+		if !strings.Contains(html, `maxlength="64"`) {
+			t.Error("el maxlength del campo no admite un enlace completo, así que pegarlo se recortaría a medias")
+		}
+	})
+
 	t.Run("sin bytes de control en el archivo", func(t *testing.T) {
 		// Un carácter de control invisible dentro de un literal de JavaScript
 		// no se ve al revisar el diff y puede cambiar lo que hace el código.
