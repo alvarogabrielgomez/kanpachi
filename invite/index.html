@@ -745,9 +745,16 @@
 
   function renderRoom(id) {
     var pretty = format(id);
+    // El intent lleva el ID PELADO, sin guion. El guion es presentación: existe
+    // para que ocho caracteres se puedan leer en voz alta y comparar de un
+    // vistazo, y no forma parte del identificador. Mandarlo obligaría a
+    // normalizar a todo lo que reciba el enlace, y bastaría con que una sola
+    // pieza no lo hiciera para que la sala "no exista" sin motivo visible.
+    // Lo que se ve, se copia y se pega sí lleva guion; lo que viaja, no.
+    //
     // Un ID pelado significa el seed por defecto. Para cualquier otro host se
     // agrega explícitamente, porque el cliente jamás asume el último usado.
-    var target = isDefault ? "kanpachi://" + pretty : "kanpachi://" + pretty + "@" + host;
+    var target = isDefault ? "kanpachi://" + id : "kanpachi://" + id + "@" + host;
 
     if (!isWindows) {
       text("nowin-code", pretty);

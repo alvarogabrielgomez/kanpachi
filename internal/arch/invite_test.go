@@ -175,6 +175,21 @@ func TestPaginaDeInvitacionRespetaSusInvariantes(t *testing.T) {
 		}
 	})
 
+	t.Run("el intent lleva el ID pelado, sin guion", func(t *testing.T) {
+		// El guion es presentación: hace que ocho caracteres se puedan leer en
+		// voz alta y comparar de un vistazo, y no forma parte del
+		// identificador. Mandarlo por el intent obliga a normalizar a todo lo
+		// que lo reciba, y basta con que una pieza no lo haga para que la sala
+		// "no exista" sin nada que lo explique. Lo que se ve y se copia lleva
+		// guion; lo que viaja, no.
+		if strings.Contains(html, `"kanpachi://" + pretty`) {
+			t.Error("el intent manda el código con guion: quien lo reciba tiene que limpiarlo para que funcione")
+		}
+		if !strings.Contains(html, `"kanpachi://" + id`) {
+			t.Error("el intent no se construye con el ID pelado")
+		}
+	})
+
 	t.Run("nada de la URL se inyecta como HTML", func(t *testing.T) {
 		// La ruta, el fragmento y la tarjeta los controla quien manda el link.
 		if strings.Contains(html, "inner"+"HTML") || strings.Contains(html, "document.wr"+"ite") {
