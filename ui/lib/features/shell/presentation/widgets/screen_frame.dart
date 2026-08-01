@@ -44,8 +44,11 @@ class ScreenBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final DensityTokens d = context.density;
+    // El scroll lo pone la pantalla, no el marco. Con el marco scrolleando,
+    // la barra de estado se iría hacia arriba al bajar en una lista larga, y
+    // el dato de "servicio activo" tiene que estar siempre visible.
     return ScreenEnter(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(
           AppSpacing.pageInline,
           d.pagePad,

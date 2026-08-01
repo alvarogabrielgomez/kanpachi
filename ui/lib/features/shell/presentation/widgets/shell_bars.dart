@@ -9,6 +9,7 @@ import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
+import 'package:window_manager/window_manager.dart';
 
 /// La barra de título: logotipo, cuenta y los botones de ventana.
 class ShellTitleBar extends StatelessWidget {
@@ -19,23 +20,32 @@ class ShellTitleBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Container(
-      height: AppSpacing.titleBarHeight,
-      padding: const EdgeInsets.only(left: AppSpacing.x3l, right: AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: colors.surfaceSunken,
-        border: Border(
-          bottom: BorderSide(color: colors.border, width: AppStroke.hairline),
+    // Es el chrome de la ventana de verdad, no una barra dibujada: arrastrarla
+    // mueve la ventana y el doble clic la maximiza, como espera cualquiera que
+    // use Windows. Sin esto, esconder el marco nativo dejaría una ventana que
+    // no se puede mover.
+    return DragToMoveArea(
+      child: Container(
+        height: AppSpacing.titleBarHeight,
+        padding: const EdgeInsets.only(
+          left: AppSpacing.x3l,
+          right: AppSpacing.sm,
         ),
-      ),
-      child: Row(
-        children: <Widget>[
-          const KanpachiWordmark(height: 14, opacity: 0.85),
-          const Spacer(),
-          _AccountButton(nickname: nickname),
-          const SizedBox(width: AppSpacing.md),
-          const _WindowButtons(),
-        ],
+        decoration: BoxDecoration(
+          color: colors.surfaceSunken,
+          border: Border(
+            bottom: BorderSide(color: colors.border, width: AppStroke.hairline),
+          ),
+        ),
+        child: Row(
+          children: <Widget>[
+            const KanpachiWordmark(height: 14, opacity: 0.85),
+            const Spacer(),
+            _AccountButton(nickname: nickname),
+            const SizedBox(width: AppSpacing.md),
+            const _WindowButtons(),
+          ],
+        ),
       ),
     );
   }
@@ -55,10 +65,12 @@ class _AccountButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final ShellCubit shell = context.read<ShellCubit>();
-    final bool open =
-        context.select<ShellCubit, bool>((ShellCubit c) => c.state.accountMenuOpen);
-    final String initial =
-        nickname.isEmpty ? '?' : nickname.characters.first.toUpperCase();
+    final bool open = context.select<ShellCubit, bool>(
+      (ShellCubit c) => c.state.accountMenuOpen,
+    );
+    final String initial = nickname.isEmpty
+        ? '?'
+        : nickname.characters.first.toUpperCase();
 
     return Stack(
       clipBehavior: Clip.none,
@@ -105,7 +117,11 @@ class _AccountButton extends StatelessWidget {
           ),
         ),
         if (open)
-          Positioned(top: 32, right: 0, child: _AccountMenu(nickname: nickname)),
+          Positioned(
+            top: 32,
+            right: 0,
+            child: _AccountMenu(nickname: nickname),
+          ),
       ],
     );
   }
@@ -184,17 +200,26 @@ class _WindowButtons extends StatelessWidget {
         AppIconButton(
           icon: Icons.remove,
           tooltip: 'Minimizar',
-          onPressed: () => context.read<ShellCubit>().go(AppScreen.tray),
+          onPressed: windowManager.minimize,
         ),
-        const AppIconButton(
+        AppIconButton(
           icon: Icons.crop_square,
           tooltip: 'Maximizar',
           iconSize: 11,
-          onPressed: null,
+          onPressed: () async {
+            if (await windowManager.isMaximized()) {
+              await windowManager.unmaximize();
+            } else {
+              await windowManager.maximize();
+            }
+          },
         ),
         AppIconButton(
           icon: Icons.close,
           tooltip: 'Cerrar a la bandeja',
+          // Cerrar NO cierra la sala: el daemon la sostiene y queda el icono
+          // en la bandeja. Por eso lleva a esa pantalla en vez de matar el
+          // proceso; matarlo sería tirar la partida de todos.
           onPressed: () => context.read<ShellCubit>().go(AppScreen.tray),
         ),
       ],

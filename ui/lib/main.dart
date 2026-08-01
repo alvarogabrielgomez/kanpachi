@@ -7,11 +7,40 @@ import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/pages/shell_page.dart';
 import 'package:kanpachi_ui/ioc/injector.dart';
 import 'package:kanpachi_ui/ioc/ioc_manager.dart';
+import 'package:window_manager/window_manager.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _prepareWindow();
   IocManager.register();
   runApp(const KanpachiApp());
+}
+
+/// Kanpachi dibuja su propia barra de título, así que la del sistema se
+/// esconde.
+///
+/// No es estética: esa barra es donde viven el nombre con el que te ven y el
+/// aviso de que cerrar la ventana NO cierra la sala. Con el marco nativo
+/// encima habría dos barras de título, dos juegos de botones de ventana y dos
+/// respuestas distintas a la misma cruz.
+Future<void> _prepareWindow() async {
+  await windowManager.ensureInitialized();
+  const WindowOptions options = WindowOptions(
+    // El ancho del diseño más el aire de los lados. El alto da para la sala
+    // entera sin scroll, que es la pantalla más larga de uso normal.
+    size: Size(1000, 720),
+    minimumSize: Size(720, 520),
+    center: true,
+    backgroundColor: Colors.transparent,
+    skipTaskbar: false,
+    titleBarStyle: TitleBarStyle.hidden,
+    windowButtonVisibility: false,
+    title: 'Kanpachi',
+  );
+  await windowManager.waitUntilReadyToShow(options, () async {
+    await windowManager.show();
+    await windowManager.focus();
+  });
 }
 
 class KanpachiApp extends StatelessWidget {

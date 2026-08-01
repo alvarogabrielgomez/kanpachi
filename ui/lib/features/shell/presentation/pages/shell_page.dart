@@ -1,9 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:kanpachi_ui/core/design_system/molecules/app_ambient_background.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
-import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/games/presentation/pages/game_picker_page.dart';
 import 'package:kanpachi_ui/features/games/presentation/pages/manual_game_page.dart';
 import 'package:kanpachi_ui/features/home/presentation/pages/home_page.dart';
@@ -18,85 +16,32 @@ import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/prototype_dock.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/shell_bars.dart';
 
-/// El marco de la aplicación: la tarjeta flotando sobre el lienzo, con su
-/// barra de título arriba y la de estado abajo.
+/// El marco de la aplicación: la ventana ES la app.
 ///
-/// El marco no cambia nunca. Lo único que cambia es lo de dentro, y eso es lo
-/// que hace que la app se sienta un solo sitio y no una sucesión de pantallas
-/// distintas: el código de la sala y el estado del servicio siguen visibles
-/// mientras se elige un juego o se lee la biblioteca.
+/// El archivo de diseño enseña la app como una captura — un lienzo con manchas
+/// de color y la ventana flotando encima con su sombra. Eso es cómo se
+/// PRESENTA un mockup de escritorio, no cómo se construye: aquí la barra de
+/// título es el chrome de la ventana de verdad, y el contenido llega hasta los
+/// bordes. Dibujar una ventana dentro de la ventana daría dos marcos, dos
+/// juegos de botones y dos respuestas a la misma cruz.
 class ShellPage extends StatelessWidget {
   const ShellPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final ShellState shell = context.watch<ShellCubit>().state;
-
-    return Scaffold(
-      backgroundColor: colors.background,
-      body: Stack(
-        children: <Widget>[
-          AppAmbientBackground(enabled: shell.ambient),
-          Column(
-            children: <Widget>[
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.x7l,
-                      vertical: AppSpacing.x8l,
-                    ),
-                    child: const Center(child: _Window()),
-                  ),
-                ),
-              ),
-              // Sólo en debug. Es la barra del prototipo, no una función de la
-              // app: en una build de release no existe ni ocupa sitio.
-              if (kDebugMode) const PrototypeDock(),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Window extends StatelessWidget {
-  const _Window();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
     final SessionState session = context.watch<SessionCubit>().state;
 
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: AppSpacing.shellWidth),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: colors.surface,
-          borderRadius: AppRadius.allLg,
-          border: Border.all(color: colors.border, width: AppStroke.hairline),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: colors.shadow,
-              blurRadius: 84,
-              spreadRadius: -38,
-              offset: const Offset(0, 46),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: AppRadius.allLg,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              ShellTitleBar(nickname: session.nickname),
-              const _WindowBody(),
-              ShellStatusBar(right: _statusRight(session)),
-            ],
-          ),
-        ),
+    return Scaffold(
+      backgroundColor: context.colors.surface,
+      body: Column(
+        children: <Widget>[
+          ShellTitleBar(nickname: session.nickname),
+          const Expanded(child: _WindowBody()),
+          ShellStatusBar(right: _statusRight(session)),
+          // Sólo en debug. Es andamiaje del prototipo, no una función de la
+          // app: en una build de release no existe ni ocupa sitio.
+          if (kDebugMode) const PrototypeDock(),
+        ],
       ),
     );
   }
@@ -124,21 +69,14 @@ class _WindowBody extends StatelessWidget {
     final ShellState shell = context.watch<ShellCubit>().state;
     final SessionState session = context.watch<SessionCubit>().state;
 
-    return ConstrainedBox(
-      // Acotada como en el diseño para que la ventana no dé saltos entre una
-      // pantalla corta y una larga.
-      constraints: const BoxConstraints(minHeight: 240, maxHeight: 596),
-      child: Stack(
-        children: <Widget>[
-          const Positioned.fill(
-            child: SingleChildScrollView(child: _CurrentScreen()),
-          ),
-          // Dentro del marco y no como ruta aparte: los tres diálogos
-          // confirman algo que cambia la sala que se ve por detrás, y dejarla
-          // visible tras el velo es lo que da contexto a qué se confirma.
-          _DialogLayer(shell: shell, session: session),
-        ],
-      ),
+    return Stack(
+      children: <Widget>[
+        const Positioned.fill(child: _CurrentScreen()),
+        // Dentro del marco y no como ruta aparte: los tres diálogos confirman
+        // algo que cambia la sala que se ve por detrás, y dejarla visible tras
+        // el velo es lo que da contexto a qué se está confirmando.
+        _DialogLayer(shell: shell, session: session),
+      ],
     );
   }
 }

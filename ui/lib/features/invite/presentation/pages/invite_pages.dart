@@ -142,10 +142,12 @@ class TrayScreen extends StatelessWidget {
     final SessionState session = context.watch<SessionCubit>().state;
     final ShellCubit shell = context.read<ShellCubit>();
 
+    // Ocupa la ventana entera: es una simulación del escritorio con la app
+    // cerrada, así que recortarla a una altura fija rompería la ilusión que da
+    // sentido a la pantalla.
     return ColoredBox(
       color: colors.surfaceSunken,
-      child: SizedBox(
-        height: 400,
+      child: SizedBox.expand(
         child: Stack(
           children: <Widget>[
             Center(
