@@ -33,20 +33,25 @@ func sinComentarios(s string) string {
 	return b.String()
 }
 
-// TestPaginaDeInvitacionCoincideConElDominio evita una desincronización
-// silenciosa entre dos implementaciones del mismo formato.
-//
-// La página valida el código en JavaScript porque el fragmento nunca llega al
-// servidor y no hay backend que pueda validarlo. Eso significa que el alfabeto
-// y la longitud viven duplicados, en Go y en JS. Si se separan, la página
-// aceptaría códigos que la app rechaza, y el usuario concluiría que la app
-// está rota. Este test los ata.
-func TestPaginaDeInvitacionCoincideConElDominio(t *testing.T) {
+func leerPagina(t *testing.T) string {
+	t.Helper()
 	crudo, err := os.ReadFile(invitePage)
 	if err != nil {
 		t.Fatalf("no se pudo leer %s: %v", invitePage, err)
 	}
-	html := string(crudo)
+	return string(crudo)
+}
+
+// TestPaginaDeInvitacionCoincideConElDominio evita una desincronización
+// silenciosa entre dos implementaciones del mismo formato.
+//
+// La página valida el invite ID en JavaScript porque tiene que decidir qué
+// pantalla mostrar antes de hablar con nadie. Eso significa que el alfabeto y
+// la longitud viven duplicados, en Go y en JS. Si se separan, la página
+// aceptaría IDs que la app rechaza, y el usuario concluiría que la app está
+// rota. Este test los ata.
+func TestPaginaDeInvitacionCoincideConElDominio(t *testing.T) {
+	html := leerPagina(t)
 
 	t.Run("alfabeto", func(t *testing.T) {
 		re := regexp.MustCompile(`var ALPHABET = "([^"]*)"`)
@@ -56,7 +61,7 @@ func TestPaginaDeInvitacionCoincideConElDominio(t *testing.T) {
 		}
 		if m[1] != domain.Alphabet {
 			t.Errorf("el alfabeto de la página es %q\n  y el del dominio es %q\n"+
-				"  con alfabetos distintos, la página acepta códigos que la app rechaza", m[1], domain.Alphabet)
+				"  con alfabetos distintos, la página acepta IDs que la app rechaza", m[1], domain.Alphabet)
 		}
 	})
 
@@ -66,8 +71,8 @@ func TestPaginaDeInvitacionCoincideConElDominio(t *testing.T) {
 		if m == nil {
 			t.Fatal("no se encontró CODE_LEN en la página")
 		}
-		if m[1] != "12" || domain.CodeLen != 12 {
-			t.Errorf("CODE_LEN de la página es %s y el del dominio es %d", m[1], domain.CodeLen)
+		if m[1] != "8" || domain.InviteIDLen != 8 {
+			t.Errorf("CODE_LEN de la página es %s y el del dominio es %d", m[1], domain.InviteIDLen)
 		}
 	})
 
@@ -81,50 +86,79 @@ func TestPaginaDeInvitacionCoincideConElDominio(t *testing.T) {
 			t.Errorf("el seed por defecto de la página es %q y el del dominio es %q", m[1], domain.DefaultSeedHost)
 		}
 	})
+
+	t.Run("la URL que genera la app abre esta pagina", func(t *testing.T) {
+		// La app genera `seed/A7K2-M9QX` y la página lee el invite ID de la
+		// ruta. Si una de las dos cambia de forma, el enlace deja de abrir nada
+		// y el síntoma aparece en producción, no acá. Este caso ata las dos.
+		r, err := domain.ParseRoom("A7K2M9QX")
+		if err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		url := r.InviteURL()
+		if strings.Contains(url, "#") {
+			t.Errorf("InviteURL() = %q: el invite ID va en la ruta, el fragmento es para la clave de tarjeta", url)
+		}
+		if !strings.Contains(html, "window.location.pathname") {
+			t.Error("la página no lee la ruta: el invite ID viaja ahí desde la decisión 17")
+		}
+	})
 }
 
 // TestPaginaDeInvitacionRespetaSusInvariantes comprueba en el propio archivo
-// las tres reglas de la decisión 17. Son reglas que se rompen sin querer al
+// las reglas de las decisiones 17 y 25. Son reglas que se rompen sin querer al
 // editar, y ninguna deja rastro visible cuando se rompe: la página sigue
 // pareciendo correcta.
 func TestPaginaDeInvitacionRespetaSusInvariantes(t *testing.T) {
-	crudo, err := os.ReadFile(invitePage)
-	if err != nil {
-		t.Fatalf("no se pudo leer %s: %v", invitePage, err)
-	}
+	crudo := leerPagina(t)
 	// Se revisa el código, no los comentarios. Sin esto, un comentario que
 	// explica "acá jamás se usa innerHTML" hace fallar el test que comprueba
 	// que no se usa innerHTML, y la única salida sería dejar de documentar el
 	// motivo. Los comentarios de esa página son parte de su valor.
-	html := sinComentarios(string(crudo))
+	html := sinComentarios(crudo)
 
-	t.Run("sin peticiones ni recursos externos", func(t *testing.T) {
+	t.Run("sin recursos externos ni telemetria", func(t *testing.T) {
 		// Cero telemetría, y además la deja servible desde cualquier sitio sin
 		// depender de nadie, que es lo que necesita un self-hoster.
 		prohibidos := map[string]string{
-			"<script src":  "script externo",
-			"<link":        "hoja de estilos o fuente externa",
-			"@import":      "CSS importado de fuera",
-			"fetch(":       "petición saliente",
-			"XMLHttpRequ":  "petición saliente",
-			"navigator.se": "sendBeacon, o sea telemetría",
-			"googleapis":   "recurso de Google",
-			"gtag":         "Google Analytics",
-			"analytics":    "analítica",
-			"document.coo": "cookies",
+			"<script src":               "script externo",
+			"<link":                     "hoja de estilos o fuente externa",
+			"@import":                   "CSS importado de fuera",
+			"XMLHttpRequ":               "petición fuera del único fetch permitido",
+			"navigator.s" + "endBeacon": "telemetría",
+			"googleapis":                "recurso de Google",
+			"gtag":                      "Google Analytics",
+			"analytics":                 "analítica",
+			"document.coo" + "kie":      "cookies",
 		}
 		for patron, queEs := range prohibidos {
 			if strings.Contains(html, patron) {
-				t.Errorf("la página contiene %q (%s): debe ser autocontenida, sin peticiones salientes y sin cookies", patron, queEs)
+				t.Errorf("la página contiene %q (%s): debe ser autocontenida, sin telemetría y sin cookies", patron, queEs)
 			}
 		}
 
 		// El enlace al repositorio es la única URL absoluta admitida, y es un
-		// href sobre el que el usuario decide, no una carga automática.
+		// href sobre el que el usuario decide, no una carga automática. Los
+		// logos van EN LÍNEA justamente para no necesitar ninguna otra.
 		for _, u := range regexp.MustCompile(`https?://[^"'\s)]+`).FindAllString(html, -1) {
 			if !strings.HasPrefix(u, "https://github.com/accentiostudios/") {
 				t.Errorf("URL absoluta inesperada en la página: %q", u)
 			}
+		}
+	})
+
+	t.Run("la unica peticion es al mismo origen", func(t *testing.T) {
+		// La decisión 24 autoriza exactamente una: el registro de salas. Tiene
+		// que ser relativa, o sea al mismo host que sirvió la página. Una
+		// absoluta filtraría a un tercero qué sala está mirando el visitante,
+		// que es justo lo que la decisión acotó.
+		llamadas := regexp.MustCompile(`fetch\(([^,)]*)`).FindAllStringSubmatch(html, -1)
+		if len(llamadas) != 1 {
+			t.Fatalf("la página hace %d llamadas a fetch, debe hacer exactamente 1 (el registro)", len(llamadas))
+		}
+		destino := strings.TrimSpace(llamadas[0][1])
+		if !strings.HasPrefix(destino, `"/`) {
+			t.Errorf("fetch a %s: tiene que ser una ruta relativa al mismo origen", destino)
 		}
 	})
 
@@ -141,10 +175,13 @@ func TestPaginaDeInvitacionRespetaSusInvariantes(t *testing.T) {
 		}
 	})
 
-	t.Run("el codigo nunca se inyecta como HTML", func(t *testing.T) {
-		// El fragmento lo controla quien manda el enlace.
-		if strings.Contains(html, "innerHTML") || strings.Contains(html, "document.write") {
-			t.Error("la página usa innerHTML o document.write: el fragmento es entrada hostil, solo textContent")
+	t.Run("nada de la URL se inyecta como HTML", func(t *testing.T) {
+		// La ruta, el fragmento y la tarjeta los controla quien manda el link.
+		if strings.Contains(html, "inner"+"HTML") || strings.Contains(html, "document.wr"+"ite") {
+			t.Error("la página construye HTML con entrada de fuera: solo textContent")
+		}
+		if strings.Contains(html, "insertAdjacentHTML") || strings.Contains(html, "outer"+"HTML") {
+			t.Error("la página construye HTML con entrada de fuera: solo textContent")
 		}
 	})
 
@@ -153,6 +190,58 @@ func TestPaginaDeInvitacionRespetaSusInvariantes(t *testing.T) {
 		// adivinar mal es peor que preguntar.
 		if strings.Contains(html, "blur") || strings.Contains(html, "visibilitychange") {
 			t.Error("la página parece intentar detectar la instalación: no hay forma confiable, ver decisión 17")
+		}
+	})
+
+	t.Run("no promete que el codigo no llega al servidor", func(t *testing.T) {
+		// Fue cierto hasta la decisión 17 y dejó de serlo: el invite ID va en la
+		// ruta y el servidor lo recibe. La frase sobrevivió en el diseño de la
+		// portada y hubo que quitarla. Este caso existe para que no vuelva,
+		// porque es de las que se copian de un mockup viejo sin releer.
+		falsas := []string{
+			"nunca sale de tu navegador",
+			"jamás lo recibe",
+			"jamas lo recibe",
+			"viaja en el fragmento del enlace",
+		}
+		for _, f := range falsas {
+			if strings.Contains(crudo, f) {
+				t.Errorf("la página dice %q: el invite ID viaja en la RUTA desde la decisión 17, "+
+					"así que el servidor sí lo recibe. Esa frase es falsa", f)
+			}
+		}
+	})
+
+	t.Run("no afirma identidad", func(t *testing.T) {
+		// Decisión 25: el nickname no se verifica, así que la página no puede
+		// decir quién te invitó. Este test cuida una frase, y esa frase es la
+		// diferencia entre informar y mentir.
+		if strings.Contains(html, "te invitó a su sala") {
+			t.Error(`la página dice "te invitó a su sala": el nickname no se verifica, ` +
+				`debe decir "se identifica como". Ver decisión 25`)
+		}
+		if !strings.Contains(html, "Se identifica como") {
+			t.Error(`falta la fórmula "Se identifica como": es lo que evita afirmar una identidad que nadie verificó`)
+		}
+	})
+
+	t.Run("la entrada de fuera tiene tope antes de mirarse", func(t *testing.T) {
+		// Mismo principio que domain.MaxInputLen: el tope va antes de tocar el
+		// contenido, para que una entrada de megabytes no llegue a los bucles.
+		for _, c := range []string{"MAX_INPUT", "MAX_KEY", "MAX_NAME"} {
+			if !strings.Contains(html, "var "+c+" =") {
+				t.Errorf("falta el tope %s: ruta, fragmento y tarjeta son entrada hostil", c)
+			}
+		}
+	})
+
+	t.Run("sin bytes de control en el archivo", func(t *testing.T) {
+		// Un carácter de control invisible dentro de un literal de JavaScript
+		// no se ve al revisar el diff y puede cambiar lo que hace el código.
+		for i, r := range crudo {
+			if r < 32 && r != '\n' && r != '\r' && r != '\t' {
+				t.Fatalf("byte de control %#x en la posición %d del archivo", r, i)
+			}
 		}
 	})
 }

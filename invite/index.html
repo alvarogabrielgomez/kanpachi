@@ -4,196 +4,462 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kanpachi</title>
+<meta name="color-scheme" content="light dark">
 <!--
-  Página de invitación. HTML estático puro, sin backend y sin dependencias
-  externas. Implementa las decisiones 16 y 17 de docs/02 y el diseño de docs/05.
+  Página de invitación. Implementa las decisiones 17, 24 y 25 de docs/02 y el
+  diseño de docs/05.
 
-  Las tres propiedades que la definen, y ninguna es cosmética:
+  Autocontenida a propósito: sin recursos externos, sin fuentes remotas, sin
+  cookies y sin analítica. Los logos van en línea como SVG, no como archivos
+  aparte, para que una CSP que prohíbe todo lo de fuera siga valiendo.
 
-  1. EL CÓDIGO VA EN EL FRAGMENTO. Los navegadores no mandan lo que va después
-     del # en la petición HTTP, así que este servidor NUNCA recibe un código de
-     sala. No se puede filtrar lo que no se conoce, y eso es verificable por
-     cualquiera que mire el tráfico. Por eso el código se lee acá con
-     JavaScript y jamás se pone en la ruta ni en un query string.
+  Lo único que sale de acá es una petición al MISMO origen, a /api/i/<id>, que
+  trae el contador de miembros y la tarjeta cifrada. Si esa petición falla, la
+  página funciona igual con la tarjeta genérica: el enlace sirve para entrar,
+  que es lo que importa.
 
-  2. EL INTENT SOLO SE DISPARA CON UN CLICK. Nunca al cargar. Los navegadores
+  LAS TRES PROPIEDADES QUE LA DEFINEN
+
+  1. EL INVITE ID VA EN LA RUTA. Cambió respecto del diseño anterior, que lo
+     escondía en el fragmento. El motivo de esconderlo era que el servidor no lo
+     recibiera, y eso se apoyaba en que el código era el secreto de la red. Con
+     la decisión 2 dejó de serlo, y el registro tiene que conocerlo igual para
+     resolverlo. Acertar un invite ID da la tarjeta y el derecho a tocar la
+     puerta, jamás la entrada: eso lo decide el host con una credencial.
+
+  2. EL FRAGMENTO LLEVA LA CLAVE DE LA TARJETA. Eso sí no llega al servidor.
+     El registro guarda y sirve bytes que no puede descifrar, y el nombre de la
+     sala se descifra acá. Un ID dictado por teléfono, sin fragmento, abre la
+     página igual con la tarjeta genérica.
+
+  3. EL INTENT SOLO SE DISPARA CON UN CLICK. Nunca al cargar. Los navegadores
      penalizan la navegación a esquemas externos sin gesto del usuario, y una
      página que abre programas sola es exactamente lo que alguien desconfiado
      espera de un link sospechoso.
 
-  3. NO SE INTENTA DETECTAR SI LA APP ESTÁ INSTALADA. No hay forma confiable, y
-     el truco del temporizador falla distinto en cada navegador. El mensaje de
-     "si no pasó nada" cubre el caso sin adivinar y sin equivocarse.
+  Y una que es de honestidad, no de mecánica: LA PÁGINA NUNCA AFIRMA IDENTIDAD.
+  El nickname no se verifica, por decisión 21, así que acá dice "se identifica
+  como" y muestra la huella de la llave al lado. Quien juzga esa huella contra
+  la libreta de con quién jugaste es la app, que sí tiene memoria. Ver
+  decisión 25.
 
-  Sin analítica, sin cookies, sin fuentes remotas, sin peticiones salientes.
+  Para previsualizar los estados sin montar el registro: ?preview=invite,
+  badcode, empty, nowin o download.
 -->
 <style>
   :root {
     color-scheme: light dark;
-    --bg: #fbfaf8;
-    --surface: #ffffff;
-    --border: #e6e2dc;
-    --text: #1c1a17;
-    --muted: #6b655c;
-    --accent: #b4451f;
-    --accent-text: #ffffff;
-    --code-bg: #f4f1ec;
+    --bg:#f7efe6; --card:#ffffff; --text:#1c1a17; --muted:#6b655c;
+    --accent:#b4451f; --accent-ink:#ffffff; --accent-shadow:#7f3116;
+    --chip:#f4f1ec; --chip-text:#5f594f; --line:#e6e2dc; --ok:#4f8f3a;
+    --warn:#b4451f;
+    --s1:#f3b98a; --s2:#f2d9a8; --s3:#e8845a; --s4:#d9c3a0; --ring:#f7d7b4;
+    --veil:rgba(247,239,230,.30); --foot:#7a6f62; --shadow:rgba(60,36,20,.42);
+    --shape-op:1;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #171614;
-      --surface: #201e1b;
-      --border: #35322d;
-      --text: #f0ede8;
-      --muted: #a19a8f;
-      --accent: #e0703f;
-      --accent-text: #1c1a17;
-      --code-bg: #2a2724;
+      --bg:#141210; --card:#201e1b; --text:#f0ede8; --muted:#a19a8f;
+      --accent:#e0703f; --accent-ink:#201e1b; --accent-shadow:#a94b26;
+      --chip:#2a2724; --chip-text:#c9c2b8; --line:#35322d; --ok:#7fae6b;
+      --warn:#e0703f;
+      --s1:#e0703f; --s2:#f0c58a; --s3:#7f4a2e; --s4:#b4451f; --ring:#f0c58a;
+      --veil:rgba(20,18,16,.28); --foot:rgba(240,237,232,.6); --shadow:rgba(0,0,0,.75);
+      --shape-op:.85;
     }
   }
+
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     margin: 0;
-    min-height: 100vh;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  .stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 1.5rem;
-    background: var(--bg);
-    color: var(--text);
-    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 24px;
+    overflow: hidden;
   }
-  main {
-    width: 100%;
-    max-width: 27rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 2rem 1.75rem;
-  }
-  h1 { margin: 0 0 .25rem; font-size: 1.6rem; letter-spacing: -.02em; }
-  .tagline { margin: 0 0 1.75rem; color: var(--muted); }
-  .label { font-size: .8rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: .4rem; }
 
-  .code-row { display: flex; gap: .5rem; align-items: stretch; margin-bottom: 1.5rem; }
-  .code {
-    flex: 1 1 auto;
-    min-width: 0;
-    background: var(--code-bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: .7rem .85rem;
-    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
-    font-size: 1.05rem;
-    letter-spacing: .06em;
-    overflow-x: auto;
+  /* Formas de fondo. Decorativas, sin contenido, fuera del árbol accesible. */
+  .ambient { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .ambient i { position: absolute; display: block; opacity: var(--shape-op); }
+  .a1 { left:-140px; top:-120px; width:460px; height:460px; border-radius:50%; background:var(--s1); animation: drift1 17s ease-in-out infinite; }
+  .a2 { right:-90px; top:40px; width:340px; height:340px; border-radius:96px; background:var(--s2); animation: drift2 21s ease-in-out infinite; }
+  .a3 { right:14%; bottom:-190px; width:420px; height:420px; border-radius:50%; background:var(--s3); animation: drift3 19s ease-in-out infinite; }
+  .a4 { left:8%; bottom:-110px; width:280px; height:280px; border-radius:78px; background:var(--s4); transform: rotate(18deg); animation: drift2 24s ease-in-out infinite; }
+  .a5 { left:46%; top:-160px; width:300px; height:300px; border-radius:50%; border:34px solid var(--ring); opacity:.7; animation: drift3 26s ease-in-out infinite; }
+  .veil { position:absolute; inset:0; background: var(--veil); }
+
+  @keyframes drift1 { 0%,100%{transform:translate(0,0) rotate(0)} 50%{transform:translate(-26px,30px) rotate(7deg)} }
+  @keyframes drift2 { 0%,100%{transform:translate(0,0) rotate(0)} 50%{transform:translate(30px,-22px) rotate(-9deg)} }
+  @keyframes drift3 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(18px,18px) scale(1.07)} }
+  @keyframes bob    { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)} }
+  @keyframes pulse  { 0%,100%{opacity:1} 50%{opacity:.3} }
+  @keyframes sweep  { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
+  @keyframes dot    { 0%,100%{opacity:.3;transform:translateY(0)} 50%{opacity:1;transform:translateY(-3px)} }
+
+  /* Quien pidió menos movimiento no ve nada moverse. La página no pierde
+     ninguna función por eso, todo lo animado acá es decorativo o de estado. */
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+
+  .card {
+    position: relative;
+    margin: auto;
+    width: 452px;
+    max-width: 100%;
+    background: var(--card);
+    border-radius: 28px;
+    padding: 36px 32px 26px;
+    box-shadow: 0 44px 74px -34px var(--shadow);
+    text-align: center;
+  }
+  .card.narrow { width: 360px; padding: 34px 26px 26px; }
+  .card.wide { width: 560px; padding: 38px 36px 30px; }
+
+  /* Portada. Es la única pantalla con texto alineado a la izquierda: hay
+     etiquetas, un campo y una lista, y centrarlos volvería ilegible la lista. */
+  .cap {
+    display: block; text-align: left;
+    font: 600 10.5px/1 ui-monospace, Consolas, monospace;
+    letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); margin: 26px 0 8px;
+  }
+  .entry { display: flex; gap: 8px; }
+  .entry input {
+    flex: 1 1 auto; min-width: 0;
+    background: var(--chip); color: var(--text);
+    border: 1px solid transparent; border-radius: 14px;
+    padding: 15px 18px;
+    font: 400 15px/1 ui-monospace, Consolas, monospace;
+    letter-spacing: .08em;
+  }
+  .entry input::placeholder { color: var(--muted); opacity: .7; }
+  .entry input:focus { outline: none; border-color: var(--accent); }
+  .entry input.wrong { border-color: var(--warn); }
+  .chipbtn {
+    display: flex; align-items: center;
+    background: var(--chip); color: var(--text);
+    border: none; border-radius: 14px; padding: 0 22px;
+    font: 700 14px/1 system-ui, sans-serif;
+    cursor: pointer; white-space: nowrap;
+    transition: filter .18s, opacity .18s;
+  }
+  .chipbtn:hover { filter: brightness(1.08); text-decoration: none; }
+  .chipbtn[aria-disabled="true"] { opacity: .5; cursor: default; }
+
+  .note { text-align: left; font: 400 12.5px/1.5 system-ui, sans-serif; color: var(--muted); margin: 10px 0 0; text-wrap: pretty; }
+  .note.center { text-align: center; margin-top: 10px; }
+  .note.wrong { color: var(--warn); }
+
+  .rule { display: flex; align-items: center; gap: 14px; margin: 26px 0 20px; }
+  .rule::before, .rule::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .rule span { font: 600 10.5px/1 ui-monospace, Consolas, monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+
+  .points { list-style: none; margin: 26px 0 0; padding: 20px 0 0; border-top: 1px solid var(--line); text-align: left; }
+  .points li { position: relative; padding-left: 18px; margin-bottom: 14px; font: 400 13.5px/1.55 system-ui, sans-serif; color: var(--muted); text-wrap: pretty; }
+  .points li:last-child { margin-bottom: 0; }
+  .points li::before { content: ""; position: absolute; left: 0; top: .55em; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .points b { color: var(--text); font-weight: 600; }
+
+  /* Un svg sin viewBox no tiene relación de aspecto, así que width:auto no
+     calcula nada y el navegador cae a 300px de ancho con el símbolo escalado
+     adentro. Todos los de esta página llevan el suyo, y esta regla les da la
+     altura. */
+  .glyph { display: block; width: auto; }
+
+  .mark {
+    width: 88px; height: 88px; border-radius: 27px;
+    background: var(--accent); color: var(--accent-ink);
+    margin: 0 auto 18px;
+    display: flex; align-items: center; justify-content: center;
+    font: 700 36px/1 system-ui, sans-serif;
+    animation: bob 5s ease-in-out infinite;
+  }
+  .mark .glyph { height: 40px; }
+  .mark.live { box-shadow: 0 0 0 5px var(--card), 0 0 0 8px var(--ok); }
+  .mark.sm { width: 76px; height: 76px; border-radius: 24px; font-size: 30px; margin-bottom: 16px; }
+  .mark.sm .glyph { height: 34px; }
+  .mark.quiet {
+    background: var(--chip); color: var(--accent);
+    border: 2px solid var(--accent);
+    width: 76px; height: 76px; border-radius: 24px;
+    font: 700 32px/1 system-ui, sans-serif;
+    animation: none;
+  }
+
+  .eyebrow { font: 400 14.5px/1.4 system-ui, sans-serif; color: var(--muted); margin: 0 0 6px; }
+  .title { font: 700 31px/1.15 system-ui, sans-serif; letter-spacing: -.02em; margin: 0 0 18px; }
+  .title.sm { font-size: 25px; letter-spacing: -.015em; margin-bottom: 10px; }
+  .lede { font: 400 14px/1.55 system-ui, sans-serif; color: var(--muted); margin: 0 0 18px; text-wrap: pretty; }
+
+  .chips { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 22px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--chip); color: var(--chip-text);
+    border: none; border-radius: 999px; padding: 8px 14px;
+    font: 400 12.5px/1 ui-monospace, Consolas, monospace;
     white-space: nowrap;
   }
-  button {
-    font: inherit;
-    cursor: pointer;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text);
-    padding: .7rem 1rem;
-    white-space: nowrap;
-  }
-  button:hover { border-color: var(--muted); }
-  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.chip { cursor: pointer; transition: filter .18s; }
+  button.chip:hover { filter: brightness(.96); }
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); animation: pulse 2.4s ease-in-out infinite; }
+  .bar .foreign { color: var(--warn); }
 
   .primary {
-    display: block;
-    width: 100%;
-    background: var(--accent);
-    color: var(--accent-text);
-    border-color: transparent;
-    font-weight: 600;
-    padding: .85rem 1rem;
-    font-size: 1.05rem;
+    position: relative; overflow: hidden;
+    display: block; width: 100%;
+    background: var(--accent); color: var(--accent-ink);
+    border: none; border-radius: 999px; padding: 17px;
+    font: 700 16px/1 system-ui, sans-serif;
+    cursor: pointer; text-decoration: none;
+    box-shadow: 0 8px 0 var(--accent-shadow);
+    transition: transform .16s, box-shadow .16s;
   }
-  .primary:hover { filter: brightness(1.08); }
+  .primary:hover { transform: translateY(-2px); box-shadow: 0 10px 0 var(--accent-shadow); }
+  .primary:active { transform: translateY(4px); box-shadow: 0 4px 0 var(--accent-shadow); }
+  .primary:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
+  .primary .label { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 9px; }
+  .primary .glare { position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.34), transparent); animation: sweep 1.1s linear infinite; }
+  .dots { display: none; gap: 4px; align-items: center; }
+  .dots span { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: dot 1s ease-in-out infinite; }
+  .dots span:nth-child(2) { animation-delay: .16s; }
+  .dots span:nth-child(3) { animation-delay: .32s; }
+  .busy .dots { display: flex; }
 
-  .server { font-size: .85rem; color: var(--muted); margin: -.9rem 0 1.5rem; }
-  .fallback { margin: 1.5rem 0 0; color: var(--muted); font-size: .92rem; }
-  .fallback a, footer a { color: var(--accent); }
-  footer {
-    margin-top: 1.75rem; padding-top: 1rem;
-    border-top: 1px solid var(--border);
-    font-size: .78rem; color: var(--muted);
-    display: flex; flex-wrap: wrap; gap: .5rem 1rem;
+  .reassure { margin: 16px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+
+  .cardfoot {
+    margin-top: 20px; padding-top: 16px;
+    border-top: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
   }
-  footer code { font-family: ui-monospace, Consolas, monospace; }
+  .cardfoot svg { height: 15px; width: auto; opacity: .8; color: var(--text); }
+  .cardfoot a, .escape { font: 500 12.5px/1 system-ui, sans-serif; color: var(--accent); white-space: nowrap; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .codebox { background: var(--chip); border-radius: 16px; padding: 14px; margin-bottom: 16px; }
+  .codebox .cap { font: 600 10px/1 ui-monospace, Consolas, monospace; letter-spacing: .14em; color: var(--muted); margin-bottom: 8px; }
+  .codebox .val { font: 400 15px/1 ui-monospace, Consolas, monospace; color: var(--text); }
+
+  .partial { display: inline-block; background: var(--chip); border-radius: 999px; padding: 11px 16px; margin-bottom: 22px; font: 400 14px/1 ui-monospace, Consolas, monospace; color: var(--chip-text); }
+  .partial .rest { color: var(--accent); }
+
+  .sha { background: var(--chip); border-radius: 16px; padding: 14px 16px; text-align: left; }
+  .sha .cap { font: 600 10px/1 ui-monospace, Consolas, monospace; letter-spacing: .14em; color: var(--muted); margin-bottom: 7px; }
+  .sha .val { font: 400 11.5px/1.6 ui-monospace, Consolas, monospace; color: var(--chip-text); word-break: break-all; }
+
+  .wordmark { display: flex; justify-content: center; margin-bottom: 20px; color: var(--text); }
+  .wordmark svg { height: 26px; width: auto; }
+  .escape { display: inline-block; margin-top: 14px; color: var(--muted); }
+
+  .bar {
+    flex: none;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 14px 26px;
+    font: 400 11.5px/1 ui-monospace, Consolas, monospace;
+    color: var(--foot);
+  }
+  .bar a { color: var(--foot); }
+  .bar .right { display: flex; gap: 18px; align-items: center; }
+
   .hidden { display: none; }
-  .notice {
-    background: var(--code-bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: .85rem;
-    color: var(--muted);
-    font-size: .92rem;
+
+  @media (max-width: 420px) {
+    .card { padding: 30px 22px 22px; border-radius: 22px; }
+    .title { font-size: 26px; }
+    .bar { flex-direction: column; gap: 8px; text-align: center; }
   }
 </style>
 </head>
 <body>
-<main>
-  <h1>Kanpachi</h1>
-  <p class="tagline">Jugar en LAN con tus panas, sin abrir puertos ni crear cuentas.</p>
 
-  <!-- Con código válido en el fragmento -->
-  <section id="invite" class="hidden">
-    <div class="label">Sala</div>
-    <div class="code-row">
-      <div class="code" id="code"></div>
-      <button id="copy" type="button">Copiar</button>
+<!-- Logos en línea, con currentColor: un solo trazado sirve para tema claro y
+     oscuro, y no hace falta permitir img-src en la CSP. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="kp-word" viewBox="0 0 202 51" fill="currentColor">
+    <path d="M16.224 24.9774L27.3 40.7724H17.94L10.608 30.5154L7.683 33.7134V40.7724H0V4.719L7.683 0V23.3784L17.238 13.2384H26.52L16.224 24.9774Z"/>
+    <path d="M51.3945 13.6675V40.7725H44.1795V38.6275C42.3855 39.9535 40.2015 40.6945 37.9785 40.7335C30.7245 40.4215 25.0305 34.4545 25.0305 27.2005C25.0305 19.9465 30.7245 13.9795 37.9785 13.6675C40.9035 13.7845 43.7115 14.5255 45.7785 16.6705L48.8205 15.2665L51.3945 13.6675ZM38.7969 33.4867C42.2289 33.4087 44.9979 30.5227 44.9199 27.0517C44.9199 24.4387 43.3209 22.0597 40.8639 21.0847C38.4459 20.0707 35.6379 20.6947 33.8049 22.6057C31.9719 24.5167 31.5039 27.3247 32.5959 29.7427C33.6879 32.1217 36.1449 33.6427 38.7969 33.4867Z"/>
+    <path d="M77.1157 16.7485C79.1437 19.2445 80.1187 22.4425 79.9237 25.6795V40.7725H72.5137V26.8495C72.6307 25.2505 72.2017 23.6905 71.3437 22.3645C70.5637 21.3895 69.3157 20.8825 68.0677 20.9605C66.5857 20.8825 65.1427 21.5065 64.1677 22.6375C63.1147 24.1195 62.6077 25.9135 62.7247 27.7075V40.7725H55.3537V13.7065H62.4517V16.6705C63.2707 15.8125 64.2457 15.1105 65.3767 14.6425C66.7807 14.0185 68.3407 13.7065 69.8617 13.7065C72.6307 13.6285 75.2827 14.7205 77.1157 16.7485Z"/>
+    <path d="M96.3494 13.2385C103.603 13.5895 109.258 19.5175 109.258 26.7715C109.258 33.9865 103.603 39.9535 96.3494 40.3045C94.9454 40.3045 93.5024 40.0315 92.1764 39.5635V31.6855C93.3074 32.6605 94.7504 33.2065 96.2324 33.2065C99.7424 33.1285 102.511 30.2815 102.511 26.7715C102.511 23.2615 99.7424 20.4145 96.2324 20.3365C94.5554 20.3365 92.9564 21.0385 91.7864 22.2475C90.6164 23.4565 89.9924 25.0945 90.0314 26.7715L89.8754 50.3275H83.0114V26.7715C83.0504 19.3615 88.9784 13.3555 96.3494 13.2385Z"/>
+    <path d="M137.45 13.6675V40.7725H130.235V38.6275C128.441 39.9535 126.257 40.6945 124.034 40.7335C116.78 40.4215 111.086 34.4545 111.086 27.2005C111.086 19.9465 116.78 13.9795 124.034 13.6675C126.959 13.7845 129.767 15.0325 131.834 17.1775L134.876 15.2665L137.45 13.6675ZM124.732 33.6355C128.164 33.5575 130.933 30.6715 130.855 27.2005C130.855 24.5875 129.256 22.2085 126.799 21.2335C124.381 20.2195 121.573 20.8435 119.74 22.7545C117.907 24.6655 117.439 27.4735 118.531 29.8915C119.623 32.2705 122.08 33.7915 124.732 33.6355Z"/>
+    <path d="M158.647 30.2815L163.561 35.2345C161.221 38.6665 157.321 40.7335 153.148 40.7335C145.933 40.3825 140.317 34.4155 140.317 27.2005C140.317 19.9855 145.933 14.0185 153.148 13.6675C157.321 13.6675 161.182 15.7345 163.522 19.2055L158.647 24.1195C157.594 22.0525 155.488 20.7265 153.148 20.6875C149.677 20.8435 146.947 23.7295 146.947 27.2005C146.947 30.6715 149.677 33.5575 153.148 33.7135C155.488 33.6745 157.594 32.3485 158.647 30.2815Z"/>
+    <path d="M189.716 18.2305C190.621 20.3755 191.074 22.7155 190.998 25.0555V40.7725H183.532V26.2645C183.645 24.6655 183.268 23.0665 182.401 21.7405C181.609 20.8045 180.458 20.2975 179.21 20.3365C178.235 20.3365 177.299 20.5705 176.441 21.0775C175.622 21.5845 174.959 22.3645 174.569 23.2615C174.062 24.4705 173.828 25.8355 173.867 27.1615V40.7725H166.184V5.57621H173.867V15.5005C174.335 15.0715 174.842 14.6815 175.388 14.3695C177.104 13.3555 179.12 12.8485 181.043 12.8875C182.853 12.8485 184.588 13.2775 186.172 14.1745C187.718 15.1105 188.962 16.5145 189.716 18.2305Z"/>
+    <path d="M201.492 7.45019H201.531L201.33 40.7725H194.115L194.316 11.9352L198.957 9.04918L201.492 7.45019Z"/>
+  </symbol>
+  <symbol id="kp-mark" viewBox="0 0 27.3 40.78" fill="currentColor">
+    <path d="M16.224 24.9774L27.3 40.7724H17.94L10.608 30.5154L7.683 33.7134V40.7724H0V4.719L7.683 0V23.3784L17.238 13.2384H26.52L16.224 24.9774Z"/>
+  </symbol>
+</svg>
+
+<div class="stage">
+  <div class="ambient" aria-hidden="true">
+    <i class="a1"></i><i class="a2"></i><i class="a3"></i><i class="a4"></i><i class="a5"></i>
+    <div class="veil"></div>
+  </div>
+
+  <!-- Invitación válida -->
+  <main class="card hidden" id="sec-invite">
+    <div class="mark" id="mark">
+      <svg class="glyph" id="mark-glyph" viewBox="0 0 27.3 40.78" aria-hidden="true"><use href="#kp-mark"/></svg>
+      <span class="hidden" id="mark-initial" aria-hidden="true"></span>
     </div>
-    <p class="server" id="server"></p>
+    <p class="eyebrow" id="eyebrow">Te invitaron a una sala de Kanpachi</p>
+    <h1 class="title" id="roomname">Sala de Kanpachi</h1>
 
-    <button class="primary" id="open" type="button">Abrir en Kanpachi</button>
+    <!-- Dos chips y una sola línea, como el diseño. El aviso de seed ajeno NO
+         vive acá: empujaba la fila a dos líneas, y le repetía el dominio a
+         alguien que ya lo tiene en la barra de direcciones y en el pie. La
+         advertencia que cuenta es la de la app, que no se puede saltar. -->
+    <div class="chips">
+      <span class="chip hidden" id="members"><span class="dot"></span><span id="members-text"></span></span>
+      <button type="button" class="chip" id="copy"><span id="copy-text"></span></button>
+    </div>
 
-    <p class="fallback">
-      ¿No pasó nada? Es que no lo tienes instalado todavía.<br>
-      <a href="/descargar" id="download">→ Descargar Kanpachi para Windows</a>
+    <button type="button" class="primary" id="open">
+      <span class="glare hidden" id="glare"></span>
+      <span class="label">
+        <span class="dots" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span id="open-text">Abrir en Kanpachi</span>
+      </span>
+    </button>
+
+    <p class="reassure">Entrar no abre nada en tu router. Internet no ve tu PC.</p>
+
+    <div class="cardfoot">
+      <svg class="glyph" viewBox="0 0 202 51" role="img" aria-label="Kanpachi"><use href="#kp-word"/></svg>
+      <a href="/descargar">No lo tengo instalado</a>
+    </div>
+  </main>
+
+  <!-- Invite ID incompleto, o que el registro no conoce -->
+  <main class="card hidden" id="sec-badcode">
+    <div class="mark quiet" aria-hidden="true">?</div>
+    <h1 class="title sm" id="bad-title">Ese código no está completo</h1>
+    <p class="lede" id="bad-lede"></p>
+    <p class="partial hidden" id="bad-partial"></p>
+    <a class="primary" href="/descargar">Descargar Kanpachi</a>
+    <div class="cardfoot" style="justify-content:center">
+      <svg class="glyph" viewBox="0 0 202 51" role="img" aria-label="Kanpachi"><use href="#kp-word"/></svg>
+    </div>
+  </main>
+
+  <!-- Sin invite ID: la portada. Dos salidas, entrar con código o instalar. -->
+  <main class="card wide hidden" id="sec-empty">
+    <div class="wordmark"><svg class="glyph" viewBox="0 0 202 51" role="img" aria-label="Kanpachi"><use href="#kp-word"/></svg></div>
+    <p class="lede">Jugar en LAN con tus panas, sin abrir puertos ni crear cuentas.</p>
+
+    <label class="cap" for="code-input">¿Te pasaron un código?</label>
+    <div class="entry">
+      <input id="code-input" type="text" inputmode="latin" autocomplete="off"
+             autocapitalize="characters" spellcheck="false" maxlength="24"
+             placeholder="A7K2-M9QX" aria-describedby="entry-note">
+      <a class="chipbtn" id="enter" href="#" aria-disabled="true">Entrar</a>
+    </div>
+    <p class="note" id="entry-note">
+      El código no es una contraseña: te lleva a la puerta, no te mete adentro.
+      Quien te deja entrar es el host de la sala, y puede revocarte cuando quiera.
     </p>
-  </section>
 
-  <!-- Sin código, o con uno que no tiene forma de código -->
-  <section id="nocode" class="hidden">
-    <p class="notice" id="nocode-text"></p>
-    <p class="fallback">
-      <a href="/descargar">→ Descargar Kanpachi para Windows</a>
-    </p>
-  </section>
+    <div class="rule"><span>o empieza aquí</span></div>
 
-  <footer>
-    <span>SHA256: <code id="hash">pendiente</code></span>
-    <span>·</span>
+    <a class="primary" id="get" href="/descargar">Descargar Kanpachi</a>
+    <p class="note center" id="get-note"></p>
+
+    <ul class="points">
+      <li><b>Tu router no se toca.</b> Todo se conecta desde adentro, nada queda escuchando en tu IP pública.</li>
+      <li><b>Solo los puertos del juego.</b> Se abren cuando el host elige juego y se cierran al salir de la sala.</li>
+      <li><b>Sin cuentas ni telemetría.</b> No hay registro, no hay base de datos, no sale nada de tu máquina.</li>
+    </ul>
+  </main>
+
+  <!-- Invite ID válido, plataforma que no es Windows -->
+  <main class="card narrow hidden" id="sec-nowin">
+    <div class="mark sm" id="nowin-mark">
+      <svg class="glyph" id="nowin-glyph" viewBox="0 0 27.3 40.78" aria-hidden="true"><use href="#kp-mark"/></svg>
+      <span class="hidden" id="nowin-initial" aria-hidden="true"></span>
+    </div>
+    <p class="eyebrow" id="nowin-eyebrow">Te invitaron a una sala de Kanpachi</p>
+    <h1 class="title" style="font-size:23px" id="nowin-room">Sala de Kanpachi</h1>
+    <div class="codebox">
+      <div class="cap">CÓDIGO DE SALA</div>
+      <div class="val" id="nowin-code"></div>
+    </div>
+    <p class="lede" style="font-size:13px">Kanpachi todavía es solo para Windows. Copia el código y abre este enlace desde tu PC.</p>
+    <button type="button" class="primary" id="nowin-copy">Copiar código</button>
+    <a class="escape" id="anyway" href="/descargar">Ábrelo igual en esta máquina</a>
+    <div class="cardfoot" style="justify-content:center">
+      <svg class="glyph" viewBox="0 0 202 51" role="img" aria-label="Kanpachi"><use href="#kp-word"/></svg>
+    </div>
+  </main>
+
+  <!-- Descarga -->
+  <main class="card hidden" id="sec-download">
+    <div class="wordmark"><svg class="glyph" viewBox="0 0 202 51" role="img" aria-label="Kanpachi"><use href="#kp-word"/></svg></div>
+    <h1 class="title" id="dl-title">Descargar Kanpachi</h1>
+    <p class="lede" id="dl-sub"></p>
+    <a class="primary hidden" id="dl-button" href="#"></a>
+    <div class="sha hidden" id="dl-sha">
+      <div class="cap">SHA256 DEL INSTALADOR</div>
+      <div class="val" id="dl-sha-val"></div>
+    </div>
+  </main>
+</div>
+
+<footer class="bar">
+  <span id="bar-host"></span>
+  <span class="right">
     <a href="https://github.com/accentiostudios/kanpachi">Código fuente</a>
-  </footer>
-</main>
+    <span id="bar-version"></span>
+  </span>
+</footer>
 
 <script>
 (function () {
   "use strict";
 
-  // Mismo alfabeto que core/domain/code.go: los 36 alfanuméricos menos
-  // 0, O, 1 e I. Son 32 exactos, o sea 5 bits por carácter y 60 bits en 12.
-  // Si esto se desincroniza del cliente, la página aceptaría códigos que la
-  // app rechaza, que es la peor forma de fallar: el usuario cree que el
-  // problema es la app.
+  // Mismo alfabeto que core/domain/inviteid.go: los 36 alfanuméricos menos
+  // 0, O, 1 e I. Son 32 exactos. Si esto se desincroniza del cliente, la
+  // página aceptaría IDs que la app rechaza, que es la peor forma de fallar:
+  // el usuario cree que el problema es la app. Hay un test que los ata.
   var ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
-  var CODE_LEN = 12;
+  var CODE_LEN = 8;
   var DEFAULT_SEED = "kanpachi.accentio.dev";
 
-  // Tope antes de mirar el contenido. El fragmento lo controla quien manda el
-  // link, así que se trata como entrada hostil igual que en el cliente.
+  // Tope antes de mirar el contenido. La ruta y el fragmento los controla
+  // quien manda el link, así que se tratan como entrada hostil.
   var MAX_INPUT = 64;
+  var MAX_KEY = 64;
+  var MAX_NAME = 40;
+
+  // Vacío mientras no haya instalador publicado. La pantalla de descarga se
+  // adapta sola en vez de ofrecer un botón que no lleva a ningún lado.
+  var RELEASE = { version: "", size: "", sha256: "" };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var show = function (id) { $(id).classList.remove("hidden"); };
+  var hide = function (id) { $(id).classList.add("hidden"); };
+  var text = function (id, s) { $(id).textContent = s; };
 
   function normalize(raw) {
-    return raw.replace(/[-_\s]/g, "").toUpperCase();
+    return String(raw).replace(/[-_\s]/g, "").toUpperCase();
   }
 
-  function parseCode(raw) {
+  function parseInviteID(raw) {
     if (typeof raw !== "string" || raw.length > MAX_INPUT) return null;
     var n = normalize(raw);
     if (n.length !== CODE_LEN) return null;
@@ -203,77 +469,242 @@
     return n;
   }
 
-  function format(code) {
-    return code.slice(0, 4) + "-" + code.slice(4, 8) + "-" + code.slice(8, 12);
+  function format(id) {
+    return id.slice(0, 4) + "-" + id.slice(4, 8);
   }
 
-  function show(id) { document.getElementById(id).classList.remove("hidden"); }
-
-  // El fragmento se lee acá y nunca sale de este navegador.
-  // decodeURIComponent puede lanzar con secuencias mal formadas, y un throw
-  // dejaría la página en blanco, así que se atrapa.
-  var fragment = "";
-  try {
-    fragment = decodeURIComponent(window.location.hash.replace(/^#/, ""));
-  } catch (e) {
-    fragment = "";
+  // Limpia texto que viene de la tarjeta. Ya se descifró con una clave que solo
+  // tiene quien recibió el link, y aun así se recorta y se filtra: quien abrió
+  // la sala eligió estas cadenas, y no es necesariamente quien te invitó.
+  function clean(s, max) {
+    if (typeof s !== "string") return "";
+    // Fuera controles, separadores de linea, y los invisibles con los que se
+    // dibuja un nombre visualmente identico al de otra persona.
+    var invisibles = /[\u0000-\u001f\u007f-\u009f\u00ad\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u206f\ufeff]/g;
+    return s.replace(invisibles, "").trim().slice(0, max);
   }
 
-  var code = parseCode(fragment);
+  var params = new URLSearchParams(window.location.search);
+  var preview = params.get("preview");
 
-  if (!code) {
-    // Dos casos distintos merecen dos textos distintos: no traer código no es
-    // un error del usuario, traer uno roto sí necesita explicación.
-    document.getElementById("nocode-text").textContent = fragment
-      ? "Ese código no parece completo. Son 12 caracteres, revisa que el enlace se copió entero."
-      : "Este enlace abre una sala de Kanpachi. Pide el código a quien te invitó, o descarga la app.";
-    show("nocode");
-    return;
-  }
-
-  var pretty = format(code);
-  // textContent y jamás innerHTML: el fragmento lo controla quien manda el
-  // enlace. Ya está validado contra el alfabeto, y aun así no se construye
-  // HTML con él. Defensa en profundidad, no confianza en una validación.
-  document.getElementById("code").textContent = pretty;
-
-  // El seed es el dominio desde el que se sirve esta página. Sale directo de
-  // la decisión 16: quien se autohospeda sube esta misma página a su servidor
-  // y los enlaces que genere llevan su host solos, sin que él edite nada y sin
-  // que sus invitados configuren nada.
-  var host = window.location.hostname;
+  // El seed sale del dominio que sirve esta página. Quien se autohospeda sube
+  // su registro a su dominio y los enlaces que genera llevan su host solos, sin
+  // editar nada y sin que sus invitados configuren nada. Decisión 16.
+  var host = window.location.hostname || DEFAULT_SEED;
   var isDefault = (host === DEFAULT_SEED);
-  document.getElementById("server").textContent = isDefault
-    ? "Servidor: " + DEFAULT_SEED
-    : "Servidor: " + host + " (de otra persona, no el de Accentio)";
+  text("bar-host", host);
+  // Un seed ajeno se marca en el pie, donde el host ya se muestra, en vez de
+  // ocupar un chip. Es un dato, no una alarma: la advertencia con peso está en
+  // la tarjeta de confirmación de la app, que aparece siempre.
+  if (!isDefault) $("bar-host").classList.add("foreign");
+  text("bar-version", RELEASE.version ? "v" + RELEASE.version : "sin publicar");
 
-  // Un código pelado significa "seed por defecto". Para cualquier otro host se
-  // agrega explícitamente, porque el cliente jamás asume el último usado.
-  var target = isDefault ? "kanpachi://" + pretty : "kanpachi://" + pretty + "@" + host;
+  var path = window.location.pathname.replace(/^\/+|\/+$/g, "");
 
-  // SOLO con click. Nunca al cargar.
-  document.getElementById("open").addEventListener("click", function () {
-    window.location.href = target;
-  });
+  // El fragmento lleva la clave con que se descifra la tarjeta de sala. No se
+  // envía en la petición HTTP, así que el registro guarda y sirve bytes que no
+  // puede leer. Decisión 17.
+  var cardKey = "";
+  try {
+    var frag = window.location.hash.replace(/^#/, "");
+    if (frag.length <= MAX_KEY && /^[A-Za-z0-9_-]*$/.test(frag)) cardKey = frag;
+  } catch (e) {
+    cardKey = "";
+  }
 
-  document.getElementById("copy").addEventListener("click", function (ev) {
-    var btn = ev.currentTarget;
-    var done = function () {
-      btn.textContent = "Copiado";
-      setTimeout(function () { btn.textContent = "Copiar"; }, 1600);
-    };
-    // El portapapeles moderno exige contexto seguro y puede ser denegado. El
-    // respaldo mantiene viva la tercera salida: copiar el código a mano es la
-    // vía que funciona pase lo que pase.
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(pretty).then(done, function () { selectCode(); });
+  var isWindows = /Windows NT/i.test(navigator.userAgent);
+  if (navigator.userAgentData && navigator.userAgentData.platform) {
+    isWindows = navigator.userAgentData.platform === "Windows";
+  }
+
+  // ---- Enrutado de pantalla ------------------------------------------------
+
+  if (preview) { renderPreview(preview); return; }
+
+  if (path === "descargar") { renderDownload(); return; }
+
+  if (path === "") { renderHome(); return; }
+
+  var id = parseInviteID(path);
+  if (!id) { renderBadCode(path); return; }
+
+  renderRoom(id);
+
+  // ---- Pantallas -----------------------------------------------------------
+
+  function renderBadCode(raw, notFound) {
+    if (notFound) {
+      text("bad-title", "Esa sala no existe");
+      text("bad-lede", "El código tiene la forma correcta, el servidor no la conoce. Puede que la sala ya se haya cerrado, o que el código se haya renovado.");
     } else {
-      selectCode();
+      text("bad-lede", "Son " + CODE_LEN + " caracteres. Revisa que el enlace se haya copiado entero, o pídelo de nuevo a quien te invitó.");
+      var partial = normalize(raw).slice(0, CODE_LEN);
+      if (partial) {
+        // textContent en las dos mitades, jamás innerHTML: esto viene de la
+        // URL, o sea de quien mandó el link.
+        var node = $("bad-partial");
+        var got = document.createElement("span");
+        got.textContent = partial;
+        var rest = document.createElement("span");
+        rest.className = "rest";
+        rest.textContent = new Array(CODE_LEN - partial.length + 1).join("·");
+        node.appendChild(got);
+        node.appendChild(rest);
+        show("bad-partial");
+      }
     }
-  });
+    show("sec-badcode");
+  }
 
-  function selectCode() {
-    var el = document.getElementById("code");
+  // La portada, en /. Dos salidas y nada más: entrar con un código que te
+  // pasaron, o instalar. Todo lo demás de esta pantalla es explicar por qué
+  // instalar esto no le abre un agujero a nadie.
+  function renderHome() {
+    var campo = $("code-input");
+    var boton = $("enter");
+
+    // "Entrar" es un enlace de verdad, con su href, y no una navegación por
+    // JavaScript. Así el único window.location.href de la página sigue siendo
+    // el del intent kanpachi://, que es la regla que el test de arquitectura
+    // vigila. De paso funciona con el botón central del ratón y con "abrir en
+    // pestaña nueva", que una navegación programática rompe.
+    var revisar = function () {
+      var id = parseInviteID(campo.value);
+      campo.classList.remove("wrong");
+      if (id) {
+        boton.setAttribute("href", "/" + format(id));
+        boton.removeAttribute("aria-disabled");
+      } else {
+        boton.setAttribute("href", "#");
+        boton.setAttribute("aria-disabled", "true");
+      }
+      return id;
+    };
+
+    campo.addEventListener("input", revisar);
+    campo.addEventListener("keydown", function (ev) {
+      if (ev.key !== "Enter") return;
+      ev.preventDefault();
+      if (revisar()) boton.click();
+      else marcarMal();
+    });
+    boton.addEventListener("click", function (ev) {
+      if (boton.getAttribute("aria-disabled") === "true") {
+        ev.preventDefault();
+        marcarMal();
+      }
+    });
+
+    function marcarMal() {
+      // Solo se queja si el usuario ya escribió algo. Regañar un campo vacío
+      // porque alguien pulsó Entrar de más es ruido.
+      if (!campo.value.trim()) { campo.focus(); return; }
+      campo.classList.add("wrong");
+      $("entry-note").classList.add("wrong");
+      text("entry-note", "Ese código no tiene la forma correcta. Son " + CODE_LEN +
+        " caracteres, sin las letras que se confunden con números.");
+    }
+
+    aplicarPlataforma();
+    show("sec-empty");
+  }
+
+  // La descarga se adapta a lo que detectamos. La detección se equivoca, así
+  // que jamás bloquea: en cualquier plataforma el enlace sigue llevando al
+  // instalador, y lo único que cambia es lo que se le explica al usuario.
+  function aplicarPlataforma() {
+    var boton = $("get");
+    if (!RELEASE.version) {
+      boton.textContent = "Descargar Kanpachi";
+      text("get-note", "Todavía no hay instalador publicado.");
+      return;
+    }
+    if (isWindows) {
+      boton.textContent = "Descargar Kanpachi para Windows";
+      text("get-note", "Windows 10 y 11 · " + RELEASE.size + " · un solo UAC");
+      return;
+    }
+    boton.textContent = "Descargar el instalador de Windows";
+    text("get-note", "Kanpachi todavía es solo para Windows. Puedes bajarlo desde " +
+      "acá y pasarlo a tu PC, o pedir el código y abrirlo allá.");
+  }
+
+  function renderDownload() {
+    if (!RELEASE.version) {
+      text("dl-title", "Todavía no hay instalador");
+      text("dl-sub", "Kanpachi está en construcción. Cuando haya una versión publicada, aparece acá con su hash para que puedas verificarla.");
+      show("sec-download");
+      return;
+    }
+    text("dl-sub", "Windows 10 y 11 · 64-bit · se instala con un solo UAC");
+    var b = $("dl-button");
+    b.textContent = "Kanpachi " + RELEASE.version + " · " + RELEASE.size;
+    b.setAttribute("href", "/descargar/kanpachi-" + RELEASE.version + ".exe");
+    show("dl-button");
+    text("dl-sha-val", RELEASE.sha256);
+    show("dl-sha");
+    show("sec-download");
+  }
+
+  function renderRoom(id) {
+    var pretty = format(id);
+    // Un ID pelado significa el seed por defecto. Para cualquier otro host se
+    // agrega explícitamente, porque el cliente jamás asume el último usado.
+    var target = isDefault ? "kanpachi://" + pretty : "kanpachi://" + pretty + "@" + host;
+
+    if (!isWindows) {
+      text("nowin-code", pretty);
+      $("anyway").setAttribute("href", target);
+      wireCopy("nowin-copy", pretty, "Copiar código");
+      show("sec-nowin");
+      loadCard(id, "nowin-eyebrow", "nowin-room");
+      return;
+    }
+
+    text("copy-text", pretty);
+    wireCopy("copy", pretty, pretty);
+    text("roomname", pretty);
+
+    // SOLO con click. Nunca al cargar. Escrito sin el atajo $() a propósito:
+    // es el enlace que el test de arquitectura ancla para verificar que la
+    // navegación a kanpachi:// vive dentro del manejador y en ningún otro lado.
+    document.getElementById("open").addEventListener("click", function () {
+      var btn = $("open");
+      btn.classList.add("busy");
+      show("glare");
+      text("open-text", "Abriendo Kanpachi");
+      setTimeout(function () {
+        btn.classList.remove("busy");
+        hide("glare");
+        text("open-text", "Abrir en Kanpachi");
+      }, 2600);
+      window.location.href = target;
+    });
+
+    show("sec-invite");
+    loadCard(id, "eyebrow", "roomname");
+  }
+
+  function wireCopy(btnID, value, restore) {
+    $(btnID).addEventListener("click", function (ev) {
+      var btn = ev.currentTarget;
+      var slot = btnID === "copy" ? $("copy-text") : btn;
+      var done = function () {
+        slot.textContent = "Código copiado";
+        setTimeout(function () { slot.textContent = restore; }, 1800);
+      };
+      // El portapapeles moderno exige contexto seguro y puede ser denegado. El
+      // respaldo mantiene viva la tercera salida: copiar el código a mano es la
+      // vía que funciona pase lo que pase.
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(value).then(done, function () { selectText(slot); });
+      } else {
+        selectText(slot);
+      }
+    });
+  }
+
+  function selectText(el) {
     var range = document.createRange();
     range.selectNodeContents(el);
     var sel = window.getSelection();
@@ -281,7 +712,128 @@
     sel.addRange(range);
   }
 
-  show("invite");
+  // ---- El registro ---------------------------------------------------------
+
+  // Una sola petición, al MISMO origen. Si falla, la página se queda como está:
+  // tarjeta genérica, contador oculto, y el botón de entrar intacto. Que el
+  // registro esté caído no puede impedir que alguien entre a una sala.
+  function loadCard(id, eyebrowID, nameID) {
+    fetch("/api/i/" + encodeURIComponent(id), { cache: "no-store" })
+      .then(function (res) {
+        if (res.status === 404) throw { notFound: true };
+        if (!res.ok) throw new Error("registro no disponible");
+        return res.json();
+      })
+      .then(function (data) { return applyCard(data, eyebrowID, nameID); })
+      .catch(function (err) {
+        if (err && err.notFound) {
+          hide("sec-invite");
+          hide("sec-nowin");
+          renderBadCode("", true);
+        }
+        // Cualquier otro fallo se traga a propósito: no hay nada que decirle al
+        // usuario, y el camino principal sigue funcionando sin esto.
+      });
+  }
+
+  function applyCard(data, eyebrowID, nameID) {
+    if (data && typeof data.members === "number" && data.members > 0 && eyebrowID === "eyebrow") {
+      text("members-text", data.members === 1 ? "1 en la sala" : data.members + " en la sala");
+      show("members");
+      $("mark").classList.add("live");
+    }
+    if (!data || !data.card || !cardKey) return;
+    return decryptCard(data.card, cardKey).then(function (card) {
+      var nick = clean(card.host, 12);
+      var name = clean(card.room, MAX_NAME);
+      // "Se identifica como", jamás "te invitó". El nickname no se verifica,
+      // decisión 21, así que la página no puede afirmar quién es.
+      //
+      // La huella de la llave del host NO se muestra acá. El navegador no tiene
+      // memoria de con quién jugaste, así que un montón de caracteres sin nada
+      // contra qué compararlos no informa, decora. La comparación ocurre en la
+      // tarjeta de confirmación de la app, que sí tiene la libreta. Decisión 25.
+      if (nick) {
+        text(eyebrowID, "Se identifica como " + nick);
+        setInitial(eyebrowID === "eyebrow" ? "mark" : "nowin", nick);
+      }
+      if (name) text(nameID, name);
+    }, function () {
+      // Clave equivocada o tarjeta manipulada. AES-GCM autentica, así que un
+      // fallo acá significa que el contenido no es de fiar: se descarta entero
+      // y queda la tarjeta genérica.
+    });
+  }
+
+  // La inicial del host reemplaza a la marca de Kanpachi en el avatar, que es
+  // lo que hace el diseño. La marca queda de respaldo para cuando no hay
+  // tarjeta, o sea un ID dictado por teléfono sin el fragmento.
+  function setInitial(prefijo, nick) {
+    var glifo = prefijo === "mark" ? "mark-glyph" : "nowin-glyph";
+    var slot = prefijo === "mark" ? "mark-initial" : "nowin-initial";
+    text(slot, nick.charAt(0).toUpperCase());
+    hide(glifo);
+    show(slot);
+  }
+
+  function b64uToBytes(s) {
+    try {
+      var b = atob(String(s).replace(/-/g, "+").replace(/_/g, "/"));
+      var out = new Uint8Array(b.length);
+      for (var i = 0; i < b.length; i++) out[i] = b.charCodeAt(i);
+      return out;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // AES-GCM con los 12 primeros bytes de nonce. El registro guarda esto tal
+  // cual y no tiene la clave, así que no puede leerlo ni alterarlo sin que el
+  // descifrado falle.
+  function decryptCard(blobB64u, keyB64u) {
+    var blob = b64uToBytes(blobB64u), key = b64uToBytes(keyB64u);
+    if (!blob || !key || blob.length < 29 || key.length !== 32) {
+      return Promise.reject(new Error("tarjeta o clave con forma inválida"));
+    }
+    return crypto.subtle.importKey("raw", key, "AES-GCM", false, ["decrypt"])
+      .then(function (k) {
+        return crypto.subtle.decrypt({ name: "AES-GCM", iv: blob.slice(0, 12) }, k, blob.slice(12));
+      })
+      .then(function (plain) {
+        var parsed = JSON.parse(new TextDecoder().decode(plain));
+        if (!parsed || typeof parsed !== "object") throw new Error("tarjeta con forma inválida");
+        return parsed;
+      });
+  }
+
+  // ---- Previsualización ----------------------------------------------------
+
+  // Existe para revisar el diseño sin montar el registro. No cambia nada de la
+  // lógica de arriba: rellena a mano y muestra la sección que se le pide.
+  function renderPreview(which) {
+    var demo = "A7K2-M9QX";
+    if (which === "empty" || which === "home") { renderHome(); return; }
+    if (which === "download") { renderDownload(); return; }
+    if (which === "badcode") { renderBadCode("A7K2M"); return; }
+    if (which === "nowin") {
+      text("nowin-eyebrow", "Se identifica como Humberto");
+      text("nowin-room", "La Guarida");
+      text("nowin-code", demo);
+      setInitial("nowin", "Humberto");
+      wireCopy("nowin-copy", demo, "Copiar código");
+      show("sec-nowin");
+      return;
+    }
+    text("eyebrow", "Se identifica como Humberto");
+    text("roomname", "La Guarida");
+    setInitial("mark", "Humberto");
+    text("members-text", "4 en la sala");
+    show("members");
+    $("mark").classList.add("live");
+    text("copy-text", demo);
+    wireCopy("copy", demo, demo);
+    show("sec-invite");
+  }
 })();
 </script>
 </body>
