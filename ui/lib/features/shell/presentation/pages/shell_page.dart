@@ -69,9 +69,17 @@ class _WindowBody extends StatelessWidget {
     final ShellState shell = context.watch<ShellCubit>().state;
     final SessionState session = context.watch<SessionCubit>().state;
 
+    // `fit: expand` y no un `Positioned.fill` suelto. Un Stack se mide por sus
+    // hijos NO posicionados, y cuando no hay diálogo la capa de diálogos es un
+    // `SizedBox.shrink()`: con todo lo demás posicionado, el Stack medía cero
+    // de ancho y la ventana salía en blanco. Con diálogo abierto no pasaba
+    // — el modal es `Positioned.fill`, no quedaba ningún hijo sin posicionar
+    // y el Stack se iba a `constraints.biggest` — que es justo la clase de
+    // bug que aparece en una pantalla y no en la de al lado.
     return Stack(
+      fit: StackFit.expand,
       children: <Widget>[
-        const Positioned.fill(child: _CurrentScreen()),
+        const _CurrentScreen(),
         // Dentro del marco y no como ruta aparte: los tres diálogos confirman
         // algo que cambia la sala que se ve por detrás, y dejarla visible tras
         // el velo es lo que da contexto a qué se está confirmando.

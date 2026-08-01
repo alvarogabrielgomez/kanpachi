@@ -37,31 +37,46 @@ class AppStatusDot extends StatefulWidget {
 
 class _AppStatusDotState extends State<AppStatusDot>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: widget.pulseDuration,
-  );
+  /// Nulo mientras no lata, y nulable a propósito.
+  ///
+  /// Con `late final … = AnimationController(...)` el campo se inicializa en el
+  /// primer acceso, y un punto que no late no lo toca en toda su vida: el
+  /// primer acceso acaba siendo el `dispose()`. Ahí el Element ya está muerto,
+  /// así que crear el Ticker busca un `TickerMode` heredado desde un árbol
+  /// desactivado y revienta. La mayoría de los puntos de la app no laten —
+  /// cada miembro de la sala, cada aviso — así que pasaba al salir de casi
+  /// cualquier pantalla.
+  AnimationController? _controller;
 
   @override
   void initState() {
     super.initState();
-    if (widget.pulse) _controller.repeat(reverse: true);
+    if (widget.pulse) _latir();
+  }
+
+  void _latir() {
+    (_controller ??= AnimationController(
+      vsync: this,
+      duration: widget.pulseDuration,
+    ))
+        .repeat(reverse: true);
   }
 
   @override
   void didUpdateWidget(AppStatusDot oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.pulse && !_controller.isAnimating) {
-      _controller.repeat(reverse: true);
-    } else if (!widget.pulse && _controller.isAnimating) {
-      _controller.stop();
-      _controller.value = 0;
+    final AnimationController? c = _controller;
+    if (widget.pulse) {
+      if (c == null || !c.isAnimating) _latir();
+    } else if (c != null && c.isAnimating) {
+      c.stop();
+      c.value = 0;
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -72,9 +87,10 @@ class _AppStatusDotState extends State<AppStatusDot>
       size: widget.size,
       square: widget.square,
     );
-    if (!widget.pulse) return dot;
+    final AnimationController? c = _controller;
+    if (!widget.pulse || c == null) return dot;
     return FadeTransition(
-      opacity: Tween<double>(begin: 1, end: 0.3).animate(_controller),
+      opacity: Tween<double>(begin: 1, end: 0.3).animate(c),
       child: dot,
     );
   }

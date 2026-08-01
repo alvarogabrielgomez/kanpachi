@@ -30,8 +30,26 @@ abstract final class AppSpacing {
   /// densidad: lo que se comprime es el aire vertical, no el ancho de lectura.
   static const double pageInline = 30;
 
-  /// Ancho de la ventana de la app tal como la dibuja el diseño.
-  static const double shellWidth = 940;
+  /// Hasta dónde crece el contenido antes de dejar de crecer y centrarse.
+  ///
+  /// Es el ancho de la ventana que dibuja el diseño, y arriba de eso no hay
+  /// diseño: una ventana maximizada en un monitor de 1440p daría dos columnas
+  /// de 1200 px y renglones que no se pueden leer de corrido. Que sobre margen
+  /// a los lados es la respuesta correcta, no un desperdicio.
+  static const double contentMax = 940;
+
+  /// El tamaño mínimo de la ventana, el que impone `main()`.
+  ///
+  /// Vive acá y no suelto en `main.dart` porque es la condición de contorno de
+  /// todo layout de la app: por debajo de esto nadie tiene que responder, y por
+  /// encima todo tiene que aguantar. El test de layout prueba exactamente este
+  /// tamaño, así que subirlo sin mirar deja pantallas sin cubrir.
+  static const Size minWindow = Size(720, 520);
+
+  /// Con la que abre. El ancho del diseño más el aire de los lados; el alto da
+  /// para la sala entera sin scroll, que es la pantalla más larga de uso
+  /// normal.
+  static const Size initialWindow = Size(1000, 720);
 
   static const double titleBarHeight = 44;
   static const double statusBarHeight = 38;

@@ -143,26 +143,35 @@ class _RoomHeaderState extends State<_RoomHeader> {
             ],
           ),
         ),
-        Wrap(
-          spacing: AppSpacing.md,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: <Widget>[
-            AppChip(room.code),
-            CopyButton(
-              label: 'Copiar enlace',
-              height: 36,
-              value: 'https://kanpachi.accentio.dev/${room.code}',
-            ),
-            if (room.selfIsHost)
-              AppButton(
-                label: 'Renovar código',
-                variant: AppButtonVariant.ghost,
+        // Flexible y no suelto. Un `Wrap` que va de hijo no-flexible de un
+        // `Row` se mide con ancho infinito, así que NUNCA envuelve: se queda
+        // en una línea, se lleva todo el ancho y deja al título con 19 px.
+        // Acotado, cuando no cabe pasa el botón de más a la derecha al
+        // renglón de abajo, que es para lo que existe un Wrap.
+        Flexible(
+          child: Wrap(
+            spacing: AppSpacing.md,
+            runSpacing: AppSpacing.md,
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              AppChip(room.code),
+              CopyButton(
+                label: 'Copiar enlace',
                 height: 36,
-                onPressed: () => context
-                    .read<ShellCubit>()
-                    .showDialog(AppDialog.confirmRenew),
+                value: 'https://kanpachi.accentio.dev/${room.code}',
               ),
-          ],
+              if (room.selfIsHost)
+                AppButton(
+                  label: 'Renovar código',
+                  variant: AppButtonVariant.ghost,
+                  height: 36,
+                  onPressed: () => context
+                      .read<ShellCubit>()
+                      .showDialog(AppDialog.confirmRenew),
+                ),
+            ],
+          ),
         ),
       ],
     );
@@ -186,9 +195,16 @@ class _NameDisplay extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Text(
-          name,
-          style: context.type.titleLg.copyWith(color: colors.text),
+        // Flexible y no suelto: el nombre lo escribe el host, hasta 24
+        // caracteres, y en la ventana mínima no cabe entero junto a los tres
+        // botones de la derecha. Cede él, que se puede recortar; los botones no.
+        Flexible(
+          child: Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.type.titleLg.copyWith(color: colors.text),
+          ),
         ),
         if (canEdit) ...<Widget>[
           const SizedBox(width: AppSpacing.sm),
@@ -215,8 +231,11 @@ class _NameEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 360,
+    // Tope, no ancho fijo. En la ventana mínima quedan menos de 300 px a la
+    // izquierda de los botones, y un `SizedBox(width: 360)` ahí se desborda
+    // justo cuando el host está escribiendo dentro.
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 360),
       child: AppField(
         controller: controller,
         maxLength: 24,

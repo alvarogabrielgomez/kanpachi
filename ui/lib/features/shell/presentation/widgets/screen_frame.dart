@@ -55,7 +55,18 @@ class ScreenBody extends StatelessWidget {
           AppSpacing.pageInline,
           bottom ?? d.pagePad,
         ),
-        child: child,
+        // El contenido crece con la ventana hasta un tope y ahí se centra. Sin
+        // tope, maximizar en un monitor grande estira las dos columnas hasta
+        // renglones que no se leen de corrido y separa el título de la sala de
+        // sus botones por medio metro de vacío. Se pone acá, en el marco, y no
+        // en cada pantalla: es una decisión de la app, no de once pantallas que
+        // acabarían con once topes distintos.
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AppSpacing.contentMax),
+            child: child,
+          ),
+        ),
       ),
     );
   }

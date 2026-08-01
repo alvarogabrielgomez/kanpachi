@@ -63,7 +63,12 @@ class AppModal extends StatelessWidget {
                         ),
                       ],
                     ),
-                    child: child,
+                    // Si no cabe a lo alto, se recorre. Un modal que se sale
+                    // de la ventana se come sus propios botones, y entonces
+                    // no hay forma de confirmar ni de cancelar lo que vino a
+                    // preguntar. Pasa de verdad: ventana en el mínimo, o el
+                    // texto largo de la regla ajena.
+                    child: SingleChildScrollView(child: child),
                   ),
                 ),
               ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/theme/app_theme.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/density_tokens.dart';
+import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/pages/shell_page.dart';
@@ -26,10 +27,8 @@ Future<void> main() async {
 Future<void> _prepareWindow() async {
   await windowManager.ensureInitialized();
   const WindowOptions options = WindowOptions(
-    // El ancho del diseño más el aire de los lados. El alto da para la sala
-    // entera sin scroll, que es la pantalla más larga de uso normal.
-    size: Size(1000, 720),
-    minimumSize: Size(720, 520),
+    size: AppSpacing.initialWindow,
+    minimumSize: AppSpacing.minWindow,
     center: true,
     backgroundColor: Colors.transparent,
     skipTaskbar: false,
