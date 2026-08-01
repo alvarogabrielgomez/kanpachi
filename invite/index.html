@@ -142,24 +142,35 @@
   .entry input {
     flex: 1 1 auto; min-width: 0;
     background: var(--chip); color: var(--text);
-    border: 1px solid transparent; border-radius: 14px;
-    padding: 15px 18px;
+    border: 1px solid transparent; border-radius: 999px;
+    padding: 16px 22px;
     font: 400 15px/1 ui-monospace, Consolas, monospace;
     letter-spacing: .08em;
   }
   .entry input::placeholder { color: var(--muted); opacity: .7; }
   .entry input:focus { outline: none; border-color: var(--accent); }
   .entry input.wrong { border-color: var(--warn); }
+
+  /* Entrar se enciende cuando lo escrito ya tiene forma de invite ID. Es la
+     única confirmación de que el código está completo antes de pulsar, y sin
+     ella el usuario descubre que le falta un carácter recién en la pantalla
+     siguiente. Apagado no se ve deshabilitado, se ve en espera. */
   .chipbtn {
     display: flex; align-items: center;
-    background: var(--chip); color: var(--text);
-    border: none; border-radius: 14px; padding: 0 22px;
+    background: var(--chip); color: var(--muted);
+    border: none; border-radius: 999px; padding: 0 26px;
     font: 700 14px/1 system-ui, sans-serif;
-    cursor: pointer; white-space: nowrap;
-    transition: filter .18s, opacity .18s;
+    cursor: default; white-space: nowrap;
+    transition: background .18s, color .18s, box-shadow .18s, transform .12s;
   }
-  .chipbtn:hover { filter: brightness(1.08); text-decoration: none; }
-  .chipbtn[aria-disabled="true"] { opacity: .5; cursor: default; }
+  .chipbtn:not([aria-disabled="true"]) {
+    background: var(--accent); color: var(--accent-ink);
+    cursor: pointer;
+    box-shadow: 0 5px 0 var(--accent-shadow);
+  }
+  .chipbtn:not([aria-disabled="true"]):hover { transform: translateY(-1px); box-shadow: 0 6px 0 var(--accent-shadow); text-decoration: none; }
+  .chipbtn:not([aria-disabled="true"]):active { transform: translateY(3px); box-shadow: 0 2px 0 var(--accent-shadow); }
+  .chipbtn:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
 
   .note { text-align: left; font: 400 12.5px/1.5 system-ui, sans-serif; color: var(--muted); margin: 10px 0 0; text-wrap: pretty; }
   .note.center { text-align: center; margin-top: 10px; }
