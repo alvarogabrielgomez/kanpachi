@@ -61,7 +61,7 @@ jobs:
             Nodo de encuentro de Kanpachi.
 
             ```
-            curl -fsSL https://raw.githubusercontent.com/accentiostudios/kanpachi/main/seed/install.sh | sudo sh
+            curl -fsSL https://raw.githubusercontent.com/alvarogabrielgomez/kanpachi/main/seed/install.sh | sudo sh
             ```
 
             El instalador elige un puerto interno libre y lo imprime al terminar:

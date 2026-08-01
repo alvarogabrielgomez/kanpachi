@@ -1,7 +1,7 @@
 #!/bin/sh
 # Instalador de kanpachi-seed.
 #
-#   curl -fsSL https://raw.githubusercontent.com/accentiostudios/kanpachi/main/seed/install.sh | sudo sh
+#   curl -fsSL https://raw.githubusercontent.com/alvarogabrielgomez/kanpachi/main/seed/install.sh | sudo sh
 #
 # Baja el binario, comprueba su firma de contenido, y le cede el trabajo a
 # `kanpseed init`, que es quien elige puertos, coloca EasyTier, escribe los
@@ -14,7 +14,7 @@
 # POSIX sh, sin bashismos: el droplet trae dash como /bin/sh.
 set -eu
 
-REPO="accentiostudios/kanpachi"
+REPO="alvarogabrielgomez/kanpachi"
 DESTINO="/usr/local/bin/kanpseed"
 
 decir()  { printf '%s\n' "$*"; }
