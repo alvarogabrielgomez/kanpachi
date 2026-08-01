@@ -66,60 +66,78 @@ En orden: detener y borrar el servicio, purgar todas las reglas del grupo "Kanpa
 
 ## Configuración del droplet (kanpachi-seed)
 
-Contexto: droplet DigitalOcean NYC3 ya existente, Docker sobre Ubuntu, con Reserved IP. El seed convive con las cargas de Accentio, aislado en su propia red de contenedores.
+Contexto: droplet DigitalOcean NYC3 ya existente, Ubuntu con systemd, con Reserved IP. El seed convive con las cargas de Accentio, que sí viven en Docker.
 
-El archivo vive en `seed/docker-compose.yml` del repositorio y se despliega en `~/apps/kanpachi-seed/`, siguiendo la convención del droplet. **Desplegado y verificado el 2026-07-31.**
-
-### Dos procesos, no uno
-
-```
-easytier-core       upstream sin modificar, 11010 TCP y UDP
-                    rpc en 127.0.0.1:15888
-kanpachi-registry   nuestro. Invoca easytier-cli contra ese rpc, sirve / y /api
-                    publicado como 127.0.0.1:8010 en el host
-```
-
-El registro es lo que hace que esto sea `kanpachi-seed` y no una instalación plana de EasyTier, ver decisión 24. Habla con el motor invocando su CLI, o sea como proceso hijo y jamás vinculado, así que no arrastra su LGPL-3.0.
-
-**Cada contenedor con su propio espacio de red**, los dos en `kanpachi-net` con subred fijada en `10.77.7.0/24`. La subred se fija porque la lista blanca del portal RPC la nombra, y no puede depender de lo que Docker asigne ese día.
-
-Compartir espacio de red entre ambos (`network_mode: service:`) fue el primer intento y **hay que no repetirlo**: al reiniciarse el motor, su espacio se destruye y el registro se queda con un socket en un espacio muerto, "Up" para Docker y sin responder, sin un error en los logs. Ver `03-arquitectura.md` para el razonamiento completo.
-
-El registro escucha en `0.0.0.0` dentro del contenedor: publicar un puerto hace DNAT hacia la IP del contenedor y no hacia su loopback, así que un bind a `127.0.0.1` ahí dentro no recibiría nada. Quien restringe es el `127.0.0.1:` del lado del host.
-
-**La imagen del registro se construye SOBRE la de EasyTier.** El registro necesita `easytier-cli` y necesita que corra; copiarlo a una base cualquiera es apostar a que coincidan libc y versión, y partir de su imagen elimina la apuesta. Sigue siendo agregación y no vinculación: son ejecutables que conviven y se invocan como procesos.
+### Una sola ejecución
 
 ```bash
-docker compose build          # el contexto es la raíz del repo, no seed/
-docker compose up -d
-curl -s localhost:8010/healthz
+curl -fsSL https://raw.githubusercontent.com/accentiostudios/kanpachi/main/seed/install.sh | sudo sh
 ```
 
-El nginx del droplet apunta a `127.0.0.1:8010` con esquema **`http`**: TLS termina en el proxy y hacia atrás va plano por loopback. Público en `https` con Let's Encrypt y Force SSL. Esto último no es cosmético, la página usa `navigator.clipboard` para el botón de copiar y esa API solo existe en contexto seguro.
+Baja el binario, verifica su SHA256, y le cede el trabajo a `kanpseed init`, que elige puertos, coloca EasyTier, escribe los servicios y **imprime el puerto interno** que hay que poner en el proxy inverso.
 
-Ambos contenedores usan `network_mode: bridge` en vez de crear una red propia. Crear una red reescribe reglas de iptables, y en este droplet ya conviven once redes con CrowdSec y npmplus tocando las suyas.
+Sin Docker. El razonamiento está en `03-arquitectura.md`: se implementó con contenedores primero y se descartó por evidencia.
 
-### Lo que no se deduce leyendo el YAML
+```
+kanpseed-engine.service     easytier-core, 11010 TCP y UDP
+                            rpc en 127.0.0.1:15888
+kanpseed-registry.service   kanpseed serve, sirve / y /api
+                            127.0.0.1:<el puerto que eligió el instalador>
+```
+
+### El CLI
+
+Un solo binario, `kanpseed`. Se llama así y no `kanpachi` porque ese nombre queda reservado para el cliente de terminal de Linux, que entrará y creará salas y es otra cosa.
+
+| Comando | Para qué |
+|---|---|
+| `kanpseed init` | instala y configura todo. Idempotente: repetirlo conserva los puertos |
+| `kanpseed doctor` | revisa archivos, servicios, puertos, RPC y salud, y dice qué hacer con cada fallo |
+| `kanpseed config` | muestra o cambia puertos y dominio, reescribe las units y reinicia |
+| `kanpseed nginx` | repite el bloque del proxy, para no tener que recordar el puerto |
+| `kanpseed uninstall` | deja la máquina como estaba |
+| `kanpseed serve` | lo arranca systemd. No hace falta a mano |
+
+### El puerto interno se elige y se imprime
+
+`init` busca el primer puerto libre desde el 8010 comprobándolo **con un bind de verdad**, no leyendo una tabla. Si el 8010 está tomado sigue por el 8011, y así hasta el 8099. Al terminar lo imprime en una caja, porque es el dato que hay que llevar al proxy inverso.
+
+Lo que esa comprobación **no** puede saber: un puerto libre ahora mismo puede estar reservado en la configuración de otro servicio que esté apagado. Por eso se imprime en vez de darse por obvio, y por eso `kanpseed nginx` lo repite cuando haga falta.
+
+El puerto del motor, el 11010, es distinto: **va compilado en el cliente**, así que moverlo obliga a publicar una versión nueva. Si está ocupado, `init` avisa y pregunta antes de seguir.
+
+### El proxy inverso
+
+Esquema **`http`** hacia `127.0.0.1:<puerto>`: el TLS termina en el proxy y hacia atrás va plano por loopback. Público en `https` con Let's Encrypt y **Force SSL**, que no es cosmético: la página usa `navigator.clipboard` para el botón de copiar y esa API solo existe en contexto seguro.
+
+`X-Forwarded-For` tampoco es opcional. El límite de tasa del registro cuenta por IP, y sin esa cabecera todas las visitas parecen una sola, o sea que el límite se convertiría en una denegación de servicio contra todo el mundo a la vez.
+
+### Lo que systemd aporta y hay que no deshacer
+
+- **`WatchdogSec=30s` con `sd_notify`.** `Restart=always` solo actúa cuando el proceso muere; el latido cubre el proceso vivo pero colgado. Verificado con un `SIGSTOP`: systemd lo reinició a los 29 segundos.
+- **`BindsTo=` del registro hacia el motor.** Si el motor se detiene, el registro se detiene con él y vuelve con él, en vez de quedarse sirviendo páginas sin contador para siempre.
+- **`DynamicUser=yes`, `ProtectSystem=strict`, `CapabilityBoundingSet=` vacío.** Ninguno de los dos procesos escribe en disco ni necesita capacidades. El motor escucha en un puerto público y habla con desconocidos, así que es el que más lo merece.
+- **`MemoryMax` y `CPUQuota`.** El droplet comparte casa con Vaultwarden, Logto y varias bases de datos.
+
+### Lo que el motor lleva, y por qué
 
 | Ajuste | Por qué |
 |---|---|
-| `image: easytier/easytier:v2.6.4` | Versión fijada, jamás `latest`. Una actualización sorpresa del motor cambia el comportamiento de la red de todo el grupo sin que nadie lo haya pedido |
+| Versión fijada, jamás `latest` | Una actualización sorpresa del motor cambia el comportamiento de la red de todo el grupo sin que nadie lo haya pedido. El instalador verifica su SHA256 antes de colocarlo |
 | `--disable-upnp true` | El motor mapea puertos por defecto. Acá no hay router que tocar, y es una invariante del producto |
 | `--stun-servers` y `--stun-servers-v6` vacíos | STUN sirve para descubrir el propio NAT, y este nodo tiene IP pública directa. Con los valores por defecto, el droplet **estaba mandando tráfico saliente a servidores STUN de terceros**. Detectado en los logs al desplegar |
-| `--no-tun true` | El seed presenta peers, no necesita interfaz virtual. Así el contenedor no pide `NET_ADMIN` ni `/dev/net/tun` |
-| `--rpc-portal 127.0.0.1:15888` | Es el panel de control del motor. Queda en el loopback del contenedor y no se publica, o sea solo se alcanza por `docker exec` |
+| `--no-tun true` | El seed presenta peers, no necesita interfaz virtual. Así el servicio no requiere `NET_ADMIN` y puede correr con capacidades vacías |
+| `--rpc-portal 127.0.0.1` | Es el panel de control del motor. Solo loopback, y `doctor` comprueba que no responda desde fuera |
 | Sin `--network-name` ni `--network-secret` | **El seed no se une a ninguna sala.** Es lo que garantiza que jamás vea el secreto de una red |
-| El registro lee `peer list-foreign` por RPC | De ahí sale el contador de miembros, sin cooperación del host y sin unirse a nada. El mismo JSON confirma que ahí **no hay hostnames**: el nick viaja dentro de la red cifrada. Verificado contra la v2.6.4 con tres clientes en dos redes |
-| El registro vive en memoria, con TTL | Sin base de datos y sin disco. Muere con la sala, salvo la llave fijada del host, que dura semanas para que reabrir con el mismo invite ID siga siendo suyo |
+| El registro lee `peer list-foreign` | De ahí sale el contador de miembros, sin cooperación del host. El mismo JSON confirma que ahí **no hay hostnames**: el nick viaja dentro de la red cifrada |
 | Límite de tasa en `/api` | 40 bits de invite ID son enumerables sin él. Es la defensa que reemplazó a los 60 bits del diseño anterior, ver decisión 24 |
-| `cpu_period` y `cpu_quota` explícitos | `cpus: 0.5` se acepta sin error en Compose v2.17 y **no llega al contenedor**: `docker inspect` mostraba `CpuQuota: 0`. Verificado tras el primer despliegue |
 
 Checklist del droplet:
 
 1. **Cloud Firewall de DigitalOcean:** 11010 TCP y UDP entrantes. Verificado alcanzable desde una máquina externa. Ningún otro puerto nuevo.
 2. **Semilla en el cliente:** compilar la **Reserved IP**, nunca la IP pública directa del droplet. La reservada se mueve de máquina sin releasear el cliente. Pendiente confirmar cuál de las dos es la reservada.
 3. **DNS opcional:** un registro tipo `_seeds.kanpachi.dev` como fuente primaria de semillas, con la IP compilada de respaldo. Dos fuentes siempre.
-4. **Actualización manual y deliberada:** subir la versión fijada en el compose, luego `docker compose up -d`. Nada de `pull` a `latest`.
+4. **Actualización manual y deliberada:** subir la versión fijada en `registry/setup/easytier.go` con su SHA256 nuevo, publicar un release, y volver a ejecutar el instalador. Nada de `latest`.
 5. **Vigilancia:** una mirada mensual al consumo de transferencia en el panel de DO. El plan incluye 4000 GiB salientes al mes, el rendezvous consume kilobytes, cualquier número grande delata relay intensivo.
 6. **Convive con producción.** El droplet corre Vaultwarden, Logto, el blog y varias bases de datos, con el disco al 87% y poca RAM libre. Por eso los límites de memoria y CPU no son opcionales, y por eso el seed vive en su propia red de contenedores sin ver a los demás.
 7. **Endurecimiento futuro:** con público, limitar qué redes puede relevar con `--relay-network-whitelist`, poner techo con `--foreign-relay-bps-limit`, y mover el relay de datos a un VPS dedicado.

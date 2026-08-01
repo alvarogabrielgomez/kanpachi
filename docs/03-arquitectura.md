@@ -491,33 +491,53 @@ Del lado del invitado no hay servidor, solo un cliente que reconecta con backoff
 Dos procesos en el droplet, en la misma imagen y el mismo compose.
 
 ```
-kanpachi-seed          dos contenedores en kanpachi-net (10.77.7.0/24)
-├── easytier-core      upstream v2.6.4, sin modificar
-│     listeners 11010 TCP y UDP, publicados
-│     rpc :15888, NO publicado, whitelist a la subred del compose
+kanpachi-seed         dos servicios de systemd, sin Docker
+├── kanpseed-engine.service     easytier-core v2.6.4, upstream sin modificar
+│     listeners 11010 TCP y UDP
+│     rpc 127.0.0.1:15888, whitelist de loopback
 │           ▲
 │           │ easytier-cli, solo lectura, sondeo cada 3 s
 │           │
-└── kanpachi-registry  binario Go nuestro
+└── kanpseed-registry.service   kanpseed serve
       POST /api/rooms         el host abre sala: el registro emite el invite ID
       GET  /api/i/A7K2M9QX    resuelve: tarjeta cifrada, llave del host, contador
       PUT  /api/i/A7K2M9QX    el host actualiza su tarjeta, o reabre la sala
       GET  /healthz           salas vivas, y si EasyTier contesta
       GET  /cualquier-cosa    la página, con el estado ya incrustado
-      publicado como 127.0.0.1:8010 en el host
+      escucha en 127.0.0.1:<puerto elegido al instalar>
 ```
 
 **El registro es lo que hace que `kanpachi-seed` sea distinto de una instalación plana de EasyTier.** Habla con el motor invocando `easytier-cli`, o sea como proceso hijo y jamás vinculado, igual que hace el cliente. Eso mantiene la licencia de Kanpachi libre de la LGPL-3.0 de EasyTier.
 
-### El portal RPC del seed no va en loopback, y ese cambio se ganó a golpes
+### Por qué no hay Docker, aunque el droplet sea de Docker
 
-El primer intento compartía espacio de red entre los dos contenedores (`network_mode: service:`), que es la forma de dejar el portal RPC atado a `127.0.0.1` y aun así alcanzable desde el registro. **Falla de una manera que no se ve.** Al reiniciarse el contenedor del motor, su espacio de red se destruye y se crea otro; el registro sigue "Up" para Docker, con su socket en un espacio que ya no existe, y la página de invitación deja de responder sin un solo error en los logs. Con `restart: unless-stopped` en el motor, un crash suyo produce exactamente eso. Comprobado, no supuesto.
+Se implementó con Docker primero y se descartó por evidencia, no por gusto. Todo el dolor venía de que hubiera contenedores.
 
-La forma que sí aguanta: cada contenedor con su espacio de red, el portal RPC escuchando en `0.0.0.0:15888` **sin publicar al host**, y lista blanca a `10.77.7.0/24`, la subred del compose. Reiniciar o recrear el motor deja de romper nada, verificado en ambos casos.
+El registro necesita hablar con el portal RPC del motor, que tiene que quedarse en `127.0.0.1`. Con dos contenedores eso obliga a elegir entre dos malas: compartir espacio de red, o sacar el RPC del loopback.
 
-**Esto se aparta a propósito del invariante "el portal RPC va fijado a `127.0.0.1`" de `CLAUDE.md`, y solo en el seed.** Ese invariante es del cliente, donde el portal convive con el escritorio del usuario y cualquier proceso suyo podría hablarle. Acá el motor está solo en un contenedor, quien necesita leerlo vive en otro, y el portal no sale de una red privada del compose. En el cliente la regla sigue intacta.
+**Compartir espacio de red falla de una manera que no se ve.** Al reiniciarse el contenedor del motor, su espacio se destruye y se crea otro; el registro sigue "Up" para Docker, con el socket en un espacio que ya no existe, y la página deja de responder sin un solo error en los logs. Con `restart: unless-stopped`, un crash del motor produce exactamente eso. Comprobado.
 
-**Dos detalles que costaron un rato cada uno.** `easytier-cli` rechaza nombres de host (`invalid socket address syntax`), así que el registro resuelve el nombre de servicio a IP antes de invocarlo, y lo hace en cada sondeo para que recrear el motor no lo deje muerto. Y dentro del contenedor el registro escucha en `0.0.0.0`, porque publicar un puerto hace DNAT hacia la IP del contenedor y no hacia su loopback: quien restringe es el `127.0.0.1:8010:8010` del lado del host.
+**La alternativa exigía romper un invariante.** Sacar el RPC a una red privada del compose funcionaba, y obligaba a fijar una subred que podía chocar con las once redes que ya tiene el droplet. Aparte, crear redes de Docker reescribe iptables, que es el sospechoso principal del incidente en que Vaultwarden dejó de responder tras un despliegue nuestro.
+
+Con systemd nada de eso existe: los dos procesos en la misma máquina, hablando por el loopback de verdad. **El invariante del RPC vuelve a estar intacto en los dos lados.**
+
+Y lo que Docker aportaba, systemd lo da igual o mejor:
+
+| | Docker | systemd |
+|---|---|---|
+| Techo de RAM y CPU | `mem_limit` | `MemoryMax=`, `CPUQuota=` |
+| Reinicio al morir | `restart: unless-stopped` | `Restart=always` |
+| **Reinicio si se cuelga vivo** | no lo hace | `WatchdogSec=` con `sd_notify` |
+| Arranque ordenado | `depends_on` | `After=`, `BindsTo=` |
+| Aislamiento | root dentro del contenedor | `DynamicUser=`, `ProtectSystem=strict`, sin capacidades |
+
+El tercero es el que más se gana: `Restart=always` solo actúa cuando el proceso MUERE, y un proceso vivo pero colgado se queda colgado para siempre. El registro late mientras se responda a sí mismo por HTTP, y dejar de latir es la señal. **Verificado con un `SIGSTOP`: systemd lo reinició a los 29 segundos**, con la ventana de 30. Eso hace innecesario el vigilante externo, que era un proceso más que podía caerse por su cuenta.
+
+El aislamiento también sale mejor, no peor: en Docker el registro corría como root dentro del contenedor, y con `DynamicUser=` corre como un usuario efímero sin casa, sin disco escribible y con `CapabilityBoundingSet` vacío.
+
+**Lo que cuesta:** rompe la convención del droplet, donde todo lo demás vive en Docker. Es el único argumento real en contra.
+
+**Un detalle que costó un rato:** `easytier-cli` rechaza nombres de host con `invalid socket address syntax`. Con systemd da igual, porque la dirección es literal, y el resolvedor que se escribió para Docker se conserva porque no estorba y cubre una configuración con el motor en otra máquina.
 
 ### Lo que el registro decidió, y por qué
 

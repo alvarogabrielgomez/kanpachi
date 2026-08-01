@@ -191,7 +191,7 @@ Lo que **dejó de ser cierto** es que quien tenga el código entre para siempre.
 
 **Razones.** Todo el grupo juega en Windows. Hay una razón de proceso igual de importante: en un proyecto de fines de semana el recurso escaso es la motivación, y la motivación se sostiene jugando con lo que se construye. Desarrollar primero en Linux optimizaba horas de compilación, no el resultado.
 
-Linux vive como servidor (el seed corre en Docker sobre el droplet) y la interfaz `netfw` queda declarada por si un día se agrega el cliente.
+Linux vive como servidor (el seed corre sobre systemd en el droplet) y la interfaz `netfw` queda declarada por si un día se agrega el cliente.
 
 ## 6. Servicio residente + UI sin privilegios
 

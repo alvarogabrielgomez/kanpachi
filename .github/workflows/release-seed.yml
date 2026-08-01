@@ -1,0 +1,68 @@
+# Publica el binario del seed y sus checksums.
+#
+# install.sh baja de aquí y verifica contra SHA256SUMS, así que este workflow
+# es la otra mitad de esa comprobación: si el archivo de sumas no se publica,
+# el instalador se niega a instalar en vez de seguir a ciegas.
+name: Release del seed
+
+on:
+  push:
+    tags: ["seed-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publicar:
+    name: kanpseed para Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Tests antes de publicar
+        # Publicar un binario que no pasa sus tests es peor que no publicar.
+        run: go test -race -count=1 ./core/... ./registry/...
+
+      - name: Compilar
+        run: |
+          mkdir -p dist
+          VERSION="${GITHUB_REF_NAME#seed-}"
+          for ARCO in amd64 arm64; do
+            # Sin -ldflags "-s -w": los símbolos pesan poco y quitarlos dispara
+            # falsos positivos de antivirus sobre binarios Go, que es una regla
+            # del proyecto y vale igual del lado del servidor.
+            CGO_ENABLED=0 GOOS=linux GOARCH=$ARCO go build \
+              -trimpath \
+              -ldflags "-X github.com/accentiostudios/kanpachi/registry/cli.Version=$VERSION" \
+              -o "dist/kanpseed-linux-$ARCO" \
+              ./registry/cmd/kanpseed
+          done
+          cp invite/index.html dist/index.html
+
+      - name: Checksums
+        # El formato es el que espera `sha256sum -c` y el que lee install.sh.
+        run: cd dist && sha256sum kanpseed-linux-* index.html > SHA256SUMS && cat SHA256SUMS
+
+      - name: Publicar
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/kanpseed-linux-amd64
+            dist/kanpseed-linux-arm64
+            dist/index.html
+            dist/SHA256SUMS
+          body: |
+            Nodo de encuentro de Kanpachi.
+
+            ```
+            curl -fsSL https://raw.githubusercontent.com/accentiostudios/kanpachi/main/seed/install.sh | sudo sh
+            ```
+
+            El instalador elige un puerto interno libre y lo imprime al terminar:
+            es el que hay que poner en el proxy inverso.

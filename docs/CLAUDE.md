@@ -60,7 +60,7 @@ Están en los docs con su razón. Se listan aquí porque romperlas es el error m
 - El router del usuario no se toca nunca. Sin port forwarding, sin UPnP. **Ojo: el motor mapea puertos por defecto.** Todo arranque de `easytier-core` lleva `--disable-upnp true`, con un test que falla si alguien lo saca. La única lectura permitida al router es la consulta al IGD del módulo de alertas, que jamás escribe.
 - **El cliente nunca escucha en un puerto público.** Arranca con `--no-listener`. Solo el seed escucha.
 - **El canal de control solo escucha en el host.** Los invitados marcan hacia afuera y no abren nada. Ese código corre como SYSTEM y parsea entrada de la sala: tope de tamaño, esquema cerrado, solo IPs de miembros presentes.
-- Flags del motor que expresan capacidades prohibidas y van siempre apagadas: `--enable-exit-node`, `--exit-nodes`, `--proxy-networks`, `--vpn-portal`, `--socks5`, `--accept-dns`. **En el cliente** el portal RPC va fijado a `127.0.0.1`, porque ahí convive con el escritorio del usuario. En el seed escucha en la red privada del compose, con lista blanca a su subred y sin publicar al host: atarlo al loopback allá exigía compartir espacio de red entre contenedores, y eso rompe el registro cada vez que el motor se reinicia. El razonamiento completo está en `03-arquitectura.md`.
+- Flags del motor que expresan capacidades prohibidas y van siempre apagadas: `--enable-exit-node`, `--exit-nodes`, `--proxy-networks`, `--vpn-portal`, `--socks5`, `--accept-dns`. El portal RPC va fijado a `127.0.0.1`, en el cliente y en el seed. Hubo un intento con Docker que obligó a sacarlo del loopback, y esa fue una de las razones para dejar Docker: ver `03-arquitectura.md`.
 
 **Privilegios y canales**
 
@@ -97,10 +97,11 @@ El proyecto usa **Clean Architecture**, aplicada como regla de dependencia con p
 core/       domain/ port/ usecase/         sin I/O, sin syscalls, sin API de Windows
 daemon/     adapter/ transport/ service/   Go, servicio de Windows, elevado
 ui/         Flutter desktop, sin privilegios
-seed/       El compose del droplet: easytier-core + kanpachi-registry
-registry/   El binario Go del seed y su Dockerfile. Resuelve invite IDs,
-            guarda tarjetas que no puede leer, cuenta miembros, sirve la página
-invite/     index.html. Un solo archivo: el registry lo sirve con el estado
+seed/       install.sh, el arranque de una sola ejecución en el servidor
+registry/   El binario Go del seed, kanpseed. Servidor HTTP + CLI + instalador.
+            Resuelve invite IDs, guarda tarjetas que no puede leer, cuenta
+            miembros y sirve la página. Linux, systemd, sin Docker
+invite/     index.html. Un solo archivo: kanpseed lo sirve con el estado
             incrustado, y abierto desde el disco funciona igual pidiéndolo
 docs/       Los siete documentos
 ```

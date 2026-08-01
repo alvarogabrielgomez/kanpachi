@@ -48,8 +48,8 @@ Ese último es un asistente opt-in que corre una vez en la vida de un juego nuev
 | **kanpachi-core** | Librería con toda la lógica: identidad, catálogo, política de firewall, interfaz del motor de red | Dentro del daemon |
 | **kanpachi-daemon** | Servicio de Windows privilegiado: adaptadores de red y firewall, API local, supervisión del motor | Windows, como servicio |
 | **kanpachi-ui** | Aplicación de escritorio Flutter, sin privilegios | Windows, sesión del usuario |
-| **kanpachi-seed** | Nodo de rendezvous que presenta a los peers entre sí | Droplet Linux, Docker |
-| **kanpachi-registry** | Registro mínimo de salas dentro del seed: resuelve invite IDs, guarda tarjetas cifradas que no puede leer, cuenta miembros leyendo el RPC de EasyTier, y sirve la página de invitación renderizada | Droplet, binario Go junto a EasyTier |
+| **kanpachi-seed** | Nodo de rendezvous que presenta a los peers entre sí | Droplet Linux, systemd |
+| **kanpseed** | El binario del seed: servidor, CLI e instalador a la vez. Resuelve invite IDs, guarda tarjetas cifradas que no puede leer, cuenta miembros leyendo el RPC de EasyTier, y sirve la página de invitación renderizada | Droplet, servicio de systemd junto a EasyTier |
 | **kanpachi-catalog** | Perfiles JSON de juegos: puertos, descubrimiento LAN, ejecutables y verificación. Viene en el instalador, se amplía con el creador de perfiles y se comparte exportando un `.json` plano | Embebido más `ProgramData` |
 
 ```
