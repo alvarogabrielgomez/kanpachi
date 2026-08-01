@@ -94,6 +94,20 @@ Sale de una regla del propio producto: **la sala necesita al host activo**. El h
 
 El código deja de ser material criptográfico y pasa a ser una llave que alguien puede cambiar la cerradura.
 
+### Los tres identificadores, que no son lo mismo
+
+Esta decisión parte en tres lo que antes era un solo string. Confundirlos es el error más fácil de cometer acá, y lleva a conclusiones de seguridad falsas en las dos direcciones.
+
+| Nombre | Qué es | Quién lo conoce |
+|---|---|---|
+| **Invite ID** | 8 alfanuméricos, `A7K2M9QX`. Llave de búsqueda, no material criptográfico | El seed lo emite y lo guarda. Viaja en la URL, en los logs y por Telegram |
+| **Identidad de encuentro** | `networkID` + `secret` derivados del invite ID con Argon2id | Cualquiera que tenga el invite ID, el seed incluido |
+| **Red real de la sala** | `networkID` + `secret` propios, aleatorios, generados por el host | Solo el host. Los demás entran con credencial y jamás lo reciben |
+
+Que el seed pueda derivar la identidad de encuentro **no es una fuga, es el diseño**: el encuentro es un vestíbulo público y desechable, y lo único que pasa ahí es el pedido de credencial. Todo lo que importe en ese vestíbulo va firmado contra la llave del host, ver decisión 25.
+
+La red real no deriva de ningún string que alguien pueda escribir. Ni el seed, ni quien adivine un invite ID, ni quien lea un log llegan a ella. El invite ID te lleva a la puerta, la credencial te deja pasar, y quien emite credenciales es el host.
+
 ### Verificado contra los binarios, no contra la documentación
 
 Esta decisión se apoya en el sistema de credenciales de EasyTier. Se probó con dos instancias locales sobre la v2.6.4 fijada, y las tres preguntas que podían tumbarla salieron bien:
@@ -127,19 +141,29 @@ Ese tercer punto es el que hace que revocar sirva de verdad. En el diseño ingen
 
 ### Lo que NO cambia
 
-Sigue sin haber cuentas, sin correo, sin registro y sin base de datos de nadie. Sigue sin viajar el secreto a ningún servidor. El seed sigue viendo únicamente networkIDs opacos e IPs públicas. La derivación local sigue existiendo, con el mismo Argon2id y los mismos salts versionados, para producir la identidad de encuentro del paso 1.
+Sigue sin haber cuentas, sin correo, sin registro y sin contraseñas de nadie. **El secreto de la red real sigue sin viajar a ningún servidor.** La derivación local sigue existiendo, con el mismo Argon2id y los mismos salts versionados, para producir la identidad de encuentro del paso 1.
 
-La derivación, que ahora produce la identidad de encuentro del paso 1:
+La derivación, que ahora produce solo la identidad de encuentro del paso 1:
 
 ```
-código (12 caracteres, 60 bits)
-   ├─ Argon2id(código, "kanpachi/v1/id")     → networkID (16 bytes)
-   └─ Argon2id(código, "kanpachi/v1/secret") → secret    (32 bytes)
+invite ID (8 caracteres, 40 bits)
+   ├─ Argon2id(inviteID, "kanpachi/v1/id")     → networkID de encuentro (16 bytes)
+   └─ Argon2id(inviteID, "kanpachi/v1/secret") → secret de encuentro    (32 bytes)
 ```
 
 Los parámetros de Argon2id están congelados para la v1 y hay un vector dorado en los tests que rompe si alguien los toca. El motivo es que los dos lados derivan por separado y sin hablarse: cambiar un parámetro produce otro networkID y las dos personas dejan de verse, con un síntoma imposible de diagnosticar en producción, "pegué el mismo código y estoy solo en la sala". Un esquema nuevo se agrega como `v2`, jamás editando los valores de `v1`.
 
-Los 60 bits siguen siendo necesarios: el paso 1 anuncia un networkID a un seed público, y sin ellos alguien podría enumerar salas vivas. Lo que **dejó de ser cierto** es que quien tenga el código entre para siempre. Ese era el costo aceptado del diseño anterior, y las credenciales lo eliminan: el host renueva el código, revoca una credencial, o las dos cosas.
+**Se deriva en el cliente y no se le pregunta al seed.** El seed podría decir cuál es la red de encuentro de un invite ID, derivarla localmente hace que llegar al vestíbulo no dependa de que la API del seed esté viva ni de que diga la verdad.
+
+### Lo que sí cambió, y hay que decirlo
+
+Dos afirmaciones del diseño anterior dejaron de ser ciertas.
+
+**"El seed solo ve networkIDs opacos e IPs públicas."** Ya no. El seed lleva un registro de salas: invite IDs vivos, su networkID de encuentro, la llave pública del host y una tarjeta de presentación. Ver decisión 24. Lo que sigue sin ver es el secreto de la red real, o sea que sigue sin poder entrar a ninguna sala.
+
+**"Hacen falta 60 bits para que nadie enumere salas vivas."** Ese argumento se apoyaba en que no había backend, o sea que nadie podía limitar la tasa de intentos y la única defensa era la entropía. Ahora hay un registro que responde las consultas, así que la enumeración se corta donde se cortan todas las enumeraciones, con límite de tasa. Y el premio de acertar bajó de "entro para siempre" a "veo la tarjeta y toco la puerta". Por eso el invite ID baja a 8 caracteres, que es lo que una persona dicta por teléfono sin equivocarse.
+
+Lo que **dejó de ser cierto** es que quien tenga el código entre para siempre. Ese era el costo aceptado del diseño anterior, y las credenciales lo eliminan: el host renueva el código, revoca una credencial, o las dos cosas.
 
 ## 3. Sin cuentas y sin links de invitación
 
@@ -284,10 +308,12 @@ Un adaptador sin puerta de enlace queda como "Red no identificada" y cae en el p
 **Elección:** embebido en el código, con parser tolerante a seis formatos y la forma URL como la que se genera por defecto.
 
 ```
-KANP-7X4M-B2QF                          → seed por defecto
-kanpachi.accentio.dev/KANP-7X4M-B2QF    → ese seed
-KANP-7X4M-B2QF@seed.midominio.com       → ese seed
+A7K2M9QX                          → seed por defecto
+kanpachi.accentio.dev/A7K2M9QX    → ese seed
+A7K2M9QX@seed.midominio.com       → ese seed
 ```
+
+**Un invite ID solo significa algo en el seed que lo emitió.** No es global, es local a un registro. `A7K2M9QX` en `kanpachi.accentio.dev` y `A7K2M9QX` en `seed.midominio.com` son dos salas distintas que no se conocen. La forma URL lleva su seed encima y por eso es la que se genera; un ID pelado significa el seed por defecto, jamás el último usado.
 
 **Razones.**
 
@@ -299,19 +325,41 @@ KANP-7X4M-B2QF@seed.midominio.com       → ese seed
 
 **Costos aceptados y sus mitigaciones:**
 
-- Pegar un código puede conectarte al servidor de un desconocido. Ese servidor solo ve el `networkID` y tu IP pública, jamás el `secret`, y no puede unirse a la sala. Aun así, confirmación de una línea la primera vez que aparece un host nuevo, recordada después por host.
+- Pegar un código puede conectarte al servidor de un desconocido. Ese servidor ve tu IP pública, el invite ID que consultaste y la red de encuentro que le corresponde. Jamás ve el secreto de la sala real, así que no puede unirse a ella. La confirmación dentro de la app es obligatoria y no se recuerda, ver decisión 17.
 - El manejador `kanpachi://` es superficie de ataque clásica. Validación estricta de todo lo que entre por ahí.
 - Un código pelado siempre usa el seed por defecto, nunca el último usado. Recordar el último produce fallos inexplicables cuando un amigo manda un código de otra procedencia.
 
-## 17. La página de invitación, con el código en el fragmento
+## 17. La página de invitación, con el invite ID en la ruta
 
-**El patrón:** el mismo de Discord. La URL del código resuelve a una página que ofrece "Abrir en Kanpachi", dispara el manejador de protocolo con un click, y avisa que si no pasó nada es porque falta instalar la app.
+**El patrón:** el mismo de Discord. La URL resuelve a una página que muestra a qué sala te invitaron, ofrece "Abrir en Kanpachi", dispara el manejador de protocolo con un click, y avisa que si no pasó nada es porque falta instalar la app.
 
-**El formato:** `kanpachi.accentio.dev/#KANP-7X4M-B2QF`, con el código después del `#`.
+**El formato:**
 
-**Por qué el fragmento y no la ruta.** Los navegadores no envían el fragmento en la petición HTTP. El servidor nunca recibe el código, así que **los logs de Accentio no pueden contener códigos de sala**. Es la misma lógica por la que el seed nunca ve el `secret`: la garantía no depende de una promesa de no registrar, depende de no recibir. Beneficio adicional: la página puede ser HTML estático puro, sin backend ni rutas dinámicas, servible desde cualquier lado.
+```
+kanpachi.accentio.dev/A7K2M9QX            funciona pelado
+kanpachi.accentio.dev/A7K2M9QX#clave      además muestra el nombre de la sala
+```
 
-El costo es estético, el `#` se ve raro. A cambio, la propiedad es verificable por cualquiera que mire el tráfico, y ese es justo el tipo de argumento que este producto necesita.
+### Por qué el invite ID pasó del fragmento a la ruta
+
+El diseño anterior lo ponía después del `#` porque los navegadores no envían el fragmento al servidor, y así los logs no podían contener códigos de sala. Ese argumento **se apoyaba en que el código era el secreto**. Ya no lo es, y con la decisión 2 el seed tiene que conocer el invite ID de todas formas para resolverlo. Esconderlo del servidor que lo emitió no protege nada, y cuesta caro:
+
+| En la ruta se gana | Detalle |
+|---|---|
+| Render en el servidor | La página llega armada, sin parpadeo y sin depender de que corra JavaScript |
+| Vista previa en el chat | Telegram y Discord piden la URL y muestran una tarjeta con el contador |
+| URL que se dicta por teléfono | `kanpachi.accentio.dev/A7K2M9QX`, sin el `#` que se veía raro |
+| Una sola forma de resolver | La app y la página consultan el mismo registro, no dos caminos que se desincronizan |
+
+**Lo que se pierde, dicho sin maquillar.** Los logs del servidor pasan a contener invite IDs. Hoy provablemente no pueden contener nada de una sala. Quien lea un log obtiene lo mismo que quien recibe el link reenviado: la tarjeta y la posibilidad de tocar la puerta. No obtiene el secreto de la red real, que no está en ningún servidor, y entrar sigue exigiendo una credencial que emite el host. El cambio es real y acotado, y se compensa con límite de tasa y retención corta.
+
+### La tarjeta va cifrada, el contador no
+
+La tarjeta de sala guarda nombre y nick del host. Va cifrada con una clave que **viaja en el fragmento**, o sea que el operador del seed guarda y sirve bytes que no puede leer. El contador de miembros sale del networkID de encuentro, que el seed ya ve, así que no necesita clave.
+
+De ahí sale que el fragmento sea **enriquecimiento opcional**: un ID dictado por teléfono y tecleado a mano abre la página igual, con la tarjeta genérica y el contador vivo. El nombre de la sala aparece solo cuando llegó el link entero.
+
+Consecuencia aceptada: la vista previa en el chat dice "Sala de Kanpachi, 4 jugando" y nunca el nombre de la sala, porque el servidor que la genera tampoco puede leerlo. Es el único punto reversible de esta decisión. Volverla plana daría previa rica a cambio de que el operador vea el nombre de cada sala y el nick de cada host.
 
 **Tres reglas de la página:**
 
@@ -483,5 +531,107 @@ Superficie nueva, así que se escribe entera:
 Conviene escribirlo acá porque es la pregunta que sigue naturalmente. El motor es una malla completa con propagación de rutas tipo OSPF: cada nodo aprende la tabla de peers entera, porque así es como enruta. No hay flag que la oculte.
 
 O sea Santiago **ve** que Victor está en la sala, con su IP virtual, su nombre y su latencia. Lo que no puede es **alcanzarlo**, porque los invitados no abren puertos.
+
+## 24. El seed lleva un registro de salas
+
+**El problema:** la página de invitación tiene que mostrar a qué sala te invitaron y quién la abrió, y la app tiene que resolver un invite ID a una sala concreta. Un HTML estático no puede hacer ninguna de las dos.
+
+**Alternativas:** meter los datos en el fragmento del link, o sea que los escriba quien manda el link. Un backend de salas completo, que es el `kanpachi-rooms` que la decisión 2 eliminó. Un registro mínimo dentro del propio seed.
+
+**Elección:** registro mínimo en el seed. Es un binario Go nuestro que corre al lado de EasyTier, dentro de la misma imagen. **Ese binario es lo que hace que `kanpachi-seed` sea algo distinto de una instalación plana de EasyTier.**
+
+### Por qué no en el fragmento
+
+La forma barata era que el app del host escribiera nombre y nick dentro del link. Se descartó por el caso de reenvío: quien recibe un link legítimo puede editar el fragmento y atribuirse la sala antes de reenviarlo. Con el registro, el dato viene de la sala y no del último que tocó el string. Aparte queda fresco cuando la sala se renombra, y el contador de miembros es imposible de otra forma.
+
+**Lo que el registro NO resuelve, y conviene no engañarse:** no impide que alguien abra su propia sala poniéndose "Humberto". El nickname no se verifica por decisión 21. Contra eso sirve la decisión 25, no esta.
+
+### Qué guarda y qué no
+
+```
+inviteID (8 chars, emitido por el seed)
+   → networkID de encuentro
+   → llave pública del host
+   → tarjeta cifrada (nombre de sala, nick), bytes opacos para el seed
+   → contador de miembros, leído en vivo del RPC de EasyTier
+```
+
+| Guarda | No guarda ni puede |
+|---|---|
+| Invite IDs vivos y su red de encuentro | El secreto de la red real de la sala |
+| La llave pública del host | Ninguna llave privada |
+| Una tarjeta que no puede descifrar | Nombres de sala ni nicks en claro |
+| Un contador por red | Quién es cada miembro. Los nicks viven dentro de la red cifrada |
+
+En memoria, con TTL. Muere con la sala, salvo la llave fijada del host, que sobrevive semanas para que reabrir con el mismo ID siga siendo del host.
+
+### El contador sale de EasyTier, verificado
+
+`easytier-cli peer list-foreign` sobre el portal RPC del seed devuelve peers agrupados por nombre de red, sin cooperación del host y sin unirse a nada:
+
+```json
+{ "kanpachi-deadbeefcafe": { "peers": [ {"peer_id": 3389069210}, {"peer_id": 546534178} ] },
+  "kanpachi-otrasala99":   { "peers": [ {"peer_id": 2231640205} ] } }
+```
+
+Probado contra la v2.6.4 fijada, con un seed en modo servidor público y tres clientes en dos redes distintas. El mismo JSON confirma lo otro que importa: **ahí no hay hostnames.** El nick viaja dentro de la red cifrada y el seed relaya sin descifrar, así que ni queriendo podría publicarlo. Esa es la razón de que la tarjeta exista.
+
+### Quién puede escribir una tarjeta
+
+El problema no es obvio y por eso se escribe. La clave de cifrado de la tarjeta tiene que derivarse de algo que el navegador del invitado tenga, porque si no la página no podría descifrarla. O sea que **cualquiera que reciba el link puede producir una tarjeta válida**, y el registro, que es HTTP plano y no conoce la sala, no tiene con qué distinguirlo del host.
+
+Se cierra con firma, no con la clave:
+
+1. La tarjeta va firmada por la llave larga del host, decisión 25.
+2. El registro **fija la primera llave pública** que ve para ese invite ID y rechaza toda actualización firmada por otra.
+3. La página verifica la firma también, así que un registro comprometido que sirva basura no valida en el cliente.
+
+El orden juega a favor: la sala no existe hasta que el host la abre y nadie puede entrar antes que él, o sea que **el host es primero por definición** y no hay carrera que perder. Para la reapertura, la llave fijada sobrevive a la muerte de la sala.
+
+### El ID lo emite el seed
+
+Se evaluó que lo generara el host y el seed solo verificara disponibilidad. Emitirlo el seed es mejor por dos razones y ningún costo: quien tiene que garantizar unicidad es el registro, así que emitir evita el ida y vuelta de proponer y ser rechazado; y no hay nada que filtrar, porque un invite ID no deriva material criptográfico de la sala real. La objeción de que un seed comprometido emitiría IDs predecibles solo pesaba cuando el ID **era** la llave de la red, y con la decisión 2 dejó de serlo.
+
+### Costos aceptados
+
+- El seed deja de ser apátrida. Estado en memoria, con TTL, sin base de datos y sin disco.
+- Superficie HTTP nueva expuesta a internet. Límite de tasa obligatorio en resolución y en registro, porque 40 bits son enumerables sin él.
+- Quien se autohospeda necesita este binario. Va dentro de la misma imagen, así que le sale configurado de fábrica.
+- Los logs pasan a contener invite IDs, ver decisión 17.
+
+## 25. La llave del host, contra la suplantación
+
+**El problema, planteado por el caso concreto:** Mallory abre una sala normal, se pone de nick "Humberto", y manda el link desde el dominio real. La página consulta el registro auténtico y muestra "Humberto te invitó". Ni el registro ni el fragmento lo impiden: el nickname no es único ni se verifica, por decisión 21, y el creador de la sala elige el suyo.
+
+**Elección:** continuidad de llave, el mismo mecanismo de SSH y de Signal.
+
+```
+1. Cada instalación genera un par de llaves al primer arranque
+2. La tarjeta de sala va firmada por la llave del host
+3. El app recuerda qué huella tenía cada persona con la que jugó
+4. Nick conocido con huella distinta, aviso fuerte antes de entrar
+```
+
+Para suplantar a Humberto ante alguien que ya jugó con él hace falta **robarle la llave**, no elegir un nick.
+
+### Dos propiedades que valen escribir
+
+**El registro no necesita ser confiable.** Solo transporta bytes firmados. La verificación ocurre en el cliente contra una llave que ya conocía, así que un seed comprometido que sirva una tarjeta falsa no valida.
+
+**La página web no puede hacer esta verificación, el app sí.** El navegador no tiene memoria de con quién jugaste. Entonces el reparto es: la página muestra el nick sin afirmar identidad, y el app, tras el click, es donde se toma la decisión con su memoria local. "Humberto, ya jugaste con él en 3 salas" contra "Humberto, esta NO es la llave del Humberto que conoces".
+
+**La huella tampoco se muestra en la página, y eso se evaluó.** La primera versión la ponía al lado del nick. Se sacó porque una huella sin nada contra qué compararla no informa, decora, y peor: aparenta una verificación que en esa pantalla no ocurre. Mostrarla donde nadie puede juzgarla enseña a ignorarla, que es exactamente lo que hay que evitar para que signifique algo donde sí se juzga.
+
+### El hueco que queda
+
+La primera vez que alguien te invita no hay con qué comparar. Es el mismo hueco que tiene Signal y se cubre igual, comparando la huella por otro canal si el caso lo amerita. Escribirlo importa para no vender una garantía que no existe.
+
+**Consecuencia en el copy.** La página no dice "Humberto te invitó a su sala", que es una afirmación de identidad que ninguna versión de esto respalda. Dice quién **se identifica** como el host. Hay un test que falla si alguien devuelve la frase original. Ver `05-ui.md`.
+
+### Costos aceptados
+
+- Estado nuevo en el cliente: la llave propia y la libreta de huellas conocidas. Va en `ProgramData`, ver `03-arquitectura.md`.
+- Reinstalar Windows genera una llave nueva, así que el host pierde sus invite IDs fijados y sus amigos ven el aviso de huella cambiada. Se mitiga con el TTL de semanas del registro, y renovar el código ya es una función que existe por decisión 22.
+- Sin la libreta, la firma sola no prueba el nombre. La continuidad es lo que da la garantía, la firma es el mecanismo.
 
 La UI muestra la lista completa a todos, y eso es deliberado: ocultarla en pantalla no la ocultaría en la red, y aparentar una privacidad que no existe es peor que no tenerla.

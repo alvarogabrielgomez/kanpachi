@@ -6,10 +6,10 @@ import (
 	"strings"
 )
 
-// DefaultSeedHost es la semilla que usa un código pelado.
+// DefaultSeedHost es la semilla que usa un invite ID pelado.
 //
-// Un código sin host SIEMPRE usa esta, jamás la última que se usó. Recordar la
-// última tiene una trampa real: tras entrar una vez a un seed ajeno, un código
+// Un ID sin host SIEMPRE usa esta, jamás la última que se usó. Recordar la
+// última tiene una trampa real: tras entrar una vez a un seed ajeno, un ID
 // pelado de otro amigo fallaría sin explicación posible.
 const DefaultSeedHost = "kanpachi.accentio.dev"
 
@@ -18,7 +18,8 @@ const DefaultSeedHost = "kanpachi.accentio.dev"
 // El manejador kanpachi:// queda expuesto a toda la web, así que lo que entra
 // por ahí es hostil por definición. Un tope temprano evita que una entrada de
 // megabytes llegue siquiera a los bucles de normalización. 300 cubre con
-// holgura la forma más larga: esquema, host de hasta 253, separador y código.
+// holgura la forma más larga: esquema, host de hasta 253, separador, invite ID
+// y la clave de tarjeta en el fragmento.
 const MaxInputLen = 300
 
 const maxHostLen = 253
@@ -29,24 +30,24 @@ var (
 	ErrSeedHost     = errors.New("el servidor del código no es un nombre válido")
 )
 
-// Room es un código con el seed por el que se lo alcanza.
+// Room es un invite ID con el seed por el que se lo alcanza.
 //
-// El host del seed es SOLO transporte y no entra en la derivación: la misma
-// sala es alcanzable por cualquier ruta si alguien conoce el código. Ver
-// docs/03-arquitectura.md.
+// **Un invite ID solo significa algo en el seed que lo emitió.** No es global,
+// es local a un registro: el mismo ID en dos seeds son dos salas distintas que
+// no se conocen. Por eso el seed viaja pegado y no es decoración.
 type Room struct {
-	Code Code
-	Seed string // host del seed, ya normalizado. Nunca vacío tras ParseRoom
+	InviteID InviteID
+	Seed     string // host del seed, ya normalizado. Nunca vacío tras ParseRoom
 }
 
 // ParseRoom acepta las seis formas documentadas y devuelve siempre lo mismo.
 //
-//	KANP7X4MB2QF                                  → seed por defecto
-//	kanp-7x4m-b2qf                                → seed por defecto
-//	kanpachi://KANP-7X4M-B2QF                     → seed por defecto
-//	KANP-7X4M-B2QF@seed.midominio.com             → ese seed
-//	kanpachi.accentio.dev/#KANP-7X4M-B2QF         → ese seed
-//	https://kanpachi.accentio.dev/#KANP-7X4M-B2QF → ese seed
+//	A7K2M9QX                                  → seed por defecto
+//	a7k2-m9qx                                 → seed por defecto
+//	kanpachi://A7K2M9QX                       → seed por defecto
+//	A7K2M9QX@seed.midominio.com               → ese seed
+//	kanpachi.accentio.dev/A7K2M9QX            → ese seed
+//	https://kanpachi.accentio.dev/A7K2M9QX    → ese seed
 //
 // El usuario pega lo que le llegó por Telegram y funciona, sin tener que saber
 // cuál de las seis es la correcta.
@@ -83,38 +84,45 @@ func ParseRoom(input string) (Room, error) {
 		return Room{}, ErrInputShape
 	}
 
-	var codePart, hostPart string
+	var idPart, hostPart string
 	switch {
 	case hasAt:
-		// código@host
+		// inviteID@host
 		parts := strings.Split(s, "@")
 		if len(parts) != 2 {
 			return Room{}, ErrInputShape
 		}
-		codePart, hostPart = parts[0], parts[1]
+		idPart, hostPart = parts[0], parts[1]
 		// Un @ escrito a propósito con nada detrás es una entrada rota, no una
-		// petición del seed por defecto. Caer al default acá haría que un
-		// código truncado a mitad de copiar conecte en silencio a otra sala.
+		// petición del seed por defecto. Caer al default acá haría que un ID
+		// truncado a mitad de copiar conecte en silencio a otra sala.
 		if hostPart == "" {
 			return Room{}, ErrSeedHost
 		}
 
 	case hasSlash:
-		// host/#código, con el fragmento opcional
+		// host/inviteID, con el fragmento de la clave de tarjeta opcional
 		parts := strings.SplitN(s, "/", 2)
-		hostPart, codePart = parts[0], parts[1]
-		codePart = strings.TrimPrefix(codePart, "#")
+		hostPart, idPart = parts[0], parts[1]
+		// El fragmento lleva la clave con que la PÁGINA descifra la tarjeta de
+		// presentación. A la app no le sirve para nada, el nombre de la sala lo
+		// recibe del host por el canal de control. Se descarta acá en vez de
+		// rechazar la entrada, porque el usuario pega el link entero que le
+		// llegó y no tiene por qué recortarlo.
+		if i := strings.IndexByte(idPart, '#'); i >= 0 {
+			idPart = idPart[:i]
+		}
 		// Una barra de más significa una ruta, y por este canal no entran
 		// rutas. Ver el modelo de amenaza del manejador de protocolo.
-		if strings.ContainsAny(codePart, "/?&#") {
+		if strings.ContainsAny(idPart, "/?&") {
 			return Room{}, ErrInputShape
 		}
 
 	default:
-		codePart = s
+		idPart = s
 	}
 
-	code, err := ParseCode(codePart)
+	id, err := ParseInviteID(idPart)
 	if err != nil {
 		return Room{}, err
 	}
@@ -126,16 +134,22 @@ func ParseRoom(input string) (Room, error) {
 			return Room{}, err
 		}
 	}
-	return Room{Code: code, Seed: seed}, nil
+	return Room{InviteID: id, Seed: seed}, nil
 }
 
-// InviteURL es la forma que la app GENERA, con el código en el fragmento.
+// InviteURL es la forma que la app GENERA, con el invite ID en la ruta.
 //
-// El fragmento no se manda en la petición HTTP, así que el servidor jamás
-// recibe el código y sus logs no pueden contenerlo. La garantía no depende de
-// una promesa de no registrar, depende de no recibir.
+// En la ruta y no en el fragmento, y eso cambió respecto del diseño anterior.
+// El motivo de esconderlo era que el servidor no lo recibiera, y ese argumento
+// se apoyaba en que el código era el secreto de la red. Con la decisión 2 dejó
+// de serlo, y el registro del seed tiene que conocerlo igual para resolverlo.
+// En la ruta la página se renderiza en el servidor, el chat muestra vista
+// previa, y la URL se dicta por teléfono sin explicar qué es un `#`.
+//
+// No incluye la clave de la tarjeta. Esa la agrega quien arma el enlace de
+// invitación, que es el único que la tiene. Ver decisión 17.
 func (r Room) InviteURL() string {
-	return r.Seed + "/#" + r.Code.String()
+	return r.Seed + "/" + r.InviteID.String()
 }
 
 // UsesDefaultSeed dice si la sala va por la semilla de Accentio. La UI resalta
@@ -153,8 +167,8 @@ func parseSeedHost(h string) (string, error) {
 	if h == "" || len(h) > maxHostLen {
 		return "", ErrSeedHost
 	}
-	// Se exige un punto para que un código mal pegado no termine
-	// interpretándose como un host de una sola etiqueta.
+	// Se exige un punto para que un ID mal pegado no termine interpretándose
+	// como un host de una sola etiqueta.
 	if !strings.Contains(h, ".") {
 		return "", ErrSeedHost
 	}

@@ -72,7 +72,8 @@ Están en los docs con su razón. Se listan aquí porque romperlas es el error m
 **Datos**
 
 - Cero telemetría. Los logs son locales y el diagnóstico se copia al portapapeles.
-- El seed nunca recibe el `secret`. La página de invitación lleva el código en el fragmento, así que el servidor tampoco lo recibe.
+- **El seed nunca recibe el secreto de la red real de una sala.** Lo genera el host, aleatorio, y no deriva de ningún string que alguien pueda escribir. El seed sí conoce invite IDs y la identidad de encuentro que deriva de ellos: es un vestíbulo público y desechable por diseño, decisión 2. Confundir los tres identificadores lleva a conclusiones de seguridad falsas en las dos direcciones.
+- El registro del seed guarda tarjetas de sala **cifradas con una clave que viaja en el fragmento**. Si algún cambio hace que el servidor pueda leer nombres de sala o nicks, es una decisión de producto que se escribe en la 17, no un detalle de implementación.
 - El instalador jamás agrega exclusiones de antivirus.
 - Los perfiles del catálogo describen lo que el juego necesita. El código decide qué es aceptable conceder. Un perfil corrupto, como máximo, impide que ese juego conecte.
 
@@ -96,8 +97,9 @@ El proyecto usa **Clean Architecture**, aplicada como regla de dependencia con p
 core/       domain/ port/ usecase/         sin I/O, sin syscalls, sin API de Windows
 daemon/     adapter/ transport/ service/   Go, servicio de Windows, elevado
 ui/         Flutter desktop, sin privilegios
-seed/       Docker sobre el droplet. Linux. No comparte código con el cliente
-invite/     HTML estático
+seed/       Docker sobre el droplet: easytier-core + kanpachi-registry
+registry/   El binario Go del seed. Linux. Resuelve invite IDs y sirve la página
+invite/     Plantilla de la página de invitación, que sirve el registry
 docs/       Los siete documentos
 ```
 

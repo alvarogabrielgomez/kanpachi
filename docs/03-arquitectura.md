@@ -195,38 +195,53 @@ type NetCheck struct {
 
 ### Identidad
 
+Son tres objetos distintos, ver decisión 2. Mezclarlos produce conclusiones de seguridad falsas.
+
 ```
-código: 12 caracteres, 3 grupos de 4  (KANP-7X4M-B2QF)
+invite ID: 8 caracteres, 2 grupos de 4  (A7K2-M9QX)
 alfabeto: 32 símbolos exactos. Los 36 alfanuméricos menos 0, O, 1, I
           (se conserva la L: en mayúsculas no se confunde con el 1)
-entropía: 12 × 5 bits = 60 bits
+entropía: 8 × 5 bits = 40 bits
 
-networkID = Argon2id(normalizar(código), salt="kanpachi/v1/id")[0:16]
-secret    = Argon2id(normalizar(código), salt="kanpachi/v1/secret")[0:32]
+  identidad de ENCUENTRO, derivada, desechable, vestíbulo público:
+    networkID = Argon2id(normalizar(inviteID), salt="kanpachi/v1/id")[0:16]
+    secret    = Argon2id(normalizar(inviteID), salt="kanpachi/v1/secret")[0:32]
+
+  red REAL de la sala, generada por el host, nunca derivada de un string:
+    networkID = 16 bytes aleatorios
+    secret    = 32 bytes aleatorios, jamás salen del host
 ```
 
-`normalizar` quita guiones y espacios y pasa a mayúsculas: pegar el código en cualquier formato funciona. Los salts llevan versión: un esquema `v2` futuro convive con `v1` sin romper clientes viejos.
+`normalizar` quita guiones y espacios y pasa a mayúsculas: pegar el ID en cualquier formato funciona. Los salts llevan versión: un esquema `v2` futuro convive con `v1` sin romper clientes viejos.
+
+**La derivación de encuentro corre en el cliente y no se le pregunta al seed.** El seed podría decirla, derivarla localmente hace que llegar al vestíbulo no dependa de que su API esté viva ni de que diga la verdad.
 
 ### Formatos aceptados
 
-Un solo campo en la UI, parser tolerante. Todas estas formas producen el mismo `networkID` y el mismo `secret`:
+Un solo campo en la UI, parser tolerante. Todas estas formas resuelven al mismo invite ID:
 
 | Entrada | Seed que usa |
 |---|---|
-| `KANP7X4MB2QF` | el por defecto |
-| `kanp-7x4m-b2qf` | el por defecto |
-| `KANP-7X4M-B2QF@seed.midominio.com` | `seed.midominio.com` |
-| `kanpachi.accentio.dev/#KANP-7X4M-B2QF` | `kanpachi.accentio.dev` |
-| `https://kanpachi.accentio.dev/#KANP-7X4M-B2QF` | idem |
-| `kanpachi://KANP-7X4M-B2QF` | el por defecto |
+| `A7K2M9QX` | el por defecto |
+| `a7k2-m9qx` | el por defecto |
+| `A7K2M9QX@seed.midominio.com` | `seed.midominio.com` |
+| `kanpachi.accentio.dev/A7K2M9QX` | `kanpachi.accentio.dev` |
+| `https://kanpachi.accentio.dev/A7K2M9QX` | idem |
+| `kanpachi://A7K2M9QX` | el por defecto |
 
-La app **genera** el formato URL con fragmento, que es el más autoexplicativo, sirve como landing de descarga para quien no tenga Kanpachi instalado, y mantiene el código fuera de los logs del servidor. La app **acepta** cualquiera de los seis. El usuario nunca tiene que saber cuál es el correcto.
+La app **genera** el formato URL, que es el más autoexplicativo y sirve de landing de descarga para quien no tenga Kanpachi. La app **acepta** cualquiera de los seis. El usuario nunca tiene que saber cuál es el correcto.
 
-El host del seed es solo transporte: **no entra en la derivación**. La misma sala es alcanzable por cualquier ruta si alguien conoce el código.
+Un fragmento después del ID (`/A7K2M9QX#clave`) es enriquecimiento opcional: lleva la clave de la tarjeta de sala. La app lo ignora, le sirve para nada, el nombre de la sala lo recibe por el canal de control.
 
-### Los 12 caracteres no se negocian
+**Un invite ID es local al seed que lo emitió.** El mismo ID en dos seeds son dos salas que no se conocen. Un ID pelado usa el seed por defecto, jamás el último usado.
 
-`KANP-7X4M` serían 40 bits. Como no hay backend que valide códigos, un atacante puede enumerar `networkID` contra un seed público hasta encontrar salas vivas. Con 60 bits eso es inviable por diseño, sin depender de que el seed limite tasa. La forma URL absorbe la longitud extra sin costo de usabilidad.
+### Por qué 8 caracteres alcanzan
+
+El diseño anterior exigía 60 bits con este argumento: sin backend que valide, un atacante enumera `networkID` contra un seed público hasta hallar salas vivas, y la única defensa posible es la entropía. Las dos premisas cambiaron con las decisiones 2 y 24.
+
+Hay un registro que responde las consultas, o sea que la enumeración se corta con límite de tasa como cualquier otra. Y acertar un invite ID ya no da entrada: da la tarjeta y el derecho a tocar la puerta, porque entrar exige una credencial que emite el host. 40 bits con límite de tasa y un premio acotado es un intercambio distinto que 40 bits sin nada y entrada perpetua.
+
+A cambio se gana lo que el producto necesita: un ID que una persona dicta por teléfono sin equivocarse.
 
 ### Qué se recuerda y qué no
 
@@ -250,17 +265,29 @@ El instalador registra el esquema `kanpachi://`. Se invoca desde dos sitios: un 
 
 **La regla vale para cualquier canal externo futuro**, no solo para `kanpachi://`: argumentos de línea de comandos, archivos asociados, o lo que se agregue después. Si el origen está fuera de la app, hay tarjeta.
 
-**La página de invitación no ve el código.** La URL lleva el código en el fragmento (`kanpachi.accentio.dev/#KANP-7X4M-B2QF`), que los navegadores no envían al servidor. El JavaScript de la página lo lee del lado del cliente y arma el `kanpachi://`. Los logs del servidor no pueden contener códigos de sala porque nunca los reciben.
+**La página de invitación resuelve el invite ID contra el registro del seed.** La URL lo lleva en la ruta (`kanpachi.accentio.dev/A7K2M9QX`), así que el servidor lo recibe y lo registra en sus logs. Es aceptable porque el invite ID dejó de ser material criptográfico con la decisión 2: quien lo lea obtiene la tarjeta y el derecho a tocar la puerta, jamás el secreto de la red real, que no vive en ningún servidor. Ver decisión 17 para el intercambio completo.
 
 ### Punto de extensión de identidad
 
 ```go
-type IdentityProvider interface {
-    Resolve(input string) (networkID, secret []byte, meta RoomMeta, err error)
+// Resuelve un invite ID a la identidad de ENCUENTRO, jamás a la red real.
+// La red real solo llega por el canje de credencial con el host.
+type RendezvousProvider interface {
+    Resolve(input string) (domain.Rendezvous, error)
 }
 ```
 
-`LocalCodeProvider` es la v1. Un `RemoteRoomProvider` daría salas persistentes con nombre sin tocar UI ni daemon.
+`LocalDerivation` es la v1: Argon2id sobre el invite ID, sin red y sin preguntarle a nadie. Un proveedor remoto daría salas con identidad de encuentro rotativa sin tocar UI ni daemon.
+
+El registro del seed se consume por un puerto aparte, porque es opcional por diseño: entrar funciona sin él, lo que se pierde es la tarjeta de presentación.
+
+```go
+// Solo presentación. Que falle no impide entrar a ninguna sala.
+type RoomDirectory interface {
+    Lookup(inviteID domain.InviteID) (domain.RoomCard, error)
+    Publish(card domain.RoomCard, signer domain.Signer) error
+}
+```
 
 ### Catálogo
 
@@ -461,29 +488,57 @@ Del lado del invitado no hay servidor, solo un cliente que reconecta con backoff
 
 ## kanpachi-seed
 
-Un contenedor EasyTier en el droplet con listeners explícitos en 11010 TCP y UDP.
+Dos procesos en el droplet, en la misma imagen y el mismo compose.
 
-**Qué ve:** networkIDs (opacos, derivados) y las IPs públicas de quienes están en cada sala.
+```
+kanpachi-seed
+├── easytier-core        upstream v2.6.4, sin modificar
+│     listeners 11010 TCP y UDP
+│     rpc 127.0.0.1:15888, whitelist de loopback
+│           ▲
+│           │ RPC local, solo lectura
+│           │
+└── kanpachi-registry    binario Go nuestro
+      GET  /A7K2M9QX          la página, renderizada en el servidor
+      GET  /api/i/A7K2M9QX    resuelve: red de encuentro, llave del host,
+                              tarjeta cifrada, contador de miembros
+      PUT  /api/i/A7K2M9QX    el host registra su tarjeta firmada
+      escucha en loopback, detrás del nginx del droplet
+```
 
-**Qué no ve ni puede:** el secret (nunca viaja), el tráfico en claro (WireGuard extremo a extremo), unirse a una sala (le falta el secret). Auditable, porque el código del cliente está a la vista del grupo.
+**El registro es lo que hace que `kanpachi-seed` sea distinto de una instalación plana de EasyTier.** Es proceso aparte que solo habla RPC por loopback, así que no vincula con EasyTier y no hereda su LGPL-3.0.
 
-**Funciones en orden de frecuencia:** presentar endpoints entre miembros del mismo networkID, sincronizar el disparo del hole punch, relevar paquetes cifrados como último recurso.
+**Qué ve el seed:** invite IDs vivos, networkIDs de encuentro, llaves públicas de hosts, tarjetas que no puede descifrar, e IPs públicas de quienes están en cada red.
+
+**Qué no ve ni puede:** el secreto de la red real de ninguna sala, o sea que no puede unirse a ninguna. El tráfico en claro, que va cifrado extremo a extremo. Los nicks de los miembros, que viven dentro de la red cifrada; verificado, `peer list-foreign` devuelve `peer_id` y nada más.
+
+**Funciones en orden de frecuencia:** presentar endpoints entre miembros del mismo networkID, sincronizar el disparo del hole punch, resolver invite IDs, relevar paquetes cifrados como último recurso.
+
+El registro vive en memoria con TTL, sin base de datos y sin disco, salvo la llave fijada del host, que sobrevive semanas para que reabrir con el mismo invite ID siga siendo del host. Ver decisión 24.
 
 ## Flujo de una conexión
 
 ```
-1. El usuario pega el código
-2. identity deriva networkID + secret
-3. El daemon resuelve semillas: registro DNS primero,
-   Reserved IP compilada como respaldo
-4. engine anuncia el networkID al seed
-5. El seed devuelve los endpoints de los demás miembros
-6. Disparo sincronizado del hole punch en ambos lados
-7. Túnel WireGuard directo peer a peer
-   (fallback: relay vía seed, marcado en ámbar en la UI)
-8. policy genera las reglas para los miembros presentes
-9. netfw aplica la diferencia
+ 1. El usuario pega el invite ID
+ 2. identity deriva la identidad de ENCUENTRO (Argon2id sobre el invite ID)
+ 3. El daemon resuelve semillas: registro DNS primero,
+    Reserved IP compilada como respaldo
+ 4. engine entra a la red de encuentro y busca al host
+ 5. El invitado le manda al host su nickname y su llave pública,
+    firmado. El host verifica y decide
+ 6. El host emite una credencial temporal y devuelve la identidad
+    de la red REAL, cifrada contra la llave del invitado
+ 7. engine sale del encuentro y entra a la red real con la credencial.
+    El secreto de esa red nunca viajó
+ 8. El seed devuelve los endpoints de los demás miembros
+ 9. Disparo sincronizado del hole punch en ambos lados
+10. Túnel WireGuard directo peer a peer
+    (fallback: relay vía seed, marcado en ámbar en la UI)
+11. policy genera las reglas para los miembros presentes
+12. netfw aplica la diferencia
 ```
+
+**El paso 5 asume que el vestíbulo es observable.** Cualquiera con el invite ID puede derivar la identidad de encuentro, el seed incluido. Por eso lo que se intercambia ahí va firmado contra la llave del host y cifrado contra la del invitado, decisión 25. Un observador del vestíbulo ve que alguien pidió entrar, no obtiene la credencial ni el secreto de la sala.
 
 ## Almacenamiento
 
@@ -492,7 +547,10 @@ Program Files\Kanpachi\      binarios (daemon, ui, easytier-core) + wintun.dll +
 ProgramData\Kanpachi\
   config.json                nombre visible, sala activa, rol
   api.token                  rotado por arranque del servicio
-  room.json                  SOLO EN EL HOST: código vigente y registro de credenciales emitidas
+  identity.key               llave privada larga de esta instalación (decisión 25)
+  known-hosts.json           libreta de huellas: nick visto, llave con que se lo vio
+  room.json                  SOLO EN EL HOST: invite ID vigente, identidad de la red real,
+                             registro de credenciales emitidas
   last-room.json             SOLO EN INVITADOS: última sala, para "volver a la última sala"
   suspended-rules.json       reglas ajenas desactivadas y su estado previo
   easytier-credentials.json  el --credential-file del motor
@@ -504,6 +562,8 @@ ACL de ProgramData: escritura solo SYSTEM y Administradores, lectura para usuari
 **El daemon es la única fuente de verdad.** Cerrar la ventana no cierra la sala, así que el estado tiene que sobrevivir a la UI. La UI lo lee por `Status()` y persiste únicamente cosas de presentación, como el tamaño de la ventana. Guardar la sala también del lado de Flutter crearía dos verdades que se desincronizan justo en el caso que el producto promete soportar, que es cerrar la ventana con la partida viva.
 
 **`room.json` y `last-room.json` contienen credenciales de sala.** La ACL de ProgramData da lectura a los usuarios de la máquina, así que cualquier proceso del usuario puede leerlos. Es coherente con el modelo de amenazas, que ya asume que malware corriendo como el usuario puede usar la API igual que el usuario. Vale escribirlo para que nadie los trate como inocuos: son portadores de acceso a la sala y sobreviven a la sesión.
+
+**`identity.key` es la excepción y lleva ACL propia: solo SYSTEM y Administradores, sin lectura para usuarios.** Es la llave que sostiene la decisión 25, o sea lo único que impide que alguien se haga pasar por este host ante quienes ya jugaron con él. Robarla es la única forma de suplantar a alguien con huella conocida, y a diferencia de una credencial de sala no expira ni se revoca sola. `known-hosts.json` sí es legible: contiene llaves públicas ajenas, nada sensible, y su integridad importa más que su confidencialidad.
 
 ## Direccionamiento y el conflicto CGNAT
 

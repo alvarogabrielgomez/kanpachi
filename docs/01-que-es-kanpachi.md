@@ -49,7 +49,7 @@ Ese último es un asistente opt-in que corre una vez en la vida de un juego nuev
 | **kanpachi-daemon** | Servicio de Windows privilegiado: adaptadores de red y firewall, API local, supervisión del motor | Windows, como servicio |
 | **kanpachi-ui** | Aplicación de escritorio Flutter, sin privilegios | Windows, sesión del usuario |
 | **kanpachi-seed** | Nodo de rendezvous que presenta a los peers entre sí | Droplet Linux, Docker |
-| **kanpachi-invite** | Página estática de invitación: abre la app con el código por `kanpachi://`, o lleva a la descarga. El código viaja en el fragmento, el servidor nunca lo recibe | Droplet, HTML estático |
+| **kanpachi-registry** | Registro mínimo de salas dentro del seed: resuelve invite IDs, guarda tarjetas cifradas que no puede leer, cuenta miembros leyendo el RPC de EasyTier, y sirve la página de invitación renderizada | Droplet, binario Go junto a EasyTier |
 | **kanpachi-catalog** | Perfiles JSON de juegos: puertos, descubrimiento LAN, ejecutables y verificación. Viene en el instalador, se amplía con el creador de perfiles y se comparte exportando un `.json` plano | Embebido más `ProgramData` |
 
 ```
@@ -75,7 +75,7 @@ Ese último es un asistente opt-in que corre una vez en la vida de un juego nuev
 
 1. **Seguro por defecto.** La interfaz virtual nace con deny all en ambas direcciones. Cada apertura es explícita, por perfil de juego, solo hacia miembros presentes, y se revierte sola. El router jamás se toca: todas las conexiones se inician desde adentro, así que no hay reenvío de puertos, no hay UPnP y nada queda escuchando en tu IP pública. Kanpachi además avisa si el propio juego dejó una regla que te expone en tu red de casa.
 2. **Si se puede detectar, no se pregunta.** Ruta de Steam, juegos instalados, MTU, rango de IPs: todo se resuelve solo. La configuración manual no existe como concepto. La contracara igual de importante: **lo detectado nunca limita al usuario**. La detección ordena y sugiere, jamás filtra ni bloquea, porque toda detección falla alguna vez.
-3. **El código es un ticket, y el host tiene la cerradura.** El código de sala no es el secreto de la red: el host lo canjea por una credencial temporal. Eso le da tres controles reales sin servidor de por medio, expulsar a alguien, renovar el código y cerrar la sala. Nada viaja a ningún servidor, no hay cuentas ni base de datos.
+3. **El código es un ticket, y el host tiene la cerradura.** El código de sala no es el secreto de la red: el host lo canjea por una credencial temporal. Eso le da tres controles reales sin servidor de por medio, expulsar a alguien, renovar el código y cerrar la sala. El secreto de la red de una sala lo genera el host, es aleatorio, y no vive en ningún servidor. Sin cuentas y sin contraseñas.
 4. **Nada de fuera surte efecto sin confirmación dentro.** Un código que llega por un enlace abre la app y muestra qué recibió, jamás entra solo a una sala. Siempre, sin "recordar esta elección".
 5. **Privado hoy, abrible mañana.** Pasar de "solo panas" a público es un cambio de configuración y presupuesto, no un rewrite. La arquitectura ya lo contempla.
 

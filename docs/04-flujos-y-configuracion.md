@@ -7,7 +7,7 @@ Objetivo: menos de 3 minutos desde recibir el link del instalador hasta estar de
 1. Descarga `kanpachi-setup.exe` del link del grupo.
 2. Siguiente, siguiente. Un solo UAC. La barra termina y Kanpachi abre solo.
 3. La app ya muestra sus juegos detectados arriba, con la biblioteca completa un click más abajo.
-4. Pega el código que le pasaron por Telegram: `KANP-7X4M-B2QF`. El campo acepta cualquier formato, con o sin guiones, en minúsculas o mayúsculas.
+4. Pega el código que le pasaron por Telegram: `A7K2-M9QX`. El campo acepta cualquier formato, con o sin guiones, en minúsculas o mayúsculas.
 5. En segundos aparece la sala: los panas en verde (directo) o ámbar (relay).
 6. Abre el juego:
    - Juegos con `lan_discovery` (Minecraft, los clásicos): la partida aparece sola en el menú de LAN.
@@ -70,7 +70,22 @@ Contexto: droplet DigitalOcean NYC3 ya existente, Docker sobre Ubuntu, con Reser
 
 El archivo vive en `seed/docker-compose.yml` del repositorio y se despliega en `~/apps/kanpachi-seed/`, siguiendo la convención del droplet. **Desplegado y verificado el 2026-07-31.**
 
-El contenido está en el repositorio. Lo que hay que entender de él, que es lo que no se deduce leyendo el YAML:
+### Dos procesos, no uno
+
+```
+easytier-core       upstream sin modificar, 11010 TCP y UDP
+                    rpc en 127.0.0.1:15888
+kanpachi-registry   nuestro. Lee ese rpc, sirve / y /api
+                    escucha en 127.0.0.1:8010, detrás del nginx del droplet
+```
+
+El registro es lo que hace que esto sea `kanpachi-seed` y no una instalación plana de EasyTier, ver decisión 24. Es proceso aparte que solo habla RPC por loopback, así que no vincula con EasyTier y no arrastra su LGPL-3.0.
+
+El nginx del droplet apunta a `127.0.0.1:8010` con esquema **`http`**: TLS termina en el proxy y hacia atrás va plano por loopback. Público en `https` con Let's Encrypt y Force SSL. Esto último no es cosmético, la página usa `navigator.clipboard` para el botón de copiar y esa API solo existe en contexto seguro.
+
+Ambos contenedores usan `network_mode: bridge` en vez de crear una red propia. Crear una red reescribe reglas de iptables, y en este droplet ya conviven once redes con CrowdSec y npmplus tocando las suyas.
+
+### Lo que no se deduce leyendo el YAML
 
 | Ajuste | Por qué |
 |---|---|
@@ -80,6 +95,9 @@ El contenido está en el repositorio. Lo que hay que entender de él, que es lo 
 | `--no-tun true` | El seed presenta peers, no necesita interfaz virtual. Así el contenedor no pide `NET_ADMIN` ni `/dev/net/tun` |
 | `--rpc-portal 127.0.0.1:15888` | Es el panel de control del motor. Queda en el loopback del contenedor y no se publica, o sea solo se alcanza por `docker exec` |
 | Sin `--network-name` ni `--network-secret` | **El seed no se une a ninguna sala.** Es lo que garantiza que jamás vea el secreto de una red |
+| El registro lee `peer list-foreign` por RPC | De ahí sale el contador de miembros, sin cooperación del host y sin unirse a nada. El mismo JSON confirma que ahí **no hay hostnames**: el nick viaja dentro de la red cifrada. Verificado contra la v2.6.4 con tres clientes en dos redes |
+| El registro vive en memoria, con TTL | Sin base de datos y sin disco. Muere con la sala, salvo la llave fijada del host, que dura semanas para que reabrir con el mismo invite ID siga siendo suyo |
+| Límite de tasa en `/api` | 40 bits de invite ID son enumerables sin él. Es la defensa que reemplazó a los 60 bits del diseño anterior, ver decisión 24 |
 | `cpu_period` y `cpu_quota` explícitos | `cpus: 0.5` se acepta sin error en Compose v2.17 y **no llega al contenedor**: `docker inspect` mostraba `CpuQuota: 0`. Verificado tras el primer despliegue |
 
 Checklist del droplet:
