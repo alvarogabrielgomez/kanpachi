@@ -269,7 +269,7 @@ class _RuleRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppField(
       controller: draft.controller,
-      shape: AppFieldShape.pill,
+      shape: AppFieldShape.inline,
       mono: true,
       hint: '2456-2458',
       onChanged: (_) => onChanged(),

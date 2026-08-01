@@ -23,6 +23,12 @@ enum AppButtonVariant {
   /// destructiva pero no urgente, y un botón lleno la haría parecer el
   /// objetivo de la pantalla.
   quiet,
+
+  /// La misma acción terciaria, pero DENTRO de un panel flotante.
+  ///
+  /// Cambia el fondo de chip por el hundido: el chip se apoya en la superficie
+  /// de una pantalla, y sobre la superficie elevada de un menú se pierde.
+  quietSunken,
 }
 
 /// El botón de Kanpachi.
@@ -134,13 +140,21 @@ class _AppButtonState extends State<AppButton> {
           _hovered && _enabled ? colors.accent : colors.text,
           _hovered && _enabled ? colors.accent : colors.border,
         ),
+      AppButtonVariant.quietSunken => (
+          colors.surfaceSunken,
+          _hovered && _enabled ? colors.accent : colors.text,
+          _hovered && _enabled ? colors.accent : colors.border,
+        ),
     };
 
     final TextStyle textStyle = widget.textStyle ??
         switch (widget.variant) {
           AppButtonVariant.primary => type.buttonLg,
           AppButtonVariant.primaryFlat => type.button,
-          AppButtonVariant.ghost || AppButtonVariant.quiet => type.label,
+          AppButtonVariant.ghost ||
+          AppButtonVariant.quiet ||
+          AppButtonVariant.quietSunken =>
+            type.label,
         };
 
     return MouseRegion(

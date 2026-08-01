@@ -4,13 +4,23 @@ import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 
-/// Las tres formas de campo del diseño.
+/// Las cuatro formas de campo del diseño.
 enum AppFieldShape {
   /// Píldora. La usan las filas que llevan un botón pegado a la derecha.
   pill,
 
   /// Rectángulo redondeado, para formularios en bloque.
   rounded,
+
+  /// La caja que lleva controles pegados DENTRO: el rango de puertos con su
+  /// selector de protocolo, el nombre de la sala con su botón de guardar.
+  ///
+  /// No es `rounded` con menos aire: el aire de `rounded` está pensado para un
+  /// campo suelto, y aquí lo que va dentro no es texto sino otro control, que
+  /// trae el suyo. Reutilizar `rounded` con un padding condicionado a
+  /// `trailing` cambiaría también los campos de nombre y portada el día que
+  /// alguno lleve algo pegado.
+  inline,
 
   /// Rectángulo grande y centrado: el nombre en el alta.
   hero,
@@ -107,19 +117,21 @@ class _AppFieldState extends State<AppField> {
         ),
       AppFieldShape.rounded => const EdgeInsets.symmetric(
           horizontal: AppSpacing.x3l, vertical: AppSpacing.xl),
+      AppFieldShape.inline => const EdgeInsets.fromLTRB(
+          AppSpacing.x3l, 5, 5, 5),
       AppFieldShape.hero => const EdgeInsets.symmetric(
           horizontal: AppSpacing.x4l, vertical: AppSpacing.x3l),
     };
 
     final BorderRadius radius = switch (widget.shape) {
       AppFieldShape.pill => AppRadius.pill,
-      AppFieldShape.rounded => AppRadius.allMd,
+      AppFieldShape.rounded || AppFieldShape.inline => AppRadius.allMd,
       AppFieldShape.hero => AppRadius.allLg,
     };
 
     final TextStyle style = widget.textStyle ??
         switch (widget.shape) {
-          AppFieldShape.pill =>
+          AppFieldShape.pill || AppFieldShape.inline =>
             widget.mono ? type.mono.copyWith(letterSpacing: 0.75) : type.labelLg,
           AppFieldShape.rounded => type.bodyLg.copyWith(height: 1),
           AppFieldShape.hero =>

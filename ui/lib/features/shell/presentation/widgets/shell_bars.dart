@@ -217,8 +217,9 @@ class _AccountMenu extends StatelessWidget {
               width: double.infinity,
               child: AppButton(
                 label: 'Cambiar nombre',
-                variant: AppButtonVariant.quiet,
-                height: 36,
+                variant: AppButtonVariant.quietSunken,
+                height: 32,
+                textStyle: context.type.labelSm,
                 onPressed: () =>
                     context.read<ShellCubit>().go(AppScreen.nickname),
               ),

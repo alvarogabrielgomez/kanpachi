@@ -13,6 +13,7 @@ import 'package:kanpachi_ui/core/design_system/molecules/app_list.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_notice.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/density_tokens.dart';
+import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/room/presentation/widgets/copy_button.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
@@ -183,7 +184,13 @@ class _RoomHeaderState extends State<_RoomHeader> {
   }
 }
 
-class _NameDisplay extends StatelessWidget {
+/// El nombre de la sala y, si eres el host, la zona entera para renombrarla.
+///
+/// El objetivo de clic es todo el bloque y no sólo el lápiz: el lápiz mide 30
+/// px y aparece al lado de un título de 24, así que quien quiere renombrar
+/// pincha el nombre. Que además se marque al pasar por encima es lo que avisa
+/// de que se puede, sin dejar una caja permanente compitiendo con el título.
+class _NameDisplay extends StatefulWidget {
   const _NameDisplay({
     required this.name,
     required this.canEdit,
@@ -195,9 +202,16 @@ class _NameDisplay extends StatelessWidget {
   final VoidCallback onEdit;
 
   @override
+  State<_NameDisplay> createState() => _NameDisplayState();
+}
+
+class _NameDisplayState extends State<_NameDisplay> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Row(
+    final Widget fila = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         // Flexible y no suelto: el nombre lo escribe el host, hasta 24
@@ -205,13 +219,13 @@ class _NameDisplay extends StatelessWidget {
         // botones de la derecha. Cede él, que se puede recortar; los botones no.
         Flexible(
           child: Text(
-            name,
+            widget.name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: context.type.titleLg.copyWith(color: colors.text),
           ),
         ),
-        if (canEdit) ...<Widget>[
+        if (widget.canEdit) ...<Widget>[
           const SizedBox(width: AppSpacing.sm),
           AppIconButton(
             icon: Icons.edit_outlined,
@@ -220,10 +234,40 @@ class _NameDisplay extends StatelessWidget {
             height: 30,
             iconSize: 15,
             danger: true,
-            onPressed: onEdit,
+            onPressed: widget.onEdit,
           ),
         ],
       ],
+    );
+
+    if (!widget.canEdit) return fila;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.text,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onEdit,
+        // El desplazamiento va por `Transform` y no por padding negativo, que
+        // no existe: así la caja del hover alinea con el título sin mover nada
+        // de la cabecera, porque una transformación es sólo pintura.
+        child: Transform.translate(
+          offset: const Offset(-AppSpacing.lg, 0),
+          child: AnimatedContainer(
+            duration: AppMotion.hover,
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            decoration: BoxDecoration(
+              color: _hovered ? colors.surfaceSunken : null,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: _hovered ? colors.border : Colors.transparent,
+                width: AppStroke.hairline,
+              ),
+            ),
+            child: fila,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -243,18 +287,37 @@ class _NameEditor extends StatelessWidget {
       constraints: const BoxConstraints(maxWidth: 360),
       child: AppField(
         controller: controller,
+        shape: AppFieldShape.inline,
+        height: 44,
         maxLength: 24,
         autofocus: true,
         textStyle: context.type.titleLg,
         onSubmitted: (_) => onCommit(),
-        trailing: AppIconButton(
-          icon: Icons.check,
-          tooltip: 'Guardar',
-          width: 32,
-          height: 32,
-          iconSize: 15,
-          danger: true,
-          onPressed: onCommit,
+        // Relleno de acento y no transparente: es la acción que confirma el
+        // cambio, compite con nada y en el diseño es la única mancha de color
+        // de la cabecera mientras se escribe.
+        trailing: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            onTap: onCommit,
+            child: Tooltip(
+              message: 'Guardar',
+              child: Container(
+                width: 36,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: context.colors.accent,
+                  borderRadius: AppRadius.allSm,
+                ),
+                child: Icon(
+                  Icons.check,
+                  size: 15,
+                  color: context.colors.accentInk,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
