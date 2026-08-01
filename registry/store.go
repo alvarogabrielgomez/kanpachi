@@ -101,10 +101,6 @@ func (s *Store) Issue(hostKey ed25519.PublicKey, card, sig []byte) (domain.Invit
 		return domain.InviteID{}, ErrBadSig
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.limpiar()
-
 	// Ocho intentos. Con 40 bits y un puñado de salas vivas, chocar dos veces
 	// seguidas ya es improbable hasta el absurdo; ocho es un techo que existe
 	// para que un registro lleno falle rápido en vez de girar para siempre.
@@ -113,20 +109,78 @@ func (s *Store) Issue(hostKey ed25519.PublicKey, card, sig []byte) (domain.Invit
 		if err != nil {
 			return domain.InviteID{}, err
 		}
-		if _, ocupado := s.rooms[id.Raw()]; ocupado {
+		if s.ocupado(id) {
 			continue
 		}
-		ahora := s.ahora()
-		s.rooms[id.Raw()] = &Room{
-			HostKey:   append(ed25519.PublicKey(nil), hostKey...),
-			Card:      append([]byte(nil), card...),
-			Network:   domain.DeriveRendezvous(id).NetworkName(),
-			CardUntil: ahora.Add(CardTTL),
-			PinUntil:  ahora.Add(PinTTL),
+		// Entre el sondeo y la inserción el lock queda suelto, así que otro
+		// puede llevarse este mismo ID. No hace falta impedirlo: insertar lo
+		// vuelve a comprobar con el lock de escritura tomado y, si perdió la
+		// carrera, el bucle prueba con otro. Ese hueco es el precio de derivar
+		// sin bloquear a nadie, y sale barato.
+		red := redDeEncuentro(id)
+		if s.insertar(id, hostKey, card, red) {
+			return id, nil
 		}
-		return id, nil
 	}
 	return domain.InviteID{}, ErrExhausted
+}
+
+// derivaciones acota cuántas derivaciones de Argon2id corren a la vez.
+//
+// Cada una reserva domain.ArgonMemoryKiB, y DeriveRendezvous la hace dos veces,
+// o sea del orden de 128 MiB de pico por sala creada. Issue está abierto a
+// internet: sin este freno, N peticiones simultáneas piden N veces esa memoria
+// y el registro muere por OOM antes de poder rechazar nada. La memoria es el
+// recurso escaso del droplet, no la CPU.
+//
+// Con hueco para una sola, el pico deja de depender de la carga. El precio es
+// que las creaciones de sala se encolan, y eso da igual: crear una sala es un
+// acto humano y esporádico, mientras que unirse a una, que sí es frecuente, no
+// pasa por acá.
+var derivaciones = make(chan struct{}, 1)
+
+// redDeEncuentro deriva la red de encuentro con el lock del store SUELTO.
+//
+// Estaba dentro, y eso convertía cada creación de sala en una parálisis de
+// segundos para todo lo demás: /healthz, la resolución de invite IDs y la
+// página comparten ese mutex. Como el latido del watchdog se comprueba pidiendo
+// /healthz, una creación lenta además se disfrazaba de proceso colgado.
+func redDeEncuentro(id domain.InviteID) string {
+	derivaciones <- struct{}{}
+	defer func() { <-derivaciones }()
+	return domain.DeriveRendezvous(id).NetworkName()
+}
+
+// ocupado dice si ese invite ID le pertenece a alguien ahora mismo. Un fijado
+// vencido no cuenta, igual que en limpiar: la entrada sigue en el mapa pero ya
+// no reserva nada.
+func (s *Store) ocupado(id domain.InviteID) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	r, hay := s.rooms[id.Raw()]
+	return hay && !s.ahora().After(r.PinUntil)
+}
+
+// insertar registra la sala y dice si lo consiguió. Devuelve false cuando el
+// invite ID se ocupó mientras se derivaba su red de encuentro.
+func (s *Store) insertar(id domain.InviteID, hostKey ed25519.PublicKey, card []byte, red string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.limpiar()
+
+	if _, ocupado := s.rooms[id.Raw()]; ocupado {
+		return false
+	}
+	ahora := s.ahora()
+	s.rooms[id.Raw()] = &Room{
+		HostKey:   append(ed25519.PublicKey(nil), hostKey...),
+		Card:      append([]byte(nil), card...),
+		Network:   red,
+		CardUntil: ahora.Add(CardTTL),
+		PinUntil:  ahora.Add(PinTTL),
+	}
+	return true
 }
 
 // Publish actualiza la tarjeta de una sala existente, o revive una cuyo fijado

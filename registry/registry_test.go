@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -228,6 +229,96 @@ func TestNetworksSoloListaSalasVivas(t *testing.T) {
 	reloj.avanza(CardTTL + time.Minute)
 	if got := len(s.Networks()); got != 0 {
 		t.Errorf("Networks devolvió %d tras caducar la tarjeta, se esperaba 0", got)
+	}
+}
+
+// Los dos tests que siguen cubren la ventana que se abrió al sacar Argon2id de
+// dentro del lock del store. Derivar sin el lock puesto es lo que impide que
+// crear una sala congele /healthz y la página entera, pero deja un hueco entre
+// comprobar que el invite ID está libre y ocuparlo.
+
+func TestIssueSobrevivePerderLaCarreraPorUnID(t *testing.T) {
+	reloj := &relojFalso{t: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)}
+	intruso := nuevoHost(t, 9)
+	suyo := []byte("la tarjeta del intruso")
+
+	// El generador entrega dos IDs fijos, y al entregar el primero simula que
+	// otra petición se lo lleva mientras nosotros seguimos derivando su red.
+	ids := []string{"AAAAAAAA", "BBBBBBBB"}
+	var s *Store
+	turno := 0
+	s = NewStore(reloj.ahora, func() (domain.InviteID, error) {
+		id, err := domain.ParseInviteID(ids[turno])
+		turno++
+		if turno == 1 {
+			s.insertar(id, intruso.pub, suyo, "red-del-intruso")
+		}
+		return id, err
+	})
+
+	h := nuevoHost(t, 1)
+	card := []byte("la tarjeta del host")
+	id, err := s.Issue(h.pub, card, h.firma(card))
+	if err != nil {
+		t.Fatalf("Issue falló al perder la carrera en vez de reintentar: %v", err)
+	}
+	if id.Raw() != "BBBBBBBB" {
+		t.Errorf("Issue devolvió %q; debía haber descartado el ID que le quitaron y usar el siguiente", id.Raw())
+	}
+
+	// Lo crítico: perder la carrera no puede pisar a quien la ganó. Si Issue
+	// sobrescribiera, cualquiera podría robarle la sala a otro con solo llegar
+	// tarde al mismo invite ID.
+	robado, _ := domain.ParseInviteID("AAAAAAAA")
+	sala, err := s.Lookup(robado)
+	if err != nil {
+		t.Fatalf("la sala del intruso desapareció: %v", err)
+	}
+	if !sala.HostKey.Equal(intruso.pub) {
+		t.Error("Issue sobrescribió una sala ajena al perder la carrera por su invite ID")
+	}
+}
+
+func TestIssueEnParaleloDaIDsDistintos(t *testing.T) {
+	// Con -race, esto también vigila que sondear y ocupar en dos lockeos
+	// separados no haya dejado ninguna escritura sin proteger.
+	s := NewStore(nil, nil)
+	h := nuevoHost(t, 1)
+	card := []byte("tarjeta")
+	firma := h.firma(card)
+
+	const n = 4
+	salidas := make(chan domain.InviteID, n)
+	errores := make(chan error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			id, err := s.Issue(h.pub, card, firma)
+			if err != nil {
+				errores <- err
+				return
+			}
+			salidas <- id
+		}()
+	}
+	wg.Wait()
+	close(salidas)
+	close(errores)
+
+	for err := range errores {
+		t.Fatalf("Issue falló en paralelo: %v", err)
+	}
+	vistos := map[string]bool{}
+	for id := range salidas {
+		if vistos[id.Raw()] {
+			t.Errorf("el invite ID %s se emitió dos veces: dos salas distintas compartirían enlace", id)
+		}
+		vistos[id.Raw()] = true
+	}
+	if len(vistos) != n {
+		t.Errorf("se emitieron %d invite IDs de %d", len(vistos), n)
 	}
 }
 

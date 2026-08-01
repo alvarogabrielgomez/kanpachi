@@ -22,6 +22,20 @@ const (
 	argonThreads = 4
 )
 
+// ArgonMemoryKiB expone el coste de memoria porque quien hospeda una derivación
+// tiene que dimensionarse para ella, y adivinar ese número sale caro.
+//
+// Se exporta a raíz de un fallo real: la unit de systemd del registro llevaba
+// MemoryMax=96M, elegido a ojo, y el primer POST que creó una sala murió por
+// OOM. El kernel mata sin avisar y systemd reinicia, así que desde fuera parece
+// un servicio que "se reinicia solo" y no un límite mal puesto. El generador de
+// units calcula ahora su techo a partir de esta constante, y un test ata las
+// dos cosas para que no vuelvan a separarse.
+//
+// DeriveRendezvous llama a argon2.IDKey DOS veces, así que el pico real es del
+// orden del doble de este valor.
+const ArgonMemoryKiB = argonMemory
+
 // Salts versionados. El sufijo dice para qué sirve cada derivación, así que un
 // networkID nunca puede coincidir con un secret aunque el invite ID sea el
 // mismo.

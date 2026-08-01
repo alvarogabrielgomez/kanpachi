@@ -4,11 +4,28 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/accentiostudios/kanpachi/core/domain"
 )
 
 // Las dos units. Se generan desde la configuración en vez de vivir como
 // archivos sueltos, para que cambiar un puerto con `kanpseed config` las
 // reescriba y no queden dos verdades: una en el JSON y otra en /etc/systemd.
+
+// MemoriaDelRegistroMiB es el techo de memoria del registro, CALCULADO a partir
+// de lo que cuesta derivar una identidad de encuentro.
+//
+// No es un número redondo elegido a ojo, y esa es toda la cuestión. Antes lo
+// era: 96 MiB, contra un Argon2id que pide 64 MiB y se ejecuta dos veces por
+// sala. El primer POST real en el droplet murió por OOM, systemd reinició, y el
+// síntoma visible fue "el servicio se reinicia solo" — un límite mal puesto
+// disfrazado de proceso inestable, sin nada en pantalla que apuntara a la causa.
+//
+// Cuatro veces el coste de una derivación: dos por las dos llamadas seguidas, y
+// otro tanto para el heap del registro, el recolector y el mapa de salas. El
+// freno de concurrencia de registry.redDeEncuentro es lo que mantiene el pico
+// en una derivación a la vez, así que este techo no escala con la carga.
+const MemoriaDelRegistroMiB = 4 * domain.ArgonMemoryKiB / 1024
 
 // UnitDelMotor devuelve la unit de easytier-core.
 //
@@ -128,12 +145,12 @@ LockPersonality=yes
 SystemCallArchitectures=native
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 
-MemoryMax=96M
+MemoryMax=%dM
 CPUQuota=25%%
 
 [Install]
 WantedBy=multi-user.target
-`, UnitMotor, UnitMotor, binario, c.PuertoRegistro, pagina, cli, c.PuertoRPC)
+`, UnitMotor, UnitMotor, binario, c.PuertoRegistro, pagina, cli, c.PuertoRPC, MemoriaDelRegistroMiB)
 }
 
 // BloqueDeProxy es lo que hay que pegar en el proxy inverso. Se imprime al

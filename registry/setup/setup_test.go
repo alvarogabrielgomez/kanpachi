@@ -2,9 +2,12 @@ package setup
 
 import (
 	"net"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/accentiostudios/kanpachi/core/domain"
 )
 
 // TestPuertoLibreEsquivaLoOcupado cubre lo que el instalador promete: elegir un
@@ -135,6 +138,26 @@ func TestLasUnitsLlevanLoQueNoSeNegocia(t *testing.T) {
 			if !strings.Contains(unit, "MemoryMax=") {
 				t.Errorf("la unit del %s no lleva techo de memoria, y el droplet es compartido", nombre)
 			}
+		}
+	})
+
+	t.Run("el techo del registro cubre la derivación", func(t *testing.T) {
+		// Esto existe por un fallo de producción, no por prolijidad. La unit
+		// llevaba MemoryMax=96M, elegido a ojo, contra un Argon2id que pide 64
+		// MiB y corre dos veces por sala creada. El primer POST real murió por
+		// OOM: el kernel mata en silencio y systemd reinicia, así que lo único
+		// visible era un servicio que "se reinicia solo". Un techo por debajo
+		// del coste de derivar no rompe nada al arrancar ni al servir la
+		// página; rompe exactamente cuando alguien crea la primera sala.
+		m := regexp.MustCompile(`MemoryMax=(\d+)M`).FindStringSubmatch(reg)
+		if m == nil {
+			t.Fatal("la unit del registro no declara MemoryMax en MiB")
+		}
+		techo, _ := strconv.Atoi(m[1])
+		derivacion := domain.ArgonMemoryKiB / 1024
+		if techo < 2*derivacion {
+			t.Errorf("MemoryMax=%dM, y cada sala creada pide %d MiB dos veces seguidas: "+
+				"el registro muere por OOM al crear la primera", techo, derivacion)
 		}
 	})
 
