@@ -1,28 +1,36 @@
-# This file configures the analyzer, which statically analyzes Dart code to
-# check for errors, warnings, and lints.
-#
-# The issues identified by the analyzer are surfaced in the UI of Dart-enabled
-# IDEs (https://dart.dev/tools#ides-and-editors). The analyzer can also be
-# invoked from the command line by running `flutter analyze`.
-
-# The following line activates a set of recommended lints for Flutter apps,
-# packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
-linter:
-  # The lint rules applied to this project can be customized in the
-  # section below to disable rules from the `package:flutter_lints/flutter.yaml`
-  # included above or to enable additional rules. A list of all available lints
-  # and their documentation is published at https://dart.dev/lints.
-  #
-  # Instead of disabling a lint rule for the entire project in the
-  # section below, it can also be suppressed for a single line of code
-  # or a specific dart file by using the `// ignore: name_of_lint` and
-  # `// ignore_for_file: name_of_lint` syntax on the line or in the file
-  # producing the lint.
-  rules:
-    # avoid_print: false  # Uncomment to disable the `avoid_print` rule
-    # prefer_single_quotes: true  # Uncomment to enable the `prefer_single_quotes` rule
+analyzer:
+  exclude:
+    # Lo escribe theme_tailor. Sus warnings son suyos, no nuestros, y no hay
+    # dónde arreglarlos: el archivo se reescribe en cada build.
+    - "**/*.tailor.dart"
+  errors:
+    # Un widget-returning method no lo detecta el analizador, pero sí detecta
+    # esto: cualquier constructor que PODRÍA ser const y no lo es. Es la misma
+    # batalla, y ésta se puede automatizar. Ver la regla dura en CLAUDE.md.
+    prefer_const_constructors: error
+    prefer_const_literals_to_create_immutables: error
+    prefer_const_declarations: error
+    # Las claves de widget mal usadas son un bug de identidad de estado.
+    use_key_in_widget_constructors: error
 
-# Additional information about this file can be found at
-# https://dart.dev/guides/language/analysis-options
+linter:
+  rules:
+    # No hay razón para un `new` ni un `this.` de más.
+    unnecessary_this: true
+    # Los widgets tienen que declarar su key para poder reconciliar listas.
+    use_key_in_widget_constructors: true
+    # Todo lo que pueda ser final, final. Un campo mutable en un widget es un
+    # error de categoría: los widgets son configuración inmutable.
+    prefer_final_fields: true
+    prefer_final_locals: true
+    # Un import relativo dentro de lib/ y otro por package: al mismo archivo
+    # producen DOS tipos distintos en runtime.
+    always_use_package_imports: true
+    # Sin catch vacíos: los delata Sonar (S108/S2486) y esconden fallos.
+    empty_catches: true
+    # El orden de los parámetros de un widget importa para leerlo rápido.
+    sort_child_properties_last: true
+    # Documentar la intención de las APIs públicas del design system.
+    slash_for_doc_comments: true

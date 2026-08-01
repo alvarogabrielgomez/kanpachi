@@ -1,18 +1,32 @@
 name: kanpachi_ui
-description: "The UI of Kanpachi app"
+description: "Kanpachi: LAN virtual privada para jugar entre amigos. Cliente de escritorio."
 publish_to: 'none'
-version: 1.0.0+1
+version: 0.1.0+1
 
 environment:
   sdk: ^3.12.1
+
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
+  # Cubit por feature, según el house style de Accentio.
+  flutter_bloc: ^9.1.1
+  # Contenedor detrás del Injector propio. Nada lo resuelve directo.
+  get_it: ^8.0.3
+  # La anotación viaja en el source, así que va en dependencies; el generador no.
+  theme_tailor_annotation: ^3.0.2
+  # Un solo SVG monocromo teñido desde los tokens. Dos archivos de color
+  # distinto serían dos verdades que el tema no controla.
+  flutter_svg: ^2.0.17
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  build_runner: ^2.4.13
+  theme_tailor: ^3.0.2
+
 flutter:
   uses-material-design: true
+  assets:
+    - assets/logo/
