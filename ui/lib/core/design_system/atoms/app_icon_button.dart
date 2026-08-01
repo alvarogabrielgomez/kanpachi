@@ -15,6 +15,7 @@ class AppIconButton extends StatefulWidget {
     this.height = 32,
     this.iconSize = 13,
     this.danger = false,
+    this.outlined = false,
     super.key,
   });
 
@@ -32,6 +33,14 @@ class AppIconButton extends StatefulWidget {
   /// Tiñe de acento al pasar por encima: quitar un rango de puertos, cerrar el
   /// juego de la sala.
   final bool danger;
+
+  /// Con aro: círculo con borde visible en reposo, no sólo al pasar por
+  /// encima. Lo pide la cruz que quita el juego de la sala, que va sola en una
+  /// tarjeta grande — sin caja no se lee como un botón hasta que el ratón la
+  /// encuentra, y para entonces ya se buscó en otro sitio. Los de la barra de
+  /// título NO lo llevan: ahí van tres seguidos y tres aros serían tres cajas
+  /// compitiendo con el contenido.
+  final bool outlined;
 
   @override
   State<AppIconButton> createState() => _AppIconButtonState();
@@ -62,7 +71,18 @@ class _AppIconButtonState extends State<AppIconButton> {
               color: _hovered
                   ? (widget.danger ? colors.chip : colors.surfaceSunken)
                   : Colors.transparent,
-              borderRadius: AppRadius.allXs,
+              shape: widget.outlined ? BoxShape.circle : BoxShape.rectangle,
+              // `BoxDecoration` asserta que no haya radio cuando la forma es
+              // círculo, así que no basta con añadir el borde.
+              borderRadius: widget.outlined ? null : AppRadius.allXs,
+              border: widget.outlined
+                  ? Border.all(
+                      color: _hovered && widget.danger
+                          ? colors.accent
+                          : colors.border,
+                      width: AppStroke.hairline,
+                    )
+                  : null,
             ),
             child: Icon(
               widget.icon,

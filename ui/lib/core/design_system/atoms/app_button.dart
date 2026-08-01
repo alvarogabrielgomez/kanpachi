@@ -38,6 +38,7 @@ class AppButton extends StatefulWidget {
     this.variant = AppButtonVariant.primary,
     this.width,
     this.height,
+    this.horizontalPadding,
     this.icon,
     super.key,
   });
@@ -51,6 +52,14 @@ class AppButton extends StatefulWidget {
   final AppButtonVariant variant;
   final double? width;
   final double? height;
+
+  /// El aire a los lados del texto. Va por llamada y no por variante porque el
+  /// diseño lo elige por SITIO, no por arquetipo: el mismo ghost mide 11 en la
+  /// fila de un miembro, 15 dentro de una tarjeta, 16 en la cabecera de la
+  /// sala y 20 en un diálogo. Un valor por variante queda tan mal como la
+  /// constante única que había antes.
+  final double? horizontalPadding;
+
   final Widget? icon;
 
   @override
@@ -129,9 +138,7 @@ class _AppButtonState extends State<AppButton> {
           height: widget.height,
           transform: Matrix4.translationValues(0, _sink, 0),
           padding: EdgeInsets.symmetric(
-            horizontal: widget.variant == AppButtonVariant.primary
-                ? AppSpacing.x7l
-                : AppSpacing.x7l,
+            horizontal: widget.horizontalPadding ?? AppSpacing.x7l,
             vertical: widget.height == null ? AppSpacing.xxl : 0,
           ),
           decoration: BoxDecoration(

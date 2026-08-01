@@ -56,73 +56,111 @@ class ShellTitleBar extends StatelessWidget {
 /// No es una cuenta: no hay sesión que cerrar ni perfil que ver. Por eso el
 /// menú tiene una sola entrada, y decirlo en el encabezado ("ENTRAS COMO") es
 /// más honesto que un avatar que insinúa que hay algo detrás.
-class _AccountButton extends StatelessWidget {
+class _AccountButton extends StatefulWidget {
   const _AccountButton({required this.nickname});
 
   final String nickname;
 
   @override
+  State<_AccountButton> createState() => _AccountButtonState();
+}
+
+class _AccountButtonState extends State<_AccountButton> {
+  /// El panel se dibuja en el Overlay de la raíz, no aquí.
+  ///
+  /// Colgado de la barra de título era inalcanzable. Un `RenderFlex` pinta a
+  /// sus hijos en orden y la barra es el PRIMER hijo del `Column` del marco,
+  /// así que el cuerpo se pintaba encima del desbordamiento; y el hit test
+  /// recorre esos hijos al revés, así que el `Scrollable` de la pantalla —que
+  /// es `HitTestBehavior.opaque`— se tragaba el toque antes de que llegara.
+  /// "Cambiar nombre" sólo respondía en la franja de 5 px que aún caía dentro
+  /// de la barra. Y al vivir dentro del `DragToMoveArea`, arrastrar sobre el
+  /// panel movía la ventana.
+  final LayerLink _link = LayerLink();
+  final OverlayPortalController _portal = OverlayPortalController();
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final ShellCubit shell = context.read<ShellCubit>();
-    final bool open = context.select<ShellCubit, bool>(
-      (ShellCubit c) => c.state.accountMenuOpen,
-    );
-    final String initial = nickname.isEmpty
+    final String initial = widget.nickname.isEmpty
         ? '?'
-        : nickname.characters.first.toUpperCase();
+        : widget.nickname.characters.first.toUpperCase();
 
-    return Stack(
-      clipBehavior: Clip.none,
-      alignment: Alignment.topRight,
-      children: <Widget>[
-        MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            onTap: shell.toggleAccountMenu,
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(4, 4, 9, 4),
-              decoration: BoxDecoration(
-                color: open ? colors.surface : Colors.transparent,
-                borderRadius: AppRadius.pill,
+    return BlocListener<ShellCubit, ShellState>(
+      listenWhen: (ShellState a, ShellState b) =>
+          a.accountMenuOpen != b.accountMenuOpen,
+      // Se sincroniza en el listener y NUNCA dentro del build: mostrar u
+      // ocultar un overlay marca el árbol como sucio, y hacerlo mientras se
+      // construye revienta.
+      listener: (BuildContext context, ShellState state) {
+        state.accountMenuOpen ? _portal.show() : _portal.hide();
+      },
+      child: OverlayPortal(
+        controller: _portal,
+        overlayChildBuilder: (BuildContext context) => Stack(
+          children: <Widget>[
+            // Clicar fuera cierra. Va debajo del panel y por encima de todo lo
+            // demás, que es lo que se espera de un menú.
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: shell.closeAccountMenu,
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Container(
-                    width: 22,
-                    height: 22,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: colors.accent,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      initial,
-                      style: context.type.monoXxs.copyWith(
-                        color: colors.accentInk,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
+            ),
+            // Anclado por `LayerLink` y no por coordenadas: el panel se pega al
+            // borde inferior derecho de la píldora, sin depender de cuántos
+            // botones de ventana haya a su derecha.
+            CompositedTransformFollower(
+              link: _link,
+              targetAnchor: Alignment.bottomRight,
+              followerAnchor: Alignment.topRight,
+              offset: const Offset(0, 2),
+              child: _AccountMenu(nickname: widget.nickname),
+            ),
+          ],
+        ),
+        child: CompositedTransformTarget(
+          link: _link,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: shell.toggleAccountMenu,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(4, 4, 9, 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Container(
+                      width: 22,
+                      height: 22,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: colors.accent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        initial,
+                        style: context.type.labelSm.copyWith(
+                          color: colors.accentInk,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          height: 1,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 7),
-                  Text(
-                    nickname.isEmpty ? 'sin nombre' : nickname,
-                    style: context.type.labelSm.copyWith(color: colors.text),
-                  ),
-                ],
+                    const SizedBox(width: 7),
+                    Text(
+                      widget.nickname.isEmpty ? 'sin nombre' : widget.nickname,
+                      style: context.type.labelSm.copyWith(color: colors.text),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
-        if (open)
-          Positioned(
-            top: 32,
-            right: 0,
-            child: _AccountMenu(nickname: nickname),
-          ),
-      ],
+      ),
     );
   }
 }
@@ -139,8 +177,12 @@ class _AccountMenu extends StatelessWidget {
       duration: AppMotion.hover,
       curve: AppMotion.enter,
       tween: Tween<double>(begin: 0, end: 1),
-      builder: (BuildContext context, double t, Widget? child) =>
-          Opacity(opacity: t, child: child),
+      // Baja al aparecer, no sólo se enciende: el desplazamiento es lo que lo
+      // ata visualmente al botón del que sale.
+      builder: (BuildContext context, double t, Widget? child) => Opacity(
+        opacity: t,
+        child: Transform.translate(offset: Offset(0, -6 * (1 - t)), child: child),
+      ),
       child: Container(
         width: 210,
         padding: const EdgeInsets.all(AppSpacing.xl),

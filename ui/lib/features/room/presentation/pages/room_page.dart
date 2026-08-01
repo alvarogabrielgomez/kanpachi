@@ -159,6 +159,7 @@ class _RoomHeaderState extends State<_RoomHeader> {
               CopyButton(
                 label: 'Copiar enlace',
                 height: 36,
+                horizontalPadding: AppSpacing.x3l,
                 value: 'https://kanpachi.accentio.dev/${room.code}',
               ),
               if (room.selfIsHost)
@@ -166,6 +167,7 @@ class _RoomHeaderState extends State<_RoomHeader> {
                   label: 'Renovar código',
                   variant: AppButtonVariant.ghost,
                   height: 36,
+                  horizontalPadding: AppSpacing.x3l,
                   onPressed: () => context
                       .read<ShellCubit>()
                       .showDialog(AppDialog.confirmRenew),
@@ -441,6 +443,7 @@ class _GameCard extends StatelessWidget {
                   height: 28,
                   iconSize: 13,
                   danger: true,
+                  outlined: true,
                   onPressed: () => context.read<SessionCubit>().closeGame(),
                 ),
             ],
@@ -455,6 +458,7 @@ class _GameCard extends StatelessWidget {
                 label: 'Cambiar juego',
                 variant: AppButtonVariant.ghost,
                 height: 34,
+                horizontalPadding: 15,
                 onPressed: () =>
                     context.read<ShellCubit>().openGamePicker(fromRoom: true),
               ),
@@ -511,6 +515,7 @@ class _AddressBox extends StatelessWidget {
             value: room.gameAddress.replaceAll(' ', ''),
             variant: AppButtonVariant.quiet,
             height: 34,
+            horizontalPadding: 15,
           ),
         ],
       ),
@@ -665,12 +670,14 @@ class _ForeignRuleNotice extends StatelessWidget {
           label: 'Desactivar mientras juego',
           variant: AppButtonVariant.primaryFlat,
           height: 34,
+          horizontalPadding: 15,
           onPressed: () => session.resolveForeignRule(disable: true),
         ),
         AppButton(
           label: 'Dejar así',
           variant: AppButtonVariant.ghost,
           height: 34,
+          horizontalPadding: 15,
           onPressed: () => session.resolveForeignRule(disable: false),
         ),
       ],
@@ -753,6 +760,7 @@ class _MemberRow extends StatelessWidget {
             label: 'Expulsar',
             variant: AppButtonVariant.ghost,
             height: 28,
+            horizontalPadding: 11,
             onPressed: () => context.read<ShellCubit>().askKick(member),
           ),
       ],

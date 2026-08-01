@@ -88,6 +88,7 @@ class _GamePickerScreenState extends State<GamePickerScreen> {
                 child: AppField(
                   controller: _query,
                   shape: AppFieldShape.pill,
+                  height: 42,
                   hint: 'Buscar en el catálogo…',
                   onChanged: (_) => setState(() {}),
                 ),
@@ -236,6 +237,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 child: AppField(
                   controller: _query,
                   shape: AppFieldShape.pill,
+                  height: 42,
                   hint: 'Buscar por nombre…',
                   onChanged: (_) => setState(() {}),
                 ),
@@ -246,7 +248,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
               AppButton(
                 label: 'Agregar juego',
                 variant: AppButtonVariant.quiet,
-                height: 44,
+                height: 42,
                 icon: const Icon(Icons.add),
                 onPressed: () => shell.go(AppScreen.manualGame),
               ),

@@ -21,6 +21,9 @@ class GameArtToggle extends StatelessWidget {
   final ValueChanged<GameArtMode> onChanged;
 
   /// Al lado de un buscador, el control se estira a lo alto de la fila.
+  ///
+  /// 36 + 3 + 3 de aire del chip = 42, que es lo que miden el campo y el botón
+  /// que lo acompañan. Antes eran 44 + 3 + 3 = 50 y la fila salía en escalera.
   final bool stretched;
 
   @override
@@ -28,7 +31,7 @@ class GameArtToggle extends StatelessWidget {
     return AppSegmented<GameArtMode>(
       value: value,
       onChanged: onChanged,
-      itemSize: stretched ? 44 : 26,
+      itemSize: stretched ? 36 : 26,
       itemWidth: stretched ? 42 : null,
       segments: const <AppSegment<GameArtMode>>[
         AppSegment<GameArtMode>(

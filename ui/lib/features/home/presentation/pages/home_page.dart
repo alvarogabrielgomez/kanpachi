@@ -214,21 +214,48 @@ class _HealthAlerts extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // El enlace no lleva a ningún sitio todavía: el diseño lo pone con
+    // `href="#"`, o sea que la página de ayuda aún no existe. Va como span de
+    // acento y sin gesto, porque un enlace que se puede pulsar y no hace nada
+    // es peor que uno que sólo señala dónde mirar. Cuando exista el destino,
+    // se extrae el átomo con recognizer.
+    final Color accento = context.colors.accent;
     return Column(
       children: <Widget>[
         AppNotice(
           title: 'Tu Firewall de Windows está apagado',
-          body: Text(
-            'Kanpachi se apoya en él para que nadie de la sala alcance tu PC. '
-            'Sin él, no puede protegerte.',
+          body: Text.rich(
+            TextSpan(
+              children: <InlineSpan>[
+                const TextSpan(
+                  text: 'Kanpachi se apoya en él para que nadie de la sala '
+                      'alcance tu PC. Sin él, no puede protegerte. ',
+                ),
+                TextSpan(
+                  text: 'Cómo activarlo',
+                  style: TextStyle(color: accento),
+                ),
+              ],
+            ),
           ),
         ),
-        SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.lg),
         AppNotice(
           title: 'Tu router tiene abierto el puerto 16261 hacia internet',
-          body: Text(
-            'Kanpachi no lo necesita: hace el túnel sin abrir nada. Mientras '
-            'siga así, cualquiera en internet llega a ese puerto.',
+          body: Text.rich(
+            TextSpan(
+              children: <InlineSpan>[
+                const TextSpan(
+                  text: 'Kanpachi no lo necesita: hace el túnel sin abrir '
+                      'nada. Mientras siga así, cualquiera en internet llega '
+                      'a ese puerto. ',
+                ),
+                TextSpan(
+                  text: 'Cómo cerrarlo',
+                  style: TextStyle(color: accento),
+                ),
+              ],
+            ),
           ),
         ),
       ],

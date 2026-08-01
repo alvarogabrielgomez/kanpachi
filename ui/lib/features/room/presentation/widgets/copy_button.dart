@@ -17,6 +17,7 @@ class CopyButton extends StatefulWidget {
     required this.value,
     this.variant = AppButtonVariant.primaryFlat,
     this.height,
+    this.horizontalPadding,
     super.key,
   });
 
@@ -24,6 +25,7 @@ class CopyButton extends StatefulWidget {
   final String value;
   final AppButtonVariant variant;
   final double? height;
+  final double? horizontalPadding;
 
   @override
   State<CopyButton> createState() => _CopyButtonState();
@@ -55,6 +57,7 @@ class _CopyButtonState extends State<CopyButton> {
       label: _copied ? 'Copiado' : widget.label,
       variant: widget.variant,
       height: widget.height,
+      horizontalPadding: widget.horizontalPadding,
       onPressed: _copy,
     );
   }

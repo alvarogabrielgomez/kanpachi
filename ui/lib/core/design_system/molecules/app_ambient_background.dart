@@ -73,67 +73,82 @@ class _AppAmbientBackgroundState extends State<AppAmbientBackground>
     final ColorTokens colors = context.colors;
     if (!widget.enabled) return const SizedBox.shrink();
 
-    final double opacity =
-        (colors.shapeOpacity * widget.intensity).clamp(0.0, 1.0);
+    final double opacity = (colors.shapeOpacity * widget.intensity).clamp(
+      0.0,
+      1.0,
+    );
 
+    // La geometría del PANEL de bienvenida, no la del lienzo.
+    //
+    // El diseño tiene dos juegos de manchas: uno detrás de la ventana flotando
+    // en la captura, y otro dentro del panel de bienvenida. Estaba puesto el
+    // primero — manchas de 460/330/420/280 en un panel que sólo es un 6% mayor
+    // que el del diseño, o sea entre un 27% y un 53% más grandes de lo que
+    // toca. No se compensa haciendo la ventana más grande. Estas son las del
+    // panel: 300/240/280/220.
     return Positioned.fill(
       child: IgnorePointer(
         child: ClipRect(
-          child: Stack(
-            children: <Widget>[
-              _Blob(
-                controller: _controllers[0],
-                color: colors.shapeOne,
-                opacity: opacity,
-                left: -170,
-                top: -150,
-                size: 460,
-                borderRadius: 230,
-                travel: const Offset(-26, 30),
-                spin: 7,
-              ),
-              _Blob(
-                controller: _controllers[1],
-                color: colors.shapeTwo,
-                opacity: opacity,
-                right: -120,
-                top: 10,
-                size: 330,
-                borderRadius: 96,
-                travel: const Offset(30, -22),
-                spin: -9,
-              ),
-              _Blob(
-                controller: _controllers[2],
-                color: colors.shapeThree,
-                opacity: opacity,
-                right: 40,
-                bottom: -230,
-                size: 420,
-                borderRadius: 210,
-                travel: const Offset(18, 18),
-                scale: 0.07,
-              ),
-              _Blob(
-                controller: _controllers[3],
-                color: colors.shapeFour,
-                opacity: opacity,
-                left: 20,
-                bottom: -160,
-                size: 280,
-                borderRadius: 78,
-                travel: const Offset(30, -22),
-                spin: -9,
-                baseRotation: 18,
-              ),
-              Positioned.fill(
-                child: ColoredBox(
-                  color: widget.veilOverSurface
-                      ? colors.surface.withValues(alpha: 0.5)
-                      : colors.veil,
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints c) => Stack(
+              children: <Widget>[
+                _Blob(
+                  controller: _controllers[0],
+                  color: colors.shapeOne,
+                  opacity: opacity,
+                  left: -120,
+                  top: -110,
+                  size: 300,
+                  borderRadius: 150,
+                  travel: const Offset(-26, 30),
+                  spin: 7,
                 ),
-              ),
-            ],
+                _Blob(
+                  controller: _controllers[1],
+                  color: colors.shapeTwo,
+                  opacity: opacity,
+                  right: -90,
+                  top: -40,
+                  size: 240,
+                  borderRadius: 70,
+                  travel: const Offset(30, -22),
+                  spin: -9,
+                ),
+                _Blob(
+                  controller: _controllers[2],
+                  color: colors.shapeThree,
+                  opacity: opacity,
+                  // El diseño las coloca en porcentaje del ancho del panel, así
+                  // que se resuelven contra el ancho real y no contra el que
+                  // tenía la maqueta.
+                  right: c.maxWidth * 0.06,
+                  bottom: -150,
+                  size: 280,
+                  borderRadius: 140,
+                  travel: const Offset(18, 18),
+                  scale: 0.07,
+                ),
+                _Blob(
+                  controller: _controllers[3],
+                  color: colors.shapeFour,
+                  opacity: opacity,
+                  left: c.maxWidth * 0.04,
+                  bottom: -120,
+                  size: 220,
+                  borderRadius: 62,
+                  travel: const Offset(30, -22),
+                  spin: -9,
+                  baseRotation: 18,
+                ),
+                Positioned.fill(
+                  child: ColoredBox(
+                    color: widget.veilOverSurface
+                        ? colors.surface.withValues(alpha: 0.5)
+                        : colors.veil,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

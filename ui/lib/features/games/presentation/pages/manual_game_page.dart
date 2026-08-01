@@ -260,10 +260,12 @@ class _RuleRow extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          // Con palabras y no con iconos: el protocolo es el dato que decide
+          // qué se abre, y no hay dibujo que diga "UDP". Con iconos había que
+          // parar el ratón encima para saber qué estaba puesto.
           AppSegmented<PortProtocol>(
             value: draft.protocol,
             itemSize: 28,
-            itemWidth: 46,
             onChanged: (PortProtocol p) {
               draft.protocol = p;
               onChanged();
@@ -271,17 +273,17 @@ class _RuleRow extends StatelessWidget {
             segments: const <AppSegment<PortProtocol>>[
               AppSegment<PortProtocol>(
                 value: PortProtocol.tcp,
-                icon: Icons.swap_horiz,
-                tooltip: 'TCP',
+                label: 'TCP',
+                tooltip: 'Sólo TCP',
               ),
               AppSegment<PortProtocol>(
                 value: PortProtocol.udp,
-                icon: Icons.bolt,
-                tooltip: 'UDP',
+                label: 'UDP',
+                tooltip: 'Sólo UDP',
               ),
               AppSegment<PortProtocol>(
                 value: PortProtocol.both,
-                icon: Icons.all_inclusive,
+                label: 'AMBOS',
                 tooltip: 'TCP y UDP',
               ),
             ],

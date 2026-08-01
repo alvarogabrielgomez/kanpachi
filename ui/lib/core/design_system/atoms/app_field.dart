@@ -27,6 +27,7 @@ class AppField extends StatefulWidget {
     this.hint,
     this.shape = AppFieldShape.rounded,
     this.trailing,
+    this.height,
     this.maxLength,
     this.textStyle,
     this.mono = false,
@@ -44,6 +45,11 @@ class AppField extends StatefulWidget {
 
   /// Lo que va pegado a la derecha DENTRO del campo: casi siempre un botón.
   final Widget? trailing;
+
+  /// Alto fijo, para las filas donde el campo comparte renglón con un botón y
+  /// un conmutador. Sin él cada pieza mide lo que le sale de su contenido y la
+  /// fila queda en escalera; el diseño las pone las tres del mismo alto.
+  final double? height;
 
   final int? maxLength;
   final TextStyle? textStyle;
@@ -90,8 +96,15 @@ class _AppFieldState extends State<AppField> {
     final type = context.type;
 
     final EdgeInsets padding = switch (widget.shape) {
-      AppFieldShape.pill => const EdgeInsets.fromLTRB(
-          AppSpacing.x4l, AppSpacing.sm, AppSpacing.sm, AppSpacing.sm),
+      // El inset derecho depende de si hay botón pegado dentro. Los 6 px están
+      // para dejarle sitio a ese botón; cuando no lo hay, el texto queda a 6
+      // del borde y a 18 del otro lado, descentrado a la vista.
+      AppFieldShape.pill => EdgeInsets.fromLTRB(
+          AppSpacing.x4l,
+          AppSpacing.sm,
+          widget.trailing == null ? AppSpacing.x4l : AppSpacing.sm,
+          AppSpacing.sm,
+        ),
       AppFieldShape.rounded => const EdgeInsets.symmetric(
           horizontal: AppSpacing.x3l, vertical: AppSpacing.xl),
       AppFieldShape.hero => const EdgeInsets.symmetric(
@@ -115,6 +128,7 @@ class _AppFieldState extends State<AppField> {
 
     return AnimatedContainer(
       duration: AppMotion.hover,
+      height: widget.height,
       padding: padding,
       decoration: BoxDecoration(
         color: colors.surfaceSunken,
