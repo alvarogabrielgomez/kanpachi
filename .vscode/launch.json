@@ -1,0 +1,73 @@
+{
+  // Configuraciones de arranque para el repo entero.
+  //
+  // Viven en la raíz y no dentro de ui/ para que F5 funcione desde el
+  // workspace de siempre, sin tener que abrir una segunda ventana por cada
+  // parte del proyecto. Kanpachi son tres cosas que se ejecutan distinto (la
+  // app de Windows en Flutter, el seed en Go, los tests en Go) y las tres
+  // tienen que estar a una tecla.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // La primera de la lista es la que sale por defecto con F5.
+      "name": "Kanpachi UI (Windows)",
+      "type": "dart",
+      "request": "launch",
+      "program": "${workspaceFolder}/ui/lib/main.dart",
+      "cwd": "${workspaceFolder}/ui",
+      // Fijado para que no pregunte el dispositivo en cada arranque: el
+      // cliente de la v1 es solo Windows.
+      "deviceId": "windows",
+      // La barra de PROTOTIPO solo se monta en debug, así que es este perfil
+      // el que sirve para recorrer las pantallas.
+      "flutterMode": "debug"
+    },
+    {
+      // Sin la barra de prototipo y con las animaciones a velocidad real.
+      // Para comprobar que algo va fluido, no para desarrollar.
+      "name": "Kanpachi UI (profile)",
+      "type": "dart",
+      "request": "launch",
+      "program": "${workspaceFolder}/ui/lib/main.dart",
+      "cwd": "${workspaceFolder}/ui",
+      "deviceId": "windows",
+      "flutterMode": "profile"
+    },
+    {
+      // El registro del seed, contra la página real de invite/.
+      //
+      // En Windows no encuentra /etc/kanpachi ni easytier-cli, así que arranca
+      // con los puertos por defecto y sin contador de miembros. Sirve para
+      // trabajar en la página y en la API; para la cosa entera hace falta
+      // Linux, que es donde vive el seed.
+      "name": "kanpseed serve (local)",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/registry/cmd/kanpseed",
+      "args": [
+        "serve",
+        "--addr",
+        "127.0.0.1:8010",
+        "--page",
+        "${workspaceFolder}/invite/index.html"
+      ]
+    },
+    {
+      "name": "Go: tests del paquete abierto",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${fileDirname}"
+    },
+    {
+      // Los de core corren sin admin, sin red y sin Windows. Que se puedan
+      // lanzar de un tirón es lo que mantiene viva esa propiedad.
+      "name": "Go: tests de core",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${workspaceFolder}/core/domain"
+    }
+  ]
+}

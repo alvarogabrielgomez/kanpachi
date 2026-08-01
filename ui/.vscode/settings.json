@@ -1,3 +1,20 @@
 {
-  "dart.flutterSdkPath": ".fvm/versions/3.44.6"
+  // Sin dart.flutterSdkPath a propósito.
+  //
+  // Apuntaba a .fvm/versions/3.44.6, una carpeta que no existe en este repo:
+  // F5 fallaba antes de compilar nada, y el error no dice que la culpa sea de
+  // esta línea. Sin la clave, la extensión usa el Flutter del PATH, que en
+  // esta máquina ya es el de fvm.
+  //
+  // Si algún día se fija una versión para el proyecto, se hace con `fvm use`,
+  // que crea el .fvm/ de verdad y escribe esta clave apuntando a algo que
+  // existe.
+  "dart.lineLength": 80,
+  "editor.rulers": [80],
+  "[dart]": {
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll": "explicit"
+    }
+  }
 }
