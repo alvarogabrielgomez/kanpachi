@@ -137,6 +137,9 @@ class ShellCubit extends Cubit<ShellState> {
   void setAmbient({required bool enabled}) =>
       emit(state.copyWith(ambient: enabled));
 
+  void setHealthAlerts({required bool enabled}) =>
+      emit(state.copyWith(showHealthAlerts: enabled));
+
   void cycleTheme() => emit(state.copyWith(
         themeMode: switch (state.themeMode) {
           ThemeMode.system => ThemeMode.light,

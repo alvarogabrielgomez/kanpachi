@@ -1,0 +1,278 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_field.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_icon_button.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_kicker.dart';
+import 'package:kanpachi_ui/core/design_system/molecules/app_list.dart';
+import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
+import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/features/games/presentation/widgets/game_views.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
+import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
+import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
+import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
+import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
+
+/// El selector de juego: lo instalado en esta PC, y la puerta a la biblioteca.
+///
+/// Muestra primero lo instalado porque es lo que casi siempre se busca, pero
+/// la biblioteca entera está a un clic y bien visible: la detección ordena y
+/// sugiere, jamás filtra. Un juego que Kanpachi no supo ver tiene que poder
+/// elegirse igual.
+class GamePickerScreen extends StatelessWidget {
+  const GamePickerScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final ShellCubit shell = context.read<ShellCubit>();
+    final ShellState shellState = context.watch<ShellCubit>().state;
+    final SessionState session = context.watch<SessionCubit>().state;
+    final bool fromRoom = shellState.pickerCameFromRoom;
+
+    void pick(Game game) {
+      context.read<SessionCubit>().proposeGame(game);
+      shell.showDialog(AppDialog.confirmGame);
+    }
+
+    return ScreenBody(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          ScreenHeader(
+            title: fromRoom ? 'Elegir juego de la sala' : 'Crear sala',
+            note: fromRoom
+                ? 'La sala sigue igual: cambiar de juego solo cambia qué '
+                    'puertos se abren.'
+                : 'Puedes crear la sala sin juego y elegirlo adentro, o abrir '
+                    'uno de una vez.',
+            leading: AppBackButton(
+              onPressed: () => shell.go(
+                fromRoom ? AppScreen.room : AppScreen.home,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.x4l),
+          Row(
+            children: <Widget>[
+              const Spacer(),
+              GameArtToggle(
+                value: shellState.artMode,
+                onChanged: shell.setArtMode,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xxl),
+
+          // Sólo al crear. Dentro de una sala ya existente no tiene sentido:
+          // la sala ya está creada, y "sin juego" se consigue con la cruz de
+          // la tarjeta del juego.
+          if (!fromRoom) ...<Widget>[
+            AppTappableCard(
+              dashed: true,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.x4l,
+                vertical: AppSpacing.xxl,
+              ),
+              onTap: () {
+                context.read<SessionCubit>().createRoom(
+                      name: 'Sala de Kanpachi',
+                    );
+                shell.go(AppScreen.room);
+              },
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      'Crear la sala sin juego y elegirlo adentro',
+                      style: context.type.label.copyWith(color: colors.text),
+                    ),
+                  ),
+                  Icon(Icons.arrow_forward, size: 17, color: colors.accent),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.x4l),
+          ],
+
+          AppKicker('Instalados en esta PC · ${session.installed.length}'),
+          const SizedBox(height: AppSpacing.lg),
+          GameCollection(
+            games: session.installed,
+            mode: shellState.artMode,
+            selected: session.room?.game,
+            onPick: pick,
+          ),
+          const SizedBox(height: AppSpacing.x6l),
+          AppTappableCard(
+            filled: true,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.x4l,
+              vertical: AppSpacing.x3l,
+            ),
+            onTap: () => shell.go(AppScreen.catalog),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'Ver toda la biblioteca · ${session.catalog.length} juegos',
+                        style: context.type.strong.copyWith(color: colors.text),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'Con buscador y portadas. Si tu juego no aparece '
+                        'arriba, está aquí igual.',
+                        style: context.type.bodySm
+                            .copyWith(color: colors.textMuted),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.x3l),
+                Icon(Icons.arrow_forward, size: 17, color: colors.accent),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// La biblioteca completa, con buscador y alta manual.
+class CatalogScreen extends StatefulWidget {
+  const CatalogScreen({super.key});
+
+  @override
+  State<CatalogScreen> createState() => _CatalogScreenState();
+}
+
+class _CatalogScreenState extends State<CatalogScreen> {
+  final TextEditingController _query = TextEditingController();
+
+  @override
+  void dispose() {
+    _query.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final ShellCubit shell = context.read<ShellCubit>();
+    final ShellState shellState = context.watch<ShellCubit>().state;
+    final SessionState session = context.watch<SessionCubit>().state;
+
+    final String q = _query.text.trim().toLowerCase();
+    final List<Game> results = q.isEmpty
+        ? session.catalog
+        : session.catalog
+            .where((Game g) => g.name.toLowerCase().contains(q))
+            .toList(growable: false);
+
+    return ScreenBody(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          ScreenHeader(
+            title: 'Biblioteca de juegos',
+            leading: AppBackButton(onPressed: () => shell.go(AppScreen.gamePicker)),
+            trailing: Text(
+              q.isEmpty
+                  ? '${session.catalog.length} juegos'
+                  : '${results.length} de ${session.catalog.length}',
+              style: context.type.monoSm.copyWith(color: colors.textMuted),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: AppField(
+                  controller: _query,
+                  shape: AppFieldShape.pill,
+                  hint: 'Buscar por nombre…',
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.lg),
+              // Que el alta manual viva junto al buscador no es casual: es el
+              // sitio donde alguien acaba de comprobar que su juego no está.
+              AppButton(
+                label: 'Agregar juego',
+                variant: AppButtonVariant.quiet,
+                height: 44,
+                icon: const Icon(Icons.add),
+                onPressed: () => shell.go(AppScreen.manualGame),
+              ),
+              const SizedBox(width: AppSpacing.lg),
+              GameArtToggle(
+                value: shellState.artMode,
+                onChanged: shell.setArtMode,
+                stretched: true,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.x4l),
+          if (results.isEmpty)
+            const _NoResults()
+          else
+            GameCollection(
+              games: results,
+              mode: shellState.artMode,
+              selected: session.room?.game,
+              showInstalledBadge: true,
+              minTileWidth: 140,
+              onPick: (Game game) {
+                context.read<SessionCubit>().proposeGame(game);
+                shell.showDialog(AppDialog.confirmGame);
+              },
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Cuando la búsqueda no encuentra nada.
+///
+/// No dice sólo "no hay": dice qué hacer. Que un juego falte del catálogo es
+/// esperable — son cinco los que vienen probados — y el creador de perfiles
+/// existe justo para eso.
+class _NoResults extends StatelessWidget {
+  const _NoResults();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        vertical: 50,
+        horizontal: AppSpacing.x5l,
+      ),
+      child: Column(
+        children: <Widget>[
+          Text(
+            'Ningún juego coincide',
+            style: context.type.strong
+                .copyWith(color: colors.text, fontSize: 16),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 380),
+            child: Text(
+              'Si el juego no está en el catálogo, se puede crear su perfil '
+              'con el creador de perfiles y compartirlo como un .json.',
+              textAlign: TextAlign.center,
+              style: context.type.body.copyWith(color: colors.textMuted),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

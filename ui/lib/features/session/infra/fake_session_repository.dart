@@ -59,20 +59,6 @@ class FakeSessionRepository implements SessionRepository {
         rules: <PortRule>[PortRule(range: range, protocol: protocol)],
       );
 
-  /// Los nombres que se sugieren al crear una sala. Que haya sugerencia y no
-  /// un campo vacío importa: nadie quiere bautizar nada para jugar un rato, y
-  /// una sala sin nombre es indistinguible de otra en la bandeja.
-  static const List<String> roomNameSuggestions = <String>[
-    'La Guarida',
-    'El Sótano',
-    'Cueva de Pana',
-    'El Refugio',
-    'Punto de Encuentro',
-  ];
-
-  String suggestRoomName() =>
-      roomNameSuggestions[_random.nextInt(roomNameSuggestions.length)];
-
   @override
   Future<List<Game>> catalog() async => <Game>[..._manual, ..._catalog];
 
