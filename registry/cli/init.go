@@ -41,7 +41,15 @@ func cmdInit(args []string) error {
 	}
 	if yaInstalado {
 		aviso("ya hay un seed instalado, escuchando en el puerto %d", previa.PuertoRegistro)
-		tenue("  se conservan los puertos actuales. Para cambiarlos: kanpseed config")
+		// El texto tiene que decir lo que va a pasar de verdad. Anunciar que se
+		// conservan los puertos mientras se está moviendo uno a petición del
+		// usuario es peor que no decir nada: quien lo lee deja de mirar el
+		// número del resumen, que es el único dato por el que existe.
+		if *puerto != 0 && *puerto != previa.PuertoRegistro {
+			tenue("  se va a mover al %d, así que hay que actualizar el proxy inverso", *puerto)
+		} else {
+			tenue("  se conservan los puertos actuales. Para cambiarlos: kanpseed config")
+		}
 		fmt.Println()
 	}
 
@@ -110,6 +118,7 @@ func cmdInit(args []string) error {
 	ok("el motor escucha en el %d, TCP y UDP", cfg.PuertoMotor)
 
 	imprimirResumen(cfg)
+	avisarCortafuegos(cfg)
 	return nil
 }
 
@@ -120,31 +129,50 @@ func cmdInit(args []string) error {
 func decidirPuertos(previa setup.Config, yaInstalado bool, pedido, pedidoMotor int) (setup.Config, error) {
 	c := setup.Config{}
 
-	preferido := setup.PuertoRegPorDefecto
+	// Un puerto ya instalado se CONSERVA sin comprobar si está libre.
+	//
+	// Comprobarlo era el error: quien lo tiene tomado mientras init se ejecuta
+	// es el propio registro, que sigue corriendo. Sondear con un bind lo daba
+	// por ocupado y elegía el siguiente, así que reinstalar movía el servicio
+	// del 8010 al 8011 y dejaba el proxy inverso apuntando al vacío. Sin error,
+	// sin aviso: el resumen imprimía el puerto nuevo como si fuera lo normal.
+	//
+	// Si de verdad se lo hubiera llevado otro proceso, el restart falla y se ve,
+	// con las líneas del diario incluidas. Un error a la vista es mejor que un
+	// puerto movido a espaldas de quien configuró el proxy.
 	switch {
+	case pedido != 0 && yaInstalado && pedido == previa.PuertoRegistro:
+		c.PuertoRegistro = pedido
 	case pedido != 0:
-		preferido = pedido
-	case yaInstalado:
-		preferido = previa.PuertoRegistro
+		p, err := setup.PuertoLibre(setup.RangoInternoDesde, setup.RangoInternoHasta, pedido)
+		if err != nil {
+			return c, err
+		}
+		if p != pedido {
+			return c, fmt.Errorf("el puerto %d está ocupado", pedido)
+		}
+		c.PuertoRegistro = p
+	case yaInstalado && previa.PuertoRegistro != 0:
+		c.PuertoRegistro = previa.PuertoRegistro
+	default:
+		p, err := setup.PuertoLibre(setup.RangoInternoDesde, setup.RangoInternoHasta, setup.PuertoRegPorDefecto)
+		if err != nil {
+			return c, err
+		}
+		c.PuertoRegistro = p
 	}
-	p, err := setup.PuertoLibre(setup.RangoInternoDesde, setup.RangoInternoHasta, preferido)
-	if err != nil {
-		return c, err
-	}
-	if p != preferido && pedido != 0 {
-		return c, fmt.Errorf("el puerto %d está ocupado", pedido)
-	}
-	c.PuertoRegistro = p
 
-	rpcPreferido := setup.PuertoRPCPorDefecto
-	if yaInstalado {
-		rpcPreferido = previa.PuertoRPC
+	// El del RPC va por el mismo criterio, y por el mismo motivo: lo tiene
+	// tomado el motor, que también sigue vivo mientras init corre.
+	if yaInstalado && previa.PuertoRPC != 0 {
+		c.PuertoRPC = previa.PuertoRPC
+	} else {
+		rpc, err := setup.PuertoLibre(setup.RangoRPCDesde, setup.RangoRPCHasta, setup.PuertoRPCPorDefecto)
+		if err != nil {
+			return c, err
+		}
+		c.PuertoRPC = rpc
 	}
-	rpc, err := setup.PuertoLibre(setup.RangoRPCDesde, setup.RangoRPCHasta, rpcPreferido)
-	if err != nil {
-		return c, err
-	}
-	c.PuertoRPC = rpc
 
 	motor := setup.PuertoMotorPorDefecto
 	switch {
