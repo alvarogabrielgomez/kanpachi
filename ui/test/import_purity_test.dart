@@ -61,13 +61,12 @@ void main() {
 
   test('la presentación no llama a infra por la puerta de atrás', () {
     // Las pantallas hablan con el contrato de domain, nunca con la
-    // implementación. La excepción es la barra de prototipo, cuyo trabajo es
-    // precisamente plantar datos falsos.
+    // implementación. Sin excepciones: la que había, la barra de prototipo,
+    // ya no existe.
     final List<String> culpables = <String>[];
     for (final File f in archivos) {
       final String p = ruta(f);
       if (!p.contains('/presentation/')) continue;
-      if (p.endsWith('prototype_dock.dart')) continue;
       for (final String i in importsDe(f)) {
         if (i.contains('/infra/')) culpables.add('$p → $i');
       }

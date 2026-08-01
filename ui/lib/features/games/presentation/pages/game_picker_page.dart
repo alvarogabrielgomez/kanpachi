@@ -20,8 +20,21 @@ import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dar
 /// la biblioteca entera está a un clic y bien visible: la detección ordena y
 /// sugiere, jamás filtra. Un juego que Kanpachi no supo ver tiene que poder
 /// elegirse igual.
-class GamePickerScreen extends StatelessWidget {
+class GamePickerScreen extends StatefulWidget {
   const GamePickerScreen({super.key});
+
+  @override
+  State<GamePickerScreen> createState() => _GamePickerScreenState();
+}
+
+class _GamePickerScreenState extends State<GamePickerScreen> {
+  final TextEditingController _query = TextEditingController();
+
+  @override
+  void dispose() {
+    _query.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,6 +43,18 @@ class GamePickerScreen extends StatelessWidget {
     final ShellState shellState = context.watch<ShellCubit>().state;
     final SessionState session = context.watch<SessionCubit>().state;
     final bool fromRoom = shellState.pickerCameFromRoom;
+
+    // El campo dice "buscar en el catálogo", así que busca en el catálogo
+    // entero y no sólo en lo instalado: la detección ordena y sugiere, jamás
+    // filtra. Sin texto se ve lo instalado, que es lo que casi siempre se
+    // quiere y ahorra escribir.
+    final String q = _query.text.trim().toLowerCase();
+    final bool buscando = q.isNotEmpty;
+    final List<Game> mostrados = buscando
+        ? session.catalog
+            .where((Game g) => g.name.toLowerCase().contains(q))
+            .toList(growable: false)
+        : session.installed;
 
     void pick(Game game) {
       context.read<SessionCubit>().proposeGame(game);
@@ -54,16 +79,28 @@ class GamePickerScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.x4l),
+          // El buscador y el conmutador comparten fila, como en el diseño. El
+          // conmutador solo, alineado a la derecha sobre una fila vacía, dejaba
+          // un hueco que no significaba nada.
           Row(
             children: <Widget>[
-              const Spacer(),
+              Expanded(
+                child: AppField(
+                  controller: _query,
+                  shape: AppFieldShape.pill,
+                  hint: 'Buscar en el catálogo…',
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.lg),
               GameArtToggle(
                 value: shellState.artMode,
                 onChanged: shell.setArtMode,
+                stretched: true,
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.xxl),
+          const SizedBox(height: AppSpacing.x4l),
 
           // Sólo al crear. Dentro de una sala ya existente no tiene sentido:
           // la sala ya está creada, y "sin juego" se consigue con la cruz de
@@ -96,10 +133,14 @@ class GamePickerScreen extends StatelessWidget {
             const SizedBox(height: AppSpacing.x4l),
           ],
 
-          AppKicker('Instalados en esta PC · ${session.installed.length}'),
+          AppKicker(
+            buscando
+                ? 'Resultados · ${mostrados.length}'
+                : 'Instalados en esta PC · ${mostrados.length}',
+          ),
           const SizedBox(height: AppSpacing.lg),
           GameCollection(
-            games: session.installed,
+            games: mostrados,
             mode: shellState.artMode,
             selected: session.room?.game,
             onPick: pick,

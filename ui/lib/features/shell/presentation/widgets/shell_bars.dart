@@ -217,10 +217,11 @@ class _WindowButtons extends StatelessWidget {
         AppIconButton(
           icon: Icons.close,
           tooltip: 'Cerrar a la bandeja',
-          // Cerrar NO cierra la sala: el daemon la sostiene y queda el icono
-          // en la bandeja. Por eso lleva a esa pantalla en vez de matar el
-          // proceso; matarlo sería tirar la partida de todos.
-          onPressed: () => context.read<ShellCubit>().go(AppScreen.tray),
+          // Cerrar NO cierra la sala. `close()` no mata el proceso: la ventana
+          // tiene puesto `preventClose`, así que dispara `onWindowClose` y el
+          // TrayBridge la esconde dejando el icono en la bandeja. Matarla sería
+          // tirar la partida de todos.
+          onPressed: windowManager.close,
         ),
       ],
     );

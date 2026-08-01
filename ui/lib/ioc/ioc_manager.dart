@@ -1,6 +1,8 @@
 import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
 import 'package:kanpachi_ui/features/session/infra/fake_session_repository.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
+import 'package:kanpachi_ui/features/shell/domain/tray_presence.dart';
+import 'package:kanpachi_ui/features/shell/infra/windows_tray.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/ioc/injector.dart';
 
@@ -32,6 +34,11 @@ abstract final class IocManager {
   }
 
   static void _registerShell() {
-    Injector.instance.registerLazySingleton<ShellCubit>(ShellCubit.new);
+    final Injector i = Injector.instance;
+    i.registerLazySingleton<ShellCubit>(ShellCubit.new);
+    // Detrás del contrato para que los tests de widget no toquen la bandeja
+    // del sistema: un test que planta un icono de verdad lo deja puesto
+    // cuando falla.
+    i.registerLazySingleton<TrayPresence>(WindowsTray.new);
   }
 }

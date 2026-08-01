@@ -19,7 +19,6 @@ enum AppScreen {
   manualGame,
   room,
   invite,
-  tray,
 }
 
 /// Los diálogos, que se dibujan por encima de la pantalla actual.

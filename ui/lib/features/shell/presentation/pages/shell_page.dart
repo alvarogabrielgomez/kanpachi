@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
@@ -13,7 +12,6 @@ import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
-import 'package:kanpachi_ui/features/shell/presentation/widgets/prototype_dock.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/shell_bars.dart';
 
 /// El marco de la aplicación: la ventana ES la app.
@@ -38,9 +36,6 @@ class ShellPage extends StatelessWidget {
           ShellTitleBar(nickname: session.nickname),
           const Expanded(child: _WindowBody()),
           ShellStatusBar(right: _statusRight(session)),
-          // Sólo en debug. Es andamiaje del prototipo, no una función de la
-          // app: en una build de release no existe ni ocupa sitio.
-          if (kDebugMode) const PrototypeDock(),
         ],
       ),
     );
@@ -134,7 +129,6 @@ class _CurrentScreen extends StatelessWidget {
           code: session.room?.code ?? 'A7K2-M9QX',
           roomName: session.room?.name ?? 'La Guarida',
         ),
-      AppScreen.tray => const TrayScreen(),
     };
   }
 }

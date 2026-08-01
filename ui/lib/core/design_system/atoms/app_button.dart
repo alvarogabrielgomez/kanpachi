@@ -149,7 +149,14 @@ class _AppButtonState extends State<AppButton> {
                     ),
                   ],
           ),
-          alignment: Alignment.center,
+          // Sin `alignment`. Un Container con alignment envuelve al hijo en un
+          // Align sin factor, y eso se come el ancho disponible entero: dentro
+          // de un Wrap acotado el botón dejaba de abrazar su texto y se
+          // estiraba a lo ancho del renglón, uno por línea. Sin alignment, el
+          // Container encoge cuando las constraints son sueltas y se llena
+          // cuando son tirantes — que es exactamente lo que se quiere: abraza
+          // en una fila de acciones, y ocupa el ancho entero cuando la columna
+          // que lo contiene lo estira.
           child: Row(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,

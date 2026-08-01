@@ -19,6 +19,10 @@ dependencies:
   # distinto serían dos verdades que el tema no controla.
   flutter_svg: ^2.0.17
   window_manager: ^0.5.2
+  # La bandeja no es una pantalla de la app: es el menú del icono en la
+  # bandeja de Windows. Cerrar la ventana esconde la ventana, y ese icono es
+  # lo único que queda para volver.
+  tray_manager: ^0.5.2
 
 dev_dependencies:
   flutter_test:

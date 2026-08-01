@@ -92,29 +92,37 @@ class GameCollection extends StatelessWidget {
       );
     }
 
+    // Wrap y no GridView. Un grid obliga a declarar el alto de la celda por
+    // adelantado (`mainAxisExtent`), y ese número es una suma a mano de la
+    // portada más dos renglones de texto: cambia con el tema, con la fuente y
+    // con la escala de texto del sistema, y cuando se queda un píxel corto la
+    // ficha se raya de amarillo y negro. El Wrap deja que la ficha mida lo que
+    // mide. Aquí no se pierde nada por no ser perezoso: esto vive dentro de un
+    // SingleChildScrollView, así que el grid tampoco lo era.
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
+        const double gap = AppSpacing.xl;
         final int columns =
-            (constraints.maxWidth / minTileWidth).floor().clamp(1, 8);
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          padding: EdgeInsets.zero,
-          itemCount: games.length,
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            crossAxisSpacing: AppSpacing.xl,
-            mainAxisSpacing: AppSpacing.xl,
-            // La tarjeta es portada más dos líneas de texto; el alto sale de
-            // ahí y no de una proporción inventada.
-            mainAxisExtent: 175,
-          ),
-          itemBuilder: (BuildContext context, int i) => _GameTile(
-            game: games[i],
-            selected: games[i] == selected,
-            showInstalledBadge: showInstalledBadge,
-            onTap: () => onPick(games[i]),
-          ),
+            ((constraints.maxWidth + gap) / (minTileWidth + gap))
+                .floor()
+                .clamp(1, 8);
+        final double tile =
+            (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: <Widget>[
+            for (final Game game in games)
+              SizedBox(
+                width: tile,
+                child: _GameTile(
+                  game: game,
+                  selected: game == selected,
+                  showInstalledBadge: showInstalledBadge,
+                  onTap: () => onPick(game),
+                ),
+              ),
+          ],
         );
       },
     );

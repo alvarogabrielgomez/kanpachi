@@ -6,6 +6,7 @@ import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/pages/shell_page.dart';
+import 'package:kanpachi_ui/features/shell/presentation/widgets/tray_bridge.dart';
 import 'package:kanpachi_ui/ioc/injector.dart';
 import 'package:kanpachi_ui/ioc/ioc_manager.dart';
 import 'package:window_manager/window_manager.dart';
@@ -56,7 +57,10 @@ class KanpachiApp extends StatelessWidget {
           create: (_) => Injector.instance.get<SessionCubit>()..loadCatalog(),
         ),
       ],
-      child: const _ThemedApp(),
+      // Por encima de la app y por debajo de los cubits: tiene que durar lo
+      // que dure la ventana y necesita leer la sala para escribir el menú de
+      // la bandeja.
+      child: const TrayBridge(child: _ThemedApp()),
     );
   }
 }

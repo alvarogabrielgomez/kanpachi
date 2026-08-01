@@ -123,7 +123,7 @@ void main() {
           // que es el estado con más cosas en pantalla a la vez.
           final Room? sala = switch (pantalla) {
             AppScreen.room => salaDeHost,
-            AppScreen.invite || AppScreen.tray => salaDeInvitado,
+            AppScreen.invite => salaDeInvitado,
             _ => null,
           };
 

@@ -17,12 +17,6 @@ void main() {
   bool esTokens(String path) =>
       path.replaceAll(r'\', '/').contains('lib/core/design_system/tokens/');
 
-  /// La barra de prototipo no es parte del producto: se monta sólo en debug y
-  /// su trabajo es NO parecerse a la app. Tematizarla la camuflaría justo
-  /// cuando hace falta que se distinga.
-  bool esPrototipo(String path) =>
-      path.replaceAll(r'\', '/').endsWith('prototype_dock.dart');
-
   bool esGenerado(String path) => path.endsWith('.tailor.dart');
 
   List<File> archivosDart() => lib
@@ -45,7 +39,7 @@ void main() {
     final List<String> culpables = <String>[];
 
     for (final File f in archivosDart()) {
-      if (esTokens(f.path) || esPrototipo(f.path)) continue;
+      if (esTokens(f.path)) continue;
       final String fuente = sinComentarios(f.readAsStringSync());
       // Colors.transparent es la ausencia de color, no un color: no tiene
       // equivalente semántico y no cambia con el tema.
@@ -68,7 +62,7 @@ void main() {
     final List<String> culpables = <String>[];
 
     for (final File f in archivosDart()) {
-      if (esTokens(f.path) || esPrototipo(f.path)) continue;
+      if (esTokens(f.path)) continue;
       if (sinComentarios(f.readAsStringSync()).contains('fontFamily:')) {
         culpables.add(f.path);
       }
