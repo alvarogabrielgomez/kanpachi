@@ -125,6 +125,9 @@ func cmdDoctor(args []string) error {
 		}
 	}
 
+	seccion("Cortafuegos")
+	revisarCortafuegos(cfg, malo)
+
 	seccion("Proxy inverso")
 	if cfg.Dominio == "" {
 		aviso("no hay dominio configurado, así que no puedo comprobar el proxy")
