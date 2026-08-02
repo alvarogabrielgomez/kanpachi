@@ -1,0 +1,509 @@
+package protocol
+
+import (
+	"context"
+	"crypto/subtle"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/netip"
+	"time"
+
+	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/port"
+	"github.com/accentiostudios/kanpachi/core/usecase"
+)
+
+// API es lo que el protocolo puede pedirle al daemon.
+//
+// Es una interfaz declarada acá y no *usecase.Session, por lo mismo que en el
+// supervisor: lo que no está en esta lista no se puede exponer por el pipe ni
+// por accidente. Faltan a propósito `IssueCredentialFor`, `OnRoomAnnounce`,
+// `OnEngineEvent` y las demás entradas del supervisor y del canal de control:
+// esas llegan por otros caminos y ponerlas acá las volvería invocables desde
+// cualquier proceso del usuario.
+type API interface {
+	Status() domain.RoomState
+	MissingGame() string
+
+	CreateRoom(ctx context.Context, nick domain.Nickname, roomName string) (domain.RoomState, error)
+	JoinRoom(ctx context.Context, input string, nick domain.Nickname) (domain.RoomState, error)
+	LeaveRoom(ctx context.Context) domain.RoomState
+	ActivateProfile(ctx context.Context, gameID string) (domain.RoomState, error)
+	KickMember(ctx context.Context, ip netip.Addr) (domain.RoomState, error)
+	RotateInviteCode(ctx context.Context) (domain.RoomState, error)
+	RenameRoom(ctx context.Context, name string) (domain.RoomState, error)
+	InviteLink() string
+
+	Catalog() (domain.Catalog, []domain.GameRef)
+	ListGames() []domain.GameProfile
+	RejectedGames() []domain.RejectedProfile
+	SaveProfile(ctx context.Context, p domain.GameProfile, replace bool) (domain.GameProfile, error)
+	ImportCatalog(ctx context.Context, raw []byte, chosen []string) ([]domain.ImportCandidate, error)
+	ExportCatalog(at, by, version string, all bool) ([]byte, error)
+	MarkVerified(ctx context.Context, gameID string, v domain.Verified) error
+
+	ForeignRulesFor(ctx context.Context, gameID string) ([]domain.ForeignRule, error)
+	SuspendForeignRules(ctx context.Context, rules []domain.ForeignRule) error
+	Diagnose(ctx context.Context) (domain.NetCheck, error)
+	ObserveGame(ctx context.Context, root domain.ProcessRef, tree map[int]bool, keepSteam bool) ([]domain.PortRange, error)
+
+	PendingRoom() (domain.PersistedRoom, bool)
+	ResumeRoom(ctx context.Context) (domain.RoomState, error)
+	DiscardPendingRoom(ctx context.Context) error
+	LastRoom() (domain.LastRoom, bool)
+}
+
+// Server atiende una conexión.
+//
+// Una instancia por conexión, y ahí está el estado de autenticación: que una
+// conexión haya saludado no autentica a la siguiente.
+type Server struct {
+	api   API
+	token string
+	clock port.Clock
+	log   port.Logger
+
+	saludó bool
+}
+
+// NewServer arma el servidor de UNA conexión.
+func NewServer(api API, token string, clock port.Clock, log port.Logger) *Server {
+	return &Server{api: api, token: token, clock: clock, log: log}
+}
+
+// Serve atiende hasta que la conexión se cierre o el contexto se cancele.
+//
+// Devuelve nil en un cierre limpio. Un error de enmarcado es terminal para la
+// conexión: con mensajes delimitados por líneas, uno que no cupo deja el flujo
+// desincronizado, así que seguir leyendo sería interpretar la cola de un
+// mensaje gigante como mensajes nuevos.
+func (s *Server) Serve(ctx context.Context, rw io.ReadWriter) error {
+	r := NewReader(rw)
+	w := NewWriter(rw)
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil
+		}
+		linea, err := r.ReadLine()
+		switch {
+		case errors.Is(err, io.EOF):
+			return nil
+		case errors.Is(err, ErrTooLarge):
+			// Se contesta y se corta. El aviso es cortesía para que el cliente
+			// sepa por qué, y cortar no es negociable.
+			_ = w.Write(Response{Error: &Error{Code: CodeTooLarge, Message: err.Error()}})
+			return err
+		case err != nil:
+			return err
+		}
+
+		resp := s.handle(ctx, linea)
+		if err := w.Write(resp); err != nil {
+			return err
+		}
+	}
+}
+
+// handle interpreta una línea y produce la respuesta.
+//
+// Nunca entra en pánico hacia afuera y nunca deja de responder: un cliente sin
+// respuesta es una UI colgada, que del lado del usuario se ve peor que un
+// error.
+func (s *Server) handle(ctx context.Context, linea []byte) Response {
+	var req Request
+	if e := decodeInto(linea, &req); e != nil {
+		return Response{Error: e}
+	}
+	resp := Response{ID: req.ID}
+
+	if !req.Method.Known() {
+		// No se interpreta, no se registra el contenido, no se adivina. Lo que
+		// no está en la tabla no existe.
+		resp.Error = badRequest("método desconocido")
+		return resp
+	}
+
+	// El saludo va PRIMERO y es lo único que se admite antes de él. Sin esta
+	// puerta, un proceso que no tenga el token igual podría pedir el estado, y
+	// el estado dice en qué sala estás y con quién.
+	if req.Method == MethodHello {
+		resp.Result, resp.Error = s.hello(req.Params)
+		return resp
+	}
+	if !s.saludó {
+		resp.Error = &Error{Code: CodeUnauthorized, Message: "hay que saludar con el token antes de pedir nada"}
+		return resp
+	}
+
+	resp.Result, resp.Error = s.dispatch(ctx, req)
+	return resp
+}
+
+// hello comprueba el token.
+//
+// Comparación en tiempo constante. El token vive en ProgramData con lectura
+// para los usuarios de la máquina, así que esto no es lo que separa al usuario
+// de sus propios datos: lo que acota la superficie es la lista cerrada de
+// métodos. La comparación constante cuesta nada y evita el único ataque que
+// esta capa sí puede evitar.
+func (s *Server) hello(params json.RawMessage) (json.RawMessage, *Error) {
+	p, e := decodeStrict[struct {
+		Token string `json:"token"`
+	}](params)
+	if e != nil {
+		return nil, e
+	}
+	if subtle.ConstantTimeCompare([]byte(p.Token), []byte(s.token)) != 1 {
+		s.log.Warn("saludo rechazado por token inválido")
+		return nil, &Error{Code: CodeUnauthorized, Message: "token inválido"}
+	}
+	s.saludó = true
+	return result(struct {
+		OK bool `json:"ok"`
+	}{true})
+}
+
+func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *Error) {
+	switch req.Method {
+	case MethodStatus:
+		return s.room(s.api.Status())
+
+	case MethodCreateRoom:
+		p, e := decodeStrict[struct {
+			Nickname string `json:"nickname"`
+			Name     string `json:"name"`
+		}](req.Params)
+		if e != nil {
+			return nil, e
+		}
+		nick, err := domain.ParseNickname(p.Nickname)
+		if err != nil {
+			return nil, errorFor(err)
+		}
+		st, err := s.api.CreateRoom(ctx, nick, p.Name)
+		return s.roomOrErr(st, err)
+
+	case MethodJoinRoom:
+		p, e := decodeStrict[struct {
+			Code     string `json:"code"`
+			Nickname string `json:"nickname"`
+		}](req.Params)
+		if e != nil {
+			return nil, e
+		}
+		nick, err := domain.ParseNickname(p.Nickname)
+		if err != nil {
+			return nil, errorFor(err)
+		}
+		st, err := s.api.JoinRoom(ctx, p.Code, nick)
+		return s.roomOrErr(st, err)
+
+	case MethodLeaveRoom:
+		return s.room(s.api.LeaveRoom(ctx))
+
+	case MethodActivateProfile:
+		p, e := decodeStrict[struct {
+			Game string `json:"game"`
+		}](req.Params)
+		if e != nil {
+			return nil, e
+		}
+		// El id vacío es legal y cierra todos los puertos. La frontera de "solo
+		// perfiles del catálogo" la aplica el caso de uso, que es quien tiene
+		// el catálogo: acá no se valida el id contra nada, se pasa tal cual.
+		st, err := s.api.ActivateProfile(ctx, p.Game)
+		return s.roomOrErr(st, err)
+
+	case MethodKickMember:
+		p, e := decodeStrict[struct {
+			IP string `json:"ip"`
+		}](req.Params)
+		if e != nil {
+			return nil, e
+		}
+		ip, err := netip.ParseAddr(p.IP)
+		if err != nil {
+			return nil, badRequest("esa no es una dirección: %v", err)
+		}
+		st, err := s.api.KickMember(ctx, ip)
+		if err != nil && errors.Is(err, usecase.ErrKickPartial) {
+			// Una expulsión a medias devuelve estado VÁLIDO junto al error, y
+			// las dos cosas viajan: la UI necesita redibujar la lista sin el
+			// expulsado y mostrar el aviso de lo que no se pudo cerrar.
+			return s.roomWithError(st, errorFor(err))
+		}
+		return s.roomOrErr(st, err)
+
+	case MethodRotateInviteCode:
+		st, err := s.api.RotateInviteCode(ctx)
+		return s.roomOrErr(st, err)
+
+	case MethodRenameRoom:
+		p, e := decodeStrict[struct {
+			Name string `json:"name"`
+		}](req.Params)
+		if e != nil {
+			return nil, e
+		}
+		st, err := s.api.RenameRoom(ctx, p.Name)
+		return s.roomOrErr(st, err)
+
+	case MethodInviteLink:
+		return result(struct {
+			Link string `json:"link"`
+		}{s.api.InviteLink()})
+
+	case MethodListGames:
+		return s.games()
+
+	case MethodRejectedGames:
+		out := make([]RejectedView, 0)
+		for _, r := range s.api.RejectedGames() {
+			out = append(out, RejectedView{ID: r.ID, Reason: r.Reason, Origin: r.Origin.String()})
+		}
+		return result(out)
+
+	case MethodSaveProfile:
+		return s.saveProfile(ctx, req.Params)
+
+	case MethodImportCatalog:
+		p, e := decodeStrict[struct {
+			File   []byte   `json:"file"`
+			Chosen []string `json:"chosen"`
+		}](req.Params)
+		if e != nil {
+			return nil, e
+		}
+		cands, err := s.api.ImportCatalog(ctx, p.File, p.Chosen)
+		if err != nil {
+			return nil, errorFor(err)
+		}
+		return result(candidateViews(cands))
+
+	case MethodExportCatalog:
+		p, e := decodeStrict[struct {
+			At      string `json:"at"`
+			By      string `json:"by"`
+			Version string `json:"version"`
+			All     bool   `json:"all"`
+		}](req.Params)
+		if e != nil {
+			return nil, e
+		}
+		raw, err := s.api.ExportCatalog(p.At, p.By, p.Version, p.All)
+		if err != nil {
+			return nil, errorFor(err)
+		}
+		return result(struct {
+			File []byte `json:"file"`
+		}{raw})
+
+	case MethodMarkVerified:
+		p, e := decodeStrict[struct {
+			Game        string `json:"game"`
+			Date        string `json:"date"`
+			By          string `json:"by"`
+			Method      string `json:"method"`
+			GameVersion string `json:"game_version"`
+		}](req.Params)
+		if e != nil {
+			return nil, e
+		}
+		err := s.api.MarkVerified(ctx, p.Game, domain.Verified{
+			Date: p.Date, By: p.By, Method: p.Method, GameVersion: p.GameVersion,
+		})
+		if err != nil {
+			return nil, errorFor(err)
+		}
+		return result(struct{}{})
+
+	case MethodForeignRules:
+		p, e := decodeStrict[struct {
+			Game string `json:"game"`
+		}](req.Params)
+		if e != nil {
+			return nil, e
+		}
+		reglas, err := s.api.ForeignRulesFor(ctx, p.Game)
+		if err != nil {
+			return nil, errorFor(err)
+		}
+		return result(foreignViews(reglas))
+
+	case MethodSuspendForeignRules:
+		p, e := decodeStrict[struct {
+			Rules []ForeignView `json:"rules"`
+		}](req.Params)
+		if e != nil {
+			return nil, e
+		}
+		if err := s.api.SuspendForeignRules(ctx, foreignRules(p.Rules)); err != nil {
+			return nil, errorFor(err)
+		}
+		return result(struct{}{})
+
+	case MethodDiagReport:
+		check, err := s.api.Diagnose(ctx)
+		if err != nil {
+			return nil, &Error{Code: CodeUnavailable, Message: err.Error()}
+		}
+		return result(netView(check))
+
+	case MethodObserveGame:
+		return s.observe(ctx, req.Params)
+
+	case MethodPendingRoom:
+		return s.pending()
+
+	case MethodResumeRoom:
+		st, err := s.api.ResumeRoom(ctx)
+		return s.roomOrErr(st, err)
+
+	case MethodDiscardPendingRoom:
+		if err := s.api.DiscardPendingRoom(ctx); err != nil {
+			return nil, errorFor(err)
+		}
+		return result(struct{}{})
+
+	case MethodLastRoom:
+		last, hay := s.api.LastRoom()
+		if !hay {
+			return result(struct {
+				Found bool `json:"found"`
+			}{false})
+		}
+		return result(struct {
+			Found bool         `json:"found"`
+			Room  LastRoomView `json:"room"`
+		}{true, LastRoomView{
+			Code: last.Room.InviteID.String(), Seed: last.Room.Seed,
+			Name: last.Name, Nick: last.Nick.String(), SavedAt: stamp(last.SavedAt),
+		}})
+	}
+	// Inalcanzable: Known() ya filtró. Se contesta igual en vez de caerse,
+	// porque el día que alguien agregue un método a la tabla y olvide el caso,
+	// el síntoma tiene que ser un error y no una UI esperando para siempre.
+	return nil, badRequest("el método %q está en la tabla y no tiene manejador", req.Method)
+}
+
+func (s *Server) room(st domain.RoomState) (json.RawMessage, *Error) {
+	return result(roomView(st, s.api.MissingGame(), s.clock.Now()))
+}
+
+func (s *Server) roomOrErr(st domain.RoomState, err error) (json.RawMessage, *Error) {
+	if err != nil {
+		return nil, errorFor(err)
+	}
+	return s.room(st)
+}
+
+// roomWithError manda el estado Y el error. Es el caso de la expulsión a
+// medias, que es la única operación cuyo fallo deja un estado que la UI
+// necesita.
+func (s *Server) roomWithError(st domain.RoomState, e *Error) (json.RawMessage, *Error) {
+	raw, err2 := s.room(st)
+	if err2 != nil {
+		return nil, err2
+	}
+	e.Message = e.Message + " | estado: " + string(raw)
+	return raw, e
+}
+
+// games arma la lista, con los instalados marcados.
+//
+// La detección ORDENA y jamás filtra: la marca es un atajo para la pantalla, no
+// una puerta. Un juego que la detección no encontró aparece igual y funciona
+// igual, porque Kanpachi no tiene por qué tener la razón sobre qué hay
+// instalado en la máquina.
+func (s *Server) games() (json.RawMessage, *Error) {
+	_, instalados := s.api.Catalog()
+	índice := make(map[int]bool, len(instalados))
+	for _, r := range instalados {
+		if r.SteamAppID != 0 {
+			índice[r.SteamAppID] = true
+		}
+	}
+	perfiles := s.api.ListGames()
+	out := make([]GameView, 0, len(perfiles))
+	for _, p := range perfiles {
+		out = append(out, gameView(p, índice[p.Detect.SteamAppID]))
+	}
+	return result(out)
+}
+
+// saveProfile es el alta manual desde el creador de perfiles.
+func (s *Server) saveProfile(ctx context.Context, params json.RawMessage) (json.RawMessage, *Error) {
+	p, e := decodeStrict[profileParams](params)
+	if e != nil {
+		return nil, e
+	}
+	perfil, err := domain.ParseGameProfile(p.Profile, domain.OriginMine)
+	if err != nil {
+		return nil, &Error{Code: CodeBadProfile, Message: err.Error()}
+	}
+	guardado, err := s.api.SaveProfile(ctx, perfil, p.Replace)
+	if err != nil {
+		return nil, errorFor(err)
+	}
+	return result(gameView(guardado, false))
+}
+
+// observe es la foto de sockets, y es la ÚNICA función del programa que mira un
+// proceso. La dispara un botón del usuario dentro del creador de perfiles.
+func (s *Server) observe(ctx context.Context, params json.RawMessage) (json.RawMessage, *Error) {
+	p, e := decodeStrict[observeParams](params)
+	if e != nil {
+		return nil, e
+	}
+	if p.Executable == "" || p.PID <= 0 {
+		return nil, badRequest("hace falta el proceso a mirar")
+	}
+	árbol := make(map[int]bool, len(p.Tree))
+	for _, pid := range p.Tree {
+		if pid > 0 {
+			árbol[pid] = true
+		}
+	}
+	rangos, err := s.api.ObserveGame(ctx,
+		domain.ProcessRef{PID: p.PID, Executable: p.Executable}, árbol, p.KeepSteam)
+	if err != nil {
+		return nil, &Error{Code: CodeUnavailable, Message: err.Error()}
+	}
+	return result(rangeViews(rangos))
+}
+
+func (s *Server) pending() (json.RawMessage, *Error) {
+	room, hay := s.api.PendingRoom()
+	if !hay {
+		return result(struct {
+			Found bool `json:"found"`
+		}{false})
+	}
+	return result(struct {
+		Found bool        `json:"found"`
+		Room  PendingView `json:"room"`
+	}{true, PendingView{
+		Code: room.Room.InviteID.String(), Seed: room.Room.Seed, Name: room.Name,
+		Game: room.GameID, Subnet: room.Subnet.String(), SavedAt: stamp(room.SavedAt),
+	}})
+}
+
+func stamp(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+// decodeInto interpreta el sobre del mensaje, estricto igual que los
+// parámetros.
+func decodeInto(linea []byte, req *Request) *Error {
+	r, e := decodeStrict[Request](linea)
+	if e != nil {
+		return e
+	}
+	*req = r
+	return nil
+}

@@ -21,14 +21,20 @@ import (
 // trabajo al del paquete bajo prueba, así que las rutas son estables sin
 // importar desde dónde se invoque.
 //
-// daemon/service está acá aunque viva bajo daemon/, y el motivo es el mismo que
-// justifica la regla entera: el supervisor solo habla con puertos declarados en
-// core, así que corre en el job de Linux junto a core. El día que alguien meta
-// una llamada a Windows ahí dentro, ese job deja de correrlo y el bucle que
-// hace vencer el contador de veinte minutos se queda sin pruebas.
+// Dos viven bajo daemon/ y están acá por el mismo motivo que justifica la regla
+// entera. El supervisor solo habla con puertos declarados en core, y el
+// protocolo se define APARTE de su transporte, así que los dos son Go puro por
+// construcción y corren en el job de Linux junto a core.
+//
+// El día que alguien meta una llamada a Windows en el supervisor, ese job deja
+// de correrlo y el bucle que hace vencer el contador de veinte minutos se queda
+// sin pruebas. El día que la meta en el protocolo, la API local deja de poder
+// reusarse sobre un socket Unix, que es la única razón por la que está
+// separada del pipe.
 var puros = []string{
 	"../../core",
 	"../../daemon/service",
+	"../../daemon/transport/protocol",
 }
 
 // prohibidos son los imports que no pueden aparecer en core.

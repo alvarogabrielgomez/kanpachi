@@ -26,7 +26,7 @@ jobs:
           cache: true
 
       - name: go vet
-        run: go vet ./core/... ./internal/... ./daemon/service/... ./registry/...
+        run: go vet ./core/... ./internal/... ./daemon/service/... ./daemon/transport/protocol/... ./registry/...
 
       - name: Test de pureza de imports
         # Se ejecuta aparte y primero para que su fallo sea inconfundible en el
@@ -36,16 +36,17 @@ jobs:
       - name: Tests de core
         run: go test -race -count=1 ./core/...
 
-      # El supervisor va en el job de LINUX, y por el mismo motivo que core.
-      # Solo habla con puertos declarados en core, así que es Go puro por
-      # construcción, y correrlo en Ubuntu es lo que convierte esa frase en algo
-      # comprobable. Con -race porque es el único paquete del proyecto con
+      # Los dos paquetes puros de daemon/ van en el job de LINUX, por el mismo
+      # motivo que core. El supervisor solo habla con puertos declarados en
+      # core, y el protocolo se define aparte de su transporte: correrlos en
+      # Ubuntu es lo que convierte esas dos frases en algo comprobable. Con
+      # -race porque el supervisor es el único paquete del proyecto con
       # goroutines de larga vida.
       #
-      # Se acota a ./daemon/service/... a propósito: los adaptadores son solo
-      # Windows y sus paquetes no compilan acá.
-      - name: Tests del supervisor
-        run: go test -race -count=1 ./daemon/service/...
+      # Se acotan a propósito: los adaptadores y el named pipe son solo Windows
+      # y sus paquetes no compilan acá.
+      - name: Tests del supervisor y del protocolo
+        run: go test -race -count=1 ./daemon/service/... ./daemon/transport/protocol/...
 
       # El registro es el seed, o sea Linux por definición. Va en este job y no
       # en el de Windows. Con -race porque atiende peticiones concurrentes

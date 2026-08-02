@@ -561,25 +561,53 @@ transport/
 
 **La superficie es la mitigación principal:** la API solo puede aplicar perfiles del catálogo embebido. No existe la operación "abrir puerto arbitrario". Un proceso malicioso corriendo como el usuario puede, como máximo, unirse a una sala y aplicar el perfil de un juego, nunca abrir 445 ni nada fuera del catálogo. La frontera de seguridad honesta es la sesión del usuario, igual que en cualquier aplicación de escritorio.
 
-| Operación | Notas |
-|---|---|
-| `CreateRoom(nickname, nombre)` | Fija `Role = Host`. **No pide juego:** la sala es independiente del juego activo, decisión 20 |
-| `JoinRoom(code, nickname)` | El nombre es obligatorio, ver decisión 21 |
-| `LeaveRoom()` | Idempotente. Lo llaman el usuario, el contador de 20 minutos y el apagado del servicio |
-| `ActivateProfile(gameID)` | **Solo el host.** Abre los puertos de ese juego. `gameID` vacío los cierra todos |
-| `KickMember(virtualIP)` | **Solo el host.** Revoca la credencial y recalcula, ver decisión 22 |
-| `RotateInviteCode()` | **Solo el host.** Código nuevo, los presentes no se enteran |
-| `RenameRoom(nombre)` | **Solo el host.** Presentación pura: republica la tarjeta cifrada |
-| `InviteLink()` | El enlace con la clave de la tarjeta en el fragmento, para copiar al portapapeles |
-| `Status()` | Estado, rol, `HostPresent`, miembros con su nombre, juego activo, y las alertas vigentes |
-| `ListGames()` | Con los instalados arriba. El orden es un atajo, jamás una puerta |
-| `SaveProfile(perfil)` | Alta manual. Nace **sin verificar** y el campo se descarta venga como venga |
-| `ImportCatalog(archivo, elegidos)` | Nada se sobreescribe en silencio, y un rechazado no se puede forzar |
-| `ExportCatalog(soloPropios)` | |
-| `MarkVerified(gameID, constancia)` | La única vía para que un perfil quede verificado, y la dispara salir de la sala |
-| `ForeignRulesFor(gameID)` / `SuspendForeignRules(reglas)` | Se consultan y se muestran. Nunca se desactivan solas |
-| `DiagReport()` | Consulta `Diagnostics` al motor y conserva lo que el motor no sabe: el MTU lo sondea netcfg y la subred la eligió el plan de direcciones |
-| `ObserveGame(proceso, árbol)` | La foto de sockets del creador de perfiles. Es la ÚNICA función del programa que mira un proceso |
+#### Las cuatro reglas del parseo, que son las mismas del catálogo
+
+Este código corre como SYSTEM y lee de un pipe al que puede hablarle cualquier proceso del usuario, así que se trata como entrada hostil de punta a punta:
+
+1. **Tope de tamaño ANTES de deserializar**, un mega. Antes y no después, que es la mitad del punto: un tope aplicado después ya pagó el coste de parsear. Pasarse **corta la conexión**, y eso no es severidad de más: con mensajes delimitados por líneas, uno que no cupo deja el flujo desincronizado, y seguir leyendo sería interpretar la cola de un mensaje gigante como mensajes nuevos.
+2. **Lista de métodos cerrada**, comprobada contra una tabla y jamás despachada por reflexión. Lo que no está no se interpreta, no se registra su contenido y no se adivina.
+3. **Parámetros estrictos.** Un campo que el esquema no define rechaza el mensaje entero, igual que en el catálogo y en el estado guardado. Un campo de más no es un cliente amable con extensiones, es un cliente que cree estar pidiendo algo que este daemon no hace.
+4. **Los tipos del dominio se reconstruyen, jamás se creen.** Un perfil que llega por el pipe se pasa por el mismo decodificador estricto que uno que llega en un archivo, así que un perfil que abarca el 445 se rechaza igual venga de donde venga. Un perfil de firewall en una orden de suspender se busca en la tabla cerrada y no se toma del número que mandó el cliente.
+
+#### El saludo va primero
+
+La primera línea de cada conexión tiene que ser `hello` con el token, y hasta que se conteste no se admite nada más. Sin esa puerta, un proceso sin el token igual podría pedir el estado, y el estado dice en qué sala estás y con quién. El token se compara en tiempo constante, y el estado de autenticación es **por conexión**: que una haya saludado no autentica a la siguiente.
+
+Lo honesto: el token vive en `ProgramData` con lectura para los usuarios de la máquina, así que no es lo que separa al usuario de sus propios datos. Lo que acota la superficie es la lista cerrada de métodos, y el saludo cubre lo poco que esta capa sí puede cubrir.
+
+#### El formato de cable
+
+Los enums viajan como **cadenas** y no como el número de un iota. Con el número, agregar un estado en medio de un bloque de constantes le cambiaría el significado a todos los de abajo en una UI ya instalada, y el síntoma sería una pantalla que dice "degradado" cuando el daemon dijo "reconectando". Las duraciones viajan en milisegundos, ya calculadas contra el reloj del daemon, para que la UI no reste contra un reloj que puede no ser el mismo.
+
+Eso no contradice "nada de DTOs entre capas": aquella regla habla de mapear structs entre anillos del mismo proceso, que es ceremonia sin retorno. Esto cruza una frontera de procesos y de lenguajes, y ahí el formato es un contrato con Flutter que tiene que poder no moverse cuando el dominio se mueva.
+
+**Un pedido, una respuesta, siempre.** Ni siquiera un método desconocido se queda sin contestar: un cliente sin respuesta es una UI colgada, que del lado del usuario se ve peor que un error.
+
+La única operación que devuelve **estado y error a la vez** es expulsar, y es el caso de la expulsión a medias: el expulsado ya salió del conjunto de reglas, así que la lista tiene que redibujarse sin él incluso con la operación fallida.
+
+| Operación | Método en el cable | Notas |
+|---|---|---|
+| `CreateRoom(nickname, nombre)` | `create_room` | Fija `Role = Host`. **No pide juego:** la sala es independiente del juego activo, decisión 20 |
+| `JoinRoom(code, nickname)` | `join_room` | El nombre es obligatorio, ver decisión 21 |
+| `LeaveRoom()` | `leave_room` | Idempotente. Lo llaman el usuario, el contador de 20 minutos y el apagado del servicio |
+| `ActivateProfile(gameID)` | `activate_profile` | **Solo el host.** Abre los puertos de ese juego. `gameID` vacío los cierra todos |
+| `KickMember(virtualIP)` | `kick_member` | **Solo el host.** Revoca la credencial y recalcula, ver decisión 22 |
+| `RotateInviteCode()` | `rotate_invite_code` | **Solo el host.** Código nuevo, los presentes no se enteran |
+| `RenameRoom(nombre)` | `rename_room` | **Solo el host.** Presentación pura: republica la tarjeta cifrada |
+| `InviteLink()` | `invite_link` | El enlace con la clave de la tarjeta en el fragmento, para copiar al portapapeles |
+| `Status()` | `status` | Estado, rol, `HostPresent`, miembros con su nombre, juego activo, y las alertas vigentes |
+| `ListGames()` | `list_games` | Con los instalados arriba. El orden es un atajo, jamás una puerta |
+| `SaveProfile(perfil)` | `save_profile` | Alta manual. Nace **sin verificar** y el campo se descarta venga como venga |
+| `ImportCatalog(archivo, elegidos)` | `import_catalog` | Nada se sobreescribe en silencio, y un rechazado no se puede forzar |
+| `ExportCatalog(soloPropios)` | `export_catalog` | |
+| `MarkVerified(gameID, constancia)` | `mark_verified` | La única vía para que un perfil quede verificado, y la dispara salir de la sala |
+| `ForeignRulesFor(gameID)` / `SuspendForeignRules(reglas)` | `foreign_rules_for` / `suspend_foreign_rules` | Se consultan y se muestran. Nunca se desactivan solas |
+| `DiagReport()` | `diag_report` | Consulta `Diagnostics` al motor y conserva lo que el motor no sabe: el MTU lo sondea netcfg y la subred la eligió el plan de direcciones |
+| `ObserveGame(proceso, árbol)` | `observe_game` | La foto de sockets del creador de perfiles. Es la ÚNICA función del programa que mira un proceso |
+| `RejectedGames()` | `rejected_games` | Los perfiles que el catálogo rechazó, con su motivo, para que un archivo mal escrito sea arreglable en vez de invisible |
+| `PendingRoom()` / `ResumeRoom()` / `DiscardPendingRoom()` | `pending_room` / `resume_room` / `discard_pending_room` | La sala que quedó abierta tras un mal cierre. **Nunca se reabre sola**, ver decisión 2 |
+| `LastRoom()` | `last_room` | Los datos de "volver a la última sala". Entrar es el `join_room` de siempre con el código guardado |
 
 Tres operaciones **no** vienen del named pipe, y las tres las llama el supervisor o el adaptador del canal de control:
 
