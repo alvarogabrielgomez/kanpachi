@@ -15,10 +15,21 @@ import (
 	"testing"
 )
 
-// coreDir es relativo al directorio de este paquete. `go test` fija el
-// directorio de trabajo al del paquete bajo prueba, así que la ruta es estable
-// sin importar desde dónde se invoque.
-const coreDir = "../../core"
+// puros son los directorios que NO pueden conocer el sistema operativo.
+//
+// Son relativos al directorio de este paquete. `go test` fija el directorio de
+// trabajo al del paquete bajo prueba, así que las rutas son estables sin
+// importar desde dónde se invoque.
+//
+// daemon/service está acá aunque viva bajo daemon/, y el motivo es el mismo que
+// justifica la regla entera: el supervisor solo habla con puertos declarados en
+// core, así que corre en el job de Linux junto a core. El día que alguien meta
+// una llamada a Windows ahí dentro, ese job deja de correrlo y el bucle que
+// hace vencer el contador de veinte minutos se queda sin pruebas.
+var puros = []string{
+	"../../core",
+	"../../daemon/service",
+}
 
 // prohibidos son los imports que no pueden aparecer en core.
 //
@@ -55,14 +66,21 @@ func estaProhibido(ruta string) bool {
 // y se olvida, este test falla en el momento exacto en que alguien mete el
 // sistema operativo dentro del dominio.
 func TestCoreNoTieneDependenciasSucias(t *testing.T) {
-	if _, err := os.Stat(coreDir); err != nil {
-		t.Fatalf("no se encuentra %s: %v", coreDir, err)
+	for _, dir := range puros {
+		t.Run(dir, func(t *testing.T) { revisaPureza(t, dir) })
+	}
+}
+
+func revisaPureza(t *testing.T, dir string) {
+	t.Helper()
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("no se encuentra %s: %v", dir, err)
 	}
 
 	var revisados int
 	fset := token.NewFileSet()
 
-	err := filepath.WalkDir(coreDir, func(ruta string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(dir, func(ruta string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -90,24 +108,24 @@ func TestCoreNoTieneDependenciasSucias(t *testing.T) {
 			ruteoImport := strings.Trim(imp.Path.Value, `"`)
 			if estaProhibido(ruteoImport) {
 				t.Errorf(
-					"%s importa %q, que está prohibido en core\n"+
-						"  core no puede conocer el sistema operativo: si necesitas esto, "+
-						"declara un puerto en core/port y ponlo en un adaptador dentro de daemon/",
+					"%s importa %q, que está prohibido acá\n"+
+						"  esta capa no puede conocer el sistema operativo: si necesitas esto, "+
+						"declara un puerto en core/port y ponlo en un adaptador dentro de daemon/adapter",
 					ruta, ruteoImport)
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("recorriendo %s: %v", coreDir, err)
+		t.Fatalf("recorriendo %s: %v", dir, err)
 	}
 
-	// Sin esta comprobación el test pasaría feliz el día que alguien mueva
-	// core de sitio o rompa la ruta relativa, dando una garantía falsa.
+	// Sin esta comprobación el test pasaría feliz el día que alguien mueva un
+	// paquete de sitio o rompa la ruta relativa, dando una garantía falsa.
 	if revisados == 0 {
-		t.Fatalf("no se revisó ningún archivo .go en %s: la ruta está mal y el test no está vigilando nada", coreDir)
+		t.Fatalf("no se revisó ningún archivo .go en %s: la ruta está mal y el test no está vigilando nada", dir)
 	}
-	t.Logf("%d archivos de core revisados, sin imports prohibidos", revisados)
+	t.Logf("%d archivos de %s revisados, sin imports prohibidos", revisados, dir)
 }
 
 // TestElTestDePurezaDetectaUnaViolacion comprueba el detector contra un caso

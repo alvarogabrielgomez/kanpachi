@@ -100,6 +100,11 @@ const (
 	ExitRoomClosed
 	// ExitFailed: no se llegó a entrar.
 	ExitFailed
+	// ExitTunnelLost: se estaba DENTRO y el túnel no volvió.
+	//
+	// Separado de ExitFailed a propósito. Aquel es no haber llegado a entrar
+	// nunca, y su texto dicho después de hora y media jugando es mentira.
+	ExitTunnelLost
 )
 
 func (r ExitReason) String() string {
@@ -114,6 +119,8 @@ func (r ExitReason) String() string {
 		return "el host cerró la sala"
 	case ExitFailed:
 		return "no se pudo entrar a la sala"
+	case ExitTunnelLost:
+		return "la conexión con la sala no volvió"
 	default:
 		return ""
 	}

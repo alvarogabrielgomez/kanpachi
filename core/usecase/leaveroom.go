@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"net/netip"
+	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 )
@@ -53,6 +54,11 @@ func (s *Session) OnRoomNotice(ctx context.Context, n domain.RoomNotice) domain.
 	if !s.state.Conn.InRoom() || s.state.IsHost() {
 		return s.snapshot()
 	}
+	// Un aviso que llega es prueba de vida del host, aunque lo que diga sea que
+	// la sala se acabó. Se anota antes de actuar por si el aviso resulta ser de
+	// un tipo que no se maneja: hasta un mensaje que se descarta demuestra que
+	// del otro lado hay alguien.
+	s.state.NoteHostAlive(s.deps.Clock.Now())
 
 	switch n.Kind {
 	case domain.NoticeKicked:
@@ -91,12 +97,25 @@ func (s *Session) leaveLocked(ctx context.Context, reason string, exit domain.Ex
 		s.verificables[s.state.Game.ID] = s.deps.Clock.Now().UTC().Format("2006-01-02")
 	}
 
+	// El archivo de la sala se borra ACÁ, y su ausencia es lo que dice que esta
+	// salida fue limpia. No hay bandera de "cerrado bien" dentro del archivo:
+	// una bandera es un campo más que alguien puede escribir a mano, y este
+	// hecho no se puede falsificar desde dentro.
+	//
+	// La última sala del invitado NO se borra: existe justamente para volver, y
+	// que te hayan expulsado no cambia eso, porque expulsar no es banear.
+	if err := s.deps.State.ClearRoom(); err != nil {
+		s.deps.Log.Warn("no se pudo borrar la sala guardada al salir", "error", err)
+	}
+
 	s.teardown(ctx)
-	s.hostNetworkName = ""
+	s.hostSpec = domain.HostSpec{}
 	s.cardKey = [domain.CardKeyLen]byte{}
 	s.nick = domain.Nickname{}
 	s.kicked = nil
 	s.announcedGame = ""
+	s.lastAnnounce = time.Time{}
+	s.tamperRepairs = 0
 
 	// Transition a Idle limpia la sala entera. Es legal desde cualquier
 	// estado, incluso a mitad de un intento de conexión que no responde,
@@ -109,26 +128,6 @@ func (s *Session) leaveLocked(ctx context.Context, reason string, exit domain.Ex
 	}
 	s.deps.Log.Info("fuera de la sala", "código", code, "motivo", reason)
 	return s.snapshot()
-}
-
-// TickHostAbsence es el contador de la decisión 20, y lo llama el supervisor.
-//
-// Devuelve true si salió. Es política LOCAL pura: no hay mensaje, no hay
-// coordinación y no hay que confiar en nadie. Cada máquina decide sobre sí
-// misma a partir de un hecho que no se puede falsificar, que su socket al host
-// no está.
-//
-// Resuelve el caso real de que el host reinicie la máquina y se olvide de
-// abrir Kanpachi, dejando a los demás en una sala sin sentido.
-func (s *Session) TickHostAbsence(ctx context.Context) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if !s.state.ShouldLeaveForHostAbsence(s.deps.Clock.Now()) {
-		return false
-	}
-	s.leaveLocked(ctx, "el host lleva veinte minutos sin aparecer", domain.ExitHostGone)
-	return true
 }
 
 // SetHostPresent lo llama el supervisor cuando el canal de control se cae o
@@ -150,5 +149,8 @@ func (s *Session) SetHostPresent(present bool) domain.RoomState {
 	if was != present {
 		s.deps.Log.Info("cambió la presencia del host", "presente", present)
 	}
+	// El flanco de subida es una prueba de vida más, y las tres capas conviven
+	// sin estorbarse: el socket la da al instante, el anuncio la da cada dos
+	// minutos y la tabla de peers la quita cuando el host desaparece de la red.
 	return s.snapshot()
 }

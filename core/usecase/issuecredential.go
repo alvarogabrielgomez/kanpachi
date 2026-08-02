@@ -73,7 +73,7 @@ func (s *Session) IssueCredentialFor(ctx context.Context, req domain.CredentialR
 	cred.Name = req.Name
 	cred.VirtualIP = ip
 	cred.Subnet = s.state.Subnet
-	cred.NetworkName = s.hostNetworkName
+	cred.NetworkName = s.hostSpec.RealNetworkName()
 	cred.IssuedAt = now
 	cred.ExpiresAt = now.Add(CredentialTTL)
 

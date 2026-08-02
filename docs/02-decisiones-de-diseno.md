@@ -132,6 +132,35 @@ Ese tercer punto es el que hace que revocar sirva de verdad. En el diseño ingen
 
 **Una consecuencia que vale más de lo que parece:** como el código dejó de ser la red, "la misma sala" sobrevive a que la red subyacente cambie por completo. La sala pasa a ser un objeto durable que el host posee, en vez de una consecuencia matemática de un string. Reiniciar, cambiar de red o migrar el esquema de derivación dejan de romper la invitación.
 
+### La sala mal cerrada del host
+
+Un apagón deja al host sin mandar el aviso de cierre. Al volver, el daemon detecta la sala anterior y **pregunta**: reabrirla con el mismo código, o cerrarla.
+
+**El archivo ES la señal.** Salir limpio lo borra, morir sucio lo deja. No hay bandera `dirty` dentro, porque una bandera es un campo más que alguien puede escribir a mano y este hecho no se puede falsificar desde dentro del archivo.
+
+**Dos reglas de orden, y las dos son invariantes:**
+
+1. **Se purga primero.** El arranque ya borra las reglas del grupo `Kanpachi` y restaura las ajenas suspendidas, así que la máquina está en deny-all mientras la pregunta está en pantalla.
+2. **Nunca reconecta solo.** Siempre pregunta. Es la invariante de que nada que llegue de fuera de la app surte efecto sin confirmación dentro de la app, y acá lo de fuera es un archivo del arranque anterior.
+
+**La ventana encaja sola con el contador de la decisión 20.** Los invitados guardan una credencial contra la red real, así que un host que vuelve dentro de los veinte minutos se los encuentra reconectando solos. Uno que tarda más reabre una sala vacía con el mismo código, que es igual de correcto y era el otro caso a cubrir.
+
+**Lo que el archivo lleva y lo que no.** Lleva **identidad y referencias, jamás política**: el invite ID con su seed, la identidad de la red real, la subred, el nombre, el nick, la clave de la tarjeta, y el **id del juego activo**. Lo que no se puede escribir ahí: un puerto, un rango, una regla, un ejecutable, un plazo, una lista de miembros. Si no se puede expresar, un archivo manipulado no abre nada ni compra tiempo de más en ninguna sala.
+
+**El id del juego no es política**, y por eso sí entra. Es la misma referencia que ya viaja en el anuncio del host, donde la regla es que lleva el id y jamás el perfil: al reabrir se resuelve contra el catálogo de ESA máquina, con sus invariantes y sus puertos prohibidos. Lo peor que logra un archivo manipulado es nombrar otro juego que ya está en el catálogo, o sea algo que el usuario podía elegir con dos clics. Si el perfil ya no está, la sala reabre sin juego.
+
+**Los miembros y las reglas no se restauran del disco.** Los miembros son lo que reporte el motor y las reglas se recalculan desde ahí. Restaurarlas abriría puertos hacia direcciones que hoy pueden no ser de nadie, que es justo lo que la cuarentena por defecto existe para impedir. Con cero miembros presentes el conjunto deseado es el vacío, así que reponer el juego no abre nada hasta que haya alguien de verdad.
+
+**Se falla en vez de mudar la subred.** Una laptop que abrió la sala en casa y la reabre en la oficina puede tener ahora una LAN que pisa ese rango. Elegir otra subred rompería justo la reconexión por la que esto existe, porque las credenciales emitidas apuntan a la vieja. Se dice que no cabe, el usuario descarta y crea una sala nueva.
+
+### Volver a la última sala, del lado del invitado
+
+Simétrico y mucho más chico. El invitado guarda **el código, el seed, el nombre de la sala y su nick**, y nada más.
+
+**Jamás la credencial y jamás la identidad de la red real.** Volver pasa otra vez por el vestíbulo: el host reemite y ve llegar a quien llega, y eso es lo que mantiene con sentido a la revocación. Un archivo con credencial dentro sería una llave de sala tirada en disco que sobrevive a la sesión.
+
+El código guardado se mantiene vigente cuando el host lo renueva, porque se lo reparte a los presentes en ese mismo acto. Ver decisión 23.
+
 ### Costos aceptados
 
 - **Entrar depende de que el host esté alcanzable en ese instante.** Si está reconectando, los ingresos fallan y hay que reintentar. Se gana control, se pierde robustez, y es un intercambio explícito.
@@ -383,6 +412,10 @@ Además, validación de entrada hostil en ese canal: solo el formato exacto del 
 
 La v1 no hace: compartir archivos, chat, voz, salas persistentes, cuentas, panel web, móvil, macOS, autoupdate. Cada "y si también..." va a `07-futuro.md`, no al código. El alcance negativo escrito es la defensa contra el scope creep, uno de los tres riesgos reales del proyecto.
 
+**"Salas persistentes" significa una sala que existe sin nadie dentro**, sostenida por un servidor al que se puede volver cuando sea. Eso sigue fuera de la v1 y vive en `07-futuro.md`.
+
+Lo que la decisión 2 sí hace, y conviene no confundir, es que **el host reabra la suya con el mismo código**. La diferencia es dónde vive el estado: ahí es un archivo en el disco del dueño de la sala, y si él no la reabre no existe para nadie. Acá sería un servidor sosteniéndola para todos.
+
 ## 19. Módulo de alertas de exposición
 
 **El hueco:** hay tres cosas fuera del control de Kanpachi que anulan su promesa entera, y las tres son silenciosas. El Firewall de Windows apagado, un puerto reenviado en el router, y las reglas permisivas que dejó el instalador de un juego. Con cualquiera de las tres, Kanpachi puede estar impecable y el usuario expuesto.
@@ -410,6 +443,14 @@ Qué revisa:
 2. **Asíncrono y aislado.** Corre en su propio ciclo, con su propio timer. Un fallo del módulo no toca la conexión, ni el firewall, ni el estado de la sala.
 3. **Cada alerta dice qué pasa, qué significa para el usuario y qué hacer**, en ese orden, igual que el resto de los textos del producto. Ver `05-ui.md`.
 
+### La única que Kanpachi sí repara es la suya
+
+De las cuatro, tres describen la máquina del usuario y Kanpachi las dice sin tocarlas: su firewall, su router y las reglas que instaló un juego suyo son suyos. La cuarta es distinta, porque son **las reglas del grupo `Kanpachi`**, o sea la propia declaración del producto.
+
+**Reponerlas no es arreglarle la máquina al usuario, es volver a hacer cierta su propia declaración.** Un hallazgo que se denuncia y no se repara deja la cuarentena rota mientras el usuario lee el aviso. Funciona porque el puerto del firewall es declarativo y calcula la diferencia contra las reglas VIVAS del grupo, no contra un recuerdo en memoria: reaplicar el mismo conjunto repone lo que alguien borró y quita lo que alguien agregó.
+
+**Se repone tres veces y después se avisa.** Tres distingue los dos casos que producen el mismo síntoma: el toque puntual de alguien mirando la consola del firewall, que se arregla con una reaplicación, y algo que las quita en bucle, que suele ser un antivirus. Contra lo segundo, insistir es pelearse a golpe de COM y eso no lo gana nadie.
+
 ## 20. La sala vive mientras haya alguien conectado
 
 **El malentendido que esta decisión evita:** la palabra "sala" nombra tres cosas distintas, y confundirlas lleva a diseñar un servidor de salas que este producto no tiene.
@@ -428,7 +469,31 @@ Qué revisa:
 
 Veinte minutos y no dos: el margen tiene que cubrir un reinicio con holgura. Una salida inmediata echaría a todo el mundo cada vez que al host se le cierra el juego, que es el caso más común de todos.
 
+**Los veinte minutos cuentan desde la última PRUEBA DE VIDA del host, no desde que este código se enteró.** Cuando el host se da por ausente por silencio y no por caída de socket, la marca se fecha hacia atrás, en el último momento en que se supo de él. Sin eso, el límite de silencio se sumaría al contador y veinte minutos serían veintiséis.
+
 **Descartado: la expulsión inmediata coordinada por mensaje.** Sería cooperativa, no hay servidor que la imponga y un cliente modificado se queda igual, así que daría sensación de control sin control. El timeout local no necesita que nadie obedezca: es cada máquina decidiendo sobre sí misma.
+
+### Saber que el host no está: tres señales independientes
+
+Una sola señal es una sola forma de fallar. El contador de 20 minutos se arma con cualquiera de estas tres, y ninguna necesita que las otras funcionen:
+
+| Señal | Latencia | Qué la produce | Qué falla que las otras cubren |
+|---|---|---|---|
+| **La conexión de control cae** | segundos | El socket al host se cierra | Un socket TCP medio abierto sobrevive horas a una máquina apagada de golpe, sin FIN y sin RST. Esta señal puede no llegar nunca |
+| **Silencio del host, 6 minutos** | 6 min | El host reanuncia cada 2 minutos, y se dejaron de recibir tres anuncios seguidos | Necesita que el canal de control exista. Si el adaptador del canal está roto o nunca arrancó, no mide nada |
+| **El host no está en la tabla de miembros del motor** | segundos | El motor propaga la tabla entera a cada nodo, así que la `.1` del host está o no está | No dice nada del canal de control: un host cuya máquina sigue en la red con Kanpachi colgado sigue apareciendo |
+
+**La tabla de miembros solo puede APAGAR la presencia, jamás encenderla.** La asimetría es el punto entero. Que el motor reporte al host prueba que su nodo está en la red, y no prueba que su canal de control funcione. Encenderla desde ahí desarmaría el contador con evidencia que no lo respalda, y el caso real que rompería es el host que dejó la máquina encendida con la app colgada.
+
+### El túnel también tiene un plazo, y es más corto
+
+Hermano del anterior, del lado de la red y no de la persona. Si esta máquina se queda sin túnel y no vuelve en **10 minutos**, sale de la sala, cierra los puertos y revierte sus ajustes.
+
+**Diez y no veinte, y la asimetría tiene razón.** La ausencia del host es que falta la persona con la red impecable, y ahí esperar un reinicio completo vale la pena. Esto es lo contrario: sostener una sala sin red durante veinte minutos solo consigue que el usuario mire una pantalla que miente.
+
+El motivo de salida es propio, "la conexión con la sala no volvió", y no se reusa el de "no se pudo entrar": ese texto, dicho después de hora y media jugando, es mentira.
+
+**Es el respaldo del watchdog del supervisor, no su competidor.** El watchdog agota sus ocho reintentos en 3 minutos y 18 segundos, o sea bastante antes. Ese orden importa: si los dos plazos se cruzaran, la sala se cerraría a mitad de un reintento que iba a funcionar. Hay un test que falla si alguien toca los números y los cruza.
 
 ### La sala es independiente del juego activo
 
@@ -474,6 +539,14 @@ Que el host cambie de juego no toca la sala. `policy/` recalcula el `RuleSet`, `
 
 Ninguna de las dos es cooperativa. No hay mensaje que el expulsado pueda ignorar: una es el motor cerrándole la sesión, la otra es el Firewall de Windows del host descartando sus paquetes.
 
+**Las dos corren en el mismo acto y ninguna aborta a la otra.** Es el sentido literal de la tabla de arriba, y el código lo tenía en serie: un error del motor devolvía antes de recortar el firewall, así que un bug del motor le dejaba la sesión abierta Y el puerto autorizado, que es exactamente lo contrario de lo prometido. Ahora se ejecutan las dos siempre y los errores se juntan.
+
+**Una expulsión a medias es un estado VISIBLE, no un rollback.** Si una capa falla, la lista de miembros dice que no está y la máquina puede seguir autorizándolo, y eso se avisa con una alerta que sobrevive al refresco del módulo de exposición. No se deshace la mitad que sí funcionó: deshacerla volvería a autorizar a quien el host acaba de echar. La UI ofrece renovar el código ahí mismo, que es el control que cierra la puerta de verdad.
+
+**No hay ni va a haber baneo.** Banear exige guardar identidad por peer, y este producto no la guarda. El expulsado que vuelve con el mismo código entra de nuevo, y eso es deliberado: el kick saca de la sala, no impide volver. Lo único que impide volver es renovar el código.
+
+**El límite honesto de eso, escrito para que nadie lo descubra por su cuenta:** el que vuelve toca la puerta del vestíbulo con una dirección ALEATORIA, así que ni siquiera se parece al que se echó. Reconocerlo exigiría la llave de la decisión 25, que todavía no está implementada. Mientras no lo esté, la respuesta a "no quiero que vuelva" es una sola y es renovar el código.
+
 **Qué pasa si intenta volver.** Con el mismo código, y si el host no lo renovó, entra de nuevo como si nada. Eso es deliberado: expulsar y bloquear son cosas distintas. Para que no vuelva, el host **renueva el código** (decisión 2), y ahí el código viejo deja de servir mientras los que ya están adentro siguen dentro, porque tienen credencial y no código.
 
 **Los dos controles del host, que son independientes:**
@@ -509,6 +582,19 @@ Alvaro   ──┘     alcance = miembros presentes. Los clientes nunca escuchan
 | Expulsar | El host le avisa por ahí, y recién después revoca y recalcula. El aviso es cortesía: ver `03-arquitectura.md` |
 | Presencia del host | Si la conexión cae, el host no está. Si vuelve, volvió |
 | Latido | Es la misma conexión, no hace falta un ping aparte |
+| Repartir el código nuevo | Al renovar, el host se lo manda cifrado a los que están dentro |
+
+**Sobre el latido, un matiz que no lo contradice.** La conexión sigue siendo el latido para el caso normal, y no se agrega ningún ping. Lo que se agrega es que el host **repite cada 2 minutos el anuncio de sala que ya existía**, el mismo que manda al cambiar de juego, de nombre o de miembros. El motivo es que el borde de la conexión es una señal que puede no llegar jamás: un socket TCP medio abierto sobrevive horas a una máquina apagada de golpe. Con la repetición, el silencio pasa a ser medible.
+
+### El código nuevo viaja a los que están dentro
+
+Renovar el código tenía un efecto secundario que nadie había nombrado: los presentes se quedaban con el viejo guardado. Siguen en la sala, la partida no se entera, y el día que quieran volver tienen un código muerto.
+
+**La confianza ya está dada.** Están dentro porque el host los dejó entrar, y renovar con ellos dentro es exactamente la señal de que se quedan. Merecen el código nuevo sin tener que pedirlo, y con él funciona "volver a la última sala".
+
+**Va cifrado, no en claro.** Se sella contra la llave pública de cada miembro, la misma que llegó en su pedido de credencial, así que el código es legible solo por aquel para quien es. No es una llave nueva ni un almacén nuevo: vive lo que dura la sesión de esa persona y se descarta al salir, o sea que no es identidad persistida y no habilita ningún baneo.
+
+Que el reparto falle no invalida nada. El código nuevo ya es el bueno y el vestíbulo ya está levantado con él; lo que se pierde es que el otro lo tenga guardado.
 
 **La propiedad que hace que esto sea barato:** una conexión TCP caída es información confiable **sin necesidad de confiar en nadie**. No es un mensaje que alguien pueda falsificar, es la ausencia de un socket. Por eso la detección de presencia y el timeout de 20 minutos de la decisión 20 no necesitan firma, autenticación ni credenciales.
 
@@ -521,6 +607,7 @@ Superficie nueva, así que se escribe entera:
 | Miembro manda mensajes malformados al host | El host corre como SYSTEM: parseo estricto, tope de tamaño, sin reflexión, sin deserializar tipos arbitrarios. Es el código que más revisión merece del proyecto |
 | Miembro falsifica una expulsión | No puede: expulsar lo ejecuta el host sobre sí mismo, no es un mensaje que alguien pida |
 | Miembro falsifica "la sala se cerró" | Lo peor que logra es que a otros se les cierre la app. Molestia, no riesgo, y ya está dentro de la sala |
+| Miembro falsifica un código nuevo | No puede: los invitados no escuchan, y solo procesan lo que llegó por SU conexión al host. Un host modificado que mande un código falso logra que a ese invitado le falle su "volver a la última sala", y nada más |
 | Miembro se hace pasar por el host | No puede: los clientes marcan hacia una dirección conocida, no aceptan conexiones entrantes |
 | Inundación de conexiones al host | Tope de conexiones por IP virtual, y solo se aceptan IPs de miembros presentes |
 
@@ -635,3 +722,40 @@ La primera vez que alguien te invita no hay con qué comparar. Es el mismo hueco
 - Sin la libreta, la firma sola no prueba el nombre. La continuidad es lo que da la garantía, la firma es el mecanismo.
 
 La UI muestra la lista completa a todos, y eso es deliberado: ocultarla en pantalla no la ocultaría en la red, y aparentar una privacidad que no existe es peor que no tenerla.
+
+## 26. Ninguna capa depende de que la anterior haya funcionado
+
+**El problema:** casi todo lo que Kanpachi tiene que detectar es una ausencia. Que el host se fue, que el túnel se cayó, que a alguien lo echaron. Una ausencia no llega por un mensaje, y **cualquier mecanismo que la detecte puede no dispararse nunca**: un socket que no se entera, un adaptador roto, una goroutine muerta, una suscripción de Windows que caducó en silencio.
+
+**El malentendido que evita:** que "hay un contador de 20 minutos" significa que la sala se cierra a los 20 minutos. No significa nada de eso si nadie mueve el contador. Durante todo el desarrollo de `core` ese contador existió, estuvo probado, y era **inalcanzable en tiempo de ejecución**, porque no había supervisor que lo llamara.
+
+**Elección:** cada detección tiene al menos un respaldo que no comparte causa de fallo con ella, y ningún respaldo necesita que el de arriba haya corrido.
+
+| # | Señal | Latencia | Cooperativa | Qué falla que las de abajo cubren |
+|---|---|---|---|---|
+| 0 | El host avisa: expulsión o cierre de sala | instantánea | **sí** | El aviso puede no salir, no llegar o no procesarse |
+| 1 | La conexión de control se cae | segundos | no | Un socket medio abierto no se entera de una máquina apagada de golpe |
+| 2 | El host no está en la tabla de miembros del motor | segundos | no | El motor sigue reportando a un host con la app colgada |
+| 3 | Silencio del host, 6 minutos | 6 min | no | Necesita que el canal de control exista |
+| 4 | Contador de ausencia, 20 minutos | 20 min | no | Necesita que algo llame al latido |
+| 5 | El motor avisa que murió | segundos | no | El motor puede morir sin decirlo |
+| 6 | El watchdog del supervisor se rinde | 3 min 18 s | no | El supervisor puede estar colgado |
+| 7 | Sin túnel, 10 minutos | 10 min | no | Necesita que algo llame al latido |
+
+### Las tres reglas que hacen que esto funcione de verdad
+
+**1. Los plazos se evalúan desde varias puertas, no solo desde el latido.** Cada entrada del daemon que OBSERVA algo comprueba los vencimientos antes de hacer su trabajo: un cambio de miembros, un anuncio del host, un evento del motor, el barrido de exposición. Si la goroutine del latido se muere, los contadores siguen venciendo con lo siguiente que entre.
+
+Las entradas que expresan una INTENCIÓN del usuario no lo hacen, y esa asimetría es deliberada. Expulsar, elegir juego, renovar el código y renombrar tienen que fallar con un error preciso, y que "expulsar" se convierta en silencio en "saliste de la sala" es peor que un contador que vence un latido más tarde.
+
+**2. Un fallo en una capa no puede llevarse a la siguiente.** Las dos capas de la expulsión corren en el mismo acto y ninguna aborta a la otra. Un pánico atendiendo un evento cuesta ese evento y no el bucle. Un canal de entrada cerrado se registra y el latido sigue.
+
+**3. Nada de esto se configura desde fuera.** Los plazos son constantes de compilación, ninguna operación de la API local los toca, y la cadencia del supervisor tampoco se configura. Hay un test de arquitectura que falla si alguno deja de ser `const`, si aparece un método exportado que huela a apagarlo, o si un plazo se convierte en un campo del estado de la sala, que es como entraría desde un archivo de disco.
+
+### El límite honesto
+
+**Si el daemon entero se cuelga, no hay capa de software que lo cubra desde dentro.** El proceso hijo del motor seguiría conectado y las reglas aplicadas. La mitigación no es otra capa de lógica, es del sistema operativo: el motor arranca dentro de un Job Object de Windows con `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, así el hijo muere con el padre pase lo que pase. Va con el adaptador del motor.
+
+### Descartado: reintentar el aviso hasta que lo confirmen
+
+Se evaluó al diseñar el aviso de expulsión. Reintentar sin tope convierte una operación no cooperativa en una que espera al otro lado, o sea le devuelve al expulsado el poder de decidir cuándo se va. Lo que se hace es esperar el acuse **con tope**: pasado el plazo se revoca igual, y lo único que se pierde es que se entere.

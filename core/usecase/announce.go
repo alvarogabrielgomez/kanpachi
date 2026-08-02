@@ -2,15 +2,29 @@ package usecase
 
 import (
 	"context"
+	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 )
+
+// AnnounceInterval es cada cuánto el host REPITE el anuncio de sala.
+//
+// No es un latido nuevo y no contradice la decisión 23: es el mismo mensaje que
+// ya se manda en cada cambio de juego, de nombre y de miembros, repetido. La
+// conexión sigue siendo el latido para el caso normal, y esto existe para el
+// caso en que la conexión miente, o sea un socket TCP medio abierto que
+// sobrevive horas a una máquina apagada de golpe.
+//
+// Dos minutos son unos pocos cientos de bytes por miembro y por hora, y tres
+// anuncios perdidos caben dentro de [domain.HostSilenceLimit].
+const AnnounceInterval = 2 * time.Minute
 
 // announceLocked le cuenta a los presentes cómo está la sala.
 //
 // Lo llama el host después de todo lo que cambia algo que el invitado necesita
 // saber: elegir juego, quitarlo, renombrar la sala, y cada cambio de miembros,
-// porque quien acaba de entrar no estaba cuando se anunció lo anterior.
+// porque quien acaba de entrar no estaba cuando se anunció lo anterior. Y cada
+// [AnnounceInterval], que es lo que hace medible el silencio del otro lado.
 //
 // No es fatal que falle. Lo que se pierde es que la pantalla del otro muestre
 // el juego, y lo que NO se pierde es la sala: el túnel sigue, las reglas del
@@ -22,6 +36,11 @@ func (s *Session) announceLocked(ctx context.Context) {
 	if !s.state.IsHost() || !s.state.Conn.InRoom() {
 		return
 	}
+	// El reloj se sella pase lo que pase, y no solo cuando sale bien. Si el
+	// anuncio falla, reintentarlo en el siguiente latido en vez de en cada
+	// evento es lo correcto: el canal está roto y machacarlo no lo arregla.
+	s.lastAnnounce = s.deps.Clock.Now()
+
 	err := s.deps.Control.Announce(ctx, domain.RoomAnnounce{
 		RoomName: s.state.Name,
 		GameID:   s.state.Game.ID,
@@ -48,6 +67,14 @@ func (s *Session) OnRoomAnnounce(ctx context.Context, raw domain.RoomAnnounce) (
 	defer s.mu.Unlock()
 
 	if !s.state.Conn.InRoom() || s.state.IsHost() {
+		return s.snapshot(), nil
+	}
+	// Un anuncio que llega es prueba de vida del host, y se anota antes de
+	// mirar qué dice: es la señal que llega sola cuando la caída del socket es
+	// una señal que nunca va a llegar.
+	s.state.NoteHostAlive(s.deps.Clock.Now())
+
+	if s.enforceDeadlinesLocked(ctx) {
 		return s.snapshot(), nil
 	}
 

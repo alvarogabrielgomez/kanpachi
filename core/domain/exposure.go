@@ -123,7 +123,27 @@ const (
 	// sería indiagnosticable. Ver "El vestíbulo tiene un /24 fijo" en
 	// 03-arquitectura.md.
 	AlertLobbyConflict
+	// AlertKickIncomplete: una expulsión no cerró sus dos capas.
+	//
+	// La lista de miembros ya no lo tiene y la máquina puede seguir
+	// autorizándolo. Se avisa en vez de deshacer la mitad que sí funcionó,
+	// porque deshacerla volvería a autorizar a quien el host acaba de echar.
+	AlertKickIncomplete
 )
+
+// Sticky dice si la alerta sobrevive al refresco del módulo de exposición.
+//
+// Las pegajosas describen algo que PASÓ y que nadie va a volver a medir. Las
+// demás son el resultado de una comprobación puntual y se recalculan enteras en
+// cada barrido, así que conservarlas mostraría hallazgos de hace diez minutos
+// como si fueran de ahora.
+//
+// Existe como predicado del dominio, con sus dos casos nombrados, para que
+// agregar un tercero sea una edición visible y no un `if` más colado dentro del
+// barrido.
+func (k AlertKind) Sticky() bool {
+	return k == AlertLobbyConflict || k == AlertKickIncomplete
+}
 
 // Alert es un hallazgo del módulo de exposición.
 //
@@ -134,4 +154,22 @@ const (
 type Alert struct {
 	Kind   AlertKind
 	Detail string
+}
+
+// DropAlerts quita todas las alertas de un tipo.
+//
+// La usa el caso de uso que ARREGLA lo que la alerta denunciaba. Una alerta
+// pegajosa que nadie pueda quitar se queda para siempre, y una alerta eterna
+// deja de ser información.
+func (r *RoomState) DropAlerts(k AlertKind) {
+	if len(r.Alerts) == 0 {
+		return
+	}
+	kept := make([]Alert, 0, len(r.Alerts))
+	for _, a := range r.Alerts {
+		if a.Kind != k {
+			kept = append(kept, a)
+		}
+	}
+	r.Alerts = kept
 }

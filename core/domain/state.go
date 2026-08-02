@@ -17,6 +17,30 @@ import (
 // que no se puede falsificar, que su socket al host no está.
 const HostAbsenceLimit = 20 * time.Minute
 
+// HostSilenceLimit es el respaldo del socket que miente.
+//
+// Que la conexión de control esté caída es la señal buena, y es una señal que
+// puede no llegar NUNCA: un socket TCP medio abierto sobrevive horas a una
+// máquina apagada de golpe, sin FIN y sin RST. Sin esto, ese caso deja la
+// presencia clavada en true y el contador de veinte minutos no arranca jamás.
+//
+// Seis minutos son tres anuncios perdidos. Vencer no saca a nadie de la sala:
+// marca al host como ausente, que es lo que arranca el contador de arriba.
+const HostSilenceLimit = 6 * time.Minute
+
+// ReconnectLimit es cuánto se tolera estar sin túnel antes de rendirse.
+//
+// Diez minutos y no veinte, y la asimetría con [HostAbsenceLimit] tiene razón.
+// La ausencia del host es que falta la persona con la red impecable, y ahí
+// esperar un reinicio completo vale la pena. Esto es lo contrario, esta máquina
+// no tiene túnel, y sostener una sala sin red veinte minutos solo consigue que
+// el usuario mire una pantalla que miente.
+//
+// Es el RESPALDO del watchdog del supervisor, no su competidor. El watchdog
+// agota sus reintentos bastante antes, y ese orden importa: si se cruzaran, la
+// sala se cerraría a mitad de un reintento que iba a funcionar.
+const ReconnectLimit = 10 * time.Minute
+
 // ConnState es el estado del túnel, y es un valor único y explícito, sin flags
 // booleanos regados. La UI lo renderiza, no lo infiere.
 type ConnState uint8
@@ -140,6 +164,19 @@ type RoomState struct {
 	// HostGoneSince marca desde cuándo. El cero significa que está presente, o
 	// que soy yo el host.
 	HostGoneSince time.Time
+	// HostLastHeard es cuándo llegó la última PRUEBA DE VIDA del host: la
+	// conexión de control levantada, un anuncio, un aviso, o su dirección en la
+	// tabla de peers del motor.
+	//
+	// Existe porque la caída del socket es una señal que puede no llegar, y
+	// esta llega sola. Solo se llena en invitados.
+	HostLastHeard time.Time
+
+	// ReconnectingSince marca desde cuándo NO hay túnel. El cero es que lo hay.
+	//
+	// Es de la máquina de estados y no de la sala, a diferencia de
+	// HostGoneSince: aquello es que falta una persona, esto es que falta la red.
+	ReconnectingSince time.Time
 
 	// Game es el juego activo, y el cero es un estado válido y el que trae una
 	// sala recién creada: red cifrada, cero puertos abiertos.
@@ -231,6 +268,8 @@ func (r *RoomState) clearRoom() {
 	r.Peers = nil
 	r.HostPresent = false
 	r.HostGoneSince = time.Time{}
+	r.HostLastHeard = time.Time{}
+	r.ReconnectingSince = time.Time{}
 	r.Game = GameProfile{}
 	r.LocalIP = netip.Addr{}
 	r.Alerts = nil
@@ -266,6 +305,10 @@ func (r *RoomState) SetHostPresent(present bool, now time.Time) {
 	if present {
 		r.HostPresent = true
 		r.HostGoneSince = time.Time{}
+		// Que el socket esté levantado es prueba de vida, así que sella el
+		// reloj del silencio por el mismo acto. Sin esto habría dos verdades
+		// sobre lo mismo, la del flanco y la del plazo, y se desincronizarían.
+		r.HostLastHeard = now
 		return
 	}
 	// No se pisa la marca si ya estaba ausente: el contador cuenta desde la
@@ -275,6 +318,63 @@ func (r *RoomState) SetHostPresent(present bool, now time.Time) {
 		r.HostGoneSince = now
 	}
 	r.HostPresent = false
+}
+
+// NoteHostAlive registra una prueba de vida del host.
+//
+// Existe con nombre propio, en vez de llamar a [RoomState.SetHostPresent], para
+// que los sitios que la llaman se lean como lo que son: EVIDENCIA de que el
+// host está, no el flanco de un socket. Un anuncio que llega, un aviso que
+// llega, su dirección en la tabla de peers.
+//
+// Solo en invitados. Un host no se prueba vida a sí mismo.
+func (r *RoomState) NoteHostAlive(now time.Time) {
+	if r.Role != RoleGuest {
+		return
+	}
+	r.SetHostPresent(true, now)
+}
+
+// HostSilent dice si pasó [HostSilenceLimit] sin oír nada del host.
+//
+// Es la señal que llega sola cuando la caída del socket no llega nunca. Solo en
+// invitados, y solo si alguna vez se oyó algo: sin marca previa no hay silencio
+// que medir, hay un ingreso a medio hacer.
+func (r RoomState) HostSilent(now time.Time) bool {
+	if r.Role != RoleGuest || r.HostLastHeard.IsZero() {
+		return false
+	}
+	return now.Sub(r.HostLastHeard) >= HostSilenceLimit
+}
+
+// SetTunnelDown marca que no hay túnel, sin pisar la marca previa.
+//
+// No pisarla es la misma razón que en [RoomState.SetHostPresent]: el plazo
+// cuenta desde la primera caída, y un motor que reporta la desconexión tres
+// veces seguidas dejaría el contador en cero para siempre.
+func (r *RoomState) SetTunnelDown(now time.Time) {
+	if r.ReconnectingSince.IsZero() {
+		r.ReconnectingSince = now
+	}
+}
+
+// SetTunnelUp borra la marca. El túnel volvió.
+func (r *RoomState) SetTunnelUp() { r.ReconnectingSince = time.Time{} }
+
+// TunnelDown dice si se está sin túnel ahora mismo.
+func (r RoomState) TunnelDown() bool { return !r.ReconnectingSince.IsZero() }
+
+// ShouldLeaveForReconnectTimeout es el hermano de
+// [RoomState.ShouldLeaveForHostAbsence], del lado de la red.
+//
+// Aplica a los dos roles, y ahí está la diferencia con el otro: un host sin
+// túnel tampoco tiene sala, y sostenerla abierta dejaría sus puertos aplicados
+// hacia miembros que no puede alcanzar.
+func (r RoomState) ShouldLeaveForReconnectTimeout(now time.Time) bool {
+	if !r.Conn.InRoom() || r.ReconnectingSince.IsZero() {
+		return false
+	}
+	return now.Sub(r.ReconnectingSince) >= ReconnectLimit
 }
 
 // Self devuelve el peer que es esta máquina.

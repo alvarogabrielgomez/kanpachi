@@ -49,6 +49,11 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 		if !ok {
 			s.teardown(ctx)
 			_ = s.state.TransitionWithExit(domain.StateIdle, "falló el ingreso a la sala", domain.ExitFailed)
+			// Republicar no es opcional. Quien llama recibe un error y descarta
+			// el estado, así que sin esto la copia que lee Status se quedaría
+			// con la de antes del fallo y la pantalla de inicio no diría nunca
+			// que el ingreso falló.
+			s.snapshot()
 		}
 	}()
 
@@ -120,7 +125,9 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 		return domain.RoomState{}, fmt.Errorf(
 			"se entró a la sala y el canal con el host no levantó: %w", err)
 	}
-	s.state.SetHostPresent(true, s.deps.Clock.Now())
+	// El rol ya está fijado unas líneas más arriba, y NoteHostAlive lo exige:
+	// solo un invitado registra pruebas de vida del host.
+	s.state.NoteHostAlive(s.deps.Clock.Now())
 
 	s.configureAdapter(ctx)
 
@@ -137,6 +144,10 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 	if err := s.applyPolicy(ctx); err != nil {
 		return domain.RoomState{}, err
 	}
+
+	// La última sala se guarda al entrar y no al salir, así una muerte sucia
+	// del daemon tampoco la pierde.
+	s.saveLastRoomLocked()
 
 	ok = true
 	s.deps.Log.Info("dentro de la sala",
@@ -224,7 +235,43 @@ func (s *Session) refreshPeersLocked(ctx context.Context) error {
 		return fmt.Errorf("consultando los miembros de la sala: %w", err)
 	}
 	s.state.Peers = markRoles(peers, s.state.LocalIP, s.state.Role, s.state.Subnet)
+	s.inferHostPresenceLocked()
 	return nil
+}
+
+// inferHostPresenceLocked deduce la presencia del host de la tabla de peers.
+//
+// Es la capa que sigue funcionando cuando el canal de control está roto,
+// colgado o nunca arrancó: el motor propaga la tabla entera a cada nodo, así
+// que la .1 del host está o no está sin que el canal opine. Cuesta cero
+// llamadas nuevas, porque la lista ya se acaba de leer.
+//
+// **Solo puede APAGAR la presencia, jamás encenderla.** La asimetría es el
+// punto entero: que el motor reporte al host prueba que su nodo está en la red,
+// y no prueba que su canal de control funcione. Encenderla desde acá desarmaría
+// el contador de veinte minutos con evidencia que no lo respalda, y el caso
+// real que rompería es el host que dejó la máquina encendida con Kanpachi
+// colgado.
+//
+// Los dos guardas evitan el falso positivo. Una lista vacía es que el motor no
+// tiene nada que decir, no que el host se haya ido. Y exigir StateConnected
+// impide que dispare a mitad de un ingreso, cuando todavía no hay a quién ver.
+//
+// Asume el candado tomado.
+func (s *Session) inferHostPresenceLocked() {
+	if s.state.Role != domain.RoleGuest || s.state.Conn != domain.StateConnected || len(s.state.Peers) == 0 {
+		return
+	}
+	hostIP := domain.HostAddress(s.state.Subnet)
+	for _, p := range s.state.Peers {
+		if p.VirtualIP == hostIP {
+			return
+		}
+	}
+	if s.state.HostPresent {
+		s.deps.Log.Info("el host no está en la tabla de miembros del motor", "esperada", hostIP.String())
+	}
+	s.state.SetHostPresent(false, s.deps.Clock.Now())
 }
 
 // markRoles decide cuál de los peers soy yo y cuál hospeda.

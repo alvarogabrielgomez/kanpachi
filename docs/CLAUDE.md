@@ -89,13 +89,14 @@ El proyecto usa **Clean Architecture**, aplicada como regla de dependencia con p
 |---|---|
 | Dominio | Tipos y reglas puras: `Code`, `Room`, `GameProfile`, `RuleSet`, `Peer`, invariantes del catálogo, derivación del código |
 | Casos de uso | Uno por intención: `CreateRoom`, `JoinRoom`, `ActivateProfile`, `LeaveRoom`, `ImportCatalog` |
-| Puertos | `EnginePort`, `FirewallPort`, `NetConfigPort`, `CatalogStore`, `GameLibrary`, `SocketInspector`, `RoutingTable` |
+| Puertos | `EnginePort`, `FirewallPort`, `NetConfigPort`, `CatalogStore`, `StateStore`, `SystemEvents`, `GameLibrary`, `SocketInspector`, `RoutingTable`, `ControlChannel` |
 | Adaptadores | EasyTier, COM del Firewall, `iphlpapi`, registro, Steam, JSON en disco |
 | Entrada | Named pipe, manejador `kanpachi://`, arranque del servicio |
 
 ```
 core/       domain/ port/ usecase/         sin I/O, sin syscalls, sin API de Windows
 daemon/     adapter/ transport/ service/   Go, servicio de Windows, elevado
+            service/ es Go PURO y corre en el job de Linux junto a core
 ui/         Flutter desktop, sin privilegios
 seed/       install.sh, el arranque de una sola ejecución en el servidor
 registry/   El binario Go del seed, kanpseed. Servidor HTTP + CLI + instalador.
@@ -108,7 +109,8 @@ docs/       Los siete documentos
 
 Qué respetar al escribir código:
 
-- **Un import prohibido en `core` es un error de arquitectura, no un detalle.** Nada de `os`, `syscall`, `golang.org/x/sys`, `net/http`, `os/exec` dentro de `core/`. Lo verifica `internal/arch/arch_test.go`, que corre en CI sobre Ubuntu y falla nombrando el archivo y el import.
+- **Un import prohibido en `core` es un error de arquitectura, no un detalle.** Nada de `os`, `syscall`, `golang.org/x/sys`, `net/http`, `os/exec` dentro de `core/`. Lo verifica `internal/arch/arch_test.go`, que corre en CI sobre Ubuntu y falla nombrando el archivo y el import. **La misma regla vigila `daemon/service`:** el supervisor solo habla con puertos declarados en `core`, así que corre en el job de Linux, y el día que alguien meta Windows ahí dentro el bucle que sostiene los cortes automáticos se queda sin pruebas.
+- **Los cortes automáticos no se pueden apagar desde fuera.** Los plazos son constantes de compilación, ninguna operación del named pipe los toca, y las cadencias del supervisor tampoco se configuran. Lo vigila `internal/arch/corte_test.go`, que falla si alguno deja de ser `const`, si aparece un método exportado que huela a apagarlo, o si un plazo se convierte en un campo de `RoomState`, que es como entraría desde un archivo de disco. Ver decisión 26.
 - Si algo necesita privilegios o API de Windows, va en un adaptador detrás de un puerto declarado en `core`.
 - **El cableado de dependencias vive solo en `service/`.** Es el único sitio que conoce a la vez el dominio y los adaptadores concretos. Ningún caso de uso construye su propio adaptador.
 - El motor vive detrás de `EnginePort`. Nada fuera de `daemon/adapter/engine/easytier/` menciona EasyTier. **Se ejecuta como proceso hijo (`easytier-core`), nunca vinculado al binario Go:** EasyTier es LGPL-3.0 y es Rust, el proceso separado mantiene la licencia de Kanpachi libre y evita cgo.

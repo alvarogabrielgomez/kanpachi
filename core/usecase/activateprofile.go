@@ -58,6 +58,9 @@ func (s *Session) ActivateProfile(ctx context.Context, gameID string) (domain.Ro
 	// que deshacerlas una por una.
 	s.configureAdapter(ctx)
 	s.announceLocked(ctx)
+	// El juego activo se guarda con la sala, para poder reponerlo si la máquina
+	// se apaga de golpe. Va el ID y jamás el perfil, igual que en el anuncio.
+	s.saveRoomLocked()
 
 	s.deps.Log.Info("juego activo", "juego", s.state.Game.ID, "anterior", previous.ID)
 	return s.snapshot(), nil

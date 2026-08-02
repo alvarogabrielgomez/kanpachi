@@ -64,9 +64,27 @@ type EnginePort interface {
 	RevokeCredential(ctx context.Context, id domain.CredentialID) error
 	ListCredentials(ctx context.Context) ([]domain.Credential, error)
 
+	// Restart vuelve a levantar el motor con la ÚLTIMA especificación con la
+	// que se arrancó.
+	//
+	// Es el MECANISMO del watchdog. Cuántas veces y cada cuánto es POLÍTICA y
+	// vive en el supervisor: el adaptador sabe cómo arrancarlo, no sabe cuándo
+	// hay que rendirse.
+	//
+	// La especificación no vuelve a core, y por eso existe este método en vez
+	// de repetir HostNetwork: el secreto de la red real se queda dentro del
+	// adaptador, que es el único sitio del programa que lo necesita.
+	//
+	// Sin arranque previo devuelve error y no inventa ninguna sala.
+	Restart(ctx context.Context) error
+
 	Peers(ctx context.Context) ([]domain.Peer, error)
 	// Events es el canal por el que el motor empuja. El supervisor lo escucha
 	// y traduce cada evento a una transición de la máquina de estados.
+	//
+	// Devuelve el canal del proceso ACTUAL. Tras un Restart hay un canal nuevo
+	// y el anterior se cierra, así que quien escuche tiene que volver a
+	// pedirlo. El supervisor lo hace en cada latido, comparando por identidad.
 	Events() <-chan domain.EngineEvent
 	Diagnostics(ctx context.Context) (domain.NetCheck, error)
 }
@@ -76,6 +94,16 @@ type EnginePort interface {
 // que un cambio de miembros o de juego no puede dejar nada colgando del
 // cálculo anterior.
 type FirewallPort interface {
+	// Apply lleva el firewall al conjunto deseado.
+	//
+	// **La diferencia se calcula contra las reglas VIVAS del grupo Kanpachi,
+	// enumeradas del sistema en CADA llamada, jamás contra una copia en memoria
+	// de lo último que se pidió.** De eso dependen dos cosas, y las dos son
+	// funcionales y no estéticas: que Apply sea idempotente, y que reaplicar el
+	// mismo conjunto REPARE lo que alguien haya borrado o agregado por fuera.
+	//
+	// Con un recuerdo en memoria, reaplicar un conjunto igual sería un no-op y
+	// la autorreparación del módulo de exposición no existiría.
 	Apply(ctx context.Context, desired domain.RuleSet) error
 	// PurgeOwned borra todo lo etiquetado con el grupo Kanpachi. Se llama al
 	// arrancar el servicio, antes de aplicar nada: una muerte sucia del daemon
@@ -136,6 +164,66 @@ type CatalogStore interface {
 	LoadLocal() ([]byte, error)
 	// SaveLocal escribe, con respaldo de la escritura anterior.
 	SaveLocal([]byte) error
+}
+
+// StateStore guarda lo que tiene que sobrevivir a un arranque.
+//
+// Devuelve bytes crudos y no structs, por lo mismo que [CatalogStore]: el
+// decodificador estricto vive en el dominio, que es el único sitio con las
+// invariantes. Un adaptador que decidiera qué es una sala válida movería la
+// política fuera de core.
+//
+// Son dos archivos y dos motivos distintos:
+//
+//	room.json       SOLO EN EL HOST. La sala que estaba abierta. Salir limpio
+//	                lo borra y morir sucio lo deja, así que su sola presencia
+//	                al arrancar es la señal de que hubo un mal cierre.
+//	last-room.json  SOLO EN INVITADOS. La última sala, para poder volver. Lleva
+//	                el código y nada que sirva para entrar sin pasar por el
+//	                host.
+//
+// Que cualquiera de los dos falte NO es un error: es lo normal en una
+// instalación nueva y en toda salida limpia.
+type StateStore interface {
+	LoadRoom() ([]byte, error)
+	SaveRoom([]byte) error
+	ClearRoom() error
+
+	LoadLast() ([]byte, error)
+	SaveLast([]byte) error
+	ClearLast() error
+}
+
+// SystemEvents son las cosas que le pasan a la MÁQUINA y que invalidan lo que
+// Kanpachi dejó puesto. No son eventos del motor ni de la sala.
+//
+// Tres canales y no uno con un enum, a diferencia de [domain.EngineEvent]:
+// aquel viene de una sola fuente, el proceso hijo, y estos vienen de tres
+// subsistemas de Windows que no se conocen entre sí, el visor de eventos, la
+// bomba de mensajes de una ventana oculta y el aviso de cambio de red. Un canal
+// por fuente hace que una suscripción muerta se VEA, porque su canal se cierra
+// y los otros dos siguen.
+//
+// Ninguno de los tres es fiable, y el supervisor no los trata como si lo
+// fueran: reaplica los ajustes del adaptador cada tantos latidos aunque no
+// llegue ningún evento. Una suscripción muerta sin ese respaldo se traduce en
+// "ayer funcionaba".
+type SystemEvents interface {
+	// NetworkIdentified emite cada vez que Windows identifica una red, o sea el
+	// Event ID 10000 de Microsoft-Windows-NetworkProfile/Operational. Es cuando
+	// Windows revierte la métrica del adaptador, la categoría y las rutas.
+	NetworkIdentified() <-chan struct{}
+	// Resumed emite al despertar de suspensión o hibernación, y tras Fast
+	// Startup. Deja endpoints muertos y sesiones colgadas.
+	Resumed() <-chan struct{}
+	// NetworkChanged emite cuando cambia la conectividad: WiFi a cable, cable a
+	// LTE. Una IP pública nueva obliga a renegociar sin perder la sala.
+	NetworkChanged() <-chan struct{}
+	// Close corta las suscripciones y cierra los tres canales.
+	//
+	// Es idempotente y NUNCA espera a que alguien lea. Un adaptador que
+	// bloqueara en Close esperando lector colgaría el apagado del servicio.
+	Close() error
 }
 
 // GameLibrary detecta qué está instalado. El resultado ORDENA la lista, jamás
@@ -250,6 +338,25 @@ type ControlChannel interface {
 	// solo emite lo que llegó por la conexión al host.
 	Notices() <-chan domain.RoomNotice
 
+	// AnnounceCode le reparte el invite ID NUEVO a los miembros presentes, tras
+	// renovarlo. SOLO el host.
+	//
+	// Existe porque renovar tenía un efecto secundario que nadie había
+	// nombrado: los que están dentro se quedan con el código viejo guardado.
+	// Siguen en la sala y la partida no se entera, y el día que quieran volver
+	// tienen un código muerto. La confianza ya está dada, están dentro porque
+	// el host los dejó entrar.
+	//
+	// **El adaptador lo SELLA contra la llave pública de cada miembro**, la
+	// misma que llegó en su pedido de credencial. Core no ve llaves. No es una
+	// llave nueva ni un almacén nuevo: vive lo que dura la sesión de esa
+	// persona y se descarta al salir, así que no es identidad persistida y no
+	// habilita ningún baneo.
+	AnnounceCode(ctx context.Context, r domain.Room) error
+	// Codes es el lado del invitado. Igual que los otros dos canales, el
+	// adaptador solo emite lo que llegó por la conexión al host.
+	Codes() <-chan domain.Room
+
 	// RequestCredential es el paso 5 del canje. El adaptador rellena la llave
 	// pública desde identity.key antes de firmar: esa llave vive en disco con
 	// ACL propia y core no la conoce, que es justo lo que la decisión 25
@@ -257,6 +364,13 @@ type ControlChannel interface {
 	RequestCredential(ctx context.Context, req domain.CredentialRequest) (domain.Credential, error)
 	// Close es IDEMPOTENTE, por lo mismo que Leave: lo llama el camino de
 	// error, que puede correr antes de que se haya abierto nada.
+	//
+	// **NUNCA espera a que alguien lea sus canales, y sus emisores están
+	// amortiguados.** No es higiene, es lo que evita un abrazo mortal real: el
+	// caso de uso llama a Close con el candado de la sesión tomado, y si Close
+	// esperara a su goroutine emisora mientras esa goroutine está bloqueada
+	// escribiendo en HostPresence, las dos se esperarían para siempre y el
+	// daemon quedaría colgado con la sala a medio cerrar.
 	Close() error
 }
 

@@ -73,10 +73,67 @@ func (s *Session) RotateInviteCode(ctx context.Context) (domain.RoomState, error
 
 	s.state.Room = room
 	s.cardKey = key
+	s.saveRoomLocked()
+
+	// El código nuevo se le reparte a los que están DENTRO.
+	//
+	// Arregla un efecto secundario que nadie había nombrado: renovar dejaba a
+	// los presentes con el código viejo guardado. Siguen en la sala y la
+	// partida no se entera, y el día que quieran volver tienen un código
+	// muerto. La confianza ya está dada, están dentro porque el host los dejó
+	// entrar, y renovar con ellos dentro es la señal de que se quedan.
+	//
+	// Va cifrado contra la llave de cada uno, que es cosa del adaptador. Que
+	// falle no invalida nada: el código nuevo ya es el bueno y el vestíbulo ya
+	// está levantado con él. Lo que se pierde es que el otro lo tenga guardado.
+	if err := s.deps.Control.AnnounceCode(ctx, room); err != nil {
+		s.deps.Log.Warn("no se les pudo repartir el código nuevo a los presentes", "error", err)
+	}
 
 	s.deps.Log.Info("código renovado",
 		"antes", old.InviteID.String(), "ahora", room.InviteID.String(), "presentes", len(s.state.Peers))
 	return s.snapshot(), nil
+}
+
+// OnCodeRotated aplica el código nuevo que repartió el host.
+//
+// Lo llama el supervisor drenando [port.ControlChannel.Codes]. Lo único que
+// cambia es la llave de búsqueda de la sala: la red real es la misma, la
+// credencial sigue valiendo, y nadie se reconecta ni migra a ningún lado.
+//
+// Un host no toma códigos de nadie. El suyo es el original, y aceptarlos le
+// permitiría a un miembro modificado cambiarle el código a la sala que hospeda,
+// o sea dejarlo publicando una puerta que no existe.
+func (s *Session) OnCodeRotated(ctx context.Context, r domain.Room) domain.RoomState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.state.Conn.InRoom() || s.state.IsHost() {
+		return s.snapshot()
+	}
+	// Que llegue un código es prueba de vida del host, como cualquier otra cosa
+	// que venga por ese canal.
+	s.state.NoteHostAlive(s.deps.Clock.Now())
+
+	if r.InviteID.IsZero() || r.Seed == "" {
+		// Llega de otra máquina, así que se comprueba acá y no se confía en que
+		// el otro lado haya mandado algo coherente. Un código a medias
+		// guardado en disco haría fallar el "volver a la última sala" sin
+		// ninguna pista de por qué.
+		s.deps.Log.Warn("el host mandó un código nuevo incompleto, se ignora")
+		return s.snapshot()
+	}
+	if r == s.state.Room {
+		return s.snapshot()
+	}
+
+	old := s.state.Room
+	s.state.Room = r
+	s.saveLastRoomLocked()
+
+	s.deps.Log.Info("el host renovó el código de la sala",
+		"antes", old.InviteID.String(), "ahora", r.InviteID.String())
+	return s.snapshot()
 }
 
 // RenameRoom cambia el nombre visible y vuelve a publicar la tarjeta.
@@ -97,6 +154,7 @@ func (s *Session) RenameRoom(ctx context.Context, name string) (domain.RoomState
 	// nombre que van a ver los demás, en vez de uno que a todos les llega
 	// recortado y a él entero.
 	s.announceLocked(ctx)
+	s.saveRoomLocked()
 
 	sealed, key, err := domain.SealRoomCard(domain.RoomCard{Host: s.nick, Room: s.state.Name}, s.deps.Rand)
 	if err != nil {

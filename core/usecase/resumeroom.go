@@ -1,0 +1,196 @@
+package usecase
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/accentiostudios/kanpachi/core/domain"
+)
+
+// ErrNoPendingRoom es reanudar sin nada que reanudar.
+var ErrNoPendingRoom = errors.New("no hay ninguna sala del arranque anterior")
+
+// PendingRoom es la sala que quedó abierta cuando el daemon murió sucio.
+//
+// **Su sola existencia es la señal de mal cierre.** Salir limpio borra el
+// archivo y morir sucio lo deja, así que no hace falta una bandera `dirty`
+// dentro, que sería un campo más que alguien puede escribir a mano.
+//
+// La lee la UI al arrancar para preguntar. Preguntar y no reanudar solo: es la
+// invariante de que nada que llegue de fuera de la app surte efecto sin
+// confirmación dentro de la app, y acá lo de fuera es un archivo del arranque
+// anterior.
+func (s *Session) PendingRoom() (domain.PersistedRoom, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.pending, s.hasPending
+}
+
+// DiscardPendingRoom tira la sala anterior. Es el "no, ciérrala" de la
+// pregunta del arranque.
+func (s *Session) DiscardPendingRoom(_ context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.hasPending {
+		return ErrNoPendingRoom
+	}
+	if err := s.deps.State.ClearRoom(); err != nil {
+		return fmt.Errorf("borrando la sala del arranque anterior: %w", err)
+	}
+	s.pending = domain.PersistedRoom{}
+	s.hasPending = false
+	s.deps.Log.Info("la sala del arranque anterior se descartó")
+	return nil
+}
+
+// ResumeRoom vuelve a abrir la sala que quedó de un apagón, con el MISMO
+// código y la MISMA red.
+//
+// Que la identidad de la red sea la misma es lo que hace que esto sirva: los
+// invitados guardan una credencial contra esa red, así que un host que vuelve
+// dentro de los veinte minutos del contador de la decisión 20 se los encuentra
+// reconectando solos. Uno que tarda más reabre una sala vacía con el mismo
+// código, que es igual de correcto y era el otro caso a cubrir.
+//
+// # Lo que NO se restaura del disco
+//
+// Los miembros y las reglas. Los miembros son lo que reporte el motor, y las
+// reglas se recalculan desde ahí. Restaurarlas del archivo abriría puertos
+// hacia direcciones que hoy pueden no ser de nadie, que es exactamente lo que
+// la cuarentena por defecto existe para impedir. Con cero miembros presentes el
+// conjunto deseado es el vacío, así que reponer el juego no abre nada hasta que
+// haya alguien de verdad.
+func (s *Session) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.state.Conn.InRoom() {
+		return domain.RoomState{}, ErrBusy
+	}
+	if !s.hasPending {
+		return domain.RoomState{}, ErrNoPendingRoom
+	}
+	saved := s.pending
+
+	if err := s.state.Transition(domain.StateResolving, "el usuario reabrió la sala anterior"); err != nil {
+		return domain.RoomState{}, err
+	}
+	ok := false
+	defer func() {
+		if !ok {
+			s.teardown(ctx)
+			_ = s.state.TransitionWithExit(domain.StateIdle, "falló reabrir la sala anterior", domain.ExitFailed)
+			s.snapshot()
+		}
+	}()
+
+	// La subred se comprueba contra la máquina de HOY. Una laptop que abrió la
+	// sala en casa y la reabre en la oficina puede tener ahora una LAN que pisa
+	// ese rango, y levantarla igual dejaría al usuario sin esa red.
+	//
+	// Se falla en vez de elegir otra subred, y es deliberado: cambiarla haría
+	// que las credenciales emitidas apuntaran a un rango que ya no existe, o
+	// sea rompería justo la reconexión por la que esta función existe. El
+	// usuario descarta la sala y crea una nueva, que es un click.
+	if err := s.checkSubnetAgainstLocal(ctx, saved.Subnet); err != nil {
+		return domain.RoomState{}, fmt.Errorf("la sala anterior ya no cabe en esta máquina: %w", err)
+	}
+
+	spec := domain.HostSpec{
+		Rendezvous:    domain.DeriveRendezvous(saved.Room.InviteID),
+		NetworkID:     saved.NetworkID,
+		NetworkSecret: saved.NetworkSecret,
+		Name:          saved.Host,
+		Subnet:        saved.Subnet,
+		Seeds:         seedsFor(saved.Room),
+	}
+
+	if err := s.state.Transition(domain.StateConnecting, "levantando la red de la sala anterior"); err != nil {
+		return domain.RoomState{}, err
+	}
+	if err := s.deps.Engine.HostNetwork(ctx, spec); err != nil {
+		return domain.RoomState{}, fmt.Errorf("levantando la red de la sala anterior: %w", err)
+	}
+
+	local := domain.HostAddress(saved.Subnet)
+	s.state.Role = domain.RoleHost
+	s.state.Room = saved.Room
+	s.state.Name = saved.Name
+	s.state.LocalIP = local
+	s.state.Subnet = saved.Subnet
+	s.state.HostPresent = true
+	s.state.Net.Subnet = saved.Subnet
+	s.state.Net.SubnetReason = "la subred es la que tenía la sala anterior"
+	s.state.Peers = []domain.Peer{{
+		VirtualIP: local, Name: saved.Host, Path: domain.PathSelf, Self: true, Host: true,
+	}}
+	s.hostSpec = spec
+	s.cardKey = saved.CardKey
+	s.nick = saved.Host
+
+	s.configureAdapter(ctx)
+
+	if err := s.deps.Engine.JoinRendezvous(ctx, domain.RendezvousSpec{
+		Rendezvous: spec.Rendezvous,
+		Address:    domain.RendezvousHostAddress,
+		Name:       saved.Host,
+		Seeds:      spec.Seeds,
+	}); err != nil {
+		return domain.RoomState{}, fmt.Errorf("abriendo la puerta de la sala anterior: %w", err)
+	}
+	if err := s.deps.Control.Serve(ctx, s.controlScope()); err != nil {
+		return domain.RoomState{}, fmt.Errorf("abriendo el canal de la sala anterior: %w", err)
+	}
+	if err := s.state.Transition(domain.StateConnected, "la sala anterior está levantada"); err != nil {
+		return domain.RoomState{}, err
+	}
+
+	// El juego se repone DESPUÉS de estar conectado y por el camino de siempre,
+	// resolviendo el id contra el catálogo de esta máquina. Un perfil que ya no
+	// está deja la sala sin juego, que es el estado por defecto y el seguro.
+	s.restoreGameLocked(ctx, saved.GameID)
+
+	// Sin juego el conjunto deseado es el vacío, y se aplica igual: la
+	// cuarentena por defecto es un acto, no una omisión. Con juego,
+	// restoreGameLocked ya aplicó, y volver a aplicar el mismo conjunto es un
+	// no-op porque el puerto es declarativo.
+	if err := s.applyPolicy(ctx); err != nil {
+		return domain.RoomState{}, err
+	}
+
+	s.saveRoomLocked()
+	s.pending = domain.PersistedRoom{}
+	s.hasPending = false
+
+	ok = true
+	s.deps.Log.Info("sala anterior reabierta",
+		"código", saved.Room.InviteID.String(), "subred", saved.Subnet.String(), "juego", s.state.Game.ID)
+	return s.snapshot(), nil
+}
+
+// restoreGameLocked repone el juego que estaba activo. Asume el candado tomado.
+//
+// No es fatal que falle, y por eso no devuelve error: la sala ya está abierta y
+// levantada, y quedarse sin reabrirla porque un perfil se borró sería cambiar
+// un problema chico por uno grande. El usuario elige el juego a mano y sigue.
+func (s *Session) restoreGameLocked(ctx context.Context, gameID string) {
+	if gameID == "" {
+		return
+	}
+	p, ok := s.catalog.Find(gameID)
+	if !ok {
+		s.deps.Log.Info("el juego que estaba activo ya no está en el catálogo", "juego", gameID)
+		return
+	}
+	s.state.Game = p
+	if err := s.applyPolicy(ctx); err != nil {
+		s.state.Game = domain.GameProfile{}
+		s.deps.Log.Warn("no se pudieron reponer las reglas del juego anterior", "juego", gameID, "error", err)
+		return
+	}
+	s.configureAdapter(ctx)
+	s.deps.Log.Info("juego repuesto de la sala anterior", "juego", gameID)
+}

@@ -43,6 +43,10 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 		if !ok {
 			s.teardown(ctx)
 			_ = s.state.TransitionWithExit(domain.StateIdle, "falló la creación de la sala", domain.ExitFailed)
+			// Se republica por lo mismo que en JoinRoom: quien llama descarta
+			// el estado al recibir un error, así que si no se publica acá la
+			// copia que lee Status se queda con la de antes del fallo.
+			s.snapshot()
 		}
 	}()
 
@@ -92,7 +96,7 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 	s.state.Peers = []domain.Peer{{
 		VirtualIP: local, Name: nick, Path: domain.PathSelf, Self: true, Host: true,
 	}}
-	s.hostNetworkName = spec.RealNetworkName()
+	s.hostSpec = spec
 	s.cardKey = key
 	s.nick = nick
 
@@ -126,6 +130,11 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 	if err := s.applyPolicy(ctx); err != nil {
 		return domain.RoomState{}, err
 	}
+
+	// La sala se guarda recién cuando está entera y funcionando. Guardarla
+	// antes dejaría en disco una sala que nunca llegó a existir, y el arranque
+	// siguiente ofrecería reabrir algo que jamás estuvo abierto.
+	s.saveRoomLocked()
 
 	ok = true
 	s.deps.Log.Info("sala creada",

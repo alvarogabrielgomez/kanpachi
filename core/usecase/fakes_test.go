@@ -37,9 +37,12 @@ type motorFalso struct {
 	// no el caso de uso, que es lo que hace que revocar corte la sesión.
 	credenciales func() domain.Credential
 
-	errHost error
-	errRdv  error
-	errJoin error
+	reinicios int
+
+	errHost    error
+	errRdv     error
+	errJoin    error
+	errRevocar error
 }
 
 func nuevoMotor() *motorFalso {
@@ -100,7 +103,18 @@ func (m *motorFalso) RevokeCredential(_ context.Context, id domain.CredentialID)
 	m.anota("revocar")
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.errRevocar != nil {
+		return m.errRevocar
+	}
 	m.revocadas = append(m.revocadas, id)
+	return nil
+}
+
+func (m *motorFalso) Restart(context.Context) error {
+	m.anota("reiniciar")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.reinicios++
 	return nil
 }
 
@@ -125,11 +139,12 @@ func (m *motorFalso) Diagnostics(context.Context) (domain.NetCheck, error) {
 type firewallFalso struct {
 	mu sync.Mutex
 
-	aplicado  domain.RuleSet
-	purgas    int
-	restauras int
-	suspendió []domain.ForeignRule
-	ajenas    []domain.ForeignRule
+	aplicado     domain.RuleSet
+	aplicaciones int
+	purgas       int
+	restauras    int
+	suspendió    []domain.ForeignRule
+	ajenas       []domain.ForeignRule
 
 	errApply error
 }
@@ -141,7 +156,14 @@ func (f *firewallFalso) Apply(_ context.Context, rs domain.RuleSet) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.aplicado = rs
+	f.aplicaciones++
 	return nil
+}
+
+func (f *firewallFalso) veces() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.aplicaciones
 }
 
 func (f *firewallFalso) estado() domain.RuleSet {
@@ -329,7 +351,10 @@ type controlFalso struct {
 	avisos          []avisoFalso
 	avisados        []netip.Addr
 	avisosEntrantes chan domain.RoomNotice
+	códigos         []domain.Room
+	códigosEntantes chan domain.Room
 	errNotify       error
+	errCódigo       error
 	credencial      domain.Credential
 	cierres         int
 
@@ -343,6 +368,7 @@ func nuevoControl() *controlFalso {
 		presencia:       make(chan bool, 4),
 		entrantes:       make(chan domain.RoomAnnounce, 4),
 		avisosEntrantes: make(chan domain.RoomNotice, 4),
+		códigosEntantes: make(chan domain.Room, 4),
 	}
 }
 
@@ -390,6 +416,24 @@ func (c *controlFalso) Announce(_ context.Context, a domain.RoomAnnounce) error 
 }
 
 func (c *controlFalso) Announcements() <-chan domain.RoomAnnounce { return c.entrantes }
+
+func (c *controlFalso) AnnounceCode(_ context.Context, r domain.Room) error {
+	if c.errCódigo != nil {
+		return c.errCódigo
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.códigos = append(c.códigos, r)
+	return nil
+}
+
+func (c *controlFalso) Codes() <-chan domain.Room { return c.códigosEntantes }
+
+func (c *controlFalso) códigosRepartidos() []domain.Room {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]domain.Room(nil), c.códigos...)
+}
 
 func (c *controlFalso) Notify(_ context.Context, to netip.Addr, n domain.RoomNotice) error {
 	if c.errNotify != nil {
@@ -501,11 +545,85 @@ type banco struct {
 	firewall  *firewallFalso
 	netcfg    *netcfgFalso
 	almacén   *almacénFalso
+	estado    *estadoFalso
 	registro  *registroFalso
 	control   *controlFalso
 	auditoría *auditoríaFalsa
 	reloj     *relojFijo
 	sesión    *Session
+}
+
+// estadoFalso es el disco de room.json y last-room.json.
+//
+// Guarda bytes y no structs, igual que el puerto de verdad: el decodificador
+// estricto vive en el dominio y estos tests lo ejercitan de punta a punta.
+type estadoFalso struct {
+	mu sync.Mutex
+
+	sala     []byte
+	última   []byte
+	borrados int
+
+	errGuardar error
+}
+
+func (e *estadoFalso) LoadRoom() ([]byte, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.sala == nil {
+		return nil, errors.New("no hay sala guardada")
+	}
+	return append([]byte(nil), e.sala...), nil
+}
+
+func (e *estadoFalso) SaveRoom(raw []byte) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.errGuardar != nil {
+		return e.errGuardar
+	}
+	e.sala = append([]byte(nil), raw...)
+	return nil
+}
+
+func (e *estadoFalso) ClearRoom() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.sala = nil
+	e.borrados++
+	return nil
+}
+
+func (e *estadoFalso) LoadLast() ([]byte, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.última == nil {
+		return nil, errors.New("no hay última sala")
+	}
+	return append([]byte(nil), e.última...), nil
+}
+
+func (e *estadoFalso) SaveLast(raw []byte) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.errGuardar != nil {
+		return e.errGuardar
+	}
+	e.última = append([]byte(nil), raw...)
+	return nil
+}
+
+func (e *estadoFalso) ClearLast() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.última = nil
+	return nil
+}
+
+func (e *estadoFalso) salaGuardada() []byte {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]byte(nil), e.sala...)
 }
 
 const catálogoDePrueba = `{"kanpachi_catalog":1,"profiles":[
@@ -525,6 +643,7 @@ func nuevoBanco(t interface{ Fatalf(string, ...any) }) *banco {
 		firewall:  &firewallFalso{},
 		netcfg:    &netcfgFalso{},
 		almacén:   &almacénFalso{builtin: []byte(catálogoDePrueba)},
+		estado:    &estadoFalso{},
 		registro:  &registroFalso{},
 		control:   nuevoControl(),
 		auditoría: &auditoríaFalsa{intactas: true},
@@ -536,6 +655,7 @@ func nuevoBanco(t interface{ Fatalf(string, ...any) }) *banco {
 		NetCfg:    b.netcfg,
 		Routes:    rutasFalsas{prefijos: []netip.Prefix{netip.MustParsePrefix("192.168.1.0/24")}},
 		Store:     b.almacén,
+		State:     b.estado,
 		Library:   bibliotecaFalsa{},
 		Directory: b.registro,
 		Control:   b.control,

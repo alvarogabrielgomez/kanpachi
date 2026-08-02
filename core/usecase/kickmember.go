@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 	"time"
@@ -68,8 +69,15 @@ func (s *Session) KickMember(ctx context.Context, ip netip.Addr) (domain.RoomSta
 		s.deps.Log.Warn("no se le pudo avisar al expulsado", "ip", ip.String(), "error", err)
 	}
 
+	// A partir de acá NADA se salta, y ese es el arreglo. Las dos capas fallan
+	// por motivos distintos y esa es toda la gracia de la decisión 22, así que
+	// abortar en la primera convertía dos capas en una: un bug del motor le
+	// dejaba la sesión abierta Y el puerto autorizado.
+	var fallos []error
 	if err := s.deps.Engine.RevokeCredential(ctx, cred.ID); err != nil {
-		return domain.RoomState{}, fmt.Errorf("revocando la credencial de %s: %w", peer.Name, err)
+		fallos = append(fallos, fmt.Errorf("%w: %s: %v", ErrRevokeFailed, peer.Name, err))
+		s.deps.Log.Error("el motor no revocó la credencial, sigue la segunda capa",
+			"ip", ip.String(), "error", err)
 	}
 
 	// La lista se recorta acá y no se espera al siguiente sondeo del motor. Un
@@ -95,11 +103,37 @@ func (s *Session) KickMember(ctx context.Context, ip netip.Addr) (domain.RoomSta
 	s.restrictControlChannel(ctx)
 
 	if err := s.applyPolicy(ctx); err != nil {
-		return domain.RoomState{}, err
+		fallos = append(fallos, fmt.Errorf("%w: %v", ErrRulesFailed, err))
+	}
+
+	if len(fallos) > 0 {
+		// Se AVISA en vez de deshacer, y la asimetría es deliberada. Deshacer el
+		// recorte volvería a autorizar a quien el host acaba de echar, así que
+		// lo que queda es la mitad que sí funcionó más una alerta que dice que
+		// la otra no. Es un estado visible, no un estado escondido.
+		s.raiseKickAlertLocked(peer, fallos)
+		s.deps.Log.Error("expulsión a medias", "nombre", peer.Name.String(), "ip", ip.String())
+		// Devuelve el estado VÁLIDO junto al error, que es lo contrario de lo
+		// que hace el resto del paquete y va dicho acá para que nadie lo
+		// "arregle": el miembro ya está fuera del conjunto de reglas, y
+		// descartar el estado haría que la UI redibuje a alguien que el
+		// firewall ya no autoriza.
+		return s.snapshot(), fmt.Errorf("%w: %w", ErrKickPartial, errors.Join(fallos...))
 	}
 
 	s.deps.Log.Info("miembro expulsado", "nombre", peer.Name.String(), "ip", ip.String())
 	return s.snapshot(), nil
+}
+
+// raiseKickAlertLocked deja constancia de que una expulsión no cerró sus dos
+// capas. Asume el candado tomado.
+func (s *Session) raiseKickAlertLocked(peer domain.Peer, fallos []error) {
+	s.state.DropAlerts(domain.AlertKickIncomplete)
+	s.state.Alerts = append(s.state.Alerts, domain.Alert{
+		Kind: domain.AlertKickIncomplete,
+		Detail: fmt.Sprintf("la expulsión de %s no se aplicó entera: %v. Renueva el código para que no vuelva",
+			peer.Name, errors.Join(fallos...)),
+	})
 }
 
 // dropPeerLocked saca a alguien de la lista de miembros. Asume el candado.
@@ -186,6 +220,18 @@ func (s *Session) OnPeersChanged(ctx context.Context) (domain.RoomState, error) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Un cambio de miembros es también una oportunidad de comprobar los plazos,
+	// y esa es la red de abajo de todo: si el latido del supervisor se murió,
+	// esto es lo que sigue sacando de una sala que ya no tiene host.
+	if s.enforceDeadlinesLocked(ctx) {
+		return s.snapshot(), nil
+	}
+	return s.onPeersChangedLocked(ctx)
+}
+
+// onPeersChangedLocked es el cuerpo, compartido con el evento del motor. Asume
+// el candado tomado.
+func (s *Session) onPeersChangedLocked(ctx context.Context) (domain.RoomState, error) {
 	if !s.state.Conn.InRoom() {
 		return s.snapshot(), nil
 	}

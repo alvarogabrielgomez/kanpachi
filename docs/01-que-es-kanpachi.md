@@ -22,6 +22,27 @@ Kanpachi toma la comodidad de Hamachi y le corrige el modelo de seguridad: **la 
 - No es acceso remoto. No hay escritorio remoto, ni transferencia de archivos, ni consola.
 - No es un launcher. No parchea juegos, no interfiere con Steam.
 
+## Qué agrega Kanpachi sobre usar EasyTier a secas
+
+El motor de red es EasyTier, sin modificar, corriendo como proceso hijo. Alguien puede razonablemente preguntar por qué no instalar EasyTier y ya. Esta sección responde eso con la guía que circula por internet para "asegurar" una partida con EasyTier, punto por punto, porque cada consejo de esa guía es un sitio donde Kanpachi ya decidió por el usuario.
+
+| El consejo que circula | Qué exige del usuario | Qué hace Kanpachi |
+|---|---|---|
+| "Usa un nombre de red y un secreto largos y aleatorios" | Generar dos strings, guardarlos, y pasárselos a cada amigo por un canal seguro | **No hay nombre ni secreto escribibles.** La identidad de la red real son 16 + 32 bytes aleatorios que genera el host, y no derivan de ningún string que alguien pueda teclear. El fallo típico, `cs16` con secreto `1234`, es estructuralmente imposible |
+| "No repartas el secreto por el chat" | Disciplina, cada vez | **El secreto no viaja.** Lo que se reparte es un invite ID de 8 caracteres que sirve para llegar a un vestíbulo público, y la credencial que emite el host no tiene campo donde poner el secreto. Quien entró nunca tuvo con qué volver por su cuenta |
+| "Limita las reglas del firewall a las IPs virtuales de tus amigos" | Escribir reglas a mano en Windows, por juego, y editarlas cada vez que entra o sale alguien | La interfaz virtual nace en deny all. Se abren **solo** los puertos del perfil del juego activo, **solo** en la máquina del host, y **solo** hacia las IPs de los miembros presentes. Se recalcula entero en cada cambio de miembros o de juego. `FirewallRule` ni siquiera tiene forma de expresar "cualquiera" |
+| "Que no se cuelen nodos nuevos" | Vigilar la consola | Entrar a la red real exige una credencial que emite el host. El código lleva al vestíbulo, que es público y desechable a propósito, y de ahí no se pasa sin que el host emita |
+| "Saca a alguien cambiando el secreto" | Cambiar el secreto y **mudar a todos** a la red nueva, o sea cortar la partida | Dos controles independientes: revocar una credencial saca a uno en un segundo sin tocar el código, y renovar el código cierra la puerta sin tocar a los presentes. La partida no se entera |
+| "No uses los nodos públicos compartidos" | Acordarse | Kanpachi apunta a su propio seed y arranca el motor con `--no-listener`, `--disable-upnp` y el portal RPC fijado a loopback. Hay un test que falla si alguien saca esas banderas |
+
+Y tres cosas que la guía ni menciona porque no son configurables en EasyTier:
+
+- **Cuarentena por defecto**, que es lo contrario de una LAN plana. En EasyTier, estar en la red significa alcanzarse en todos los puertos, y esa es exactamente la propiedad que este producto existe para no tener.
+- **El catálogo de juegos.** Nadie tiene que saber que Project Zomboid habla UDP 16261-16262. El perfil lo dice, y hay puertos que **ningún** perfil puede pedir, con 445 y 3389 a la cabeza.
+- **Que se cierre solo.** Los cortes automáticos de la decisión 26 no existen en un motor de red: nadie cierra tus puertos porque el host se fue hace veinte minutos.
+
+**Lo honesto también:** todo esto lo puede hacer una persona con paciencia y conocimiento, a mano, cada vez. El producto no inventa una capacidad nueva, quita el "cada vez" y el "con conocimiento".
+
 ## Lo que Kanpachi no sabe
 
 Esta sección existe porque es fácil suponer lo contrario. Kanpachi vive **completamente fuera del juego**:

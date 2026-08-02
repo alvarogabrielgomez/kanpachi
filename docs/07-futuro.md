@@ -31,9 +31,13 @@ Lo que se activa, en orden:
 
 ## 2. Identidad remota y salas persistentes
 
-**Disparador:** el grupo quiere salas con nombre que sobrevivan reinicios, o hace falta moderación.
+**Disparador:** el grupo quiere salas que existan **sin nadie dentro**, o hace falta moderación.
 
-Ya está preparado: la interfaz `IdentityProvider` en core. Se implementa un `RemoteRoomProvider` contra un backend pequeño (el kanpachi-rooms que se eliminó de la v1 renace aquí, con propósito real). Las cuentas siguen sin ser obligatorias: una sala persistente puede ser un código reservado, nada más.
+Ojo con el disparador, que cambió. "Sobrevivir a un reinicio" ya no lo dispara, porque eso ya está: la decisión 2 dejó al host reabriendo su sala con el mismo código y el mismo juego después de un apagón, y a los invitados con "volver a la última sala". Lo que sigue faltando es que la sala exista mientras **nadie** la sostenga, y eso sí necesita un servidor.
+
+Se implementa un `RemoteRoomProvider` contra un backend pequeño (el kanpachi-rooms que se eliminó de la v1 renace aquí, con propósito real). Las cuentas siguen sin ser obligatorias: una sala persistente puede ser un código reservado, nada más.
+
+**Lo que hay que resolver antes, y no es técnico:** hoy la sala tiene un dueño con una máquina, y su firewall es el que contiene la exposición. Una sala sin nadie dentro no tiene esa máquina, así que hay que decidir quién sostiene la cuarentena mientras no hay host. Sin esa respuesta, esto no se implementa.
 
 ## 3. Más plataformas
 

@@ -47,6 +47,17 @@ var (
 	// ErrNotPlayed es marcar como verificado un juego que esta máquina no vio
 	// jugarse. Es la puerta de "no se puede marcar a mano".
 	ErrNotPlayed = errors.New("ese juego no estuvo activo en una sala con más gente")
+
+	// ErrKickPartial es que la expulsión se aplicó a medias. Envuelve a los dos
+	// de abajo, y NO significa que no haya pasado nada: significa que una de
+	// las dos capas de la decisión 22 quedó sin cerrar y la otra sí cerró.
+	ErrKickPartial = errors.New("la expulsión se aplicó a medias")
+	// ErrRevokeFailed es que el motor no pudo cerrarle la sesión. Sigue sin
+	// alcanzar ningún puerto, porque el firewall ya no lo autoriza.
+	ErrRevokeFailed = errors.New("el motor no pudo cerrarle la sesión")
+	// ErrRulesFailed es que las reglas no se recalcularon. Ya salió de la red,
+	// porque su credencial sí se revocó.
+	ErrRulesFailed = errors.New("las reglas del firewall no se recalcularon")
 )
 
 // Deps son los puertos que la sesión necesita.
@@ -59,6 +70,7 @@ type Deps struct {
 	NetCfg    port.NetConfigPort
 	Routes    port.RoutingTable
 	Store     port.CatalogStore
+	State     port.StateStore
 	Library   port.GameLibrary
 	Directory port.RoomDirectory
 	Control   port.ControlChannel
@@ -74,13 +86,13 @@ type Deps struct {
 	Rand io.Reader
 }
 
-// validate comprueba que estén los doce puertos.
+// validate comprueba que estén todos los puertos.
 //
 // Ninguno es opcional. Un daemon al que le falte el firewall arrancaría feliz
 // y abriría una sala sin cuarentena, que es el peor fallo posible de este
 // producto y el más difícil de notar desde fuera.
 func (d Deps) validate() error {
-	faltan := make([]string, 0, 12)
+	faltan := make([]string, 0, 14)
 	nombrar := func(nombre string, presente bool) {
 		if !presente {
 			faltan = append(faltan, nombre)
@@ -91,6 +103,7 @@ func (d Deps) validate() error {
 	nombrar("NetCfg", d.NetCfg != nil)
 	nombrar("Routes", d.Routes != nil)
 	nombrar("Store", d.Store != nil)
+	nombrar("State", d.State != nil)
 	nombrar("Library", d.Library != nil)
 	nombrar("Directory", d.Directory != nil)
 	nombrar("Control", d.Control != nil)
@@ -128,9 +141,13 @@ type Session struct {
 	// disco para pintar una pantalla.
 	installed []domain.GameRef
 
-	// hostNetworkName es el nombre de la red REAL, y solo lo llena el host.
-	// Viaja dentro de cada credencial que emite.
-	hostNetworkName string
+	// hostSpec es la identidad de la red REAL, y solo la llena el host.
+	//
+	// Se guarda entera y no solo su nombre porque hacen falta las dos cosas:
+	// el nombre viaja dentro de cada credencial que emite, y los 16 + 32 bytes
+	// son lo que se persiste para poder reabrir LA MISMA sala tras un apagón.
+	// Sin ellos, reabrir sería otra red y ninguna credencial emitida valdría.
+	hostSpec domain.HostSpec
 	// cardKey es la clave con que se cifró la tarjeta de esta sala. Se guarda
 	// para poder rearmar el enlace de invitación sin volver a publicar.
 	cardKey [domain.CardKeyLen]byte
@@ -159,6 +176,29 @@ type Session struct {
 	// perfil" en vez de dejar la pantalla en blanco, y es lo que se reintenta
 	// cuando importa el perfil que le faltaba.
 	announcedGame string
+
+	// lastAnnounce es cuándo el host anunció por última vez.
+	//
+	// El anuncio periódico es lo que hace medible el silencio del otro lado: un
+	// socket TCP medio abierto sobrevive horas a una máquina apagada, así que
+	// el borde de la conexión es una señal que puede no llegar nunca.
+	lastAnnounce time.Time
+
+	// tamperRepairs son las veces que se repusieron las reglas propias en esta
+	// sala.
+	//
+	// Existe para dejar de insistir. Reponerlas una vez arregla el toque
+	// puntual de alguien mirando la consola del firewall; reponerlas en bucle
+	// es pelearse con un antivirus a golpe de COM, y eso no lo gana nadie.
+	tamperRepairs int
+
+	// pending es la sala que quedó abierta en el arranque anterior, si la hubo.
+	//
+	// Se lee al construir la sesión y NO se actúa sobre ella. Reanudar es una
+	// decisión del usuario dentro de la app, nunca un efecto de arrancar el
+	// servicio.
+	pending    domain.PersistedRoom
+	hasPending bool
 
 	// nick es el nombre propio de esta instalación en la sala actual.
 	//
@@ -212,7 +252,42 @@ func NewSession(ctx context.Context, d Deps) (*Session, error) {
 		d.Log.Warn("no se pudieron restaurar las reglas ajenas suspendidas", "error", err)
 	}
 	s.reloadCatalog(ctx)
+	s.loadPending()
+
+	// La primera publicación se hace acá y no en el primer Status.
+	//
+	// Sin esto, Status toma el candado hasta que alguien publique, y el candado
+	// se sostiene durante llamadas lentas a los adaptadores. O sea que el
+	// primer Status de la UI, que llega justo mientras se crea una sala, se
+	// quedaría esperando a que Windows termine. Es el único camino por el que
+	// la promesa de que nada retrasa una respuesta se rompía.
+	s.mu.Lock()
+	s.snapshot()
+	s.mu.Unlock()
 	return s, nil
+}
+
+// loadPending lee la sala que quedó abierta en el arranque anterior.
+//
+// Que no haya archivo es el caso NORMAL: toda salida limpia lo borra. Que haya
+// uno ilegible tampoco es un error del arranque, porque quedarse sin daemon por
+// un JSON cortado sería peor que perder una sala que de todas formas hay que
+// confirmar a mano.
+func (s *Session) loadPending() {
+	raw, err := s.deps.State.LoadRoom()
+	if err != nil {
+		s.deps.Log.Info("no hay sala pendiente del arranque anterior", "detalle", err)
+		return
+	}
+	room, err := domain.DecodePersistedRoom(raw)
+	if err != nil {
+		s.deps.Log.Warn("la sala guardada no se pudo interpretar y se ignora", "error", err)
+		return
+	}
+	s.pending = room
+	s.hasPending = true
+	s.deps.Log.Info("hay una sala del arranque anterior sin cerrar",
+		"código", room.Room.InviteID.String(), "guardada", room.SavedAt.Format(time.RFC3339))
 }
 
 // Status es lo único que la UI consulta, y arrastra las alertas del módulo de
@@ -356,6 +431,10 @@ func (s *Session) applyPolicy(ctx context.Context) error {
 	if err := s.deps.Firewall.Apply(ctx, desired); err != nil {
 		return fmt.Errorf("aplicando las reglas de firewall: %w", err)
 	}
+	// Aplicar bien cierra la alerta de expulsión a medias. Una alerta pegajosa
+	// que nadie pueda quitar se queda para siempre, y una alerta eterna deja de
+	// ser información.
+	s.state.DropAlerts(domain.AlertKickIncomplete)
 	s.deps.Log.Info("reglas aplicadas",
 		"juego", s.state.Game.ID, "rol", s.state.Role.String(), "reglas", len(desired.Rules))
 	return nil

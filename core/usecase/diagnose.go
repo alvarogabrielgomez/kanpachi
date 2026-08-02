@@ -18,6 +18,16 @@ import (
 // que Kanpachi no controla y que anula su promesa si nadie la mira, y que la
 // consulta falle no puede impedir entrar a una sala ni jugar. Lo que se pierde
 // es el aviso, y eso queda en el log.
+// TamperRepairLimit es cuántas veces se reponen las reglas propias antes de
+// dejar de intentarlo.
+//
+// Tres distingue los dos casos que producen el mismo síntoma: el toque puntual
+// de alguien mirando la consola del firewall, que se arregla con una
+// reaplicación, y algo que las está quitando en bucle, normalmente un antivirus.
+// Contra lo segundo, insistir es pelearse a golpe de COM y eso no lo gana nadie:
+// lo que corresponde es decirlo.
+const TamperRepairLimit = 3
+
 func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 	var found []domain.Alert
 
@@ -37,13 +47,15 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 		}
 	}
 
+	// Las reglas propias se COMPRUEBAN acá y se reponen más abajo, con el
+	// candado tomado, porque reponerlas es aplicar política y eso no se hace
+	// sin candado. La consulta sí va suelta, igual que las otras dos.
+	alteradas, sePudoRevisar := false, true
 	if intactas, err := s.deps.Audit.OwnRulesIntact(ctx); err != nil {
 		s.deps.Log.Warn("no se pudieron revisar las reglas propias", "error", err)
-	} else if !intactas {
-		found = append(found, domain.Alert{
-			Kind:   domain.AlertRulesTampered,
-			Detail: "las reglas de Kanpachi no están como se aplicaron",
-		})
+		sePudoRevisar = false
+	} else {
+		alteradas = !intactas
 	}
 
 	if mapeos, err := s.deps.Audit.RouterMappings(ctx); err != nil {
@@ -65,15 +77,78 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// El conflicto de vestíbulo lo detecta el plan de direcciones y sobrevive a
-	// este refresco, porque describe la máquina y no una comprobación puntual.
+	// El barrido es una entrada que OBSERVA, así que también hace vencer los
+	// plazos. Si salió de la sala, los hallazgos recién calculados describen
+	// una sala que ya no existe y clearRoom ya dejó las alertas en nil.
+	if s.enforceDeadlinesLocked(ctx) {
+		return s.snapshot()
+	}
+
+	if alteradas || !sePudoRevisar {
+		found = append(found, s.repairOwnRulesLocked(ctx, alteradas, sePudoRevisar)...)
+	}
+
+	// Las alertas PEGAJOSAS sobreviven al refresco. Describen algo que pasó y
+	// que nadie va a volver a medir, a diferencia del resto, que es el
+	// resultado de una comprobación puntual y se recalcula entero.
 	for _, a := range s.state.Alerts {
-		if a.Kind == domain.AlertLobbyConflict {
+		if a.Kind.Sticky() {
 			found = append(found, a)
 		}
 	}
 	s.state.Alerts = found
 	return s.snapshot()
+}
+
+// repairOwnRulesLocked repone las reglas propias y devuelve lo que haya que
+// avisar.
+//
+// **Reponer no es arreglarle la máquina al usuario.** Kanpachi no toca su
+// firewall, su router ni sus reglas: lo único que hace acá es volver a hacer
+// cierta SU PROPIA declaración, que es la que sostiene la cuarentena. Un
+// hallazgo que se denuncia y no se repara deja la promesa rota mientras el
+// usuario lee el aviso.
+//
+// Funciona porque [port.FirewallPort.Apply] calcula la diferencia contra las
+// reglas vivas del grupo Kanpachi, no contra un recuerdo en memoria. Con un
+// recuerdo, reaplicar el mismo conjunto sería un no-op y esto no serviría de
+// nada.
+//
+// Asume el candado tomado.
+func (s *Session) repairOwnRulesLocked(ctx context.Context, alteradas, sePudoRevisar bool) []domain.Alert {
+	const detalle = "las reglas de Kanpachi no están como se aplicaron"
+
+	switch {
+	case !sePudoRevisar:
+		// Sin poder mirarlas no hay nada que reponer, y reaplicar a ciegas en
+		// cada barrido sería tocar el firewall cada minuto por una consulta que
+		// falla. Se calla: la comprobación fallida ya quedó en el log.
+		return nil
+
+	case !s.state.Conn.InRoom():
+		// Sin sala el conjunto deseado es el vacío, así que reaplicar sería
+		// pedirle al firewall que borre lo que la purga del arranque ya borró.
+		return []domain.Alert{{Kind: domain.AlertRulesTampered, Detail: detalle}}
+
+	case s.tamperRepairs >= TamperRepairLimit:
+		return []domain.Alert{{
+			Kind:   domain.AlertRulesTampered,
+			Detail: fmt.Sprintf("%s, y se volvieron a alterar tras reponerlas %d veces", detalle, TamperRepairLimit),
+		}}
+	}
+
+	s.tamperRepairs++
+	if err := s.applyPolicy(ctx); err != nil {
+		return []domain.Alert{{
+			Kind:   domain.AlertRulesTampered,
+			Detail: fmt.Sprintf("%s y no se pudieron reponer: %v", detalle, err),
+		}}
+	}
+	// No se vuelve a comprobar acá. El barrido siguiente lo verifica, y una
+	// segunda enumeración del firewall por barrido cuesta más que el minuto de
+	// latencia que ahorra.
+	s.deps.Log.Warn("las reglas propias estaban alteradas y se repusieron", "intento", s.tamperRepairs)
+	return nil
 }
 
 // Diagnose consulta al motor y refresca el diagnóstico de red.

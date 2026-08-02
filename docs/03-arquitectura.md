@@ -10,29 +10,31 @@
 │      │  named pipe \\.\pipe\kanpachi  +  token                     │
 │      ▼                                                             │
 │  kanpachi-daemon  (servicio Windows, SYSTEM)                       │
-│  ├── api/         superficie mínima: crear, unirse, salir,         │
-│  │                estado, juegos, diagnóstico                      │
-│  ├── supervisor/  máquina de estados, watchdog, eventos de         │
-│  │                energía, de red y de identificación de red       │
-│  ├── netfw/       reglas de firewall vía INetFwPolicy2 (COM)       │
-│  ├── netcfg/      ajustes del adaptador que Windows revierte:      │
-│  │                métrica, categoría, rutas, MTU, prefijos         │
-│  └── kanpachi-core                                                 │
-│      ├── engine/    interfaz Engine + implementación EasyTier      │
-│      ├── identity/  código → networkID + secret                    │
-│      ├── catalog/   perfiles, detección de Steam                   │
-│      └── policy/    perfil + miembros → reglas declarativas        │
+│  ├── transport/   named pipe + protocolo JSON-RPC, y el canal de   │
+│  │                control de la sala                               │
+│  ├── service/     cableado de dependencias y el supervisor:        │
+│  │                latido, watchdog del motor, eventos de energía,  │
+│  │                de red y de identificación de red                │
+│  ├── adapter/     lo único que conoce Windows y EasyTier:          │
+│  │                firewall por COM, netcfg, motor, Steam,          │
+│  │                iphlpapi, catálogo y estado en JSON              │
+│  └── core/        sin I/O, sin syscalls, sin API de Windows        │
+│      ├── domain/    tipos y reglas puras, invariantes, plazos      │
+│      ├── port/      las interfaces que el dominio necesita         │
+│      └── usecase/   una intención por archivo                      │
 │                                                                    │
 │  adaptador Wintun "kanpachi0"  ← creado por el instalador          │
 └────────────────────────────────│───────────────────────────────────┘
                                  │
                                  │  internet
                                  ▼
-        kanpachi-seed (droplet, Docker)         otros peers
+        kanpachi-seed (droplet, systemd)        otros peers
         rendezvous + coordinación de      ◄──── P2P directo WireGuard
         hole punch + relay de último            (o vía relay si el
         recurso                                  NAT no cede)
 ```
+
+`core/` no vive dentro de `daemon/`, vive al lado. Se dibuja acá para que se lea la dirección de las dependencias: todo apunta hacia adentro, y `core` no conoce a ninguno de los de arriba.
 
 ## Arquitectura interna: regla de dependencia
 
@@ -44,7 +46,7 @@ El proyecto sigue Clean Architecture aplicada como **regla de dependencia con pu
 |---|---|---|
 | **Dominio** | Tipos y reglas puras | `Code`, `Room`, `GameProfile`, `RuleSet`, `Peer`, invariantes del catálogo, derivación del código, plan de direcciones |
 | **Casos de uso** | Orquestación, uno por intención | `CreateRoom`, `JoinRoom`, `ActivateProfile`, `LeaveRoom`, `CreateGameProfile`, `ImportCatalog` |
-| **Puertos** | Interfaces que el dominio necesita | `EnginePort`, `FirewallPort`, `NetConfigPort`, `CatalogStore`, `GameLibrary`, `SocketInspector`, `RoutingTable` |
+| **Puertos** | Interfaces que el dominio necesita | `EnginePort`, `FirewallPort`, `NetConfigPort`, `CatalogStore`, `StateStore`, `SystemEvents`, `GameLibrary`, `SocketInspector`, `RoutingTable`, `ControlChannel` |
 | **Adaptadores** | Implementaciones sucias | EasyTier, COM del Firewall, `iphlpapi`, registro de Windows, Steam, JSON en disco |
 | **Entrada** | Cómo se pide algo | El named pipe, el manejador `kanpachi://`, el arranque del servicio |
 
@@ -79,13 +81,27 @@ type EnginePort interface {
     RevokeCredential(ctx context.Context, id domain.CredentialID) error
     ListCredentials(ctx context.Context) ([]domain.Credential, error)
 
+    // Restart vuelve a levantar el motor con la ÚLTIMA especificación con la
+    // que se arrancó. Es el MECANISMO del watchdog; cuántas veces y cada
+    // cuánto es política y vive en el supervisor. La especificación no vuelve
+    // a core, y por eso existe este método en vez de repetir HostNetwork: el
+    // secreto de la red real se queda dentro del adaptador
+    Restart(ctx context.Context) error
+
     Peers(ctx context.Context) ([]domain.Peer, error)
+    // Events devuelve el canal del proceso ACTUAL. Tras un Restart hay uno
+    // nuevo y el anterior se cierra, así que quien escuche vuelve a pedirlo
     Events() <-chan domain.EngineEvent
     Diagnostics(ctx context.Context) (domain.NetCheck, error)
 }
 
 type FirewallPort interface {
-    Apply(ctx context.Context, desired domain.RuleSet) error  // declarativo, calcula la diferencia
+    // Apply calcula la diferencia contra las reglas VIVAS del grupo Kanpachi,
+    // enumeradas del sistema en CADA llamada, jamás contra una copia en
+    // memoria de lo último que se pidió. De eso dependen dos cosas: que sea
+    // idempotente, y que reaplicar el mismo conjunto REPARE lo que alguien
+    // haya borrado o agregado por fuera
+    Apply(ctx context.Context, desired domain.RuleSet) error
     PurgeOwned(ctx context.Context) error                     // todo lo del grupo "Kanpachi"
     AuditForeign(ctx context.Context, p domain.GameProfile) ([]domain.ForeignRule, error)
     SuspendForeign(ctx context.Context, r []domain.ForeignRule) error
@@ -114,6 +130,36 @@ type CatalogStore interface {
     LoadBuiltin() ([]byte, error)
     LoadLocal() ([]byte, error)
     SaveLocal([]byte) error
+}
+
+// StateStore es lo que sobrevive a un arranque, y devuelve bytes por lo mismo
+// que CatalogStore: el decodificador estricto vive en el dominio.
+//
+//   room.json       SOLO EN EL HOST. Salir limpio lo borra y morir sucio lo
+//                   deja, así que su sola presencia al arrancar es la señal de
+//                   mal cierre. No hay bandera "dirty" dentro
+//   last-room.json  SOLO EN INVITADOS. Código, seed, nombre y nick. Jamás la
+//                   credencial ni la identidad de la red real
+type StateStore interface {
+    LoadRoom() ([]byte, error)
+    SaveRoom([]byte) error
+    ClearRoom() error
+    LoadLast() ([]byte, error)
+    SaveLast([]byte) error
+    ClearLast() error
+}
+
+// SystemEvents son las cosas que le pasan a la MÁQUINA y que invalidan lo que
+// Kanpachi dejó puesto. Tres canales y no un enum, a diferencia de
+// EngineEvent: aquel viene de una sola fuente, el proceso hijo, y estos vienen
+// de tres subsistemas de Windows que no se conocen entre sí. Un canal por
+// fuente hace que una suscripción muerta se VEA, porque su canal se cierra y
+// los otros dos siguen.
+type SystemEvents interface {
+    NetworkIdentified() <-chan struct{} // Event ID 10000
+    Resumed() <-chan struct{}           // suspensión, hibernación, Fast Startup
+    NetworkChanged() <-chan struct{}    // WiFi a cable, cable a LTE
+    Close() error                       // idempotente, y no espera lector
 }
 
 type GameLibrary interface {
@@ -148,9 +194,27 @@ type ControlChannel interface {
     // Announcements es el lado del invitado. El adaptador solo emite lo que
     // llegó por la conexión al host: un miembro no puede anunciar nada
     Announcements() <-chan domain.RoomAnnounce
+
+    // Notify le manda un aviso a un miembro, o a todos con una dirección en
+    // cero. SOLO el host. Se manda ANTES de cortarle nada al expulsado, que es
+    // el único orden en que sirve
+    Notify(ctx context.Context, to netip.Addr, n domain.RoomNotice) error
+    Notices() <-chan domain.RoomNotice
+
+    // AnnounceCode reparte el invite ID NUEVO a los presentes tras renovarlo.
+    // El adaptador lo SELLA contra la llave pública de cada miembro, la misma
+    // que llegó en su pedido de credencial. Core no ve llaves
+    AnnounceCode(ctx context.Context, r domain.Room) error
+    Codes() <-chan domain.Room
+
     // El adaptador rellena la llave pública desde identity.key antes de firmar
     RequestCredential(ctx context.Context, req domain.CredentialRequest) (domain.Credential, error)
-    Close() error  // idempotente
+    // Close es idempotente, y NUNCA espera a que alguien lea sus canales. No
+    // es higiene: el caso de uso lo llama con el candado de la sesión tomado, y
+    // un Close que esperara a su goroutine emisora mientras esa está bloqueada
+    // escribiendo en HostPresence dejaría al daemon colgado con la sala a
+    // medio cerrar
+    Close() error
 }
 
 // Clock existe porque hay backoff y vencimientos que testear, y esperar veinte
@@ -423,6 +487,18 @@ El estado es un valor único y explícito, sin flags booleanos regados. La UI lo
 
 **Todas las transiciones nacen de una acción del usuario o de un evento de red.** Ninguna nace de que un juego arranque o se cierre: el daemon no observa procesos. Elegir el juego en la UI abre los puertos, salir de la sala los cierra. Nada más los mueve.
 
+Los eventos de red son los cinco del motor, y el supervisor los traduce uno a uno:
+
+| Evento del motor | Estado | Qué más pasa |
+|---|---|---|
+| `EngineConnected` | `Connected` | Se relee la lista de miembros, se recalculan las reglas, se reajusta el adaptador, y siendo host se recorta el alcance del canal y se vuelve a anunciar |
+| `EnginePeersChanged` | ninguno | Recalcula el conjunto de reglas completo. Es la misma operación que un cambio de juego |
+| `EngineDegraded` | `Degraded` | **Nada más, y esa ausencia importa:** degradado es que el túnel sigue en pie y va peor, normalmente por relay, que es un caso soportado. Contarlo como caída echaría de la sala a quien está jugando por relay |
+| `EngineDisconnected` | `Reconnecting` | Arranca el plazo sin túnel, y en un invitado apaga la presencia del host |
+| `EngineDied` | `Reconnecting` | Igual, y además despierta al watchdog |
+
+**Estar en `Reconnecting` no es eterno.** A los 10 minutos sin túnel se sale de la sala con motivo propio, se cierran los puertos y se revierten los ajustes. Ver decisión 20.
+
 #### La ausencia del host no es un estado de conexión
 
 Implementa la decisión 20. Que el host se haya ido es información **sobre la sala**, no sobre el túnel: la conexión sigue perfecta, lo que falta es la persona que corre el juego. Meterlo en la máquina de estados de arriba mezclaría dos cosas que fallan por motivos distintos.
@@ -432,16 +508,21 @@ Se modela como un campo aparte del estado de sala, que la UI muestra sin ambigü
 | Campo | Valores | Qué significa |
 |---|---|---|
 | `Role` | `Host`, `Guest` | Quién declaró hospedar. Lo fija `CreateRoom`, no cambia en la vida de la sala |
-| `HostPresent` | `true`, `false` | Si el peer que hospeda está en la tabla de peers |
+| `HostPresent` | `true`, `false` | Si se sabe del host ahora mismo |
+| `HostGoneSince` | marca de tiempo | Desde cuándo no. El cero es que está, o que soy yo el host |
+| `HostLastHeard` | marca de tiempo | La última prueba de vida: el socket levantado, un anuncio, un aviso, o su dirección en la tabla del motor |
+| `ReconnectingSince` | marca de tiempo | Desde cuándo no hay túnel. Es de la máquina de estados y no de la sala, a diferencia de las dos de arriba |
 
 Reglas que se derivan:
 
 - **El host se va:** sus reglas de firewall desaparecen con su máquina. Los invitados no tienen nada abierto, porque en un juego de estrella nunca abrieron nada. La red queda inerte, no insegura.
 
   La excepción, y es la única: un perfil de MALLA, o sea con `client_ports` no vacío, sí abre puertos en cada invitado. Es lo que documenta `06-catalogo.md` y lo que pide el netcode viejo de paso bloqueado, donde cada cliente habla con todos. Poner algo en `client_ports` expande el radio de explosión de todos los miembros y por eso el listón es más alto: se justifica en el perfil, se prueba que NO funcionaba en estrella, y la UI lo dice antes de entrar. La enorme mayoría de los juegos es estrella y ahí la frase de arriba vale literal.
-- **El host vuelve:** su propio daemon conserva la sala activa en `config.json`, reactiva el perfil, y las reglas se regeneran para los miembros presentes en ese momento.
+- **El host vuelve:** su propio daemon conserva la sala en `room.json` con el juego que estaba activo, y al arrancar **pregunta** si reabrirla. Al reabrir, la identidad de la red es la misma, el perfil se repone resolviéndolo contra el catálogo de esa máquina, y las reglas se regeneran para los miembros presentes en ese momento. Nunca reabre sola. Ver decisión 2.
 - **Nadie hereda el rol.** No hay promoción automática ni elección. Un invitado que quiera hospedar crea una sala nueva.
-- **Se va el último nodo y la red deja de existir.** No hay estado persistido en ningún lado, así que volver exige un código nuevo. Es la consecuencia natural de no tener servidor de salas, no una limitación que haya que disculpar.
+- **Se va el último nodo y la red deja de existir.** No queda estado de RED en ningún lado: ningún servidor sostiene la sala, y el seed no puede levantarla. Es la consecuencia natural de no tener servidor de salas, no una limitación que haya que disculpar.
+
+  Lo que sí sobrevive es el **registro local del host**, en su propio disco: el invite ID vigente y la identidad de la red real, que es lo que le permite reabrir la misma sala con el mismo código tras un apagón. Es estado del dueño de la sala, no del sistema. Ver la decisión 2, que es donde vive esta pieza.
 
 #### Salida automática a los 20 minutos sin host
 
@@ -506,7 +587,18 @@ Tres operaciones **no** vienen del named pipe, y las tres las llama el superviso
 |---|---|---|
 | `IssueCredentialFor(pedido)` | El canal de control, cuando alguien toca la puerta | Ver abajo |
 | `OnRoomAnnounce(anuncio)` | El canal de control de un invitado | Aplica el nombre y el juego que dijo el host, resolviendo el id contra el catálogo PROPIO |
-| `RefreshAlerts()` | El supervisor, cada tanto | Corre el módulo de exposición y publica el resultado dentro del estado. Ninguna comprobación es fatal |
+| `OnRoomNotice(aviso)` | El canal de control de un invitado | Expulsión o cierre de sala. Las dos terminan en salir, y se distinguen en lo que dirá la pantalla de inicio |
+| `OnCodeRotated(sala)` | El canal de control de un invitado | Toma el código nuevo que repartió el host y reescribe el guardado |
+| `OnEngineEvent(evento)` | El supervisor, drenando el motor | La tabla de arriba |
+| `OnEngineGaveUp(motivo)` | El supervisor, cuando su watchdog agota los reintentos | Cierra la sala y purga el grupo `Kanpachi` |
+| `OnPeersChanged()` | El supervisor | Recalcula el conjunto de reglas completo |
+| `SetHostPresent(bool)` | El supervisor, drenando la presencia | Enciende o apaga la presencia. No toca la máquina de estados |
+| `Tick()` | El supervisor, cada 15 s | Hace vencer los plazos. Es la puerta periódica, no la única |
+| `TickHostAbsence()` | El contador de la decisión 20, con nombre propio | El corte a los veinte minutos, solo |
+| `ReapplyAdapter()` | El supervisor, en cada identificación de red y cada ocho latidos | Repone lo que Windows revirtió |
+| `RefreshAlerts()` | El supervisor, cada 60 s | Corre el módulo de exposición, repone las reglas propias si estaban alteradas, y publica el resultado. Ninguna comprobación es fatal |
+| `PendingRoom()`, `ResumeRoom()`, `DiscardPendingRoom()` | La UI, al arrancar, si hubo mal cierre | Preguntar por la sala del arranque anterior. Nunca se reabre sola |
+| `LastRoom()` | La UI, en la pantalla de inicio | Los datos de "volver a la última sala". Entrar es el `JoinRoom` de siempre |
 
 Sobre la primera: La llama el adaptador del canal de control cuando alguien toca la puerta del vestíbulo. Vive en los casos de uso y no en el adaptador porque todo lo que decide es política: si esta máquina puede emitir, qué dirección le toca al que entra, cuánto vale la credencial y qué se le cuenta de la red. El motor pone el token, que es lo único que no se decide acá y tiene que ser así, porque revocarlo es lo que corta la sesión.
 
@@ -616,6 +708,10 @@ Es el único orden en que sirve. Revocar la credencial le cierra la sesión en a
 
 Que el aviso no salga no detiene nada. Lo que se pierde es que se entere.
 
+**Se espera el acuse, con tope.** El canal es TCP, así que la orden se retransmite hasta que el otro lado la reconoce, y eso es lo que hace que el expulsado se desconecte solo y limpio. Sin ninguna espera queda una ventana real: `Notify` devuelve cuando los bytes entraron al búfer local, no cuando llegaron, y un segundo después la revocación mata la conexión con lo que quedara sin salir. El tope es lo que impide que esperar el acuse convierta la expulsión en cooperativa: vencido el plazo se revoca igual.
+
+**Las dos capas corren siempre, falle la que falle.** Si el motor no revoca, se recorta el canal y se regeneran las reglas igual, y al revés. Una expulsión a medias deja una alerta en vez de deshacerse, porque deshacer la mitad que funcionó volvería a autorizar a quien el host acaba de echar.
+
 El mismo canal lleva el **anuncio de cierre de sala**, que el host manda a todos al salir. También va antes del apagado, por el mismo motivo, y le ahorra a cada invitado los veinte minutos del contador mirando una sala que ya no existe. Falsificarlo, desde dentro de la sala, logra como máximo que a otros se les cierre la app: es molestia, no riesgo.
 
 #### Expulsar no es bloquear, y renovar no migra a nadie
@@ -627,7 +723,21 @@ Las dos mitades de la decisión 22, dichas desde el código:
 
 Cada cliente lleva además un `LastExit` que sobrevive a limpiar la sala. Sin él, que te expulsen, que el host cierre, que desaparezca veinte minutos y salir por tu cuenta se ven exactamente igual desde la pantalla de inicio.
 
-Lo que transporta, en volumen de bytes: el canje del código por credencial cuando alguien entra, el aviso de expulsión, el anuncio de cierre de sala, y por su sola existencia la presencia del host. **Nada del juego pasa por acá.**
+Lo que transporta, en volumen de bytes: el canje del código por credencial cuando alguien entra, el aviso de expulsión, el anuncio de cierre de sala, el reparto del código nuevo al renovarlo, y por su sola existencia la presencia del host. **Nada del juego pasa por acá.**
+
+#### El anuncio se repite cada dos minutos, y no es un ping nuevo
+
+Es el mismo `RoomAnnounce` que ya se manda al cambiar de juego, de nombre y de miembros. La conexión sigue siendo el latido para el caso normal, y esto existe para el caso en que la conexión miente: **un socket TCP medio abierto sobrevive horas a una máquina apagada de golpe**, sin FIN y sin RST, así que el borde de la conexión es una señal que puede no llegar jamás.
+
+Con la repetición, el invitado puede medir el silencio: seis minutos sin oír nada dan al host por ausente, lo que arranca el contador de veinte minutos de la decisión 20. Vencer el silencio no saca a nadie de la sala, y un falso positivo se corrige con el siguiente anuncio.
+
+**La ausencia se fecha hacia atrás**, en la última prueba de vida y no en el instante en que se detectó el silencio. Sin eso, los seis minutos se sumarían a los veinte.
+
+#### El código nuevo se reparte a los presentes
+
+Al renovar, el host les manda el invite ID nuevo a los que están dentro, **sellado contra la llave pública de cada uno**, la misma que llegó en su pedido de credencial. Arregla que renovar dejaba a los presentes con un código muerto guardado, y con él funciona "volver a la última sala". Ver decisión 23.
+
+Que el reparto falle no invalida la renovación: el código nuevo ya es el bueno y el vestíbulo ya está levantado con él.
 
 **Es el código que más revisión merece del proyecto.** Corre como SYSTEM y parsea mensajes de gente que está en la sala. Reglas no negociables: tope de tamaño antes de deserializar, esquema cerrado sin tipos arbitrarios, tope de conexiones por IP virtual, y rechazo de toda IP que no sea de un miembro presente. Un fallo acá es ejecución remota como SYSTEM en la máquina del host.
 
@@ -635,12 +745,66 @@ Del lado del invitado no hay servidor, solo un cliente que reconecta con backoff
 
 ### service/supervisor, orquesta
 
-- Watchdog del motor: si EasyTier muere, reinicio con backoff, límite de intentos, purga de reglas si se rinde.
-- **Contador de ausencia del host**, solo en invitados: 20 minutos sin canal de control implica salir de la sala. Ver decisión 20.
-- **Eventos de identificación de red:** suscripción a `Microsoft-Windows-NetworkProfile/Operational` Event ID 10000. Dispara la reaplicación completa de `netcfg`. Sin esto, los ajustes se pierden solos y el usuario ve que "ayer funcionaba".
-- Eventos de energía: Fast Startup y suspender/despertar dejan endpoints muertos y sesiones colgadas. En cada resume: revalidar, rehacer hole punch, reconectar solo.
-- Eventos de cambio de red: WiFi a cable, cable a LTE. Nueva IP pública implica renegociar sin perder la sala.
-- Sala vacía: cerrar puertos, revertir ajustes por juego, volver a Idle.
+Es el **único sitio del proyecto con goroutines de larga vida**, y no conoce Windows: solo habla con puertos declarados en `core`, así que corre en el job de Linux de CI junto a `core`. Eso no es una casualidad de implementación, es lo que hace comprobable que el bucle que sostiene los cortes automáticos se puede probar sin una máquina con privilegios.
+
+**Qué hace, en una línea cada cosa:**
+
+| Trabajo | Cómo |
+|---|---|
+| Latido, cada 15 s | Hace vencer los plazos de la decisión 20 y 26. Es lo que convierte "no pasó nada" en una decisión |
+| Barrido, cada 60 s | Corre el módulo de exposición de la decisión 19 |
+| Eventos del motor | Los traduce a transiciones de la máquina de estados |
+| Canales del canal de control | Presencia del host, anuncios, avisos y códigos nuevos |
+| Watchdog del motor | Si muere, reinicio con backoff; si se rinde, cierra la sala y purga las reglas |
+| Identificación de red | Suscripción a `Microsoft-Windows-NetworkProfile/Operational`, Event ID 10000. Reaplica `netcfg` entero |
+| Energía y cambio de red | Fast Startup, suspender y despertar dejan endpoints muertos. Al volver: latido, reaplicar, empujar al motor si no hay túnel, releer miembros |
+
+**Dos cadencias y no una.** El latido no toca ningún adaptador salvo que venza algo; el barrido hace siempre tres llamadas al sistema, una al IGD del router, que en la mayoría termina en timeout. Fundirlos arrastraría el latido al ritmo del router más lento de la casa. Un latido para el tiempo, un barrido para el mundo.
+
+#### La forma del bucle: N drenajes y UN despachador
+
+Cada canal de entrada tiene su goroutine de drenaje, que es deliberadamente tonta: no llama a la sesión, no toma candados y no tiene lógica, solo empuja a un canal de trabajo amortiguado. Un despachador consume ese canal y llama al manejador **dentro de un `recover` por item**.
+
+**Un despachador y no varios, a propósito.** Todos los manejadores toman el candado de la sesión de todas formas, así que despachar en paralelo solo agregaría contención y reordenamiento. Con uno, el supervisor entero es de un solo hilo desde el punto de vista del análisis, y no hay ningún orden de adquisición de candados que razonar.
+
+**Contención de pánico.** Un mensaje malformado que haga entrar en pánico a un manejador cuesta **un evento perdido**. No puede llevarse el bucle, y por lo tanto no puede llevarse el latido que hace vencer el contador de veinte minutos. Si el despachador entero cae, se relanza, con tope de diez veces por minuto para que un pánico en bucle falle en vez de quemar la CPU.
+
+#### El abrazo mortal que esta forma evita
+
+Salir de la sala llama a `Close` del canal de control **con el candado de la sesión tomado**. Si ese `Close` esperara a su goroutine emisora, y esa goroutine estuviera bloqueada escribiendo en `HostPresence`, las dos se esperarían para siempre y el daemon quedaría colgado con la sala a medio cerrar.
+
+Hacen falta las tres defensas y ninguna es opcional: el canal de trabajo amortiguado, que los drenajes sigan drenando mientras un manejador corre, y la frase de contrato del puerto que dice que `Close` no espera lector. La tercera va en el puerto y no solo acá porque quien puede reintroducir el problema es un adaptador que todavía no existe.
+
+#### Canal cerrado no es lo mismo que canal ocioso
+
+Ocioso no es nada, y el latido es lo que convierte eso en una decisión. Cerrado es información, y cada fuente tiene su reacción:
+
+| Canal cerrado | Reacción |
+|---|---|
+| Eventos del motor | Se sintetiza "el motor murió" y pasa por el manejador normal, así el watchdog toma el mando sin un camino especial |
+| Presencia del host | Un último "no está" y se para ese drenaje. Reconectar el canal no es asunto del supervisor: lo recrean crear y entrar |
+| Anuncios, avisos, códigos | Se registra. El silencio pasa a medirlo el límite de 6 minutos, que es el respaldo que existe justo para esto |
+| Los tres de `SystemEvents` | Se registra. El respaldo es reaplicar el adaptador cada ocho latidos, sin esperar a que Windows avise |
+
+**Y se vuelve a suscribir en cada latido**, comparando los canales por identidad. Hace falta porque un `Restart` del motor produce un canal de eventos nuevo, y porque es el requisito de la decisión 26 aplicado al propio supervisor: nada depende de que la capa anterior haya funcionado, ni siquiera el cableado.
+
+#### El watchdog del motor, y dónde vive cada mitad
+
+El **reinicio del proceso hijo** es del adaptador del motor, que es el único que tiene el `Cmd` y la especificación para relanzarlo. El supervisor se queda con la **política de rendición**, que es lo único que no es mecánico.
+
+La escalera es de ocho: 1, 2, 5, 10, 20, 40, 60 y 60 segundos. Suma 198 segundos, tres minutos y dieciocho, holgado dentro de los diez minutos del plazo sin túnel de la decisión 20. **Ese orden importa:** el plazo de `core` es el respaldo de este watchdog, no su competidor, y si se cruzaran la sala se cerraría a mitad de un reintento que iba a funcionar. Hay un test que falla si alguien toca los números y los cruza.
+
+Sin jitter: hay una máquina reiniciando un hijo local, no hay manada que dispersar. Y la espera no es un `Sleep` en el despachador, que pararía todo lo demás, es un temporizador que empuja un item más al canal de trabajo.
+
+**Al rendirse**, el supervisor cierra la sala con motivo propio, purga el grupo `Kanpachi`, pone el contador a cero y **sigue vivo**. Un daemon que se apagara porque el motor falló ocho veces obligaría a reiniciar el servicio a mano.
+
+#### Las cadencias no se configuran
+
+Son constantes de compilación, igual que los plazos de `core`. Si se pudieran configurar, un proceso local podría poner el latido en un siglo y quedarse en una sala para siempre. Ver decisión 26.
+
+#### Lo que queda pendiente
+
+**Sala vacía: cerrar puertos, revertir ajustes por juego y volver a Idle.** La mitad relevante para la seguridad ya se cumple sin código nuevo, porque sin miembros presentes el conjunto de reglas deseado es el vacío y se aplica en cada cambio. Lo que falta es revertir los ajustes por juego y volver a Idle tras un rato solo, y eso necesita un número acordado y su propia entrada en `02-decisiones-de-diseno.md`.
 
 ## kanpachi-seed
 
@@ -752,9 +916,12 @@ ProgramData\Kanpachi\
   api.token                  rotado por arranque del servicio
   identity.key               llave privada larga de esta instalación (decisión 25)
   known-hosts.json           libreta de huellas: nick visto, llave con que se lo vio
-  room.json                  SOLO EN EL HOST: invite ID vigente, identidad de la red real,
-                             registro de credenciales emitidas
-  last-room.json             SOLO EN INVITADOS: última sala, para "volver a la última sala"
+  room.json                  SOLO EN EL HOST: invite ID con su seed, identidad de la red
+                             real, subred, nombre, nick, clave de la tarjeta e id del
+                             juego activo. Su PRESENCIA al arrancar es la señal de mal
+                             cierre: salir limpio lo borra
+  last-room.json             SOLO EN INVITADOS: código, seed, nombre de la sala y nick.
+                             Jamás la credencial ni la identidad de la red real
   suspended-rules.json       reglas ajenas desactivadas y su estado previo
   easytier-credentials.json  el --credential-file del motor
   logs\                      texto plano, rotación por tamaño
@@ -764,7 +931,13 @@ ACL de ProgramData: escritura solo SYSTEM y Administradores, lectura para usuari
 
 **El daemon es la única fuente de verdad.** Cerrar la ventana no cierra la sala, así que el estado tiene que sobrevivir a la UI. La UI lo lee por `Status()` y persiste únicamente cosas de presentación, como el tamaño de la ventana. Guardar la sala también del lado de Flutter crearía dos verdades que se desincronizan justo en el caso que el producto promete soportar, que es cerrar la ventana con la partida viva.
 
-**`room.json` y `last-room.json` contienen credenciales de sala.** La ACL de ProgramData da lectura a los usuarios de la máquina, así que cualquier proceso del usuario puede leerlos. Es coherente con el modelo de amenazas, que ya asume que malware corriendo como el usuario puede usar la API igual que el usuario. Vale escribirlo para que nadie los trate como inocuos: son portadores de acceso a la sala y sobreviven a la sesión.
+**`room.json` lleva la identidad de la red real, o sea que es portador de acceso a la sala.** La ACL de ProgramData da lectura a los usuarios de la máquina, así que cualquier proceso del usuario puede leerlo. Es coherente con el modelo de amenazas, que ya asume que malware corriendo como el usuario puede usar la API igual que el usuario. Vale escribirlo para que nadie lo trate como inocuo: sobrevive a la sesión.
+
+`last-room.json` es distinto y a propósito: **no lleva credencial ni identidad de red**, solo el código. Volver pasa otra vez por el vestíbulo, el host reemite y ve llegar a quien llega, y eso es lo que mantiene con sentido a la revocación.
+
+**Los dos se decodifican estricto y llevan identidad, jamás política.** Un campo desconocido rechaza el archivo entero, misma disciplina que las invariantes del catálogo. Lo que el esquema no puede expresar: un puerto, una regla, un ejecutable, un plazo, una lista de miembros. Si no se puede escribir, un archivo manipulado no abre nada ni alarga ningún corte automático. El único campo que parece política y no lo es, el id del juego activo, es una REFERENCIA que se resuelve contra el catálogo local, igual que el id que viaja en el anuncio del host.
+
+**Escritura atómica**, a temporal y rename, así un apagón a mitad de guardado no deja un JSON cortado que impida arrancar. Un archivo ilegible se registra y se ignora: quedarse sin daemon por eso sería peor que perder una sala que de todas formas hay que confirmar a mano.
 
 **`identity.key` es la excepción y lleva ACL propia: solo SYSTEM y Administradores, sin lectura para usuarios.** Es la llave que sostiene la decisión 25, o sea lo único que impide que alguien se haga pasar por este host ante quienes ya jugaron con él. Robarla es la única forma de suplantar a alguien con huella conocida, y a diferencia de una credencial de sala no expira ni se revoca sola. `known-hosts.json` sí es legible: contiene llaves públicas ajenas, nada sensible, y su integridad importa más que su confidencialidad.
 

@@ -13,18 +13,21 @@ Objetivo: menos de 3 minutos desde recibir el link del instalador hasta estar de
    - Juegos con `lan_discovery` (Minecraft, los clásicos): la partida aparece sola en el menú de LAN.
    - Juegos por IP directa (Zomboid): la UI muestra "Conéctate a 100.87.3.1, puerto 16261" con botón de copiar.
 7. Juega. Al salir de la sala o apagar la máquina, todo se cierra solo.
+8. **Y si se olvida de salir, se cierra igual.** Si el host desaparece veinte minutos, o si el túnel no vuelve en diez, Kanpachi sale de la sala por su cuenta, cierra los puertos y dice por qué en la pantalla de inicio. Cada máquina lo decide sola, sin coordinarse con nadie. Ver decisiones 20 y 26.
+9. La próxima vez, "volver a la última sala" entra con un click. El código guardado sigue sirviendo incluso si el host lo renovó, porque el host se lo reparte a los que están dentro.
 
 Lo que nunca ve: una terminal, un archivo de configuración, una pregunta del firewall de Windows, una cuenta.
 
 ## El flujo del host
 
-1. Abre Kanpachi, botón **Crear sala**.
-2. Elige el juego. Arriba aparecen los detectados como instalados, abajo la biblioteca completa del catálogo con buscador. Si la detección no encontró el juego, se elige de la biblioteca y funciona igual. Kanpachi abre los puertos del perfil, solo en la interfaz virtual, solo hacia los miembros presentes.
+1. Abre Kanpachi, botón **Crear sala**. Pide un nombre para la sala, y nada más: **crear no pide juego**, porque la sala es independiente del juego activo. Nace con red cifrada y cero puertos abiertos, que es un estado válido. Ver decisión 20.
+2. Ya dentro, elige el juego. Arriba aparecen los detectados como instalados, abajo la biblioteca completa del catálogo con buscador. Si la detección no encontró el juego, se elige de la biblioteca y funciona igual. Kanpachi abre los puertos del perfil, solo en la interfaz virtual, solo hacia los miembros presentes. Cambiar de juego después no toca la sala: nadie se reconecta ni vuelve a pegar un código.
 3. Copia el código con un click y lo pega en Telegram.
 4. Arranca el servidor del juego como siempre: el dedicado de Zomboid, "Open to LAN" en Minecraft, lo que el juego pida.
 5. La UI dice en texto plano qué está expuesto: "Abierto solo dentro de Kanpachi: 16261-16262 UDP, visible para 4 personas. Tu router sigue cerrado".
 6. Si el instalador del juego dejó una regla que lo hace visible en la red de casa, aparece el aviso con la opción de desactivarla mientras dure la sala. Se restaura sola al salir.
 7. Al salir de la sala, los puertos se cierran, las reglas ajenas suspendidas vuelven a su estado previo y la interfaz regresa a deny all.
+8. **Si la máquina se apaga de golpe**, la sala queda sin cerrar. Al volver a abrir Kanpachi, la app lo detecta y pregunta si reabrirla: vuelve con el mismo código, la misma red y el mismo juego, y quien siga esperando reconecta solo. Nunca reabre sola. Ver decisión 2.
 
 **Nada de esto toca el router.** Todas las conexiones se inician desde adentro hacia afuera, por eso el NAT deja pasar la respuesta sin reenvío de puertos ni UPnP. Nadie escucha en la IP pública de nadie.
 
