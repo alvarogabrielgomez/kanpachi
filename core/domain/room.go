@@ -65,6 +65,17 @@ func ParseRoom(input string) (Room, error) {
 		return Room{}, ErrInputShape
 	}
 
+	// El fragmento se descarta ANTES de mirar la forma, y no dentro de una de
+	// las ramas. Lleva la clave con que la PÁGINA descifra la tarjeta de
+	// presentación: a la app no le sirve para nada, el nombre de la sala lo
+	// recibe del host por el canal de control. Recortarlo solo en la forma con
+	// barra hacía que `kanpachi://A7K2M9QX#clave`, que es exactamente lo que
+	// produce el botón de la página, se rechazara por tener un carácter que no
+	// existe en el alfabeto.
+	if i := strings.IndexByte(s, '#'); i >= 0 {
+		s = s[:i]
+	}
+
 	// Los esquemas se quitan por delante. Se comparan en minúsculas porque un
 	// esquema es insensible a mayúsculas.
 	for _, scheme := range []string{"kanpachi://", "https://", "http://"} {
@@ -104,14 +115,6 @@ func ParseRoom(input string) (Room, error) {
 		// host/inviteID, con el fragmento de la clave de tarjeta opcional
 		parts := strings.SplitN(s, "/", 2)
 		hostPart, idPart = parts[0], parts[1]
-		// El fragmento lleva la clave con que la PÁGINA descifra la tarjeta de
-		// presentación. A la app no le sirve para nada, el nombre de la sala lo
-		// recibe del host por el canal de control. Se descarta acá en vez de
-		// rechazar la entrada, porque el usuario pega el link entero que le
-		// llegó y no tiene por qué recortarlo.
-		if i := strings.IndexByte(idPart, '#'); i >= 0 {
-			idPart = idPart[:i]
-		}
 		// Una barra de más significa una ruta, y por este canal no entran
 		// rutas. Ver el modelo de amenaza del manejador de protocolo.
 		if strings.ContainsAny(idPart, "/?&") {

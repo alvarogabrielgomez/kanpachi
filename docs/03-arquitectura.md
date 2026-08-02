@@ -59,9 +59,20 @@ type EnginePort interface {
     // HostNetwork arranca la red como nodo admin: es el único que conoce el
     // secreto de red y el único que puede emitir credenciales.
     HostNetwork(ctx context.Context, spec domain.HostSpec) error
-    // JoinWithCredential entra como nodo temporal. Nunca recibe el secreto.
+    // JoinRendezvous entra al VESTÍBULO, sin credencial. Es el paso 4 del
+    // flujo de conexión, y va aparte porque son dos redes con dos modelos de
+    // confianza distintos. El host también lo llama: el vestíbulo es su puerta
+    // Llamarlo otra vez REEMPLAZA el vestíbulo anterior, y de eso depende
+    // renovar el código: el nombre del vestíbulo deriva del invite ID
+    JoinRendezvous(ctx context.Context, spec domain.RendezvousSpec) error
+    // LeaveRendezvous sale SOLO del vestíbulo. Aparte de Leave porque el host
+    // está en dos redes a la vez y un único "salir" sería ambiguo justo donde
+    // no puede serlo: al invitado le toca dejar el vestíbulo y quedarse
+    LeaveRendezvous(ctx context.Context) error
+    // JoinWithCredential entra a la red REAL como nodo temporal. Nunca recibe
+    // el secreto
     JoinWithCredential(ctx context.Context, spec domain.GuestSpec) error
-    Leave(ctx context.Context) error
+    Leave(ctx context.Context) error  // de todo. Idempotente
 
     // Solo tienen sentido en un nodo admin. Ver decisiones 2 y 22.
     IssueCredential(ctx context.Context, req domain.CredentialRequest) (domain.Credential, error)
@@ -85,16 +96,24 @@ type NetConfigPort interface {
     ApplyAdapter(ctx context.Context, want domain.AdapterState) error
     RevertTweaks(ctx context.Context) error
     ProbeMTU(ctx context.Context) (int, error)
+    // SetDirectPlay va aparte porque no es un ajuste del adaptador, es una
+    // característica opcional de Windows. Meterla en el estado declarativo
+    // haría que cada evento de identificación de red, que ocurre varias veces
+    // por sesión, tocara la instalación de características del sistema
+    SetDirectPlay(ctx context.Context, want bool) error
 }
 
 type RoutingTable interface {
     LocalPrefixes(ctx context.Context) ([]netip.Prefix, error)
 }
 
+// CatalogStore devuelve BYTES y no perfiles. Quien valida es el dominio: un
+// adaptador que decidiera qué es un perfil válido movería la política fuera de
+// core, que es exactamente lo que las ocho invariantes del catálogo impiden.
 type CatalogStore interface {
-    LoadBuiltin() ([]domain.GameProfile, error)
-    LoadLocal() ([]domain.GameProfile, error)
-    SaveLocal([]domain.GameProfile) error
+    LoadBuiltin() ([]byte, error)
+    LoadLocal() ([]byte, error)
+    SaveLocal([]byte) error
 }
 
 type GameLibrary interface {
@@ -113,9 +132,57 @@ type ExposureAudit interface {
     OwnRulesIntact(ctx context.Context) (bool, error)
     RouterMappings(ctx context.Context) ([]domain.PortMapping, error) // SOLO LECTURA
 }
+
+// ControlChannel es el canal de la sala de la decisión 23. Serve lo llama SOLO
+// el host, y en DOS direcciones con dos alcances: ver más abajo.
+type ControlChannel interface {
+    Serve(ctx context.Context, scope domain.ControlScope) error
+    // Dial reemplaza la conexión anterior: el invitado marca primero al
+    // vestíbulo para pedir la credencial y después al host en la sala, que es
+    // la que tiene que quedar viva
+    Dial(ctx context.Context, host netip.Addr) error
+    HostPresence() <-chan bool
+    // Announce lo llama SOLO el host, por la dirección de la sala. Es cómo se
+    // enteran los invitados del nombre y del juego activo
+    Announce(ctx context.Context, a domain.RoomAnnounce) error
+    // Announcements es el lado del invitado. El adaptador solo emite lo que
+    // llegó por la conexión al host: un miembro no puede anunciar nada
+    Announcements() <-chan domain.RoomAnnounce
+    // El adaptador rellena la llave pública desde identity.key antes de firmar
+    RequestCredential(ctx context.Context, req domain.CredentialRequest) (domain.Credential, error)
+    Close() error  // idempotente
+}
+
+// Clock existe porque hay backoff y vencimientos que testear, y esperar veinte
+// minutos en un test no es una opción. Es la única interfaz de comodidad del
+// proyecto: un StringFormatter no existiría.
+type Clock interface{ Now() time.Time }
+
+type Logger interface {
+    Info(msg string, kv ...any)
+    Warn(msg string, kv ...any)
+    Error(msg string, kv ...any)
+}
 ```
 
 `RouterMappings` es la excepción de solo lectura a "el router no se toca nunca". El puerto **no declara** una operación de crear ni de borrar mapeos, y esa ausencia es deliberada: lo que no existe en la interfaz no se puede llamar por error.
+
+La misma idea gobierna el resto: no hay método para abrir un puerto suelto, no hay método para observar procesos de fondo, y `CatalogStore` no puede decidir qué perfil es válido.
+
+### Lo que el host les cuenta a los presentes
+
+```go
+type RoomAnnounce struct {
+    RoomName string
+    GameID   string
+}
+```
+
+Existe porque hay dos cosas que solo el host sabe y que el invitado necesita: cómo se llama la sala, que viaja cifrada en la tarjeta y no llega por la red, y cuál es el juego activo, que decide qué abre cada uno en un perfil de malla. Sin esto, la pantalla en sala de un invitado no tiene juego que mostrar, no tiene guía de conexión, y `client_ports` es código que nunca corre.
+
+**Lleva el id del juego y jamás el perfil,** y esa es la diferencia entre que el host diga "estamos jugando Zomboid" y que el host diga "abrí estos puertos". El invitado resuelve el id contra SU catálogo, con SUS invariantes, y si no lo tiene no abre nada. Es la misma regla que gobierna el named pipe, aplicada al otro canal por el que entra una orden de fuera.
+
+Un host no toma anuncios. Aceptarlos le permitiría a un miembro modificado cambiarle el juego activo justo a la máquina donde se abren los puertos.
 
 ### Estructura de carpetas
 
@@ -155,7 +222,7 @@ func TestCoreNoTieneDependenciasSucias(t *testing.T) {
 
 Vale más que cualquier documento, porque no se puede ignorar sin querer. Si ese test pasa, `core` corre en Linux, en CI, sin privilegios y con adaptadores falsos.
 
-> **Estado: pendiente.** Todavía no existe el módulo Go ni el workflow de CI. El primer commit que cree el módulo debe traer este test y el workflow que lo ejecuta. Hasta entonces la regla se sostiene a mano, y eso es deuda declarada, no el estado deseado.
+Existe en `internal/arch/arch_test.go` y lo ejecuta el job `core` del workflow de CI, en Ubuntu. Vive fuera de `core/` a propósito: necesita `os` y `path/filepath` para recorrer el disco, y ponerlo dentro lo obligaría a saltarse a sí mismo con una excepción, que es una regla más débil. Lleva un segundo test que comprueba el detector contra casos conocidos, porque un guardián que nunca se probó no es un guardián.
 
 ### Lo que deliberadamente no se hace
 
@@ -179,19 +246,51 @@ package domain
 
 type Peer struct {
     VirtualIP netip.Addr
-    Name      string
-    Path      PathKind      // Direct | Relay
+    Name      Nickname
+    Path      PathKind      // Direct | Relay | Self
     RTT       time.Duration
+
+    // Self y Host los decide el daemon, jamás el motor. El motor no sabe cuál
+    // es "yo" y NO PUEDE saber quién hospeda, que es un concepto del producto
+    // y no de la red. Creérselo a un peer sería dejar que cualquiera se
+    // declare host en la lista de los demás
+    Self bool
+    Host bool
 }
 
 type NetCheck struct {
     NATKind    string                    // cone, symmetric, cgnat...
     UDPBlocked bool
     SeedRTT    map[string]time.Duration
+
+    MTU          int           // sondeado por netcfg, no por el motor
+    Subnet       netip.Prefix  // el /24 elegido
+    SubnetReason string        // y por qué, para que un conflicto se lea en un renglón
 }
 ```
 
 `NetCheck` no es adorno: convierte "no conecta" en "tu router hace NAT simétrico, vas por relay". Lo produce `EnginePort.Diagnostics`.
+
+### La credencial, y lo que NO lleva
+
+```go
+type Credential struct {
+    ID          CredentialID
+    Token       string       // lo que el motor recibe. Opaco, no se recalcula
+    NetworkName string       // el NOMBRE de la red real. Solo el nombre
+    Name        Nickname
+    VirtualIP   netip.Addr
+    Subnet      netip.Prefix
+    IssuedAt    time.Time
+    ExpiresAt   time.Time
+}
+```
+
+**No hay campo para el secreto de la red, y esa ausencia es la decisión 2 entera.** Se verificó contra los binarios de la v2.6.4: el handshake de un nodo temporal lleva `secret_digest` en ceros y `client_secret_proof: None`. Ese hecho es lo que hace que revocar sirva de verdad, porque quien entró nunca tuvo con qué volver por su cuenta. Una credencial con un campo de secreto lo tiraría todo abajo.
+
+**Se emite una por MIEMBRO, no una por código.** El código y las credenciales son los dos controles independientes del host, y la separación es lo que permite renovar sin echar a nadie y expulsar sin renovar.
+
+La subred y la IP virtual viajan dentro: el invitado no las sabe antes, porque las elige el host.
 
 ### Identidad
 
@@ -273,7 +372,10 @@ El instalador registra el esquema `kanpachi://`. Se invoca desde dos sitios: un 
 // Resuelve un invite ID a la identidad de ENCUENTRO, jamás a la red real.
 // La red real solo llega por el canje de credencial con el host.
 type RendezvousProvider interface {
-    Resolve(input string) (domain.Rendezvous, error)
+    // Devuelve también la Room, o sea el invite ID con su seed: un invite ID
+    // solo significa algo en el registro que lo emitió, y quien resuelve la
+    // entrada es el único que sabe cuál era.
+    Resolve(input string) (domain.Room, domain.Rendezvous, error)
 }
 ```
 
@@ -334,7 +436,9 @@ Se modela como un campo aparte del estado de sala, que la UI muestra sin ambigü
 
 Reglas que se derivan:
 
-- **El host se va:** sus reglas de firewall desaparecen con su máquina. Los invitados no tienen nada abierto porque nunca abrieron nada. La red queda inerte, no insegura.
+- **El host se va:** sus reglas de firewall desaparecen con su máquina. Los invitados no tienen nada abierto, porque en un juego de estrella nunca abrieron nada. La red queda inerte, no insegura.
+
+  La excepción, y es la única: un perfil de MALLA, o sea con `client_ports` no vacío, sí abre puertos en cada invitado. Es lo que documenta `06-catalogo.md` y lo que pide el netcode viejo de paso bloqueado, donde cada cliente habla con todos. Poner algo en `client_ports` expande el radio de explosión de todos los miembros y por eso el listón es más alto: se justifica en el perfil, se prueba que NO funcionaba en estrella, y la UI lo dice antes de entrar. La enorme mayoría de los juegos es estrella y ahí la frase de arriba vale literal.
 - **El host vuelve:** su propio daemon conserva la sala activa en `config.json`, reactiva el perfil, y las reglas se regeneran para los miembros presentes en ese momento.
 - **Nadie hereda el rol.** No hay promoción automática ni elección. Un invitado que quiera hospedar crea una sala nueva.
 - **Se va el último nodo y la red deja de existir.** No hay estado persistido en ningún lado, así que volver exige un código nuevo. Es la consecuencia natural de no tener servidor de salas, no una limitación que haya que disculpar.
@@ -378,15 +482,35 @@ transport/
 
 | Operación | Notas |
 |---|---|
-| `CreateRoom(nickname)` | Fija `Role = Host`. **No pide juego:** la sala es independiente del juego activo, decisión 20 |
+| `CreateRoom(nickname, nombre)` | Fija `Role = Host`. **No pide juego:** la sala es independiente del juego activo, decisión 20 |
 | `JoinRoom(code, nickname)` | El nombre es obligatorio, ver decisión 21 |
-| `LeaveRoom()` | |
+| `LeaveRoom()` | Idempotente. Lo llaman el usuario, el contador de 20 minutos y el apagado del servicio |
 | `ActivateProfile(gameID)` | **Solo el host.** Abre los puertos de ese juego. `gameID` vacío los cierra todos |
 | `KickMember(virtualIP)` | **Solo el host.** Revoca la credencial y recalcula, ver decisión 22 |
 | `RotateInviteCode()` | **Solo el host.** Código nuevo, los presentes no se enteran |
+| `RenameRoom(nombre)` | **Solo el host.** Presentación pura: republica la tarjeta cifrada |
+| `InviteLink()` | El enlace con la clave de la tarjeta en el fragmento, para copiar al portapapeles |
 | `Status()` | Estado, rol, `HostPresent`, miembros con su nombre, juego activo, y las alertas vigentes |
-| `ListGames()` | |
-| `DiagReport()` | |
+| `ListGames()` | Con los instalados arriba. El orden es un atajo, jamás una puerta |
+| `SaveProfile(perfil)` | Alta manual. Nace **sin verificar** y el campo se descarta venga como venga |
+| `ImportCatalog(archivo, elegidos)` | Nada se sobreescribe en silencio, y un rechazado no se puede forzar |
+| `ExportCatalog(soloPropios)` | |
+| `MarkVerified(gameID, constancia)` | La única vía para que un perfil quede verificado, y la dispara salir de la sala |
+| `ForeignRulesFor(gameID)` / `SuspendForeignRules(reglas)` | Se consultan y se muestran. Nunca se desactivan solas |
+| `DiagReport()` | Consulta `Diagnostics` al motor y conserva lo que el motor no sabe: el MTU lo sondea netcfg y la subred la eligió el plan de direcciones |
+| `ObserveGame(proceso, árbol)` | La foto de sockets del creador de perfiles. Es la ÚNICA función del programa que mira un proceso |
+
+Tres operaciones **no** vienen del named pipe, y las tres las llama el supervisor o el adaptador del canal de control:
+
+| Operación | Quién la llama | Qué hace |
+|---|---|---|
+| `IssueCredentialFor(pedido)` | El canal de control, cuando alguien toca la puerta | Ver abajo |
+| `OnRoomAnnounce(anuncio)` | El canal de control de un invitado | Aplica el nombre y el juego que dijo el host, resolviendo el id contra el catálogo PROPIO |
+| `RefreshAlerts()` | El supervisor, cada tanto | Corre el módulo de exposición y publica el resultado dentro del estado. Ninguna comprobación es fatal |
+
+Sobre la primera: La llama el adaptador del canal de control cuando alguien toca la puerta del vestíbulo. Vive en los casos de uso y no en el adaptador porque todo lo que decide es política: si esta máquina puede emitir, qué dirección le toca al que entra, cuánto vale la credencial y qué se le cuenta de la red. El motor pone el token, que es lo único que no se decide acá y tiene que ser así, porque revocarlo es lo que corta la sesión.
+
+**Las direcciones se reparten mirando dos listas, no una:** los peers conectados y las credenciales emitidas todavía vigentes. Solo los peers repartiría la misma dirección a dos personas que entran a la vez, que es exactamente lo que pasa cuando alguien manda el código al grupo y los tres lo pegan al mismo tiempo.
 
 `Status()` es el único canal por el que la UI se entera de las alertas del módulo de exposición. No hay notificación aparte ni evento especial: el módulo publica su último resultado y `Status()` lo arrastra, así que una alerta nunca puede bloquear ni retrasar una respuesta.
 
@@ -408,7 +532,7 @@ type ForeignRule struct {
     WasEnabled bool          // estado previo, para restaurar
 }
 
-func (f *FW) AuditForGame(p GameProfile) ([]ForeignRule, error)
+func (f *FW) AuditForeign(p GameProfile) ([]ForeignRule, error)
 func (f *FW) SuspendForeign(rules []ForeignRule) error
 func (f *FW) RestoreForeign() error
 ```
@@ -451,7 +575,9 @@ Lo que `netcfg` mantiene:
 
 Responsabilidades:
 
-- Traducir `domain.JoinSpec` a los parámetros del proceso: `--network-name` y `--network-secret` derivados del código, semillas con `-p`, relay de broadcast según el perfil activo.
+- Traducir `domain.HostSpec`, `domain.RendezvousSpec` y `domain.GuestSpec` a los parámetros del proceso: `--network-name`, `--network-secret` y `--credential`, semillas con `-p`, y la dirección virtual del nodo.
+
+  **No traduce el descubrimiento LAN, porque no llega hasta acá.** `HostSpec` y `GuestSpec` no tienen campo para él: encenderlo significa `--enable-udp-broadcast-relay`, o sea capturar el tráfico de la red de casa del usuario con un driver de captura de paquetes, y la decisión 1 lo difiere hasta que exista un juego que lo pida. El perfil sí declara `lan_discovery`, porque el catálogo es la capa de conocimiento; esta es la capa que decide qué se concede.
 - Ciclo de vida del hijo: arranque, supervisión, apagado limpio, y matar huérfanos al arrancar el servicio por si una salida sucia dejó uno vivo.
 - Consultar estado y traducirlo a `[]domain.Peer` y `domain.NetCheck`. La salida del motor ya distingue conexión directa de relay y reporta el tipo de NAT, que es exactamente lo que la UI pinta en verde o ámbar.
 
@@ -469,7 +595,18 @@ Consulta puntual a `GetExtendedUdpTable` y `GetExtendedTcpTable` pidiendo el PID
 
 ### transport/control, el canal de la sala
 
-Implementa la decisión 23. **Solo escucha en la máquina del host**, sobre la IP de `kanpachi0`, con alcance limitado a las IPs de los miembros presentes. Los invitados únicamente marcan hacia afuera y nunca abren un puerto.
+Implementa la decisión 23. **Solo escucha en la máquina del host.** Los invitados únicamente marcan hacia afuera y nunca abren un puerto.
+
+Escucha en **dos direcciones con dos alcances distintos**, y separarlas es lo que impide regalar el canal de la sala a cualquiera que tenga el código:
+
+| Dirección | Quién puede hablar | Qué se admite |
+|---|---|---|
+| **La puerta**, la IP del host en el vestíbulo | Cualquiera que haya llegado ahí, o sea cualquiera con el invite ID | Únicamente un pedido de credencial. Cualquier otro mensaje se descarta sin interpretarse |
+| **La sala**, la IP del host en `kanpachi0` | Solo las IPs de los miembros presentes | Todo lo demás: expulsión, cierre de sala, y por su sola existencia la presencia del host |
+
+La puerta tiene que estar abierta a desconocidos por definición: quien está entrando todavía no es miembro, y lo que viene a pedir es justamente el permiso para serlo. Lo que la acota no es una lista de direcciones, es que ahí no se puede pedir nada más.
+
+**Expulsar recorta la sala y no la puerta.** Es deliberado y es la decisión 22: expulsar y bloquear son cosas distintas, y quien fue expulsado puede volver a tocar la puerta hasta que el host renueve el código.
 
 Lo que transporta, en volumen de bytes: el canje del código por credencial cuando alguien entra, el aviso de expulsión, el anuncio de cierre de sala, y por su sola existencia la presencia del host. **Nada del juego pasa por acá.**
 
@@ -568,11 +705,13 @@ El registro vive en memoria con TTL, sin base de datos y sin disco, salvo la lla
  2. identity deriva la identidad de ENCUENTRO (Argon2id sobre el invite ID)
  3. El daemon resuelve semillas: registro DNS primero,
     Reserved IP compilada como respaldo
- 4. engine entra a la red de encuentro y busca al host
+ 4. engine entra a la red de encuentro. El host está en la .1 de un /24
+    fijo, así que no hay que buscarlo: se marca a una dirección conocida
  5. El invitado le manda al host su nickname y su llave pública,
     firmado. El host verifica y decide
- 6. El host emite una credencial temporal y devuelve la identidad
-    de la red REAL, cifrada contra la llave del invitado
+ 6. El host emite una credencial temporal, con el NOMBRE de la red real,
+    la subred y la IP virtual, cifrada contra la llave del invitado.
+    El secreto de esa red no va dentro
  7. engine sale del encuentro y entra a la red real con la credencial.
     El secreto de esa red nunca viajó
  8. El seed devuelve los endpoints de los demás miembros
@@ -625,6 +764,18 @@ Kanpachi asigna un `/24` dentro de `100.64.0.0/10`, el espacio compartido de RFC
 5. `Diagnostics` reporta el rango elegido y el motivo, para que un conflicto sea diagnosticable en un renglón.
 
 El caso más común, con el router en `100.64.x.x` del lado WAN y la LAN en `192.168.x.x`, no genera conflicto en el PC. El caso que sí lo genera es el router de ISP que reparte `100.64.x.x` del lado LAN, o el usuario que ya corre otra VPN en ese espacio.
+
+El disparador es que la máquina **ya viva** en `100.64.0.0/10`, no que el `/24` elegido choque: si la LAN de casa reparte ese rango, cualquier `/24` de ahí compite con la ruta del router del usuario aunque hoy no se solapen.
+
+### El vestíbulo tiene un /24 fijo
+
+`100.127.255.0/24`, el último del espacio compartido, con el host siempre en la `.1`.
+
+Fijo y no negociado porque los dos lados tienen que llegar al mismo sin hablarse: **el invitado necesita una dirección conocida a la que marcar antes de tener nada del host**, y la subred de la sala llega dentro de la credencial, o sea después. Elegirlo al azar exigiría un canal para comunicarlo, y ese canal es justamente el que se está montando.
+
+Que sea el mismo para todas las salas no filtra nada. El vestíbulo ya es público por definición, su red la deriva cualquiera que tenga el invite ID, y una dirección dentro de un overlay cifrado no dice de qué sala es. La estancia dura lo que tarda un canje de credencial.
+
+Ese `/24` **nunca se le entrega a una sala**. Si coincidieran, entrar a la sala cortaría la conexión que se está usando para pedir la credencial, y el fallo aparecería una vez de cada dieciséis mil.
 
 ## Modelo de amenazas, resumen honesto
 

@@ -102,6 +102,10 @@ Qué alimenta cada campo:
 
 `connect_hint.kind` acepta: `direct_ip`, `lan_browser`, `steam_friends`.
 
+`proto` acepta: `udp`, `tcp`, `both`. El tercero existe porque hay juegos que piden el mismo rango en los dos protocolos, y obligar a escribirlo dos veces gastaría dos de los ocho rangos del tope para decir una sola cosa. **No es un protocolo, es escritura:** el código lo expande a dos reglas antes de llegar al Firewall de Windows, que tiene un protocolo por regla y solo uno. La UI lo escribe `TCP/UDP` y lo acepta también así al leer.
+
+`origin` es la excepción de una sola capa. Solo lo escribe `local.json`, que es el único archivo que mezcla perfiles propios con importados, y sirve para que la distinción sobreviva a un reinicio. **En un archivo de intercambio va ausente, y si viene se ignora:** la capa la fija quien carga, jamás el archivo. Sin esa regla, un `.json` que llegara por Telegram podría declararse `mine` y ganarle en precedencia a un builtin verificado.
+
 ### `client_ports` decide la topología, y por eso es el campo más delicado
 
 Es el campo que responde la pregunta "¿Santiago puede alcanzar mi PC?".
@@ -160,9 +164,18 @@ Estas viven en código y no tienen campo equivalente en el JSON, a propósito:
 5. **Nunca permitir por ejecutable.** Las reglas son por puerto, protocolo y dirección. Jamás "permitir todo lo de este exe".
 6. **Validación estricta.** Un perfil inválido se rechaza completo. Nunca se carga a medias ni se degrada a algo más permisivo.
 7. **`bind_hint` es informativo.** Kanpachi lo muestra y nunca escribe en archivos de otros programas.
-8. **`system_tweaks` es un conjunto cerrado.** Solo se aceptan las cuatro claves definidas, todas booleanas. Un perfil con claves desconocidas se rechaza. No existe forma de expresar "ejecuta este comando" ni "habilita este grupo de reglas del firewall".
+8. **`system_tweaks` es un conjunto cerrado.** Solo se aceptan las cuatro claves definidas, todas booleanas. Un perfil con claves desconocidas se rechaza. No existe forma de expresar "ejecuta este comando" ni "habilita este grupo de reglas del firewall". La regla vale para el perfil ENTERO y no solo para ese objeto: cualquier clave que el esquema no defina, en cualquier nivel, rechaza el perfil.
+9. **Un perfil que no abre ningún puerto se rechaza.** No describe nada: no hay regla que generar, y elegirlo en la lista sería un juego que se activa y no hace nada. Es un archivo a medio escribir, y decirlo vale más que aceptarlo en silencio.
 
 Cada rechazo queda en el log con la razón, y la UI marca el juego como no disponible con el motivo en lenguaje humano.
+
+Tres detalles de cómo se aplican, que son parte de la invariante y no del formato:
+
+- **Un puerto prohibido se detecta por CONTENCIÓN, no por igualdad.** Un perfil que pida `440-450` abre el 445 igual que si lo hubiera nombrado, y quien escriba un perfil malicioso lo escribiría exactamente así.
+- **El tope de 8 rangos cuenta `host_ports` y `client_ports` juntos.** Contarlos por lista lo dejaría en dieciséis por la puerta de atrás.
+- **Un perfil es UN objeto JSON y nada detrás.** El decodificador se detiene al cerrar el primero, así que un archivo con `{perfil bueno}{perfil malo}` pasaría entero mostrando solo el primero. Es la forma clásica de colar contenido que el revisor humano no ve.
+
+Y una que vive en el otro lado de la frontera: los puertos prohibidos se vuelven a comprobar **al generar las reglas**, no solo al cargar el perfil. Un perfil solo existe validado, así que esa segunda comprobación no debería poder saltar nunca; existe porque ahí es donde un puerto se abre de verdad, y una invariante de seguridad tiene que vivir también donde ocurre el acto.
 
 ## El creador de perfiles
 
@@ -208,8 +221,8 @@ Límites deliberados:
 Filtros que aplica a cada foto:
 
 - Sigue el **árbol de procesos** partiendo del ejecutable elegido, porque muchos juegos arrancan desde un launcher y el servidor es un proceso hijo.
-- Descarta binds a `127.0.0.1`, esos no salen de la máquina.
-- Conserva solo lo que escucha en `0.0.0.0`, que es lo que necesita regla.
+- **Conserva solo lo que escucha en `0.0.0.0`,** que es lo único que necesita regla. Un bind a `127.0.0.1` no sale de la máquina, y uno a la IP de la LAN doméstica (`192.168.1.5`) tampoco va a escuchar en la interfaz virtual haga lo que haga el firewall: una regla para él no arregla nada y sí abre un puerto por gusto.
+- **El árbol de procesos es obligatorio, no una mejora.** Sin él la foto trae todos los sockets de la máquina: el navegador, el antivirus, el propio Kanpachi. Si no se pudo armar, se mira solo el proceso elegido.
 - Descarta ruido conocido de Steam (27015 a 27030, 27036) salvo que el usuario marque que ese juego sí los usa.
 - Agrupa puertos contiguos en rangos.
 

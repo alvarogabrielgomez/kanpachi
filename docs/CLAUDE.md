@@ -108,8 +108,7 @@ docs/       Los siete documentos
 
 Qué respetar al escribir código:
 
-- **Un import prohibido en `core` es un error de arquitectura, no un detalle.** Nada de `os`, `syscall`, `golang.org/x/sys`, `net/http`, `os/exec` dentro de `core/`.
-- **Falta el test que verifica esto.** Todavía no hay módulo Go ni CI. El primer commit que cree el módulo debe traer el test de pureza de imports y el workflow que lo corre. Hasta entonces la regla se sostiene a mano, y eso es deuda, no estado deseado.
+- **Un import prohibido en `core` es un error de arquitectura, no un detalle.** Nada de `os`, `syscall`, `golang.org/x/sys`, `net/http`, `os/exec` dentro de `core/`. Lo verifica `internal/arch/arch_test.go`, que corre en CI sobre Ubuntu y falla nombrando el archivo y el import.
 - Si algo necesita privilegios o API de Windows, va en un adaptador detrás de un puerto declarado en `core`.
 - **El cableado de dependencias vive solo en `service/`.** Es el único sitio que conoce a la vez el dominio y los adaptadores concretos. Ningún caso de uso construye su propio adaptador.
 - El motor vive detrás de `EnginePort`. Nada fuera de `daemon/adapter/engine/easytier/` menciona EasyTier. **Se ejecuta como proceso hijo (`easytier-core`), nunca vinculado al binario Go:** EasyTier es LGPL-3.0 y es Rust, el proceso separado mantiene la licencia de Kanpachi libre y evita cgo.

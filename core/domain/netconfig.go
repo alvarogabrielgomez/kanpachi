@@ -1,0 +1,80 @@
+package domain
+
+import "net/netip"
+
+// AdapterName es el nombre del adaptador Wintun que crea el instalador. Es
+// literal en todo el proyecto: docs, instalador, código y logs dicen lo mismo.
+const AdapterName = "kanpachi0"
+
+// Métricas del adaptador.
+//
+// La IPv4 en 1 para que los juegos prefieran la red virtual sobre la LAN o el
+// WiFi. La IPv6 en 20, deprioritizada, para que no compita con el IPv6 nativo
+// del usuario: Kanpachi no enruta internet y no tiene por qué ganarle a la
+// pila que sí lo hace.
+const (
+	MetricIPv4 = 1
+	MetricIPv6 = 20
+)
+
+// AdapterState es el estado que netcfg mantiene contra la voluntad de Windows.
+//
+// "Mantiene" y no "aplica": Windows revierte la métrica, la categoría de red y
+// las rutas en cada evento de identificación de red, que se dispara al agregar
+// o quitar una IP, al conectar o desconectar un adaptador y en eventos de
+// DHCP. Aplicar esto una vez durante la instalación no alcanza, y por eso el
+// supervisor se suscribe al canal NetworkProfile/Operational y lo reaplica
+// entero. Sin eso, los ajustes se pierden solos y el usuario ve que "ayer
+// funcionaba".
+//
+// Es declarativo por el mismo motivo que el RuleSet: se compara el deseado
+// contra el aplicado y se ejecuta la diferencia.
+type AdapterState struct {
+	// Address es la IP virtual de esta máquina, dentro de Subnet.
+	Address netip.Addr
+	Subnet  netip.Prefix
+
+	MetricIPv4 int
+	MetricIPv6 int
+
+	// PrivateCategory pide clasificar la red como Privada. Kanpachi intenta
+	// fijarlo y NO depende de lograrlo: por eso las reglas se aplican a los
+	// tres perfiles de firewall.
+	PrivateCategory bool
+
+	// MTU sondeado del camino. Cero significa "todavía no se sondeó" y netcfg
+	// deja el valor que haya en vez de escribir un cero, que apagaría la
+	// interfaz.
+	MTU int
+
+	// Los tres siguientes los pide el perfil del juego activo, no la sala, y
+	// se revierten al salir. El estado previo se persiste igual que las reglas
+	// ajenas, para poder restaurar tras una salida sucia.
+	BroadcastRoute bool
+	MulticastRoute bool
+	PreferIPv4     bool
+}
+
+// AdapterStateFor arma el estado deseado del adaptador para una sala.
+//
+// Los ajustes por juego salen del perfil activo y se apagan solos cuando no
+// hay juego, que es lo que hace que salir de la sala los revierta sin que
+// nadie tenga que acordarse de deshacerlos uno por uno.
+//
+// DirectPlay no está acá a propósito: no es un ajuste del adaptador, es un
+// componente opcional de Windows, y mezclarlo con las rutas haría que un
+// reaplicado del adaptador tuviera que tocar la instalación de características
+// del sistema en cada evento de identificación de red.
+func AdapterStateFor(addr netip.Addr, subnet netip.Prefix, mtu int, game GameProfile) AdapterState {
+	return AdapterState{
+		Address:         addr,
+		Subnet:          subnet,
+		MetricIPv4:      MetricIPv4,
+		MetricIPv6:      MetricIPv6,
+		PrivateCategory: true,
+		MTU:             mtu,
+		BroadcastRoute:  game.Tweaks.BroadcastRoute,
+		MulticastRoute:  game.Tweaks.MulticastRoute,
+		PreferIPv4:      game.Tweaks.PreferIPv4,
+	}
+}
