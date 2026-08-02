@@ -78,6 +78,7 @@ class _ManualGameScreenState extends State<ManualGameScreen> {
             title: 'Agregar un juego',
             note: 'Para lo que no está en el catálogo. Kanpachi solo necesita '
                 'los puertos que el juego abre en tu PC.',
+            noteMaxWidth: 520,
             leading: AppBackButton(onPressed: () => shell.go(AppScreen.catalog)),
           ),
           const SizedBox(height: AppSpacing.x7l),
@@ -195,14 +196,24 @@ class _Form extends StatelessWidget {
         ],
         Align(
           alignment: Alignment.centerLeft,
-          child: AppButton(
-            label: 'Añadir otro rango',
-            variant: AppButtonVariant.ghost,
-            height: 36,
-            horizontalPadding: AppSpacing.x3l,
-            textStyle: context.type.label.copyWith(fontSize: 13, height: 1),
-            icon: const Icon(Icons.add),
-            onPressed: onAddRule,
+          // Trazo discontinuo, como en el diseño: dice "acá puede haber otra
+          // fila y todavía no la hay", que es lo mismo que dice el hueco de
+          // portada. Un borde continuo lo haría parecer una acción más del
+          // formulario.
+          child: CustomPaint(
+            foregroundPainter: DashedBorderPainter(
+              color: colors.border,
+              radius: AppRadius.pill,
+            ),
+            child: AppButton(
+              label: 'Añadir otro rango',
+              variant: AppButtonVariant.ghostDashed,
+              height: 36,
+              horizontalPadding: AppSpacing.x3l,
+              textStyle: context.type.label.copyWith(fontSize: 13, height: 1),
+              icon: const Icon(Icons.add),
+              onPressed: onAddRule,
+            ),
           ),
         ),
         const SizedBox(height: 7),
@@ -344,7 +355,7 @@ class _Preview extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                const AppCover(width: double.infinity, height: 150),
+                const AppCover.preview(),
                 const SizedBox(height: AppSpacing.xl),
                 Text(
                   name.isEmpty ? 'Nombre del juego' : name,

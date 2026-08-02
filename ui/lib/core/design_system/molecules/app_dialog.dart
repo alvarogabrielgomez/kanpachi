@@ -30,21 +30,30 @@ class AppModal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    // El velo NO entra en el fundido. Animarlo junto con el cuadro hacía que
+    // el fondo se aclarara y se oscureciera con él, y lo que tiene que pasar
+    // es que el velo esté puesto y el cuadro aparezca encima.
     return Positioned.fill(
-      child: TweenAnimationBuilder<double>(
-        duration: AppMotion.dialog,
-        curve: AppMotion.enter,
-        tween: Tween<double>(begin: 0, end: 1),
-        builder: (BuildContext context, double t, Widget? body) {
-          return Opacity(opacity: t, child: body);
-        },
-        child: Stack(
-          children: <Widget>[
-            GestureDetector(
-              onTap: onDismiss,
-              child: Container(color: colors.scrim),
-            ),
-            Center(
+      child: Stack(
+        children: <Widget>[
+          GestureDetector(
+            onTap: onDismiss,
+            child: Container(color: colors.scrim),
+          ),
+          TweenAnimationBuilder<double>(
+            duration: AppMotion.dialog,
+            curve: AppMotion.enter,
+            tween: Tween<double>(begin: 0, end: 1),
+            builder: (BuildContext context, double t, Widget? body) {
+              return Opacity(
+                opacity: t,
+                child: Transform.translate(
+                  offset: Offset(0, 8 * (1 - t)),
+                  child: body,
+                ),
+              );
+            },
+            child: Center(
               child: Padding(
                 padding: const EdgeInsets.all(AppSpacing.x9l),
                 child: ConstrainedBox(
@@ -73,8 +82,8 @@ class AppModal extends StatelessWidget {
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

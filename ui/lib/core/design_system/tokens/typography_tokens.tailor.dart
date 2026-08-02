@@ -32,7 +32,9 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
   TextStyle get kickerSm;
   TextStyle get statusLabel;
   TextStyle get statusMono;
+  TextStyle get kickerXs;
   TextStyle get mono;
+  TextStyle get monoMd;
   TextStyle get monoSm;
   TextStyle get monoXs;
   TextStyle get monoXxs;
@@ -61,7 +63,9 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
     TextStyle? kickerSm,
     TextStyle? statusLabel,
     TextStyle? statusMono,
+    TextStyle? kickerXs,
     TextStyle? mono,
+    TextStyle? monoMd,
     TextStyle? monoSm,
     TextStyle? monoXs,
     TextStyle? monoXxs,
@@ -89,7 +93,9 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
       kickerSm: kickerSm ?? this.kickerSm,
       statusLabel: statusLabel ?? this.statusLabel,
       statusMono: statusMono ?? this.statusMono,
+      kickerXs: kickerXs ?? this.kickerXs,
       mono: mono ?? this.mono,
+      monoMd: monoMd ?? this.monoMd,
       monoSm: monoSm ?? this.monoSm,
       monoXs: monoXs ?? this.monoXs,
       monoXxs: monoXxs ?? this.monoXxs,
@@ -125,7 +131,9 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
       kickerSm: TextStyle.lerp(kickerSm, other.kickerSm, t)!,
       statusLabel: TextStyle.lerp(statusLabel, other.statusLabel, t)!,
       statusMono: TextStyle.lerp(statusMono, other.statusMono, t)!,
+      kickerXs: TextStyle.lerp(kickerXs, other.kickerXs, t)!,
       mono: TextStyle.lerp(mono, other.mono, t)!,
+      monoMd: TextStyle.lerp(monoMd, other.monoMd, t)!,
       monoSm: TextStyle.lerp(monoSm, other.monoSm, t)!,
       monoXs: TextStyle.lerp(monoXs, other.monoXs, t)!,
       monoXxs: TextStyle.lerp(monoXxs, other.monoXxs, t)!,
@@ -168,7 +176,9 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
               statusMono,
               other.statusMono,
             ) &&
+            const DeepCollectionEquality().equals(kickerXs, other.kickerXs) &&
             const DeepCollectionEquality().equals(mono, other.mono) &&
+            const DeepCollectionEquality().equals(monoMd, other.monoMd) &&
             const DeepCollectionEquality().equals(monoSm, other.monoSm) &&
             const DeepCollectionEquality().equals(monoXs, other.monoXs) &&
             const DeepCollectionEquality().equals(monoXxs, other.monoXxs));
@@ -200,7 +210,9 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
       const DeepCollectionEquality().hash(kickerSm),
       const DeepCollectionEquality().hash(statusLabel),
       const DeepCollectionEquality().hash(statusMono),
+      const DeepCollectionEquality().hash(kickerXs),
       const DeepCollectionEquality().hash(mono),
+      const DeepCollectionEquality().hash(monoMd),
       const DeepCollectionEquality().hash(monoSm),
       const DeepCollectionEquality().hash(monoXs),
       const DeepCollectionEquality().hash(monoXxs),
@@ -255,8 +267,17 @@ extension TypographyTokensBuildContextProps on BuildContext {
   TextStyle get statusLabel => typographyTokens.statusLabel;
   TextStyle get statusMono => typographyTokens.statusMono;
 
+  /// El rótulo más pequeño, el que va pegado encima de un dato dentro de una
+  /// caja: más chico y con menos tracking que `kickerSm`, porque ahí compite
+  /// con el dato que rotula y no con el resto de la pantalla.
+  TextStyle get kickerXs => typographyTokens.kickerXs;
+
   /// Datos literales: código, dirección, puertos.
   TextStyle get mono => typographyTokens.mono;
+
+  /// El escalón mono que faltaba entre `mono` (15) y `monoSm` (12,5): los
+  /// valores de la tarjeta de invitación.
+  TextStyle get monoMd => typographyTokens.monoMd;
   TextStyle get monoSm => typographyTokens.monoSm;
   TextStyle get monoXs => typographyTokens.monoXs;
   TextStyle get monoXxs => typographyTokens.monoXxs;

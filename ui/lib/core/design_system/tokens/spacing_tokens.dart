@@ -58,14 +58,22 @@ abstract final class AppSpacing {
 /// Radios de esquina.
 abstract final class AppRadius {
   static const Radius xs = Radius.circular(6);
+  static const Radius s7 = Radius.circular(7);
   static const Radius sm = Radius.circular(8);
+  static const Radius s10 = Radius.circular(10);
   static const Radius md = Radius.circular(12);
   static const Radius lg = Radius.circular(14);
   static const Radius xl = Radius.circular(16);
   static const Radius xxl = Radius.circular(20);
 
   static const BorderRadius allXs = BorderRadius.all(xs);
+
+  /// Los escalones intermedios existen porque el diseño escala el radio con el
+  /// tamaño del hueco: una miniatura de 46 px no lleva el mismo redondeo que
+  /// una portada de 150.
+  static const BorderRadius all7 = BorderRadius.all(s7);
   static const BorderRadius allSm = BorderRadius.all(sm);
+  static const BorderRadius all10 = BorderRadius.all(s10);
   static const BorderRadius allMd = BorderRadius.all(md);
   static const BorderRadius allLg = BorderRadius.all(lg);
   static const BorderRadius allXl = BorderRadius.all(xl);

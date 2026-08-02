@@ -52,8 +52,8 @@ class _GamePickerScreenState extends State<GamePickerScreen> {
     final bool buscando = q.isNotEmpty;
     final List<Game> mostrados = buscando
         ? session.catalog
-            .where((Game g) => g.name.toLowerCase().contains(q))
-            .toList(growable: false)
+              .where((Game g) => g.name.toLowerCase().contains(q))
+              .toList(growable: false)
         : session.installed;
 
     void pick(Game game) {
@@ -69,13 +69,12 @@ class _GamePickerScreenState extends State<GamePickerScreen> {
             title: fromRoom ? 'Elegir juego de la sala' : 'Crear sala',
             note: fromRoom
                 ? 'La sala sigue igual: cambiar de juego solo cambia qué '
-                    'puertos se abren.'
+                      'puertos se abren.'
                 : 'Puedes crear la sala sin juego y elegirlo adentro, o abrir '
-                    'uno de una vez.',
+                      'uno de una vez.',
             leading: AppBackButton(
-              onPressed: () => shell.go(
-                fromRoom ? AppScreen.room : AppScreen.home,
-              ),
+              onPressed: () =>
+                  shell.go(fromRoom ? AppScreen.room : AppScreen.home),
             ),
           ),
           const SizedBox(height: AppSpacing.x4l),
@@ -115,8 +114,8 @@ class _GamePickerScreenState extends State<GamePickerScreen> {
               ),
               onTap: () {
                 context.read<SessionCubit>().createRoom(
-                      name: 'Sala de Kanpachi',
-                    );
+                  name: 'Sala de Kanpachi',
+                );
                 shell.go(AppScreen.room);
               },
               child: Row(
@@ -168,8 +167,9 @@ class _GamePickerScreenState extends State<GamePickerScreen> {
                       Text(
                         'Con buscador y portadas. Si tu juego no aparece '
                         'arriba, está aquí igual.',
-                        style: context.type.bodySm
-                            .copyWith(color: colors.textMuted),
+                        style: context.type.bodySm.copyWith(
+                          color: colors.textMuted,
+                        ),
                       ),
                     ],
                   ),
@@ -213,68 +213,132 @@ class _CatalogScreenState extends State<CatalogScreen> {
     final List<Game> results = q.isEmpty
         ? session.catalog
         : session.catalog
-            .where((Game g) => g.name.toLowerCase().contains(q))
-            .toList(growable: false);
+              .where((Game g) => g.name.toLowerCase().contains(q))
+              .toList(growable: false);
 
-    return ScreenBody(
+    // La única pantalla que NO usa `ScreenBody`: su cabecera se queda fija y
+    // sólo se recorre la rejilla. Con 18 juegos ya hay que bajar, y perder de
+    // vista el buscador justo cuando se está buscando es lo que obliga a subir
+    // otra vez para escribir una letra más. El filete inferior llega de borde
+    // a borde de la ventana; el contenido, en cambio, va centrado y con el
+    // mismo tope que el resto de la app.
+    return ScreenEnter(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          ScreenHeader(
-            title: 'Biblioteca de juegos',
-            leading: AppBackButton(onPressed: () => shell.go(AppScreen.gamePicker)),
-            trailing: Text(
-              q.isEmpty
-                  ? '${session.catalog.length} juegos'
-                  : '${results.length} de ${session.catalog.length}',
-              style: context.type.monoSm.copyWith(color: colors.textMuted),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xl),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: AppField(
-                  controller: _query,
-                  shape: AppFieldShape.pill,
-                  height: 42,
-                  hint: 'Buscar por nombre…',
-                  onChanged: (_) => setState(() {}),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.surface,
+              border: Border(
+                bottom: BorderSide(
+                  color: colors.border,
+                  width: AppStroke.hairline,
                 ),
               ),
-              const SizedBox(width: AppSpacing.lg),
-              // Que el alta manual viva junto al buscador no es casual: es el
-              // sitio donde alguien acaba de comprobar que su juego no está.
-              AppButton(
-                label: 'Agregar juego',
-                variant: AppButtonVariant.quiet,
-                height: 42,
-                icon: const Icon(Icons.add),
-                onPressed: () => shell.go(AppScreen.manualGame),
-              ),
-              const SizedBox(width: AppSpacing.lg),
-              GameArtToggle(
-                value: shellState.artMode,
-                onChanged: shell.setArtMode,
-                stretched: true,
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.x4l),
-          if (results.isEmpty)
-            const _NoResults()
-          else
-            GameCollection(
-              games: results,
-              mode: shellState.artMode,
-              selected: session.room?.game,
-              showInstalledBadge: true,
-              minTileWidth: 140,
-              onPick: (Game game) {
-                context.read<SessionCubit>().proposeGame(game);
-                shell.showDialog(AppDialog.confirmGame);
-              },
             ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: AppSpacing.contentMax,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.pageInline,
+                    AppSpacing.x3l,
+                    AppSpacing.pageInline,
+                    AppSpacing.xl,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      ScreenHeader(
+                        title: 'Biblioteca de juegos',
+                        leading: AppBackButton(
+                          onPressed: () => shell.go(AppScreen.gamePicker),
+                        ),
+                        trailing: Text(
+                          q.isEmpty
+                              ? '${session.catalog.length} juegos'
+                              : '${results.length} de '
+                                    '${session.catalog.length}',
+                          style: context.type.monoSm.copyWith(
+                            color: colors.textMuted,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: AppField(
+                              controller: _query,
+                              shape: AppFieldShape.pill,
+                              height: 42,
+                              hint: 'Buscar por nombre…',
+                              onChanged: (_) => setState(() {}),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.lg),
+                          // Que el alta manual viva junto al buscador no es casual: es el
+                          // sitio donde alguien acaba de comprobar que su juego no está.
+                          AppButton(
+                            label: 'Agregar juego',
+                            // Hundido y no chip: va a ras del buscador, que también lo
+                            // es, y con el chip parecía flotar sobre él.
+                            variant: AppButtonVariant.quietSunken,
+                            height: 42,
+                            textStyle: context.type.strongSm.copyWith(
+                              fontSize: 13,
+                              height: 1,
+                            ),
+                            horizontalPadding: AppSpacing.x4l,
+                            icon: const Icon(Icons.add),
+                            onPressed: () => shell.go(AppScreen.manualGame),
+                          ),
+                          const SizedBox(width: AppSpacing.lg),
+                          GameArtToggle(
+                            value: shellState.artMode,
+                            onChanged: shell.setArtMode,
+                            stretched: true,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.pageInline,
+                AppSpacing.x4l,
+                AppSpacing.pageInline,
+                AppSpacing.x7l,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: AppSpacing.contentMax,
+                  ),
+                  child: results.isEmpty
+                      ? const _NoResults()
+                      : GameCollection(
+                          games: results,
+                          mode: shellState.artMode,
+                          selected: session.room?.game,
+                          showInstalledBadge: true,
+                          minTileWidth: 140,
+                          onPick: (Game game) {
+                            context.read<SessionCubit>().proposeGame(game);
+                            shell.showDialog(AppDialog.confirmGame);
+                          },
+                        ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -301,8 +365,10 @@ class _NoResults extends StatelessWidget {
         children: <Widget>[
           Text(
             'Ningún juego coincide',
-            style: context.type.strong
-                .copyWith(color: colors.text, fontSize: 16),
+            style: context.type.strong.copyWith(
+              color: colors.text,
+              fontSize: 16,
+            ),
           ),
           const SizedBox(height: AppSpacing.md),
           ConstrainedBox(

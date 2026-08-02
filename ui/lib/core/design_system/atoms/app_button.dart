@@ -19,6 +19,11 @@ enum AppButtonVariant {
   /// Acción secundaria: contorno, sin relleno.
   ghost,
 
+  /// El mismo ghost pero sin contorno propio: lo pinta quien lo envuelve, con
+  /// trazo discontinuo. Es "acá puede haber otra cosa y todavía no la hay",
+  /// no una acción más del formulario.
+  ghostDashed,
+
   /// Acción terciaria, sobre fondo de chip. La usa "Salir de la sala": es
   /// destructiva pero no urgente, y un botón lleno la haría parecer el
   /// objetivo de la pantalla.
@@ -140,6 +145,13 @@ class _AppButtonState extends State<AppButton> {
           _hovered && _enabled ? colors.accent : colors.text,
           _hovered && _enabled ? colors.accent : colors.border,
         ),
+      // Borde nulo: el discontinuo lo pinta el `CustomPaint` de fuera, y con
+      // los dos se verían dos contornos.
+      AppButtonVariant.ghostDashed => (
+          _hovered ? colors.chip : Colors.transparent,
+          _hovered && _enabled ? colors.accent : colors.textMuted,
+          null,
+        ),
       AppButtonVariant.quietSunken => (
           colors.surfaceSunken,
           _hovered && _enabled ? colors.accent : colors.text,
@@ -152,6 +164,7 @@ class _AppButtonState extends State<AppButton> {
           AppButtonVariant.primary => type.buttonLg,
           AppButtonVariant.primaryFlat => type.button,
           AppButtonVariant.ghost ||
+          AppButtonVariant.ghostDashed ||
           AppButtonVariant.quiet ||
           AppButtonVariant.quietSunken =>
             type.label,

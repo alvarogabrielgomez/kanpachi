@@ -103,6 +103,7 @@ class ScreenHeader extends StatelessWidget {
     required this.title,
     required this.leading,
     this.note,
+    this.noteMaxWidth,
     this.trailing,
     super.key,
   });
@@ -113,6 +114,11 @@ class ScreenHeader extends StatelessWidget {
   /// La línea que explica de qué va la pantalla. Va indentada bajo el título,
   /// alineada con él y no con la flecha.
   final String? note;
+
+  /// Un tope de ancho para esa línea. Sólo lo pide el alta manual, donde la
+  /// nota es larga y estirada a 940 px se lee de un extremo al otro de la
+  /// ventana. Las demás notas del diseño no lo llevan.
+  final double? noteMaxWidth;
 
   final Widget? trailing;
 
@@ -138,9 +144,14 @@ class ScreenHeader extends StatelessWidget {
         if (note != null)
           Padding(
             padding: const EdgeInsets.only(left: 42, top: AppSpacing.xs),
-            child: Text(
-              note!,
-              style: context.type.body.copyWith(color: colors.textMuted),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: noteMaxWidth ?? double.infinity,
+              ),
+              child: Text(
+                note!,
+                style: context.type.body.copyWith(color: colors.textMuted),
+              ),
             ),
           ),
       ],

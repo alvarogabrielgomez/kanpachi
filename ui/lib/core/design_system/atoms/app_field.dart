@@ -38,6 +38,7 @@ class AppField extends StatefulWidget {
     this.shape = AppFieldShape.rounded,
     this.trailing,
     this.height,
+    this.radius,
     this.maxLength,
     this.textStyle,
     this.mono = false,
@@ -60,6 +61,11 @@ class AppField extends StatefulWidget {
   /// un conmutador. Sin él cada pieza mide lo que le sale de su contenido y la
   /// fila queda en escalera; el diseño las pone las tres del mismo alto.
   final double? height;
+
+  /// Gana sobre el radio de la forma. Es para el caso suelto — el editor del
+  /// nombre de la sala, que el diseño redondea a 10 — y no para abrirle la
+  /// puerta a que cada pantalla elija el suyo.
+  final BorderRadius? radius;
 
   final int? maxLength;
   final TextStyle? textStyle;
@@ -123,7 +129,8 @@ class _AppFieldState extends State<AppField> {
           horizontal: AppSpacing.x4l, vertical: AppSpacing.x3l),
     };
 
-    final BorderRadius radius = switch (widget.shape) {
+    final BorderRadius radius = widget.radius ??
+        switch (widget.shape) {
       AppFieldShape.pill => AppRadius.pill,
       AppFieldShape.rounded || AppFieldShape.inline => AppRadius.allMd,
       AppFieldShape.hero => AppRadius.allLg,
@@ -151,6 +158,9 @@ class _AppFieldState extends State<AppField> {
         ),
       ),
       child: Row(
+        // El botón pegado dentro no va pegado del todo: el diseño deja 8 px
+        // entre el texto y el control en las tres píldoras que los llevan.
+        spacing: AppSpacing.md,
         children: <Widget>[
           Expanded(
             // TextField y no EditableText: el segundo no pinta placeholder ni

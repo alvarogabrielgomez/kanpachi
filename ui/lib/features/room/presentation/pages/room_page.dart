@@ -104,8 +104,9 @@ class _RoomHeader extends StatefulWidget {
 
 class _RoomHeaderState extends State<_RoomHeader> {
   bool _editing = false;
-  late final TextEditingController _name =
-      TextEditingController(text: widget.room.name);
+  late final TextEditingController _name = TextEditingController(
+    text: widget.room.name,
+  );
 
   @override
   void dispose() {
@@ -123,63 +124,74 @@ class _RoomHeaderState extends State<_RoomHeader> {
   Widget build(BuildContext context) {
     final Room room = widget.room;
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              const AppKicker('Sala'),
-              SizedBox(
-                height: 44,
-                child: _editing
-                    ? _NameEditor(controller: _name, onCommit: _commit)
-                    : _NameDisplay(
-                        name: room.name,
-                        canEdit: room.selfIsHost,
-                        onEdit: () => setState(() => _editing = true),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        // Las acciones no pasan de poco más de la mitad: por debajo de eso
+        // envuelven, y así el título nunca se queda sin sitio.
+        final double anchoDeAcciones = c.maxWidth * 0.55;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const AppKicker('Sala'),
+                  SizedBox(
+                    height: 44,
+                    child: _editing
+                        ? _NameEditor(controller: _name, onCommit: _commit)
+                        : _NameDisplay(
+                            name: room.name,
+                            canEdit: room.selfIsHost,
+                            onEdit: () => setState(() => _editing = true),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.x5l),
+            // Acotado, y fuera del reparto flex. Un `Wrap` que va de hijo
+            // no-flexible de un `Row` se mide con ancho infinito, así que NUNCA
+            // envuelve: se queda en una línea, se lleva todo el ancho y deja al
+            // título con 19 px. Con un tope sí envuelve, y al no ser flexible se
+            // queda en su ancho natural en vez de comerse la mitad de la fila y
+            // dejar un hueco entre el título y los botones.
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: anchoDeAcciones),
+              child: Wrap(
+                spacing: AppSpacing.md,
+                runSpacing: AppSpacing.md,
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[
+                  AppChip(room.code),
+                  CopyButton(
+                    label: 'Copiar enlace',
+                    height: 36,
+                    horizontalPadding: AppSpacing.x3l,
+                    textStyle: context.type.labelSm.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                    value: 'https://kanpachi.accentio.dev/${room.code}',
+                  ),
+                  if (room.selfIsHost)
+                    AppButton(
+                      label: 'Renovar código',
+                      variant: AppButtonVariant.ghost,
+                      height: 36,
+                      horizontalPadding: AppSpacing.x3l,
+                      textStyle: context.type.labelSm,
+                      onPressed: () => context.read<ShellCubit>().showDialog(
+                        AppDialog.confirmRenew,
                       ),
+                    ),
+                ],
               ),
-            ],
-          ),
-        ),
-        // Flexible y no suelto. Un `Wrap` que va de hijo no-flexible de un
-        // `Row` se mide con ancho infinito, así que NUNCA envuelve: se queda
-        // en una línea, se lleva todo el ancho y deja al título con 19 px.
-        // Acotado, cuando no cabe pasa el botón de más a la derecha al
-        // renglón de abajo, que es para lo que existe un Wrap.
-        Flexible(
-          child: Wrap(
-            spacing: AppSpacing.md,
-            runSpacing: AppSpacing.md,
-            alignment: WrapAlignment.end,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: <Widget>[
-              AppChip(room.code),
-              CopyButton(
-                label: 'Copiar enlace',
-                height: 36,
-                horizontalPadding: AppSpacing.x3l,
-                textStyle: context.type.labelSm
-                    .copyWith(fontWeight: FontWeight.w600),
-                value: 'https://kanpachi.accentio.dev/${room.code}',
-              ),
-              if (room.selfIsHost)
-                AppButton(
-                  label: 'Renovar código',
-                  variant: AppButtonVariant.ghost,
-                  height: 36,
-                  horizontalPadding: AppSpacing.x3l,
-                  textStyle: context.type.labelSm,
-                  onPressed: () => context
-                      .read<ShellCubit>()
-                      .showDialog(AppDialog.confirmRenew),
-                ),
-            ],
-          ),
-        ),
-      ],
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -289,6 +301,7 @@ class _NameEditor extends StatelessWidget {
         controller: controller,
         shape: AppFieldShape.inline,
         height: 44,
+        radius: AppRadius.all10,
         maxLength: 24,
         autofocus: true,
         textStyle: context.type.titleLg,
@@ -338,7 +351,9 @@ class _RoomStatus extends StatelessWidget {
     final List<Widget> blocks = <Widget>[];
 
     if (session.isBusy) {
-      blocks.add(_ApplyingCard(work: session.work, game: session.pendingGame?.name));
+      blocks.add(
+        _ApplyingCard(work: session.work, game: session.pendingGame?.name),
+      );
     } else if (room.game == null) {
       blocks.add(_NoGameCard(host: host, hostName: room.hostName));
       blocks.add(const _ExposureCard.nothingOpen());
@@ -396,8 +411,10 @@ class _ApplyingCard extends StatelessWidget {
                   closing
                       ? 'Cerrando el juego…'
                       : 'Aplicando ${game ?? 'el juego'}…',
-                  style: context.type.labelLg
-                      .copyWith(color: colors.text, fontWeight: FontWeight.w600),
+                  style: context.type.labelLg.copyWith(
+                    color: colors.text,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
@@ -434,8 +451,10 @@ class _NoGameCard extends StatelessWidget {
         children: <Widget>[
           Text(
             'Sala sin juego',
-            style: context.type.labelLg
-                .copyWith(color: colors.text, fontWeight: FontWeight.w600),
+            style: context.type.labelLg.copyWith(
+              color: colors.text,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 7),
           Text(
@@ -498,15 +517,17 @@ class _GameCard extends StatelessWidget {
                         children: <Widget>[
                           Text(
                             room.game!.name,
-                            style: context.type.gameName
-                                .copyWith(color: colors.text),
+                            style: context.type.gameName.copyWith(
+                              color: colors.text,
+                            ),
                           ),
                           Text(
                             host
                                 ? 'Juego activo · lo hospedas tú'
                                 : 'Juego activo · host: ${room.hostName ?? '—'}',
-                            style: context.type.bodySm
-                                .copyWith(color: colors.textMuted),
+                            style: context.type.bodySm.copyWith(
+                              color: colors.textMuted,
+                            ),
                           ),
                         ],
                       ),
@@ -580,7 +601,7 @@ class _AddressBox extends StatelessWidget {
               children: <Widget>[
                 AppKicker(
                   room.selfIsHost ? 'Pásales esta dirección' : 'Conéctate a',
-                  small: true,
+                  size: AppKickerSize.xs,
                 ),
                 const SizedBox(height: 5),
                 Text(
@@ -608,9 +629,7 @@ class _AddressBox extends StatelessWidget {
 class _ExposureCard extends StatelessWidget {
   const _ExposureCard({required this.room}) : _empty = false;
 
-  const _ExposureCard.nothingOpen()
-      : room = null,
-        _empty = true;
+  const _ExposureCard.nothingOpen() : room = null, _empty = true;
 
   final Room? room;
   final bool _empty;
@@ -656,7 +675,8 @@ class _ExposureCard extends StatelessWidget {
             TextSpan(
               children: <InlineSpan>[
                 TextSpan(
-                  text: '${r.game!.portsLabel}, visible para '
+                  text:
+                      '${r.game!.portsLabel}, visible para '
                       '${r.members.length} personas.\n',
                 ),
                 TextSpan(
@@ -676,9 +696,9 @@ class _ExposureCard extends StatelessWidget {
           Text(
             r.selfIsHost
                 ? 'El juego corre en tu PC. Los demás solo alcanzan estos '
-                    'puertos, nada más de tu máquina.'
+                      'puertos, nada más de tu máquina.'
                 : 'Solo te conectas con el host. Los demás jugadores no '
-                    'alcanzan tu PC.',
+                      'alcanzan tu PC.',
             style: context.type.bodySm.copyWith(color: colors.textMuted),
           ),
         ],
@@ -738,7 +758,8 @@ class _ForeignRuleNotice extends StatelessWidget {
               ),
             ),
             const TextSpan(
-              text: 'Con ella el juego es alcanzable desde tu red de casa y '
+              text:
+                  'Con ella el juego es alcanzable desde tu red de casa y '
                   'por toda la sala, sin pasar por el control de Kanpachi: '
                   'expulsar a alguien no lo tapa. Podemos desactivarla '
                   'mientras juegas y devolverla al salir.',
@@ -780,9 +801,14 @@ class _RoomMembers extends StatelessWidget {
         AppKicker('En la sala · ${room.members.length}'),
         const SizedBox(height: 9),
         AppRowList(
+          // 16 y no 14: es la lista más grande de la app y con el radio de las
+          // listas de juegos se lee apretada.
+          radius: AppRadius.allXl,
           children: <Widget>[
             for (final Member member in room.members)
-              AppRow(child: _MemberRow(member: member, host: room.selfIsHost)),
+              AppRow(
+                child: _MemberRow(member: member, host: room.selfIsHost),
+              ),
           ],
         ),
         const SizedBox(height: AppSpacing.xxl),

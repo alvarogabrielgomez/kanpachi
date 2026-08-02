@@ -117,11 +117,13 @@ class _InviteRow extends StatelessWidget {
       ),
       child: Row(
         children: <Widget>[
-          AppKicker(label, small: true),
+          // Tracking propio: 1,54 es el correcto para los kickers de 11 px del
+          // resto de la app; esta tarjeta es la excepción del diseño.
+          AppKicker(label, small: true, tracking: 1.1),
           const Spacer(),
           Text(
             value,
-            style: (mono ? context.type.monoSm : context.type.label)
+            style: (mono ? context.type.monoMd : context.type.label)
                 .copyWith(color: colors.text),
           ),
         ],

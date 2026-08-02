@@ -55,9 +55,12 @@ class _AppStatusDotState extends State<AppStatusDot>
   }
 
   void _latir() {
+    // La mitad de la duración, porque con `reverse: true` un ciclo son DOS
+    // pasadas del controlador. Los tokens son de ciclo completo, así que sin
+    // dividir late a la mitad de velocidad.
     (_controller ??= AnimationController(
       vsync: this,
-      duration: widget.pulseDuration,
+      duration: widget.pulseDuration ~/ 2,
     ))
         .repeat(reverse: true);
   }
@@ -90,7 +93,11 @@ class _AppStatusDotState extends State<AppStatusDot>
     final AnimationController? c = _controller;
     if (!widget.pulse || c == null) return dot;
     return FadeTransition(
-      opacity: Tween<double>(begin: 1, end: 0.3).animate(c),
+      // Con curva: un latido lineal se lee como un parpadeo de aviso, y esto
+      // dice "vivo", no "atención".
+      opacity: Tween<double>(begin: 1, end: 0.3).animate(
+        CurvedAnimation(parent: c, curve: Curves.easeInOut),
+      ),
       child: dot,
     );
   }

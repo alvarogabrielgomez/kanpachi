@@ -52,7 +52,7 @@ class AppCard extends StatelessWidget {
     );
     if (dashed) {
       return CustomPaint(
-        painter: _DashedBorderPainter(color: colors.border, radius: radius),
+        painter: DashedBorderPainter(color: colors.border, radius: radius),
         child: body,
       );
     }
@@ -61,8 +61,12 @@ class AppCard extends StatelessWidget {
 }
 
 /// Flutter no trae bordes discontinuos, así que hay que dibujarlos.
-class _DashedBorderPainter extends CustomPainter {
-  const _DashedBorderPainter({required this.color, required this.radius});
+///
+/// Público porque no lo usa sólo la tarjeta: el botón de añadir un rango de
+/// puertos también va con trazo discontinuo, y es la misma línea — duplicarla
+/// garantizaría que un día una de las dos tenga los guiones de otro tamaño.
+class DashedBorderPainter extends CustomPainter {
+  const DashedBorderPainter({required this.color, required this.radius});
 
   final Color color;
   final BorderRadius radius;
@@ -93,6 +97,6 @@ class _DashedBorderPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_DashedBorderPainter oldDelegate) =>
+  bool shouldRepaint(DashedBorderPainter oldDelegate) =>
       oldDelegate.color != color || oldDelegate.radius != radius;
 }

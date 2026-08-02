@@ -13,19 +13,29 @@ import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 /// una línea suelta contra el borde de la caja. Es el error clásico de este
 /// patrón y sólo se ve cuando ya está en pantalla.
 class AppRowList extends StatelessWidget {
-  const AppRowList({required this.children, this.footer, super.key});
+  const AppRowList({
+    required this.children,
+    this.footer,
+    this.radius = AppRadius.allLg,
+    super.key,
+  });
 
   final List<Widget> children;
 
   /// Una fila final con fondo hundido: "Ver toda la biblioteca (18)".
   final Widget? footer;
 
+  /// 14 por defecto, que es lo que el diseño usa en las listas de juegos. La
+  /// de miembros de la sala pide 16: es la lista más grande de la app y con el
+  /// radio chico se lee como una caja apretada.
+  final BorderRadius radius;
+
   @override
   Widget build(BuildContext context) {
     final Color line = context.colors.border;
     return AppCard(
       clip: true,
-      radius: AppRadius.allLg,
+      radius: radius,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[

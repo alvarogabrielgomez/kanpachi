@@ -117,12 +117,16 @@ class _NicknameScreenState extends State<NicknameScreen> {
           const SizedBox(height: AppSpacing.lg),
           Text(
             'Hasta 12 letras y números',
-            style: context.type.labelSm.copyWith(color: colors.textMuted),
+            // El rol de nota, el mismo de «Paso 2 de 2»: es una pista, no una
+            // etiqueta, y en semi-negrita competía con el campo que explica.
+            style: context.type.bodySm
+                .copyWith(color: colors.textMuted, height: 1),
           ),
           const SizedBox(height: AppSpacing.x7l),
           const AppExplainer(
             'Es solo para que se reconozcan en la lista. No es una cuenta, no '
             'se verifica, no se manda a ningún servidor.',
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: AppSpacing.x8l),
           AppButton(label: 'Continuar', width: 220, onPressed: _continue),

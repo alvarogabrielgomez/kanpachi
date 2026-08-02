@@ -223,6 +223,7 @@ class _HealthAlerts extends StatelessWidget {
     return Column(
       children: <Widget>[
         AppNotice(
+          titleStyle: context.type.strongSm,
           title: 'Tu Firewall de Windows está apagado',
           body: Text.rich(
             TextSpan(
@@ -241,6 +242,7 @@ class _HealthAlerts extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.lg),
         AppNotice(
+          titleStyle: context.type.strongSm,
           title: 'Tu router tiene abierto el puerto 16261 hacia internet',
           body: Text.rich(
             TextSpan(
@@ -298,7 +300,8 @@ class _MyGames extends StatelessWidget {
             onTap: () => shell.openGamePicker(fromRoom: false),
             child: Text(
               'Ver toda la biblioteca ($total)',
-              style: context.type.label.copyWith(color: context.colors.accent),
+              style: context.type.label
+                  .copyWith(fontSize: 13, color: context.colors.accent),
             ),
           ),
           children: <Widget>[
@@ -335,7 +338,11 @@ class _GameRow extends StatelessWidget {
             children: <Widget>[
               Text(
                 game.name,
-                style: context.type.label.copyWith(color: colors.text),
+                // 14 y no 13,5: la lista de la portada va un punto por encima
+                // de las del selector y el catálogo, que sí son 13,5. Local a
+                // esta fila, que es privada de la pantalla.
+                style: context.type.label
+                    .copyWith(fontSize: 14, color: colors.text),
               ),
               Text(
                 game.portsLabel,

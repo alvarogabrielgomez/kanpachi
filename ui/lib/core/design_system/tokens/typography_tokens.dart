@@ -58,6 +58,8 @@ class TypographyTokens extends ThemeExtension<TypographyTokens>
     required this.mono,
     required this.statusLabel,
     required this.statusMono,
+    required this.kickerXs,
+    required this.monoMd,
     required this.monoSm,
     required this.monoXs,
     required this.monoXxs,
@@ -131,9 +133,20 @@ class TypographyTokens extends ThemeExtension<TypographyTokens>
   @override
   final TextStyle statusMono;
 
+  /// El rótulo más pequeño, el que va pegado encima de un dato dentro de una
+  /// caja: más chico y con menos tracking que `kickerSm`, porque ahí compite
+  /// con el dato que rotula y no con el resto de la pantalla.
+  @override
+  final TextStyle kickerXs;
+
   /// Datos literales: código, dirección, puertos.
   @override
   final TextStyle mono;
+
+  /// El escalón mono que faltaba entre `mono` (15) y `monoSm` (12,5): los
+  /// valores de la tarjeta de invitación.
+  @override
+  final TextStyle monoMd;
   @override
   final TextStyle monoSm;
   @override
@@ -200,7 +213,11 @@ abstract final class AppTypography {
     bodySm: _sans.copyWith(fontSize: 12.5, height: 1.5),
     labelLg: _sans.copyWith(fontSize: 15, height: 1.3, fontWeight: FontWeight.w500),
     label: _sans.copyWith(fontSize: 13.5, height: 1.3, fontWeight: FontWeight.w500),
-    labelSm: _sans.copyWith(fontSize: 12.5, height: 1.3, fontWeight: FontWeight.w500),
+    // Interlínea 1 y no 1.3: los tres sitios que la usan son rótulos de una
+    // línea metidos en cajas de alto fijo (la píldora de la cuenta, la barra
+    // de estado, la pista bajo un campo), y ahí 1.3 es aire que descuadra la
+    // caja sin separar nada de nada.
+    labelSm: _sans.copyWith(fontSize: 12.5, height: 1, fontWeight: FontWeight.w500),
     strong: _sans.copyWith(fontSize: 14, height: 1.3, fontWeight: FontWeight.w600),
     strongSm: _sans.copyWith(fontSize: 13.5, height: 1.4, fontWeight: FontWeight.w600),
     buttonLg: _sans.copyWith(fontSize: 15, height: 1, fontWeight: FontWeight.w700),
@@ -220,7 +237,14 @@ abstract final class AppTypography {
     ),
     statusLabel: _sans.copyWith(fontSize: 11.5, height: 1),
     statusMono: _mono.copyWith(fontSize: 11.5, height: 1),
+    kickerXs: _mono.copyWith(
+      fontSize: 10,
+      height: 1,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 1.2,
+    ),
     mono: _mono.copyWith(fontSize: 15, height: 1),
+    monoMd: _mono.copyWith(fontSize: 13.5, height: 1.3),
     monoSm: _mono.copyWith(fontSize: 12.5, height: 1),
     monoXs: _mono.copyWith(fontSize: 11, height: 1.3),
     monoXxs: _mono.copyWith(fontSize: 10.5, height: 1.4),

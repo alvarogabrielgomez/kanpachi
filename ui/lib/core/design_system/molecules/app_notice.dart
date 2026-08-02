@@ -33,6 +33,7 @@ class AppNotice extends StatelessWidget {
     this.tone = AppNoticeTone.warn,
     this.actions,
     this.pulse = false,
+    this.titleStyle,
     super.key,
   });
 
@@ -43,7 +44,8 @@ class AppNotice extends StatelessWidget {
     this.pulse = false,
     super.key,
   })  : title = null,
-        actions = null;
+        actions = null,
+        titleStyle = null;
 
   final String? title;
 
@@ -57,6 +59,11 @@ class AppNotice extends StatelessWidget {
   /// reconexión en curso.
   final bool pulse;
 
+  /// Los avisos de salud de la portada llevan el título un punto por debajo
+  /// del de la sala: son dos y van seguidos, y con el tamaño del otro pesan
+  /// más que la acción que tienen al lado.
+  final TextStyle? titleStyle;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -68,16 +75,39 @@ class AppNotice extends StatelessWidget {
 
     final bool oneLine = title == null && actions == null;
 
+    // El diseño da CUATRO cajas distintas, no una. Los dos ternarios que había
+    // devolvían lo mismo en las dos ramas, así que todos los avisos salían
+    // iguales. La forma la marcan la presencia de acciones y el tono, que es
+    // lo que distingue "una línea de estado" de "algo que hay que decidir".
+    final (BorderRadius radius, EdgeInsets padding) = switch (this) {
+      _ when oneLine => (
+          AppRadius.allLg,
+          const EdgeInsets.symmetric(horizontal: AppSpacing.x3l, vertical: 13),
+        ),
+      _ when actions != null => (
+          AppRadius.allXl,
+          const EdgeInsets.symmetric(horizontal: 17, vertical: 15),
+        ),
+      _ when tone == AppNoticeTone.neutral => (
+          AppRadius.allXl,
+          const EdgeInsets.symmetric(
+            horizontal: AppSpacing.x4l,
+            vertical: AppSpacing.x3l,
+          ),
+        ),
+      _ => (
+          AppRadius.allLg,
+          const EdgeInsets.symmetric(
+            horizontal: AppSpacing.x3l,
+            vertical: AppSpacing.xxl,
+          ),
+        ),
+    };
+
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.symmetric(
-        horizontal: oneLine ? AppSpacing.x3l : AppSpacing.x3l,
-        vertical: oneLine ? AppSpacing.xl : AppSpacing.xxl,
-      ),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: oneLine ? AppRadius.allLg : AppRadius.allLg,
-      ),
+      padding: padding,
+      decoration: BoxDecoration(color: background, borderRadius: radius),
       child: Row(
         crossAxisAlignment:
             oneLine ? CrossAxisAlignment.center : CrossAxisAlignment.start,
@@ -99,7 +129,8 @@ class AppNotice extends StatelessWidget {
                 if (title != null) ...<Widget>[
                   Text(
                     title!,
-                    style: context.type.strong.copyWith(color: colors.text),
+                    style: (titleStyle ?? context.type.strong)
+                        .copyWith(color: colors.text),
                   ),
                   const SizedBox(height: 3),
                 ],

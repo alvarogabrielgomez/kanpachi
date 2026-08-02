@@ -14,28 +14,43 @@ class AppCover extends StatelessWidget {
   const AppCover({
     required this.width,
     required this.height,
+    required this.radius,
     this.badge,
     super.key,
   });
 
+  // El radio va por constructor y no calculado del alto: el diseño lo escala
+  // con el tamaño del hueco (6 / 7 / 8 / 10), y una cadena de ternarios sobre
+  // `height` acierta hoy y miente en cuanto aparezca un quinto tamaño.
   const AppCover.thumb({super.key, this.badge})
       : width = 34,
-        height = 46;
+        height = 46,
+        radius = AppRadius.allXs;
 
   const AppCover.grid({super.key, this.badge})
       : width = double.infinity,
-        height = 104;
+        height = 104,
+        radius = AppRadius.allSm;
 
   const AppCover.room({super.key, this.badge})
       : width = 44,
-        height = 60;
+        height = 60,
+        radius = AppRadius.all7;
 
   const AppCover.dialog({super.key, this.badge})
       : width = 52,
-        height = 70;
+        height = 70,
+        radius = AppRadius.allSm;
+
+  /// La vista previa del alta manual: ocupa el ancho y es la más grande.
+  const AppCover.preview({super.key, this.badge})
+      : width = double.infinity,
+        height = 150,
+        radius = AppRadius.all10;
 
   final double width;
   final double height;
+  final BorderRadius radius;
 
   /// La etiqueta que se superpone arriba a la izquierda: INSTALADO.
   final Widget? badge;
@@ -56,7 +71,7 @@ class AppCover extends StatelessWidget {
         // Con relleno hundido: las seis portadas del diseño lo llevan. Sin él
         // el hueco se confunde con el fondo de la tarjeta que lo contiene.
         filled: true,
-        radius: mini ? AppRadius.allXs : AppRadius.allSm,
+        radius: radius,
         child: Center(
           child: Text(
             mini ? 'STEAM\nDB' : 'PORTADA\nSTEAMDB',

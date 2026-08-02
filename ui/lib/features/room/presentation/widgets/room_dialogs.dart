@@ -81,6 +81,7 @@ class ConfirmGameDialog extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.x4l),
           AppExplainer(
+            compact: true,
             insideRoom
                 ? 'Se abren esos puertos hacia los miembros de la sala y se '
                     'cierran al cambiar de juego o al salir.'
