@@ -66,6 +66,19 @@ type PersistedRoom struct {
 	SavedAt time.Time
 }
 
+// String redacta la identidad de la red y la clave de la tarjeta, por el mismo
+// motivo que [Rendezvous.String] y [HostSpec.String].
+//
+// Este tipo se lee al arrancar y se guarda en cuatro operaciones, así que aparece
+// en mensajes de error de esos caminos. Un `%+v` sin esto imprime el secreto de
+// la red REAL en los logs locales, que se copian al portapapeles con el botón de
+// diagnóstico y se pegan en el grupo. Lo que va al log es identidad de sala, no
+// portadores de acceso a ella.
+func (p PersistedRoom) String() string {
+	return fmt.Sprintf("PersistedRoom{%s, %q, host:%s, %s, juego:%q, secretos:REDACTADOS}",
+		p.Room.InviteID, p.Name, p.Host, p.Subnet, p.GameID)
+}
+
 // LastRoom es la última sala de un INVITADO, para poder volver.
 //
 // # Lo que deliberadamente NO lleva

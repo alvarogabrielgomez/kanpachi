@@ -62,8 +62,11 @@ func TestUnaSalaNaceSinJuegoYSinPuertos(t *testing.T) {
 	if !st.Game.IsZero() {
 		t.Fatalf("la sala nació con juego: %s", st.Game.ID)
 	}
-	if !b.firewall.estado().IsEmpty() {
-		t.Fatalf("la sala nació con reglas: %+v", b.firewall.estado().Rules)
+	// Reglas de JUEGO, que es lo que promete la cuarentena. El hueco del canal
+	// de control es otra cosa: no lo pide ningún perfil, va al puerto de
+	// Kanpachi y no al de ningún juego, y existe desde que el host abre la sala.
+	if reglas := b.firewall.estado().GameRules(); len(reglas) > 0 {
+		t.Fatalf("la sala nació con reglas de juego: %+v", reglas)
 	}
 }
 
@@ -192,8 +195,8 @@ func TestElJuegoNoAbreNadaHastaQueHayaAlguien(t *testing.T) {
 	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
-	if !b.firewall.estado().IsEmpty() {
-		t.Fatalf("se abrieron puertos con la sala vacía: %+v", b.firewall.estado().Rules)
+	if reglas := b.firewall.estado().GameRules(); len(reglas) > 0 {
+		t.Fatalf("se abrieron puertos con la sala vacía: %+v", reglas)
 	}
 }
 
@@ -213,11 +216,11 @@ func TestElJuegoAbreLosPuertosCuandoEntraAlguien(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rs := b.firewall.estado()
-	if len(rs.Rules) != 1 {
-		t.Fatalf("reglas = %d: %+v", len(rs.Rules), rs.Rules)
+	reglas := b.firewall.estado().GameRules()
+	if len(reglas) != 1 {
+		t.Fatalf("reglas de juego = %d: %+v", len(reglas), reglas)
 	}
-	r := rs.Rules[0]
+	r := reglas[0]
 	if r.From != 16261 || r.To != 16262 || r.Proto != domain.ProtoUDP {
 		t.Errorf("la regla no es la del perfil: %+v", r)
 	}
@@ -475,7 +478,7 @@ func TestExpulsarRevocaYRecalcula(t *testing.T) {
 	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
-	if len(b.firewall.estado().Rules) != 1 {
+	if len(b.firewall.estado().GameRules()) != 1 {
 		t.Fatal("no se llegó a abrir el puerto, el test no probaría nada")
 	}
 
@@ -485,8 +488,17 @@ func TestExpulsarRevocaYRecalcula(t *testing.T) {
 	if len(b.motor.revocadas) != 1 || b.motor.revocadas[0] != "cred-humberto" {
 		t.Errorf("no se revocó la credencial: %v", b.motor.revocadas)
 	}
-	if !b.firewall.estado().IsEmpty() {
-		t.Errorf("el expulsado sigue autorizado en el firewall: %+v", b.firewall.estado().Rules)
+	// Ni en las reglas del juego ni en el hueco del canal: expulsar cierra las
+	// dos, y la segunda es la que corre como SYSTEM.
+	for _, r := range b.firewall.estado().Rules {
+		for _, ip := range r.Remote {
+			if ip == invitado {
+				t.Errorf("el expulsado sigue autorizado en %q: %+v", r.Name, r)
+			}
+		}
+	}
+	if reglas := b.firewall.estado().GameRules(); len(reglas) > 0 {
+		t.Errorf("quedaron reglas de juego sin nadie a quien autorizar: %+v", reglas)
 	}
 	for _, ip := range b.control.alcanceActual() {
 		if ip == invitado {
@@ -1113,7 +1125,7 @@ func TestElSondeoNoDevuelveAlExpulsado(t *testing.T) {
 	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
-	if len(b.firewall.estado().Rules) != 1 {
+	if len(b.firewall.estado().GameRules()) != 1 {
 		t.Fatal("no se abrió el puerto, el test no probaría nada")
 	}
 
@@ -1130,8 +1142,12 @@ func TestElSondeoNoDevuelveAlExpulsado(t *testing.T) {
 			t.Fatal("el sondeo devolvió al expulsado a la lista")
 		}
 	}
-	if !b.firewall.estado().IsEmpty() {
-		t.Fatalf("el sondeo le reabrió el puerto al expulsado: %+v", b.firewall.estado().Rules)
+	for _, r := range b.firewall.estado().Rules {
+		for _, ip := range r.Remote {
+			if ip == invitado {
+				t.Fatalf("el sondeo le reabrió %q al expulsado: %+v", r.Name, r)
+			}
+		}
 	}
 
 	// Pasada la ventana, si está, está: volver con un código que el host no
@@ -1807,5 +1823,40 @@ func TestExpulsarNoEsBloquear(t *testing.T) {
 	}
 	if antesDeRenovar.NetworkSecret != después.NetworkSecret {
 		t.Fatal("renovar el código cambió el secreto de la red")
+	}
+}
+
+// TestElHostAbreElCanalDeControlDesdeQueTieneSala.
+//
+// Es lo que hace que el canal de la decisión 23 pueda existir: el host escucha
+// en un puerto de la interfaz virtual, y la interfaz nace con deny all. Sin
+// esta regla el firewall del host bloquearía su propia puerta, y el síntoma
+// sería que entrar a una sala ajena no funciona nunca.
+func TestElHostAbreElCanalDeControlDesdeQueTieneSala(t *testing.T) {
+	b := salaCreada(t)
+
+	var puerta bool
+	for _, r := range b.firewall.estado().Rules {
+		if r.IsControl() && r.Local == domain.RendezvousHostAddress {
+			puerta = true
+			if r.From != domain.ControlPort {
+				t.Errorf("la puerta no está en el puerto del canal: %+v", r)
+			}
+		}
+	}
+	if !puerta {
+		t.Fatalf("la sala del host no abrió la puerta del vestíbulo: %+v", b.firewall.estado().Rules)
+	}
+}
+
+// TestSalirDeLaSalaNoDejaElCanalAbierto: el hueco vive lo que vive la sala.
+func TestSalirDeLaSalaNoDejaElCanalAbierto(t *testing.T) {
+	b := salaCreada(t)
+	b.sesión.LeaveRoom(ctx())
+
+	for _, r := range b.firewall.estado().Rules {
+		if r.IsControl() {
+			t.Fatalf("salir dejó el canal abierto: %+v", r)
+		}
 	}
 }

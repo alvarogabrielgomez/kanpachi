@@ -30,11 +30,15 @@ import (
 // de correrlo y el bucle que hace vencer el contador de veinte minutos se queda
 // sin pruebas. El día que la meta en el protocolo, la API local deja de poder
 // reusarse sobre un socket Unix, que es la única razón por la que está
-// separada del pipe.
+// separada del pipe. Y el día que la meta en el canal de la sala, el código que
+// más revisión merece del proyecto, el que corre como SYSTEM parseando mensajes
+// de gente de la sala, se queda sin sus tests en CI.
 var puros = []string{
 	"../../core",
 	"../../daemon/service",
 	"../../daemon/transport/protocol",
+	"../../daemon/transport/wire",
+	"../../daemon/transport/control",
 }
 
 // prohibidos son los imports que no pueden aparecer en core.

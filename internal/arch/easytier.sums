@@ -1,0 +1,17 @@
+# Los binarios de EasyTier v2.6.4, del release oficial.
+#
+# No se versionan por tamaño, así que sin esto no hay NADA que diga que el
+# easytier-core.exe de esta máquina es el que se probó. El daemon lo ejecuta como
+# proceso hijo con privilegios de SYSTEM.
+#
+# Los mismos valores están en docs/02, decisión 1, y hay un test que falla si los
+# dos se separan.
+#
+# sha256  ruta relativa a third_party/easytier
+c7c03a87eac7243ccbe331554624b18803010b740e311fc8cfddb573096eacac  Packet.dll
+8da085332782708d8767bcace5327a6ec7283c17cfb85e40b03cd2323a90ddc2  WinDivert64.sys
+d8783e851e944b44a9b71b39fd02f227ec0a2a82b3165c55ead5dd32dcde53a1  easytier-cli.exe
+da7eb2d24b5416f3d3407636949e964a0750e3f9dc53a828cb6799a57ead445d  easytier-core.exe
+38b32ae7cf07c8ceaea3daf55d0ecb823cc6885d611d302450750fa1dff0edf5  easytier-web-embed.exe
+59448d5fefbb6e73c1525c167bbbcd1c20df45d2f196f11ba6203dc9cfd64757  easytier-web.exe
+e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce  wintun.dll

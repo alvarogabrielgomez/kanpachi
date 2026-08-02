@@ -23,6 +23,26 @@ Cada decisión relevante, las alternativas consideradas y la razón de la elecci
 - Comunicación por IPC en vez de llamadas en proceso. Irrelevante en volumen: son órdenes de control y consultas de estado, el tráfico del juego jamás pasa por ahí.
 - Dependencia de la calidad y el ritmo de EasyTier. `EnginePort` existe para que ese costo tenga salida: cambiar de motor toca una implementación, no el producto.
 
+### Los binarios fijados, con su suma
+
+Los binarios pesan unos 80 MB y no se versionan, así que hasta la auditoría de ciberseguridad no había **nada** que dijera que el `easytier-core.exe` de una máquina era el del release que se probó. El daemon lo ejecuta como proceso hijo con los privilegios del servicio, o sea que la pregunta no es menor.
+
+Release oficial de EasyTier **v2.6.4**, Windows x86_64. SHA256:
+
+| Archivo | SHA256 |
+|---|---|
+| `easytier-core.exe` | `da7eb2d24b5416f3d3407636949e964a0750e3f9dc53a828cb6799a57ead445d` |
+| `easytier-cli.exe` | `d8783e851e944b44a9b71b39fd02f227ec0a2a82b3165c55ead5dd32dcde53a1` |
+| `easytier-web.exe` | `59448d5fefbb6e73c1525c167bbbcd1c20df45d2f196f11ba6203dc9cfd64757` |
+| `easytier-web-embed.exe` | `38b32ae7cf07c8ceaea3daf55d0ecb823cc6885d611d302450750fa1dff0edf5` |
+| `wintun.dll` | `e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce` |
+| `Packet.dll` | `c7c03a87eac7243ccbe331554624b18803010b740e311fc8cfddb573096eacac` |
+| `WinDivert64.sys` | `8da085332782708d8767bcace5327a6ec7283c17cfb85e40b03cd2323a90ddc2` |
+
+Los mismos valores viven en `internal/arch/easytier.sums`, y hay dos tests que los sostienen: uno verifica el disco contra el manifiesto, el otro verifica que el manifiesto y esta tabla no se separen. Actualizar de versión es cambiar las dos cosas a propósito, que es exactamente lo que tiene que costar.
+
+**De los siete, el daemon solo ejecuta `easytier-core.exe` y consulta con `easytier-cli.exe`.** `wintun.dll` es el adaptador virtual. Los tres restantes vienen en el release y no los usa nada: `easytier-web` es un panel, `Packet.dll` y `WinDivert64.sys` son captura de paquetes, o sea justo la capacidad que la decisión 1 difiere al no encender el descubrimiento LAN. Se listan igual porque están en el disco, y lo que se vigila es lo que está.
+
 ### Los defaults del motor no son los nuestros
 
 Verificado contra `easytier-core --help` de la v2.6.4, que es la versión fijada. Este bloque existe porque el motor trae capacidades que contradicen invariantes del producto, y varias vienen encendidas.
@@ -213,6 +233,23 @@ Lo que **dejó de ser cierto** es que quien tenga el código entre para siempre.
 - Jamás exit node, jamás subnet routing, jamás IP forwarding. No existen como opción.
 
 **La UI lo hace visible:** "Zomboid, 2 puertos UDP, visibles para 4 personas". La seguridad que no se ve no genera confianza.
+
+### El único hueco que no pide ningún perfil
+
+El canal de la sala de la decisión 23 necesita que el host escuche en un puerto de la interfaz virtual, y la interfaz nace con deny all. O sea que el deny-all tiene exactamente una excepción, y conviene nombrarla en vez de descubrirla:
+
+| Regla | Dónde escucha | Quién puede llegar | Mientras |
+|---|---|---|---|
+| La puerta | La IP del host en el vestíbulo | El `/24` fijo del vestíbulo entero | Haya sala abierta |
+| La sala | La IP del host en `kanpachi0` | Solo las IPs de los miembros presentes | Haya al menos un miembro |
+
+**Solo en el host, y el puerto es del producto, no de ningún juego.** Un invitado no escucha nada, así que su deny-all queda literalmente intacto.
+
+**La puerta es la única regla del programa que se expresa con un prefijo y no con una lista.** No hay alternativa: quien está entrando todavía no es miembro y su dirección en el vestíbulo es aleatoria, así que la regla tiene que existir antes de saber quién va a llegar. Lo que impide que ese campo se convierta en la forma de escribir "cualquiera" es que se valida contra el `/24` del vestíbulo, y cualquier otro prefijo se rechaza con un error propio. Lo que la acota de verdad no es la regla: es que por la puerta solo se puede pedir una cosa, una credencial.
+
+**Se recalcula con los miembros presentes, como las de juego.** Consecuencia buena y gratis: expulsar cierra el hueco para el expulsado en el firewall, y no solo en la lista del oyente. Son dos capas que fallan por motivos distintos, que es la doctrina de la decisión 26 aplicada acá.
+
+Lo que sigue viviendo en el adaptador del firewall y no en el conjunto declarativo: el deny-all de base, el ICMP echo, y la dirección saliente. Son la instalación, no la sala.
 
 ## 5. Cliente solo Windows en la v1
 
@@ -545,6 +582,8 @@ Ninguna de las dos es cooperativa. No hay mensaje que el expulsado pueda ignorar
 
 **No hay ni va a haber baneo.** Banear exige guardar identidad por peer, y este producto no la guarda. El expulsado que vuelve con el mismo código entra de nuevo, y eso es deliberado: el kick saca de la sala, no impide volver. Lo único que impide volver es renovar el código.
 
+**Expulsar recorta el canal en dos sitios, y ninguno depende del otro.** La lista del oyente, que cierra en el acto la conexión de quien ya no es miembro, y el conjunto de reglas del firewall, que se recalcula sin su dirección. Son dos capas con dos causas de fallo distintas, que es la doctrina de la decisión 26 aplicada a la superficie que corre como SYSTEM.
+
 **El límite honesto de eso, escrito para que nadie lo descubra por su cuenta:** el que vuelve toca la puerta del vestíbulo con una dirección ALEATORIA, así que ni siquiera se parece al que se echó. Reconocerlo exigiría la llave de la decisión 25, que todavía no está implementada. Mientras no lo esté, la respuesta a "no quiero que vuelva" es una sola y es renovar el código.
 
 **Qué pasa si intenta volver.** Con el mismo código, y si el host no lo renovó, entra de nuevo como si nada. Eso es deliberado: expulsar y bloquear son cosas distintas. Para que no vuelva, el host **renueva el código** (decisión 2), y ahí el código viejo deja de servir mientras los que ya están adentro siguen dentro, porque tienen credencial y no código.
@@ -566,15 +605,17 @@ Ninguna de las dos es cooperativa. No hay mensaje que el expulsado pueda ignorar
 
 ```
 Santiago ──┐
-Gabriel  ──┼──►  puerto de control, ÚNICAMENTE en el host
+Gabriel  ──┼──►  TCP 57623, ÚNICAMENTE en el host, en la interfaz virtual
 Alvaro   ──┘     alcance = miembros presentes. Los clientes nunca escuchan
 ```
+
+El puerto es fijo y no negociado, por lo mismo que el `/24` del vestíbulo: quien entra tiene que llegar sin haber hablado antes con nadie, y el canal por el que se negociaría un puerto es justamente el que se está montando.
 
 **Por qué no un canal donde todos escuchan.** Sería un puerto abierto en cada PC, atendido por un daemon que corre como SYSTEM, parseando mensajes de gente semi-confiable. Un agujero deliberado en el deny-all, y de lejos la mayor superficie de ataque del producto: un fallo de parseo ahí es ejecución remota como SYSTEM en la máquina de cada miembro. Con el host como único oyente, **el deny-all de los invitados queda literalmente intacto** y la superficie se concentra en una sola máquina, la del host, que ya acepta más exposición por definición.
 
 **Por qué no el seed.** Le daría poder sobre el contenido de las salas y contradice que solo vea networkIDs opacos e IPs públicas.
 
-**Una conexión, cuatro trabajos.** Cada conexión de control resuelve de una sola vez cosas que si no habría que construir por separado:
+**Una conexión, cinco trabajos.** Cada conexión de control resuelve de una sola vez cosas que si no habría que construir por separado:
 
 | Función | Cómo sale |
 |---|---|
@@ -594,6 +635,8 @@ Renovar el código tenía un efecto secundario que nadie había nombrado: los pr
 
 **Va cifrado, no en claro.** Se sella contra la llave pública de cada miembro, la misma que llegó en su pedido de credencial, así que el código es legible solo por aquel para quien es. No es una llave nueva ni un almacén nuevo: vive lo que dura la sesión de esa persona y se descarta al salir, o sea que no es identidad persistida y no habilita ningún baneo.
 
+**Y el motivo de sellarlo no es que el código valga.** El invite code es un ticket desechable, existe justamente para no tener que repartir un secreto, y renovarlo no recrea la sala: cambia la llave de búsqueda, la red real conserva su identidad y los presentes ni se enteran. Se sella para que **renovar conserve su efecto**. El motor puede relayar tráfico por otro peer, así que repartirlo en claro le devolvería al que acaba de quedar afuera el ticket que la renovación existía para quitarle.
+
 Que el reparto falle no invalida nada. El código nuevo ya es el bueno y el vestíbulo ya está levantado con él; lo que se pierde es que el otro lo tenga guardado.
 
 **La propiedad que hace que esto sea barato:** una conexión TCP caída es información confiable **sin necesidad de confiar en nadie**. No es un mensaje que alguien pueda falsificar, es la ausencia de un socket. Por eso la detección de presencia y el timeout de 20 minutos de la decisión 20 no necesitan firma, autenticación ni credenciales.
@@ -608,10 +651,19 @@ Superficie nueva, así que se escribe entera:
 | Miembro falsifica una expulsión | No puede: expulsar lo ejecuta el host sobre sí mismo, no es un mensaje que alguien pida |
 | Miembro falsifica "la sala se cerró" | Lo peor que logra es que a otros se les cierre la app. Molestia, no riesgo, y ya está dentro de la sala |
 | Miembro falsifica un código nuevo | No puede: los invitados no escuchan, y solo procesan lo que llegó por SU conexión al host. Un host modificado que mande un código falso logra que a ese invitado le falle su "volver a la última sala", y nada más |
-| Miembro se hace pasar por el host | No puede: los clientes marcan hacia una dirección conocida, no aceptan conexiones entrantes |
-| Inundación de conexiones al host | Tope de conexiones por IP virtual, y solo se aceptan IPs de miembros presentes |
+| Miembro se hace pasar por el host EN LA SALA | No puede: los clientes marcan hacia una dirección conocida y no aceptan conexiones entrantes, y ahí las direcciones las asignó el host dentro de la credencial |
+| Alguien con el código ocupa la dirección del host EN EL VESTÍBULO | **Puede, y hoy no hay defensa criptográfica.** Ahí las direcciones son autoasignadas, y verificar exigiría la llave larga de la decisión 25, que sigue diferida. Lo que acota el daño: solo lo intenta quien ya tiene el código, y renovar levanta un vestíbulo nuevo derivado del ID nuevo, con lo que el ocupante queda solo en el viejo. La víctima entra a la red del impostor, no a la del host, o sea que el daño es no entrar a la sala que quería |
+| Un tercero lee la credencial o el código nuevo al relayarlos | Los dos van sellados contra la llave de sesión del destinatario. Eso compra CONFIDENCIALIDAD frente a quien transporta los bytes, y no autenticación del host: la caja es anónima porque no hay llave larga contra la cual verificar |
+| Inundación de conexiones al host | Tope de conexiones simultáneas en la puerta, plazo para hablar, y una sola conexión viva por IP virtual: la segunda desplaza a la primera |
+| Un miembro deja de recibir y traba al host | Toda escritura lleva plazo. Sin él, un cliente que abre la conexión y no lee nunca deja trabada la sesión entera, que la llama con su candado tomado, **sin haber mandado un solo mensaje inválido**. Vencido el plazo, esa conexión se cierra |
 
 **Lo que este canal NO transporta:** nada del juego. El tráfico de la partida va por su propio camino P2P y jamás pasa por acá. Son órdenes de control y estado, en volumen de bytes.
+
+### Las reglas del oyente, que son las mismas del catálogo
+
+Este código corre como SYSTEM y lee de gente que está en la sala, así que se trata como entrada hostil de punta a punta. Los detalles de implementación viven en `03-arquitectura.md`; lo que hay que saber acá es que son cinco y ninguna es opcional: tope de tamaño antes de deserializar, tabla de mensajes cerrada sin reflexión, esquema estricto donde un campo de más rechaza el mensaje entero, dos alcances con dos listas de admisión distintas, y tipos del dominio que se reconstruyen por sus parsers en vez de creerse.
+
+**El aviso de expulsión se acusa, con tope.** El canal es TCP, así que la orden se retransmite hasta que el otro lado la reconoce, y eso es lo que hace que el expulsado se desconecte solo y limpio. Sin ninguna espera queda una ventana real: mandar devuelve cuando los bytes entraron al búfer local, y un segundo después la revocación mata la conexión con lo que quedara sin salir. El tope es lo que impide que esperar el acuse convierta la expulsión en cooperativa: vencido, se revoca igual.
 
 ### Los peers se ven entre ellos, y no se puede evitar
 
@@ -712,6 +764,16 @@ Para suplantar a Humberto ante alguien que ya jugó con él hace falta **robarle
 ### El hueco que queda
 
 La primera vez que alguien te invita no hay con qué comparar. Es el mismo hueco que tiene Signal y se cubre igual, comparando la huella por otro canal si el caso lo amerita. Escribirlo importa para no vender una garantía que no existe.
+
+**Y mientras esta decisión siga sin implementarse, el hueco es más grande y hay que decirlo entero.** En el vestíbulo las direcciones son autoasignadas, así que **alguien que tenga el código puede ocupar la dirección del host y contestar el pedido de credencial antes que él**. El canal de la sala sella lo que manda contra la llave de sesión del destinatario, y eso compra confidencialidad frente a quien relaye los bytes, no autenticación: una firma hecha con una llave efímera que llega en el mismo mensaje no prueba nada, y por eso la caja es anónima en vez de aparentar algo.
+
+Lo que acota el daño hoy, sin llave larga:
+
+- Solo lo puede intentar quien ya tiene el código, o sea alguien a quien ya invitaron.
+- Lo que consigue es que la víctima entre a SU red en vez de a la del host. No lee la sala real, no obtiene su identidad de red y no expulsa a nadie.
+- **Renovar el código lo desarma**, porque el vestíbulo deriva del invite ID: con un ID nuevo hay un vestíbulo nuevo y el ocupante se queda solo en el viejo.
+
+**Disparador para implementar esta decisión:** que Kanpachi deje de ser privado, o el primer caso real de un código compartido fuera del grupo. Lo que la vuelve necesaria no es la criptografía, es que el círculo de quien tiene un código deje de ser gente conocida.
 
 **Consecuencia en el copy.** La página no dice "Humberto te invitó a su sala", que es una afirmación de identidad que ninguna versión de esto respalda. Dice quién **se identifica** como el host. Hay un test que falla si alguien devuelve la frase original. Ver `05-ui.md`.
 

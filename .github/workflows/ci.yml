@@ -26,7 +26,7 @@ jobs:
           cache: true
 
       - name: go vet
-        run: go vet ./core/... ./internal/... ./daemon/service/... ./daemon/transport/protocol/... ./daemon/adapter/safewrite/... ./daemon/adapter/state/... ./daemon/adapter/catalog/... ./registry/...
+        run: go vet ./core/... ./internal/... ./daemon/service/... ./daemon/transport/protocol/... ./daemon/transport/wire/... ./daemon/transport/control/... ./daemon/adapter/safewrite/... ./daemon/adapter/state/... ./daemon/adapter/catalog/... ./registry/...
 
       - name: Test de pureza de imports
         # Se ejecuta aparte y primero para que su fallo sea inconfundible en el
@@ -37,15 +37,17 @@ jobs:
         run: go test -race -count=1 ./core/...
 
       # Lo de daemon/ que NO es de Windows va en el job de Linux, por el mismo
-      # motivo que core. Son tres cosas y cada una por su razón:
+      # motivo que core. Son cinco cosas y cada una por su razón:
       #
       #   service/            el supervisor solo habla con puertos de core
       #   transport/protocol/ el protocolo se define aparte de su transporte
+      #   transport/wire/     enmarcado de mensajes, io.Reader e io.Writer
+      #   transport/control/  el canal de la sala: sockets y bytes, sin Windows
       #   adapter/{safewrite,state,catalog}/  son rutas y bytes, no API de Windows
       #
       # Correrlos en Ubuntu es lo que convierte esas frases en algo comprobable.
-      # Con -race porque el supervisor es el único paquete del proyecto con
-      # goroutines de larga vida.
+      # Con -race porque el supervisor y el canal de la sala son los dos
+      # paquetes del proyecto con goroutines de larga vida.
       #
       # La lista es explícita a propósito: el motor, el firewall por COM, netcfg
       # y el named pipe son solo Windows y sus paquetes no compilan acá.
@@ -54,6 +56,8 @@ jobs:
           go test -race -count=1
           ./daemon/service/...
           ./daemon/transport/protocol/...
+          ./daemon/transport/wire/...
+          ./daemon/transport/control/...
           ./daemon/adapter/safewrite/...
           ./daemon/adapter/state/...
           ./daemon/adapter/catalog/...

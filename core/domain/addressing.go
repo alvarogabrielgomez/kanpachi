@@ -48,6 +48,21 @@ var (
 	RendezvousHostAddress = netip.MustParseAddr("100.127.255.1")
 )
 
+// ControlPort es donde escucha el canal de la sala de la decisión 23, en la
+// interfaz virtual y en ninguna otra.
+//
+// Fijo y no negociado por lo mismo que el /24 del vestíbulo: quien entra tiene
+// que llegar sin haber hablado antes con nadie, y el canal por el que se
+// negociaría un puerto es justamente el que se está montando.
+//
+// **Solo el host escucha acá.** Los invitados marcan hacia afuera y no abren
+// nada, así que su deny-all queda literalmente intacto.
+//
+// Del rango privado, y sobre un adaptador dedicado donde no compite con nada de
+// la máquina. No es un puerto del router y no se mapea en ningún lado: vive
+// dentro del overlay cifrado.
+const ControlPort = 57623
+
 // ErrNoSubnet es que ninguno de los dos espacios tiene un /24 libre.
 //
 // Es prácticamente imposible: exigiría que la máquina ya tuviera rutas

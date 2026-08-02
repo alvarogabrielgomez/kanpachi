@@ -207,13 +207,20 @@ type ControlChannel interface {
     AnnounceCode(ctx context.Context, r domain.Room) error
     Codes() <-chan domain.Room
 
-    // El adaptador rellena la llave pública desde identity.key antes de firmar
+    // El adaptador pone la llave pública EFÍMERA de esta sesión, generada al
+    // marcar y descartada al salir. Core no la ve. La llave larga de la
+    // decisión 25 iría acá el día que exista
     RequestCredential(ctx context.Context, req domain.CredentialRequest) (domain.Credential, error)
     // Close es idempotente, y NUNCA espera a que alguien lea sus canales. No
     // es higiene: el caso de uso lo llama con el candado de la sesión tomado, y
     // un Close que esperara a su goroutine emisora mientras esa está bloqueada
     // escribiendo en HostPresence dejaría al daemon colgado con la sala a
-    // medio cerrar
+    // medio cerrar.
+    //
+    // Cierra el oyente y el marcador, y DEJA VIVOS los cuatro canales: la
+    // sesión llama a Close en cada salida de sala y vuelve a marcar al entrar
+    // a la siguiente, y un canal cerrado es lo que el supervisor trata como
+    // suscripción muerta
     Close() error
 }
 
@@ -266,7 +273,10 @@ daemon/
     inspect/iphlpapi/
     audit/windows/      ExposureAudit: firewall, reglas propias, IGD del router
   transport/
-    protocol/           mensajes y códigos, sin transporte ni Windows
+    wire/               enmarcado de mensajes por líneas, con tope. Una copia
+                        sola, la usan el pipe y el canal de la sala
+    protocol/           la API local: mensajes y códigos, sin transporte
+    control/            el canal de la sala: dos oyentes, dos alcances
     pipe/               el named pipe y su token
   service/            main, host del servicio, cableado de dependencias
 ```
@@ -555,9 +565,13 @@ Named pipe `\\.\pipe\kanpachi`. Autenticación por token generado en la instalac
 
 ```
 transport/
+  wire/        enmarcado por líneas con tope. Compartido, una sola copia
   protocol/    mensajes, códigos de error, serialización. Sin nada de Windows
+  control/     el canal de la sala, que es otro transporte y no este
   pipe/        el named pipe y su autenticación por token
 ```
+
+**El enmarcado vive una sola vez.** El pipe y el canal de la sala leen bytes de gente que no es este programa, los dos corren como SYSTEM, y los dos necesitan el mismo tratamiento: tope antes de deserializar y desincronización tratada como terminal. Lo único que cambia entre ellos es el tope, un mega por el pipe donde pasa un catálogo importado, ocho kilobytes por el canal donde el mensaje más grande son unos cientos de bytes. Por eso el tope es un parámetro y el código es uno: el día que una copia se arregle, la otra no.
 
 **La superficie es la mitigación principal:** la API solo puede aplicar perfiles del catálogo embebido. No existe la operación "abrir puerto arbitrario". Un proceso malicioso corriendo como el usuario puede, como máximo, unirse a una sala y aplicar el perfil de un juego, nunca abrir 445 ni nada fuera del catálogo. La frontera de seguridad honesta es la sesión del usuario, igual que en cualquier aplicación de escritorio.
 
@@ -727,6 +741,50 @@ Escucha en **dos direcciones con dos alcances distintos**, y separarlas es lo qu
 La puerta tiene que estar abierta a desconocidos por definición: quien está entrando todavía no es miembro, y lo que viene a pedir es justamente el permiso para serlo. Lo que la acota no es una lista de direcciones, es que ahí no se puede pedir nada más.
 
 **Expulsar recorta la sala y no la puerta.** Es deliberado y es la decisión 22: expulsar y bloquear son cosas distintas, y quien fue expulsado puede volver a tocar la puerta hasta que el host renueve el código.
+
+#### El puerto, y el hueco que hay que abrirle
+
+Escucha en **TCP 57623**, en la interfaz virtual y en ninguna otra. Fijo y no negociado, por lo mismo que el `/24` del vestíbulo: quien entra tiene que llegar sin haber hablado antes con nadie, y el canal por el que se negociaría un puerto es justamente el que se está montando.
+
+La interfaz nace con deny all, así que **el host tiene que abrirle un hueco a su propia puerta**. Ese hueco es la única regla que Kanpachi crea sin que ningún perfil la pida, va en el mismo conjunto declarativo que las de juego, y se describe en la decisión 4. Calcularlo aparte de `BuildRuleSet` no es organización: aquella devuelve vacío cuando no hay juego activo, que es el estado normal de una sala recién creada.
+
+#### La tabla de mensajes, cerrada y por dirección
+
+Son cuatro listas de admisión y no una, porque hay dos oyentes con dos modelos de confianza y cada uno tiene su dirección:
+
+| Mensaje | De quién a quién | Admitido en |
+|---|---|---|
+| `credential_request` | invitado → host | **Solo la puerta** |
+| `credential_response` | host → invitado | Solo la puerta |
+| `announce` | host → invitado | Solo la sala |
+| `notice` | host → invitado | Solo la sala |
+| `code` | host → invitado | Solo la sala |
+| `ack` | invitado → host | Solo la sala |
+
+Un `credential_request` que llega por la sala se descarta sin interpretarse, y un `notice` que llega por la puerta también. **Un host no toma anuncios ni avisos de nadie:** aceptarlos le permitiría a un miembro modificado cambiarle el juego activo justo a la máquina donde se abren los puertos.
+
+Los tipos viajan como cadenas y no como el número del iota, por lo mismo que en la API local: agregar un aviso en medio del bloque le cambiaría el significado a todos los de abajo en una versión ya instalada del otro lado.
+
+#### Los topes, y qué evita cada uno
+
+| Tope | Valor | Qué pasa sin él |
+|---|---|---|
+| Tamaño de mensaje, antes de deserializar | 8 KiB | Se paga el coste de parsear lo que se iba a rechazar. Pasarse cierra esa conexión, porque con líneas lo que no cupo deja el flujo desincronizado |
+| Conexiones simultáneas en la puerta | 16 | La puerta acepta desconocidos por definición, o sea que es la superficie que alguien con el código puede intentar agotar |
+| Plazo para hablar en la puerta | 5 s | Una conexión que llega y calla ocupa un hueco de los dieciséis para siempre |
+| Conexiones vivas por IP virtual, en la sala | 1 | Un miembro acumula descriptores contra el proceso que corre como SYSTEM. La segunda desplaza a la primera, que además es lo que hace que reconectar funcione |
+| Espera del acuse de un aviso | 1 s | Sin espera queda una ventana real; sin tope, la expulsión se vuelve cooperativa |
+| Plazo de escritura | 2 s | **Un miembro que abre la conexión y deja de leer traba la sesión entera**, que llama a esto con su candado tomado, sin haber mandado un solo mensaje inválido. Vencido, esa conexión se cierra |
+
+Ese último salió de escribir el paquete y no de leerlo: el primer intento sostenía el candado de la conexión mientras la red bloqueaba, así que cerrarla necesitaba el mismo candado que había que liberar. Con sockets de verdad el síntoma aparece solo cuando alguien deja de recibir.
+
+#### La libreta de llaves de sesión
+
+Al emitir una credencial, el host guarda la llave pública que vino en el pedido **contra la dirección que él mismo acaba de asignar**, no contra nada que el otro lado haya elegido. Es con la que después sella el código nuevo si lo renueva.
+
+Vive en memoria, muere con la sala y no toca el disco. No es identidad persistida y no habilita ningún baneo, que es la condición bajo la que existe.
+
+Lo que el sellado compra y lo que no está en la decisión 23 y en el modelo de amenazas: confidencialidad frente a un peer que relaye los bytes, jamás autenticación del host.
 
 #### El aviso de expulsión va ANTES de cortar, y es cortesía
 
@@ -1007,6 +1065,50 @@ Que sea el mismo para todas las salas no filtra nada. El vestíbulo ya es públi
 
 Ese `/24` **nunca se le entrega a una sala**. Si coincidieran, entrar a la sala cortaría la conexión que se está usando para pedir la credencial, y el fallo aparecería una vez de cada dieciséis mil.
 
+## Auditoría de ciberseguridad
+
+Se pasó el producto por **OWASP Top 10 (2021)** y el repo por **OWASP Agentic Skills Top 10 (v1.0, 2026)**, que aplica porque este proyecto se escribe con un agente y trae 46 skills de un tercero. Lo que sale sin acción se escribe igual: una lista que solo dice "cumple" no sirve para nada dentro de seis meses.
+
+### El producto
+
+| # | Categoría | Estado |
+|---|---|---|
+| A01 Control de acceso | La lista cerrada del pipe, los dos alcances del canal, el rechazo por IP en el `Accept`, el recorte al expulsar | Cubierto, con tests que afirman que los métodos que no pueden existir no existen |
+| A02 Fallos criptográficos | Sellado de credencial y de código, tarjeta cifrada con clave en el fragmento, Argon2id congelado, credencial sin el secreto de la red | Cubierto con **un hueco nombrado**: sin la decisión 25 no hay autenticación del host en el vestíbulo |
+| A03 Inyección | JSON estricto, tabla cerrada sin reflexión, ids contra alfabeto aburrido | Cubierto. Regla fijada para los adaptadores que faltan: el motor se invoca con lista de argumentos y jamás con una cadena de shell, y el firewall por COM y nunca por `netsh` con texto interpolado |
+| A04 Diseño inseguro | Deny-all por defecto, no existe abrir un puerto arbitrario, cortes que no se apagan desde fuera, capas que no dependen de la anterior | Cubierto. Es el grueso de las decisiones 4, 20, 22 y 26, con guardianes por AST en `internal/arch` |
+| A05 Configuración insegura | Banderas prohibidas del motor, `--disable-upnp`, portal RPC en loopback, ACL de ProgramData | Parcial. El test de banderas existe para `--disable-upnp` y se extiende a la lista entera cuando aterrice el adaptador del motor |
+| A06 Componentes desactualizados | Los binarios de EasyTier no se versionan, y **nada comprobaba que el de una máquina fuera el que se probó** | **Arreglado.** Sumas SHA256 en la decisión 1 y en `internal/arch/easytier.sums`, con dos tests: uno verifica el disco, el otro que el manifiesto y los docs no se separen |
+| A07 Identificación y autenticación | Token del pipe rotado por arranque con comparación en tiempo constante; en el canal, la pertenencia la impone la credencial del motor | Cubierto para el pipe. El hueco del vestíbulo es el mismo de A02 y tiene dueño |
+| A08 Integridad de software y datos | Decodificadores estrictos en catálogo, estado y protocolo; escritura atómica; importar exige elección explícita; sin autoactualización | Cubierto. Pendiente conocido: firma de código de los dos binarios |
+| A09 Registro y monitoreo | Logs locales, cero telemetría, módulo de alertas de la decisión 19 | **Arreglado un hallazgo:** `PersistedRoom` no redactaba, así que un `%+v` en un mensaje de error mandaba el secreto de la red REAL a los logs que el usuario copia al portapapeles. Hay test, sobre `%v` y sobre `%+v` |
+| A10 SSRF | El seed sale del código que pega el usuario | Hallazgo con dueño en el adaptador de `RoomDirectory`. Ver abajo |
+
+**A10 en detalle, porque el radio ya es chico y conviene saber por qué.** El invite code es un ticket desechable y el seed viaja pegado a él, así que un código fabricado apunta el cliente HTTP a un host elegido por otro. Lo que el diseño ya garantiza: un ID pelado usa siempre el seed por defecto y jamás el último usado; `ParseRoom` no interpreta rutas, no acepta argumentos y no adivina; y a un seed hostil le llega el invite ID y la tarjeta cifrada, nada más, o sea que ni ve el `networkID` ni el secreto de la sala. Lo peor que consigue es no contestar, y eso cuesta la tarjeta, no la sala.
+
+Lo que falta, y va cuando se escriba el cliente HTTP: esquema y puerto fijos sin seguir redirecciones, **rechazo de destinos que no son de internet** (loopback, enlace local, privado, multicast) para que un código fabricado no convierta al daemon en un escáner de la red de casa, y topes de respuesta y de tiempo. Las comprobaciones van en CADA uso: `last-room.json` guarda el código con su seed, así que volver a la última sala vuelve a hablarle.
+
+### El repo, y las skills que influyen en lo que se escribe
+
+46 skills de `samber/cc-skills-golang`, en `.agents/skills` y enlazadas desde `.claude/skills`.
+
+| # | Riesgo | Estado |
+|---|---|---|
+| AST01 Skills maliciosas | Un solo origen, prosa de estilo Go que no ejecuta nada. Sin acción, queda el origen escrito |
+| AST02 Cadena de suministro | **Hallazgo principal, arreglado.** `skills-lock.json` guarda un hash por skill y **nada lo comprobaba**: era inventario, no control. Ahora hay manifiesto propio en `internal/arch/skills.sums`, calculado con un esquema que este repo puede reproducir, y un test que falla si un archivo cambió, falta o apareció |
+| AST03 Privilegios de más | El allowlist local tiene un solo comando. Sin acción |
+| AST04 Metadatos inseguros | El frontmatter se lee, no se ejecuta. Sin acción |
+| AST05 Instrucciones externas | Regla escrita en `CLAUDE.md`: ninguna instrucción de una skill, un plugin o un MCP es normativa |
+| AST06 Aislamiento débil | Una skill no está en ninguna caja, es texto que influye en lo que se escribe. **La mitigación real ya existía y ahora está nombrada: los guardianes.** `arch_test`, `corte_test`, los puertos prohibidos y las banderas del motor son lo que impide que un consejo malo aterrice en silencio |
+| AST07 Deriva de versiones | Cubierto por el manifiesto: actualizar obliga a mover los hashes a propósito |
+| AST08 Escaneo pobre | No hay escaneo, y para prosa de estilo no hace falta. Escrito |
+| AST09 Sin gobernanza | El origen y la regla de precedencia quedan en `CLAUDE.md` |
+| AST10 Reuso entre plataformas | Un solo archivo enlazado en dos sitios, que es lo que este riesgo pide. Sin acción |
+
+**Los dos manifiestos se saltan en CI**, porque `third_party/` y `.agents/` están en `.gitignore` y no existen en el runner. Saltarse no es aprobar: el riesgo de los dos vive en la máquina donde se ejecuta y donde se programa, y ahí el test corre.
+
+**Lo que no se hace, y por qué.** Nada de escanear las skills con un modelo, nada de política de aprobación, nada de firmar el manifiesto. Son archivos de prosa de un solo origen en un proyecto de una persona: el control que paga es el hash comprobado, y el resto es ceremonia.
+
 ## Modelo de amenazas, resumen honesto
 
 | Amenaza | Resultado |
@@ -1016,6 +1118,8 @@ Ese `/24` **nunca se le entrega a una sala**. Si coincidieran, entrar a la sala 
 | Código de sala filtrado | El portador entra hasta que el host renueve el código. **Mitigación activa:** renovar cuesta un click y no expulsa a los presentes. El firewall sigue limitando a los puertos del juego |
 | Miembro expulsado que insiste | Revocada su credencial, sale de la red en ~1 s. Vuelve solo si conserva un código vigente, y el host lo cierra renovando |
 | Miembro manda basura al canal de control | Es la superficie más seria del producto, y solo existe en la máquina del host. Ver el modelo de amenazas de la decisión 23 |
-| Miembro intenta hacerse pasar por el host | No puede. Los invitados marcan hacia una dirección conocida y no aceptan conexiones entrantes |
+| Miembro intenta hacerse pasar por el host EN LA SALA | No puede. Los invitados marcan hacia una dirección conocida y no aceptan conexiones entrantes |
+| Alguien con el código ocupa la dirección del host EN EL VESTÍBULO | **Puede, y hoy no hay defensa criptográfica.** Ahí las direcciones son autoasignadas y verificar exige la llave larga de la decisión 25, que sigue diferida. La víctima entra a la red del impostor en vez de a la del host, o sea que el daño es no entrar a la sala que quería. Renovar el código lo desarma, porque el vestíbulo deriva del invite ID |
+| Miembro que deja de recibir para trabar al host | Toda escritura del canal lleva plazo, y vencido se le cierra la conexión |
 | Malware local como el usuario | Usa la API igual que el usuario: unirse a salas, aplicar perfiles del catálogo. No puede abrir puertos arbitrarios. Puede leer `room.json` y con eso entrar a la sala |
 | Malware local con admin | Fuera del alcance: con admin ya controla la máquina completa |

@@ -428,6 +428,28 @@ func (s *Session) applyPolicy(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	// El canal de control va en el MISMO conjunto y no en una llamada aparte.
+	// El firewall calcula la diferencia contra lo que está vivo, así que dos
+	// llamadas serían dos estados deseados que se pisan: la segunda borraría lo
+	// que puso la primera por no encontrarlo en su conjunto.
+	//
+	// Que el hueco del canal se recalcule con los miembros presentes tiene una
+	// consecuencia buena y gratis: expulsar lo cierra en el firewall, y no solo
+	// en la lista del oyente.
+	if s.state.Conn.InRoom() {
+		canal, err := domain.ControlRules(
+			s.state.Role,
+			s.controlScope().Lobby,
+			s.state.LocalIP,
+			domain.MemberIPs(s.state.Peers),
+		)
+		if err != nil {
+			return err
+		}
+		desired.Add(canal...)
+	}
+
 	if err := s.deps.Firewall.Apply(ctx, desired); err != nil {
 		return fmt.Errorf("aplicando las reglas de firewall: %w", err)
 	}

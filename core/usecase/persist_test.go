@@ -131,10 +131,10 @@ func TestReabrirReponeElJuegoResolviéndoloContraElCatálogoPropio(t *testing.T)
 	if st.Game.ID != "project-zomboid" {
 		t.Fatalf("no se repuso el juego: %q", st.Game.ID)
 	}
-	// Con la sala vacía no se abre nada, aunque el juego esté puesto. La
-	// cuarentena no depende de que el archivo diga la verdad.
-	if !b.firewall.estado().IsEmpty() {
-		t.Fatalf("reabrir abrió puertos con la sala vacía: %+v", b.firewall.estado().Rules)
+	// Con la sala vacía no se abre ningún puerto de juego, con el juego puesto
+	// y todo. La cuarentena no depende de que el archivo diga la verdad.
+	if reglas := b.firewall.estado().GameRules(); len(reglas) > 0 {
+		t.Fatalf("reabrir abrió puertos con la sala vacía: %+v", reglas)
 	}
 }
 

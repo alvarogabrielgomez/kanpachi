@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"fmt"
 	"net/netip"
 	"strings"
 	"testing"
@@ -192,4 +193,54 @@ func mustEncode(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return string(raw)
+}
+
+// TestNadaQueLleveSecretosSeImprimeEntero.
+//
+// Sale de la auditoría: los logs son locales y el usuario los copia al
+// portapapeles con el botón de diagnóstico para pegarlos en el grupo. Un `%+v`
+// de cualquiera de estos tipos en un mensaje de error manda ahí la identidad de
+// la red real, que es portadora de acceso a la sala.
+//
+// Se comprueban los dos verbos porque son dos caminos distintos de fmt, y el que
+// se escribe sin pensar es justamente `%+v`.
+func TestNadaQueLleveSecretosSeImprimeEntero(t *testing.T) {
+	secreto := "5eba57ianoesunsecretodeverdad"
+	rdv := DeriveRendezvous(InviteID{})
+
+	sala := PersistedRoom{
+		Room:    Room{Seed: DefaultSeedHost},
+		Name:    "Los panas",
+		Subnet:  netip.MustParsePrefix("100.87.3.0/24"),
+		GameID:  "project-zomboid",
+		SavedAt: time.Now(),
+	}
+	copy(sala.NetworkSecret[:], secreto)
+	copy(sala.CardKey[:], secreto)
+
+	host := HostSpec{Rendezvous: rdv, Subnet: sala.Subnet}
+	copy(host.NetworkSecret[:], secreto)
+
+	invitado := GuestSpec{Credential: Credential{ID: "cred-1", Token: secreto}}
+
+	casos := map[string]any{
+		"PersistedRoom":  sala,
+		"HostSpec":       host,
+		"GuestSpec":      invitado,
+		"RendezvousSpec": RendezvousSpec{Rendezvous: rdv},
+		"Credential":     invitado.Credential,
+	}
+	for nombre, v := range casos {
+		for _, verbo := range []string{"%v", "%+v"} {
+			salida := fmt.Sprintf(verbo, v)
+			if strings.Contains(salida, secreto) {
+				t.Errorf("%s con %s filtró el secreto: %s", nombre, verbo, salida)
+			}
+			// Los bytes crudos también: un arreglo se imprime como lista de
+			// números, y ahí el secreto viaja igual de entero.
+			if strings.Contains(salida, strings.Trim(fmt.Sprint([]byte(secreto)[:8]), "[]")) {
+				t.Errorf("%s con %s filtró el secreto en crudo: %s", nombre, verbo, salida)
+			}
+		}
+	}
 }

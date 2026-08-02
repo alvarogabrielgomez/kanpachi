@@ -180,3 +180,128 @@ func TestMemberIPsDescartaLaPropia(t *testing.T) {
 		t.Fatalf("MemberIPs = %v", got)
 	}
 }
+
+// TestElHuecoDelCanalNoDependeDeQueHayaJuego.
+//
+// Es la razón por la que ControlRules vive aparte de BuildRuleSet: aquella
+// devuelve vacío sin juego activo, que es el estado normal de una sala recién
+// creada, así que el host se quedaría escuchando detrás de su propio deny-all.
+func TestElHuecoDelCanalNoDependeDeQueHayaJuego(t *testing.T) {
+	juego, err := BuildRuleSet(GameProfile{}, RoleHost, ipLocal, []netip.Addr{ipUno})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !juego.IsEmpty() {
+		t.Fatalf("sin juego activo apareció una regla de juego: %+v", juego.Rules)
+	}
+
+	canal, err := ControlRules(RoleHost, RendezvousHostAddress, ipLocal, []netip.Addr{ipUno})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(canal) != 2 {
+		t.Fatalf("reglas del canal = %d, se esperaban la puerta y la sala: %+v", len(canal), canal)
+	}
+	for _, r := range canal {
+		if r.From != ControlPort || r.To != ControlPort || r.Proto != ProtoTCP {
+			t.Errorf("la regla del canal no es el puerto del canal: %+v", r)
+		}
+		if !r.IsControl() {
+			t.Errorf("la regla del canal no se reconoce como tal: %q", r.Name)
+		}
+	}
+}
+
+// TestLaPuertaAbreAlVestíbuloYLaSalaSoloALosPresentes: son dos alcances porque
+// son dos conversaciones con dos modelos de confianza distintos.
+func TestLaPuertaAbreAlVestíbuloYLaSalaSoloALosPresentes(t *testing.T) {
+	canal, err := ControlRules(RoleHost, RendezvousHostAddress, ipLocal, []netip.Addr{ipUno, ipDos})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	puerta, sala := canal[0], canal[1]
+	if puerta.Local != RendezvousHostAddress || len(puerta.Nets) != 1 || puerta.Nets[0] != RendezvousSubnet {
+		t.Fatalf("la puerta no está anclada al vestíbulo: %+v", puerta)
+	}
+	if len(puerta.Remote) != 0 {
+		t.Errorf("la puerta lista direcciones, y quien toca todavía no tiene ninguna conocida: %v", puerta.Remote)
+	}
+	if sala.Local != ipLocal || len(sala.Nets) != 0 {
+		t.Fatalf("la sala no está anclada a la IP del host, o abre un prefijo: %+v", sala)
+	}
+	if len(sala.Remote) != 2 || sala.Remote[0] != ipUno || sala.Remote[1] != ipDos {
+		t.Errorf("la sala no está acotada a los presentes: %v", sala.Remote)
+	}
+}
+
+// TestConLaSalaVacíaSoloQuedaLaPuerta.
+//
+// Sin nadie a quien nombrar no hay regla de sala posible, igual que en las
+// reglas de juego: una regla sin destinatarios abre el puerto a todo el mundo.
+// La puerta sí queda, porque justamente existe para quien todavía no llegó.
+func TestConLaSalaVacíaSoloQuedaLaPuerta(t *testing.T) {
+	canal, err := ControlRules(RoleHost, RendezvousHostAddress, ipLocal, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(canal) != 1 || canal[0].Local != RendezvousHostAddress {
+		t.Fatalf("con la sala vacía las reglas del canal son %+v", canal)
+	}
+}
+
+// TestUnInvitadoNoAbreElCanal: no escucha, así que su deny-all queda intacto.
+func TestUnInvitadoNoAbreElCanal(t *testing.T) {
+	canal, err := ControlRules(RoleGuest, RendezvousHostAddress, ipLocal, []netip.Addr{ipUno})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(canal) != 0 {
+		t.Fatalf("un invitado abrió %d reglas de canal: %+v", len(canal), canal)
+	}
+}
+
+// TestElPrefijoDeLaPuertaNoPuedeSerOtro.
+//
+// Nets es el único campo del tipo que acepta un prefijo, y sin este guardián
+// sería la forma de escribir "cualquiera" que el resto de FirewallRule se
+// esfuerza en no tener.
+func TestElPrefijoDeLaPuertaNoPuedeSerOtro(t *testing.T) {
+	_, err := ControlRules(RoleHost, netip.MustParseAddr("192.168.1.10"), ipLocal, []netip.Addr{ipUno})
+	if !errors.Is(err, ErrRuleWideOpen) {
+		t.Fatalf("anclar la puerta fuera del vestíbulo dio %v", err)
+	}
+}
+
+// TestElCanalNoPuedeCaerEnUnPuertoProhibido: el puerto es una constante, así
+// que esto vigila que nadie la mueva a 445 en un refactor.
+func TestElCanalNoPuedeCaerEnUnPuertoProhibido(t *testing.T) {
+	rango := PortRange{Proto: ProtoTCP, From: ControlPort, To: ControlPort}
+	if bad, hit := rango.hitsForbidden(); hit {
+		t.Fatalf("el puerto del canal es %d, que está prohibido", bad)
+	}
+}
+
+// TestLasReglasDelCanalNoSeMezclanConLasDelJuego: el conjunto que se aplica
+// lleva las dos, y hace falta poder afirmar que la sala no abrió puertos de
+// juego sin que el hueco del canal lo tape.
+func TestLasReglasDelCanalNoSeMezclanConLasDelJuego(t *testing.T) {
+	rs, err := BuildRuleSet(perfilEstrella(), RoleHost, ipLocal, []netip.Addr{ipUno})
+	if err != nil {
+		t.Fatal(err)
+	}
+	canal, err := ControlRules(RoleHost, RendezvousHostAddress, ipLocal, []netip.Addr{ipUno})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs.Add(canal...)
+
+	if len(rs.GameRules()) != 1 {
+		t.Fatalf("reglas de juego = %d: %+v", len(rs.GameRules()), rs.GameRules())
+	}
+	for i := 1; i < len(rs.Rules); i++ {
+		if rs.Rules[i-1].Name > rs.Rules[i].Name {
+			t.Fatalf("el conjunto quedó sin ordenar, y el firewall lo reescribiría en cada latido: %+v", rs.Rules)
+		}
+	}
+}

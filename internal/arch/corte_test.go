@@ -44,6 +44,12 @@ var plazosVigilados = map[string]string{
 	"CredentialTTL":    "../../core/usecase/issuecredential.go",
 	"Beat":             "../../daemon/service/supervisor/supervisor.go",
 	"Sweep":            "../../daemon/service/supervisor/supervisor.go",
+	// Los dos del canal de la sala. NoticeAckWait es el que impide que esperar
+	// el acuse convierta la expulsión en cooperativa, y writeWait el que impide
+	// que un miembro que deja de recibir trabe al host: los dos son plazos que
+	// alguien podría "arreglar" poniéndolos en infinito.
+	"NoticeAckWait": "../../daemon/transport/control/control.go",
+	"writeWait":     "../../daemon/transport/control/control.go",
 }
 
 // TestLosPlazosSonConstantesDeCompilación.

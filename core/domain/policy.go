@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/netip"
 	"sort"
+	"strings"
 )
 
 // ErrRuleForbiddenPort es el último cortafuegos entre un perfil y el Firewall
@@ -16,6 +17,14 @@ import (
 // acto, no solo donde se lee el archivo. Si salta, es un bug del programa, no
 // un perfil malo.
 var ErrRuleForbiddenPort = errors.New("policy: se intentó abrir un puerto prohibido")
+
+// ErrRuleWideOpen es el guardián del único campo que acepta un prefijo.
+//
+// [FirewallRule.Nets] existe para la puerta del vestíbulo y para nada más. Sin
+// esta comprobación, ese campo sería la forma de escribir "cualquiera" que el
+// resto del tipo se esfuerza en no tener: un /0 ahí abriría el puerto del canal
+// a toda la red de casa del usuario.
+var ErrRuleWideOpen = errors.New("policy: el alcance de la regla es más ancho que el vestíbulo")
 
 // Role es quién eres en la sala. Lo fija CreateRoom o JoinRoom y no cambia en
 // toda la vida de la sala: nadie hereda el rol de host, no hay promoción
@@ -42,9 +51,9 @@ func (r Role) String() string {
 //
 // Solo entrantes: no hay campo para dirección porque no existe la salida. No
 // hay campo para ejecutable porque jamás se permite por ejecutable. No hay
-// forma de expresar "cualquiera" en Remote, porque el cero de este campo
-// significa que la regla no debe existir. Las tres ausencias son invariantes,
-// y lo que no existe en el tipo no se puede pedir por error.
+// forma de expresar "cualquiera" en el alcance remoto, porque las dos listas
+// vacías significan que la regla no debe existir. Las tres ausencias son
+// invariantes, y lo que no existe en el tipo no se puede pedir por error.
 type FirewallRule struct {
 	// Name es determinista a partir del perfil y el rango, para que el diff
 	// declarativo empareje la regla deseada con la aplicada sin guardar ids.
@@ -60,9 +69,19 @@ type FirewallRule struct {
 	// por adaptador porque la API de firewall de Windows no filtra por nombre
 	// de interfaz.
 	Local netip.Addr
-	// Remote son las IPs virtuales de los miembros presentes. Nunca vacío en
-	// una regla emitida.
+	// Remote son las IPs virtuales de los miembros presentes.
 	Remote []netip.Addr
+	// Nets es el alcance remoto expresado como prefijo, y tiene UN uso: la
+	// puerta del vestíbulo.
+	//
+	// Existe porque ahí no hay lista posible: quien está entrando todavía no es
+	// miembro y su dirección en el vestíbulo es aleatoria, así que la regla
+	// tiene que existir antes de saber quién va a llegar. Ningún perfil del
+	// catálogo puede producir esto, y [ControlRules] es lo único que lo emite.
+	//
+	// Se valida contra [RendezvousSubnet], así que sigue sin existir forma de
+	// escribir "cualquiera" en una regla de Kanpachi.
+	Nets []netip.Prefix
 }
 
 // RuleSet es el estado DESEADO del firewall. Declarativo: FirewallPort recibe
@@ -77,7 +96,24 @@ type RuleSet struct {
 // IsEmpty es el estado normal de una sala recién creada y de todo invitado en
 // un juego de estrella: red cifrada, cero puertos abiertos, nadie alcanza a
 // nadie.
+//
+// Deja de serlo en el host en cuanto entra alguien, porque ahí aparece el hueco
+// del canal de control. Ver [ControlRules].
 func (rs RuleSet) IsEmpty() bool { return len(rs.Rules) == 0 }
+
+// Add suma reglas y conserva el orden estable.
+//
+// El orden importa por lo mismo que dentro de [BuildRuleSet]: el firewall
+// calcula la diferencia contra lo que está vivo, y dos cálculos con la misma
+// entrada tienen que producir el mismo conjunto para que no reescriba el
+// firewall en cada latido.
+func (rs *RuleSet) Add(rules ...FirewallRule) {
+	if len(rules) == 0 {
+		return
+	}
+	rs.Rules = append(rs.Rules, rules...)
+	sort.Slice(rs.Rules, func(i, j int) bool { return rs.Rules[i].Name < rs.Rules[j].Name })
+}
 
 // BuildRuleSet traduce perfil + rol + miembros presentes al estado deseado.
 //
@@ -136,6 +172,99 @@ func BuildRuleSet(p GameProfile, role Role, local netip.Addr, members []netip.Ad
 	// cambios donde no los hay y reescribiría el firewall en cada latido.
 	sort.Slice(rules, func(i, j int) bool { return rules[i].Name < rules[j].Name })
 	return RuleSet{Rules: rules}, nil
+}
+
+// ControlRules son los dos huecos del canal de la sala, y son los ÚNICOS que
+// Kanpachi abre sin que ningún perfil los pida.
+//
+// Van aparte de [BuildRuleSet] y no dentro, y la razón es funcional: aquella
+// devuelve el conjunto vacío cuando no hay juego activo, que es el estado normal
+// de una sala recién creada, así que meter la regla del canal ahí la haría
+// desaparecer justo en el caso más común. El host se quedaría escuchando detrás
+// de su propio deny-all.
+//
+//	La puerta  Su IP en el vestíbulo, abierta al /24 fijo del vestíbulo entero.
+//	           Acepta desconocidos por definición: quien toca todavía no es
+//	           miembro. Lo que la acota no es esta regla, es que del otro lado
+//	           solo se admite un pedido de credencial.
+//	La sala    Su IP en kanpachi0, abierta SOLO a los miembros presentes. Con
+//	           cero miembros no se emite: sin nadie a quien nombrar no hay regla
+//	           posible, igual que en las reglas de juego.
+//
+// Solo el host. Un invitado no escucha nada, así que devuelve vacío y su
+// deny-all queda intacto.
+//
+// Las direcciones en cero se saltan sin error: entrar a una sala pasa por
+// estados donde el vestíbulo ya se dejó y la sala todavía no tiene IP.
+func ControlRules(role Role, lobby, room netip.Addr, members []netip.Addr) ([]FirewallRule, error) {
+	if role != RoleHost {
+		return nil, nil
+	}
+	out := make([]FirewallRule, 0, 2)
+
+	if lobby.IsValid() {
+		if !RendezvousSubnet.Contains(lobby) {
+			// La puerta abre al /24 del vestíbulo entero, así que anclarla a una
+			// dirección de otra red sería abrir ese rango en un sitio donde no
+			// significa lo que dice.
+			return nil, fmt.Errorf("%w: la puerta se pidió en %s, fuera de %s",
+				ErrRuleWideOpen, lobby, RendezvousSubnet)
+		}
+		out = append(out, FirewallRule{
+			Name:  controlRuleName("puerta"),
+			Proto: ProtoTCP,
+			From:  ControlPort,
+			To:    ControlPort,
+			Local: lobby,
+			Nets:  []netip.Prefix{RendezvousSubnet},
+		})
+	}
+
+	if room.IsValid() {
+		presentes := normalizeMembers(room, members)
+		if len(presentes) > 0 {
+			out = append(out, FirewallRule{
+				Name:   controlRuleName("sala"),
+				Proto:  ProtoTCP,
+				From:   ControlPort,
+				To:     ControlPort,
+				Local:  room,
+				Remote: presentes,
+			})
+		}
+	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// controlRulePrefix distingue las reglas del canal de las de juego.
+//
+// Por el nombre y no por un campo nuevo, y es inequívoco: el id de un perfil
+// solo admite minúsculas, dígitos y guiones, así que ningún juego del catálogo
+// puede producir un nombre con espacios como este.
+const controlRulePrefix = FirewallGroup + ": canal de control "
+
+// controlRuleName lleva el grupo por delante, igual que las de juego, para que
+// se lea en la consola del firewall de Windows.
+func controlRuleName(dónde string) string { return controlRulePrefix + dónde }
+
+// IsControl dice si la regla es del canal y no de un juego.
+//
+// Sirve para poder afirmar en un test lo que el producto promete: una sala sin
+// juego activo no abre NINGÚN puerto de juego. El hueco del canal es otra cosa,
+// tiene otro dueño y se abre siempre que el host esté en una sala.
+func (r FirewallRule) IsControl() bool { return strings.HasPrefix(r.Name, controlRulePrefix) }
+
+// GameRules son las reglas que pidió un perfil, sin el hueco del canal.
+func (rs RuleSet) GameRules() []FirewallRule {
+	out := make([]FirewallRule, 0, len(rs.Rules))
+	for _, r := range rs.Rules {
+		if !r.IsControl() {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // expand convierte ProtoBoth en las dos reglas que Windows necesita.
