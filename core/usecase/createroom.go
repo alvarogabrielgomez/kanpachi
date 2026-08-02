@@ -42,7 +42,7 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 	defer func() {
 		if !ok {
 			s.teardown(ctx)
-			_ = s.state.Transition(domain.StateIdle, "falló la creación de la sala")
+			_ = s.state.TransitionWithExit(domain.StateIdle, "falló la creación de la sala", domain.ExitFailed)
 		}
 	}()
 

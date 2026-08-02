@@ -48,7 +48,7 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 	defer func() {
 		if !ok {
 			s.teardown(ctx)
-			_ = s.state.Transition(domain.StateIdle, "falló el ingreso a la sala")
+			_ = s.state.TransitionWithExit(domain.StateIdle, "falló el ingreso a la sala", domain.ExitFailed)
 		}
 	}()
 

@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"net/netip"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 )
@@ -19,12 +20,59 @@ import (
 func (s *Session) LeaveRoom(ctx context.Context) domain.RoomState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.leaveLocked(ctx, "el usuario salió de la sala")
+
+	// Si el que sale es el host, la sala se termina para todos. Avisar cuesta
+	// un mensaje y le ahorra a cada invitado los veinte minutos del contador
+	// mirando una sala que ya no existe.
+	//
+	// Va antes del teardown por lo mismo que el aviso de expulsión: después no
+	// hay canal por donde mandarlo.
+	if s.state.IsHost() && s.state.Conn.InRoom() {
+		if err := s.deps.Control.Notify(ctx, netip.Addr{}, domain.RoomNotice{
+			Kind:   domain.NoticeRoomClosed,
+			Reason: "el host cerró la sala",
+		}); err != nil {
+			s.deps.Log.Warn("no se pudo avisar del cierre de la sala", "error", err)
+		}
+	}
+	return s.leaveLocked(ctx, "el usuario salió de la sala", domain.ExitUser)
+}
+
+// OnRoomNotice aplica un aviso del host. Lo llama el supervisor cuando llega
+// algo por el canal de control.
+//
+// Los dos avisos terminan en lo mismo, salir de la sala, y se distinguen solo
+// en lo que la pantalla de inicio va a decir después. Eso vale: sin el motivo,
+// que te expulsen y que el host cierre se ven exactamente igual.
+//
+// Un host no toma avisos. Nadie puede cerrarle la sala ni echarlo de ella.
+func (s *Session) OnRoomNotice(ctx context.Context, n domain.RoomNotice) domain.RoomState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.state.Conn.InRoom() || s.state.IsHost() {
+		return s.snapshot()
+	}
+
+	switch n.Kind {
+	case domain.NoticeKicked:
+		// Salir por las buenas al recibirlo. No es obediencia: el host ya
+		// revocó la credencial o está por hacerlo, así que quedarse solo
+		// consigue que la salida sea sucia. Lo que se gana es revertir los
+		// ajustes del adaptador y cerrar el motor limpio en vez de que se caiga
+		// solo, y que la pantalla diga qué pasó.
+		return s.leaveLocked(ctx, "el host expulsó a esta máquina", domain.ExitKicked)
+	case domain.NoticeRoomClosed:
+		return s.leaveLocked(ctx, "el host cerró la sala", domain.ExitRoomClosed)
+	default:
+		s.deps.Log.Info("aviso desconocido del host, se ignora", "tipo", int(n.Kind))
+		return s.snapshot()
+	}
 }
 
 // leaveLocked es el cuerpo compartido con la salida automática. Asume el
 // candado tomado.
-func (s *Session) leaveLocked(ctx context.Context, reason string) domain.RoomState {
+func (s *Session) leaveLocked(ctx context.Context, reason string, exit domain.ExitReason) domain.RoomState {
 	if !s.state.Conn.InRoom() {
 		return s.snapshot()
 	}
@@ -53,7 +101,7 @@ func (s *Session) leaveLocked(ctx context.Context, reason string) domain.RoomSta
 	// Transition a Idle limpia la sala entera. Es legal desde cualquier
 	// estado, incluso a mitad de un intento de conexión que no responde,
 	// porque salir es una acción del usuario que tiene que funcionar siempre.
-	if err := s.state.Transition(domain.StateIdle, reason); err != nil {
+	if err := s.state.TransitionWithExit(domain.StateIdle, reason, exit); err != nil {
 		// Inalcanzable con la tabla de transiciones actual. Se registra en vez
 		// de ignorarse porque, si alguien la edita mal, el síntoma sería una
 		// sesión que no se puede abandonar y este log es lo que lo diría.
@@ -79,7 +127,7 @@ func (s *Session) TickHostAbsence(ctx context.Context) bool {
 	if !s.state.ShouldLeaveForHostAbsence(s.deps.Clock.Now()) {
 		return false
 	}
-	s.leaveLocked(ctx, "el host lleva veinte minutos sin aparecer")
+	s.leaveLocked(ctx, "el host lleva veinte minutos sin aparecer", domain.ExitHostGone)
 	return true
 }
 

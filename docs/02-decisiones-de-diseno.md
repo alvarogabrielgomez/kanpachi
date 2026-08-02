@@ -506,7 +506,7 @@ Alvaro   ──┘     alcance = miembros presentes. Los clientes nunca escuchan
 | Función | Cómo sale |
 |---|---|
 | Emitir la credencial al que entra | Es el paso 2 del canje de la decisión 2 |
-| Expulsar | El host cierra esa conexión y revoca |
+| Expulsar | El host le avisa por ahí, y recién después revoca y recalcula. El aviso es cortesía: ver `03-arquitectura.md` |
 | Presencia del host | Si la conexión cae, el host no está. Si vuelve, volvió |
 | Latido | Es la misma conexión, no hace falta un ping aparte |
 

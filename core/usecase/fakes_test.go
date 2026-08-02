@@ -97,6 +97,7 @@ func (m *motorFalso) IssueCredential(context.Context, domain.CredentialRequest) 
 }
 
 func (m *motorFalso) RevokeCredential(_ context.Context, id domain.CredentialID) error {
+	m.anota("revocar")
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.revocadas = append(m.revocadas, id)
@@ -321,12 +322,16 @@ type controlFalso struct {
 	alcance   []netip.Addr
 	marcados  []netip.Addr
 	// fallarDesde hace fallar Dial a partir de la n-ésima llamada, 1-indexada.
-	fallarDesde int
-	presencia   chan bool
-	anuncios    []domain.RoomAnnounce
-	entrantes   chan domain.RoomAnnounce
-	credencial  domain.Credential
-	cierres     int
+	fallarDesde     int
+	presencia       chan bool
+	anuncios        []domain.RoomAnnounce
+	entrantes       chan domain.RoomAnnounce
+	avisos          []avisoFalso
+	avisados        []netip.Addr
+	avisosEntrantes chan domain.RoomNotice
+	errNotify       error
+	credencial      domain.Credential
+	cierres         int
 
 	errServe error
 	errDial  error
@@ -335,9 +340,19 @@ type controlFalso struct {
 
 func nuevoControl() *controlFalso {
 	return &controlFalso{
-		presencia: make(chan bool, 4),
-		entrantes: make(chan domain.RoomAnnounce, 4),
+		presencia:       make(chan bool, 4),
+		entrantes:       make(chan domain.RoomAnnounce, 4),
+		avisosEntrantes: make(chan domain.RoomNotice, 4),
 	}
+}
+
+// avisoFalso guarda el aviso y CUÁNDO se mandó, contando las otras llamadas al
+// canal. Es la única forma de comprobar que el aviso de expulsión sale antes
+// de que al expulsado se le corte nada.
+type avisoFalso struct {
+	a    netip.Addr
+	n    domain.RoomNotice
+	tras int
 }
 
 func (c *controlFalso) Serve(_ context.Context, scope domain.ControlScope) error {
@@ -375,6 +390,28 @@ func (c *controlFalso) Announce(_ context.Context, a domain.RoomAnnounce) error 
 }
 
 func (c *controlFalso) Announcements() <-chan domain.RoomAnnounce { return c.entrantes }
+
+func (c *controlFalso) Notify(_ context.Context, to netip.Addr, n domain.RoomNotice) error {
+	if c.errNotify != nil {
+		return c.errNotify
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.avisos = append(c.avisos, avisoFalso{a: to, n: n, tras: len(c.marcados) + len(c.anuncios)})
+	c.avisados = append(c.avisados, to)
+	return nil
+}
+
+func (c *controlFalso) Notices() <-chan domain.RoomNotice { return c.avisosEntrantes }
+
+func (c *controlFalso) últimoAviso() (avisoFalso, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.avisos) == 0 {
+		return avisoFalso{}, false
+	}
+	return c.avisos[len(c.avisos)-1], true
+}
 
 func (c *controlFalso) últimoAnuncio() (domain.RoomAnnounce, bool) {
 	c.mu.Lock()

@@ -608,6 +608,25 @@ La puerta tiene que estar abierta a desconocidos por definición: quien está en
 
 **Expulsar recorta la sala y no la puerta.** Es deliberado y es la decisión 22: expulsar y bloquear son cosas distintas, y quien fue expulsado puede volver a tocar la puerta hasta que el host renueve el código.
 
+#### El aviso de expulsión va ANTES de cortar, y es cortesía
+
+Es el único orden en que sirve. Revocar la credencial le cierra la sesión en alrededor de un segundo, y a partir de ahí no hay por dónde mandarle un mensaje: del otro lado la diferencia es entre "el host te sacó de la sala" y una partida que se cae sola sin explicación.
+
+**Mandarlo primero no le regala una ventana para escapar, porque el aviso no es lo que expulsa.** Lo que expulsa son las dos capas de la decisión 22, y ninguna es cooperativa: una es el motor cerrándole la sesión, la otra es el Firewall del host descartando sus paquetes. Un cliente modificado que ignore el aviso sale igual y en el mismo segundo. Lo único que gana el que lo respeta es salir limpio: revertir sus ajustes del adaptador y cerrar su motor en vez de que se le caiga solo.
+
+Que el aviso no salga no detiene nada. Lo que se pierde es que se entere.
+
+El mismo canal lleva el **anuncio de cierre de sala**, que el host manda a todos al salir. También va antes del apagado, por el mismo motivo, y le ahorra a cada invitado los veinte minutos del contador mirando una sala que ya no existe. Falsificarlo, desde dentro de la sala, logra como máximo que a otros se les cierre la app: es molestia, no riesgo.
+
+#### Expulsar no es bloquear, y renovar no migra a nadie
+
+Las dos mitades de la decisión 22, dichas desde el código:
+
+- **Expulsar recorta la lista de la sala y NO la puerta del vestíbulo.** El expulsado vuelve a entrar con el mismo código mientras el host no lo renueve. Para que no vuelva, el host renueva, que es la otra operación y es independiente.
+- **Renovar cambia la llave de búsqueda y nada más.** El invite ID no es el `networkID` ni el secreto de la sala: es un ticket desechable y rotatorio que autentica el ingreso a la red real. Cambiarlo rehospeda el vestíbulo, que deriva de él, y deja la red real intacta. Nadie migra de sala, nadie se reconecta, la partida no se entera.
+
+Cada cliente lleva además un `LastExit` que sobrevive a limpiar la sala. Sin él, que te expulsen, que el host cierre, que desaparezca veinte minutos y salir por tu cuenta se ven exactamente igual desde la pantalla de inicio.
+
 Lo que transporta, en volumen de bytes: el canje del código por credencial cuando alguien entra, el aviso de expulsión, el anuncio de cierre de sala, y por su sola existencia la presencia del host. **Nada del juego pasa por acá.**
 
 **Es el código que más revisión merece del proyecto.** Corre como SYSTEM y parsea mensajes de gente que está en la sala. Reglas no negociables: tope de tamaño antes de deserializar, esquema cerrado sin tipos arbitrarios, tope de conexiones por IP virtual, y rechazo de toda IP que no sea de un miembro presente. Un fallo acá es ejecución remota como SYSTEM en la máquina del host.

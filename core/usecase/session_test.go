@@ -1597,3 +1597,215 @@ func TestDirectPlaySigueAlPerfil(t *testing.T) {
 		t.Fatal("quitar el juego no apagó DirectPlay")
 	}
 }
+
+// TestElAvisoDeExpulsiónSaleANTESDeCortarle.
+//
+// Es el único orden en que sirve: revocar le cierra la sesión en alrededor de
+// un segundo, y a partir de ahí no hay por dónde mandarle un mensaje. Del otro
+// lado eso es la diferencia entre "el host te sacó" y una partida que se cae
+// sola sin explicación.
+func TestElAvisoDeExpulsiónSaleANTESDeCortarle(t *testing.T) {
+	b := salaCreada(t)
+	self := b.sesión.Status().LocalIP
+	invitado := self.Next()
+
+	b.motor.peers = []domain.Peer{{VirtualIP: self}, {VirtualIP: invitado}}
+	b.motor.credentials = []domain.Credential{{ID: "c", VirtualIP: invitado}}
+	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+		t.Fatal(err)
+	}
+	pasosAntes := len(b.motor.pasos())
+
+	if _, err := b.sesión.KickMember(ctx(), invitado); err != nil {
+		t.Fatal(err)
+	}
+
+	aviso, ok := b.control.últimoAviso()
+	if !ok {
+		t.Fatal("no se le avisó al expulsado")
+	}
+	if aviso.a != invitado {
+		t.Errorf("el aviso fue a %s", aviso.a)
+	}
+	if aviso.n.Kind != domain.NoticeKicked {
+		t.Errorf("aviso = %v", aviso.n.Kind)
+	}
+	// El motor no se tocó entre que se armó el aviso y que se mandó: revocar
+	// tiene que ser posterior.
+	pasos := b.motor.pasos()
+	var iRevocar = -1
+	for i, p := range pasos {
+		if p == "revocar" {
+			iRevocar = i
+		}
+	}
+	if iRevocar < pasosAntes {
+		t.Fatalf("se revocó antes de avisar: %v", pasos)
+	}
+}
+
+// TestSiElAvisoFallaLaExpulsiónSigue: el aviso es cortesía, no el mecanismo.
+func TestSiElAvisoFallaLaExpulsiónSigue(t *testing.T) {
+	b := salaCreada(t)
+	self := b.sesión.Status().LocalIP
+	invitado := self.Next()
+
+	b.motor.peers = []domain.Peer{{VirtualIP: self}, {VirtualIP: invitado}}
+	b.motor.credentials = []domain.Credential{{ID: "c", VirtualIP: invitado}}
+	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+		t.Fatal(err)
+	}
+	b.control.errNotify = errors.New("el socket ya estaba muerto")
+
+	if _, err := b.sesión.KickMember(ctx(), invitado); err != nil {
+		t.Fatalf("un aviso que no salió detuvo la expulsión: %v", err)
+	}
+	if len(b.motor.revocadas) != 1 {
+		t.Fatal("no se revocó la credencial")
+	}
+}
+
+// TestElExpulsadoSaleLimpioYSabePorQué.
+func TestElExpulsadoSaleLimpioYSabePorQué(t *testing.T) {
+	b := salaConInvitado(t)
+
+	st := b.sesión.OnRoomNotice(ctx(), domain.RoomNotice{
+		Kind: domain.NoticeKicked, Reason: "el host te sacó de la sala",
+	})
+	if st.Conn != domain.StateIdle {
+		t.Fatalf("estado = %s", st.Conn)
+	}
+	if st.LastExit != domain.ExitKicked {
+		t.Fatalf("la pantalla de inicio no puede decir qué pasó: %v", st.LastExit)
+	}
+	// Salida limpia y no una caída: se revierten los ajustes y se cierra el
+	// motor en vez de que se caiga solo.
+	if b.netcfg.revertió == 0 {
+		t.Error("no se revirtieron los ajustes del adaptador")
+	}
+	if !b.firewall.estado().IsEmpty() {
+		t.Errorf("quedaron reglas: %+v", b.firewall.estado().Rules)
+	}
+}
+
+// TestElHostAvisaQueCierraLaSala, y le ahorra a cada invitado los veinte
+// minutos del contador mirando una sala que ya no existe.
+func TestElHostAvisaQueCierraLaSala(t *testing.T) {
+	b := salaCreada(t)
+	b.sesión.LeaveRoom(ctx())
+
+	aviso, ok := b.control.últimoAviso()
+	if !ok {
+		t.Fatal("el host se fue sin avisar")
+	}
+	if aviso.n.Kind != domain.NoticeRoomClosed {
+		t.Errorf("aviso = %v", aviso.n.Kind)
+	}
+	if aviso.a.IsValid() {
+		t.Errorf("el cierre es para todos, no para %s", aviso.a)
+	}
+}
+
+// TestUnInvitadoQueSaleNoAvisaDeNada: cerrarle la sala a los demás no es suyo.
+func TestUnInvitadoQueSaleNoAvisaDeNada(t *testing.T) {
+	b := salaConInvitado(t)
+	b.sesión.LeaveRoom(ctx())
+
+	if _, ok := b.control.últimoAviso(); ok {
+		t.Fatal("un invitado anunció el cierre de la sala")
+	}
+}
+
+// TestAlHostNadieLoEchaDeSuPropiaSala.
+func TestAlHostNadieLoEchaDeSuPropiaSala(t *testing.T) {
+	b := salaCreada(t)
+	for _, k := range []domain.NoticeKind{domain.NoticeKicked, domain.NoticeRoomClosed} {
+		st := b.sesión.OnRoomNotice(ctx(), domain.RoomNotice{Kind: k})
+		if st.Conn != domain.StateConnected {
+			t.Fatalf("un aviso %v echó al host de su sala", k)
+		}
+	}
+}
+
+// TestElMotivoDeSalidaDistingueLosCuatroCaminos. Sin esto la pantalla de inicio
+// no puede decir nada mejor que "no estás en ninguna sala".
+func TestElMotivoDeSalidaDistingueLosCuatroCaminos(t *testing.T) {
+	t.Run("salir por tu cuenta", func(t *testing.T) {
+		b := salaCreada(t)
+		if st := b.sesión.LeaveRoom(ctx()); st.LastExit != domain.ExitUser {
+			t.Fatalf("%v", st.LastExit)
+		}
+	})
+	t.Run("el host desaparece veinte minutos", func(t *testing.T) {
+		b := salaConInvitado(t)
+		b.sesión.SetHostPresent(false)
+		b.reloj.avanza(domain.HostAbsenceLimit + time.Minute)
+		if !b.sesión.TickHostAbsence(ctx()) {
+			t.Fatal("no salió")
+		}
+		if st := b.sesión.Status(); st.LastExit != domain.ExitHostGone {
+			t.Fatalf("%v", st.LastExit)
+		}
+	})
+	t.Run("el host cierra la sala", func(t *testing.T) {
+		b := salaConInvitado(t)
+		st := b.sesión.OnRoomNotice(ctx(), domain.RoomNotice{Kind: domain.NoticeRoomClosed})
+		if st.LastExit != domain.ExitRoomClosed {
+			t.Fatalf("%v", st.LastExit)
+		}
+	})
+	t.Run("no se llegó a entrar", func(t *testing.T) {
+		b := nuevoBanco(t)
+		b.control.errDial = errors.New("nadie contesta")
+		if _, err := b.sesión.JoinRoom(ctx(), "A7K2M9QX", nick(t, "humberto")); err == nil {
+			t.Fatal("entró")
+		}
+		if st := b.sesión.Status(); st.LastExit != domain.ExitFailed {
+			t.Fatalf("%v", st.LastExit)
+		}
+	})
+}
+
+// TestExpulsarNoEsBloquear: el expulsado vuelve con el mismo código mientras el
+// host no lo renueve, y renovar no migra a nadie de sala.
+func TestExpulsarNoEsBloquear(t *testing.T) {
+	b := salaCreada(t)
+	self := b.sesión.Status().LocalIP
+	invitado := self.Next()
+
+	b.motor.peers = []domain.Peer{{VirtualIP: self}, {VirtualIP: invitado}}
+	b.motor.credentials = []domain.Credential{{ID: "c", VirtualIP: invitado}}
+	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+		t.Fatal(err)
+	}
+	códigoAntes := b.sesión.Status().Room.InviteID
+	if _, err := b.sesión.KickMember(ctx(), invitado); err != nil {
+		t.Fatal(err)
+	}
+
+	// La puerta del vestíbulo NO se recortó: sigue abierta a cualquiera con el
+	// código, que es lo que hace que expulsar y bloquear sean cosas distintas.
+	b.control.mu.Lock()
+	puerta := b.control.scope.Lobby
+	b.control.mu.Unlock()
+	if puerta != domain.RendezvousHostAddress {
+		t.Fatal("expulsar cerró la puerta de la sala")
+	}
+	if b.sesión.Status().Room.InviteID != códigoAntes {
+		t.Fatal("expulsar cambió el código")
+	}
+
+	// Y renovar es la otra operación, que no toca la red real ni migra a nadie.
+	b.registro.siguiente = "B4N9PQRS"
+	antesDeRenovar := b.motor.hostSpec
+	if _, err := b.sesión.RotateInviteCode(ctx()); err != nil {
+		t.Fatal(err)
+	}
+	después := b.motor.hostSpec
+	if antesDeRenovar.RealNetworkName() != después.RealNetworkName() {
+		t.Fatal("renovar el código cambió la red real: habría que migrar a todos")
+	}
+	if antesDeRenovar.NetworkSecret != después.NetworkSecret {
+		t.Fatal("renovar el código cambió el secreto de la red")
+	}
+}

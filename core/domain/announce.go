@@ -36,3 +36,85 @@ func (a RoomAnnounce) Sanitize() RoomAnnounce {
 	}
 	return out
 }
+
+// NoticeKind son los avisos que el host le manda a un miembro.
+//
+// Ninguno de los dos es lo que hace que la cosa ocurra, y esa distinción es la
+// decisión 22 entera. Expulsar lo ejecuta el host sobre sí mismo: revoca la
+// credencial y recalcula sus reglas. El aviso es CORTESÍA, para que del otro
+// lado la app cierre limpio y diga qué pasó, en vez de que la partida se caiga
+// sola y el usuario se quede mirando una pantalla que no explica nada.
+//
+// Que sea cortesía es lo que permite mandarlo ANTES de cortar. Si fuera el
+// mecanismo, mandarlo primero le daría al expulsado una ventana para ignorarlo;
+// como no lo es, la ventana no le sirve de nada y la única diferencia es que se
+// entera.
+type NoticeKind uint8
+
+const (
+	// NoticeKicked: el host te está sacando. Llega antes de que te corte.
+	NoticeKicked NoticeKind = iota + 1
+	// NoticeRoomClosed: el host se va y la sala se termina.
+	//
+	// Lo peor que logra un miembro que lo falsifique es que a otros se les
+	// cierre la app. Es molestia, no riesgo, y quien lo haría ya está dentro de
+	// la sala. Ver el modelo de amenazas de la decisión 23.
+	NoticeRoomClosed
+)
+
+func (k NoticeKind) String() string {
+	switch k {
+	case NoticeKicked:
+		return "expulsado"
+	case NoticeRoomClosed:
+		return "la sala se cerró"
+	default:
+		return "aviso desconocido"
+	}
+}
+
+// RoomNotice es un aviso del host. Lleva el motivo en texto porque la pantalla
+// del otro lado tiene que poder decir algo mejor que "te desconectaste".
+type RoomNotice struct {
+	Kind   NoticeKind
+	Reason string
+}
+
+// ExitReason dice por qué se está en Idle.
+//
+// Sobrevive a limpiar la sala, y eso es a propósito: es lo único que le queda a
+// la pantalla de inicio para explicar por qué se volvió a ella. Sin esto, que
+// te expulsen, que el host desaparezca veinte minutos y salir por tu cuenta se
+// ven exactamente igual.
+type ExitReason uint8
+
+const (
+	ExitNone ExitReason = iota
+	// ExitUser: salió por su cuenta.
+	ExitUser
+	// ExitKicked: el host lo sacó.
+	ExitKicked
+	// ExitHostGone: veinte minutos sin host, decisión 20.
+	ExitHostGone
+	// ExitRoomClosed: el host cerró la sala.
+	ExitRoomClosed
+	// ExitFailed: no se llegó a entrar.
+	ExitFailed
+)
+
+func (r ExitReason) String() string {
+	switch r {
+	case ExitUser:
+		return "saliste de la sala"
+	case ExitKicked:
+		return "el host te sacó de la sala"
+	case ExitHostGone:
+		return "el host llevaba veinte minutos sin aparecer"
+	case ExitRoomClosed:
+		return "el host cerró la sala"
+	case ExitFailed:
+		return "no se pudo entrar a la sala"
+	default:
+		return ""
+	}
+}

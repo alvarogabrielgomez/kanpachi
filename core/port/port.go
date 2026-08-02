@@ -237,6 +237,19 @@ type ControlChannel interface {
 	// Announcements es el lado del invitado. El adaptador solo emite lo que
 	// llegó por la conexión al host: un miembro no puede anunciar nada.
 	Announcements() <-chan domain.RoomAnnounce
+
+	// Notify le manda un aviso a un miembro. SOLO el host. Una dirección en
+	// cero es a todos los presentes.
+	//
+	// Se llama ANTES de cortarle nada a quien se está expulsando, y ese es el
+	// único orden en que sirve: después, el mensaje no tiene por dónde llegar.
+	// Que se pueda mandar primero sin regalar nada es porque el aviso NO es lo
+	// que expulsa: es cortesía, para que del otro lado la app cierre limpio.
+	Notify(ctx context.Context, to netip.Addr, n domain.RoomNotice) error
+	// Notices es el lado del invitado. Igual que Announcements, el adaptador
+	// solo emite lo que llegó por la conexión al host.
+	Notices() <-chan domain.RoomNotice
+
 	// RequestCredential es el paso 5 del canje. El adaptador rellena la llave
 	// pública desde identity.key antes de firmar: esa llave vive en disco con
 	// ACL propia y core no la conoce, que es justo lo que la decisión 25

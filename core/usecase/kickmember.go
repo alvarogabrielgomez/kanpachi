@@ -47,6 +47,27 @@ func (s *Session) KickMember(ctx context.Context, ip netip.Addr) (domain.RoomSta
 	if err != nil {
 		return domain.RoomState{}, err
 	}
+
+	// El aviso va PRIMERO, antes de tocar nada. Es el único orden en que
+	// sirve: revocar le cierra la sesión en alrededor de un segundo, y a partir
+	// de ahí no hay por dónde mandarle un mensaje. Del otro lado eso es la
+	// diferencia entre "el host te sacó de la sala" y una partida que se cae
+	// sola sin explicación.
+	//
+	// Mandarlo primero no le regala una ventana para escapar, porque el aviso
+	// no es lo que expulsa. Lo que expulsa son las dos capas de abajo, y
+	// ninguna es cooperativa: una es el motor cerrándole la sesión, la otra es
+	// el Firewall de Windows del host descartando sus paquetes. Un cliente
+	// modificado que ignore el aviso sale igual y en el mismo segundo.
+	//
+	// Que falle no detiene nada. Lo que se pierde es que se entere.
+	if err := s.deps.Control.Notify(ctx, ip, domain.RoomNotice{
+		Kind:   domain.NoticeKicked,
+		Reason: "el host te sacó de la sala",
+	}); err != nil {
+		s.deps.Log.Warn("no se le pudo avisar al expulsado", "ip", ip.String(), "error", err)
+	}
+
 	if err := s.deps.Engine.RevokeCredential(ctx, cred.ID); err != nil {
 		return domain.RoomState{}, fmt.Errorf("revocando la credencial de %s: %w", peer.Name, err)
 	}

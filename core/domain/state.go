@@ -151,6 +151,11 @@ type RoomState struct {
 
 	Net    NetCheck
 	Alerts []Alert
+
+	// LastExit es por qué se volvió a Idle, y sobrevive a limpiar la sala.
+	// Sin esto, que te expulsen, que el host desaparezca y salir por tu cuenta
+	// se ven exactamente igual desde la pantalla de inicio.
+	LastExit ExitReason
 }
 
 // Clone devuelve una copia que no comparte nada mutable con el original.
@@ -180,12 +185,25 @@ func (r RoomState) Clone() RoomState {
 
 // Transition mueve el estado y deja constancia del motivo.
 func (r *RoomState) Transition(next ConnState, reason string) error {
+	return r.TransitionWithExit(next, reason, ExitNone)
+}
+
+// TransitionWithExit es lo mismo, diciendo por qué se sale.
+//
+// El motivo solo se guarda al llegar a Idle, y solo si se da uno: una
+// transición entre dos estados de sala no explica ninguna salida, y pisar el
+// motivo anterior con un cero borraría justo lo que la pantalla de inicio
+// necesita.
+func (r *RoomState) TransitionWithExit(next ConnState, reason string, exit ExitReason) error {
 	if !r.Conn.CanGoTo(next) {
 		return ErrBadTransition{From: r.Conn, To: next, Reason: reason}
 	}
 	r.Conn = next
 	if next == StateIdle {
 		r.clearRoom()
+		if exit != ExitNone {
+			r.LastExit = exit
+		}
 	}
 	return nil
 }
