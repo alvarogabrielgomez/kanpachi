@@ -965,7 +965,17 @@ ACL de ProgramData: escritura solo SYSTEM y Administradores, lectura para usuari
 
 **Los dos se decodifican estricto y llevan identidad, jamás política.** Un campo desconocido rechaza el archivo entero, misma disciplina que las invariantes del catálogo. Lo que el esquema no puede expresar: un puerto, una regla, un ejecutable, un plazo, una lista de miembros. Si no se puede escribir, un archivo manipulado no abre nada ni alarga ningún corte automático. El único campo que parece política y no lo es, el id del juego activo, es una REFERENCIA que se resuelve contra el catálogo local, igual que el id que viaja en el anuncio del host.
 
-**Escritura atómica**, a temporal y rename, así un apagón a mitad de guardado no deja un JSON cortado que impida arrancar. Un archivo ilegible se registra y se ignora: quedarse sin daemon por eso sería peor que perder una sala que de todas formas hay que confirmar a mano.
+**Escritura atómica**, y las tres partes hacen falta:
+
+1. **Temporal en el mismo directorio.** Un rename entre volúmenes no es atómico y se degrada a copiar y borrar, que es justo lo que se quiere evitar.
+2. **Forzar a disco antes de renombrar.** Sin eso, el rename puede llegar al disco antes que el contenido, y un corte de luz deja un archivo con el nombre bueno y ceros dentro. Eso es peor que no tenerlo, porque parece válido.
+3. **Rename encima.** En Windows y en Linux reemplaza en un solo paso, así que nadie puede leer un archivo a medio escribir.
+
+Un archivo ilegible se registra y se ignora: quedarse sin daemon por eso sería peor que perder una sala que de todas formas hay que confirmar a mano.
+
+**Respaldo solo en el catálogo, y no en el estado de sala.** Lo que se puede perder es distinto: una sala guardada de hace dos arranques no sirve para nada, y tenerla en disco sería dejar la identidad de una red vieja donde no hace falta. Un catálogo son horas de alguien creando perfiles a mano. Es UNA copia, la anterior, y su único trabajo es que un archivo corrupto tenga de dónde volver a mano.
+
+**Los dos adaptadores de disco no conocen Windows**, son rutas y bytes, así que corren y se prueban en el job de Linux igual que en la máquina de verdad. El directorio de datos lo crea el instalador con su ACL y no el daemon: crearlo desde el daemon lo dejaría con los permisos que herede, y esos permisos son la mitad de la protección de estos archivos.
 
 **`identity.key` es la excepción y lleva ACL propia: solo SYSTEM y Administradores, sin lectura para usuarios.** Es la llave que sostiene la decisión 25, o sea lo único que impide que alguien se haga pasar por este host ante quienes ya jugaron con él. Robarla es la única forma de suplantar a alguien con huella conocida, y a diferencia de una credencial de sala no expira ni se revoca sola. `known-hosts.json` sí es legible: contiene llaves públicas ajenas, nada sensible, y su integridad importa más que su confidencialidad.
 
