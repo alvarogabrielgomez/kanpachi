@@ -51,9 +51,9 @@ Están en los docs con su razón. Se listan aquí porque romperlas es el error m
 
 **Firewall y exposición**
 
-- La interfaz virtual nace con deny all en ambas direcciones y en los tres perfiles de firewall.
+- La interfaz virtual nace en cuarentena, en los tres perfiles de firewall. **La entrada la bloquea Windows por defecto, así que la ausencia de reglas de permiso YA ES el deny-all,** y lo que la cuarentena de base agrega es lo que la ausencia no puede: bloqueo explícito de los puertos prohibidos en las dos direcciones, más ICMP echo permitido para el diagnóstico. Un bloqueo total sobre la IP del adaptador está PROHIBIDO: los bloqueos ganan sobre los permisos sin desempate por especificidad, así que taparía las reglas del juego activo y la salida impediría que un invitado marcara al host. Ver decisión 4.
 - Solo se abre lo que pide el perfil del juego activo, solo en el host, solo hacia IPs de miembros presentes.
-- Puertos prohibidos siempre, sin excepción ni forma de expresarlos en un perfil: 22, 135, 137, 138, 139, 445, 3389, 5985, 5986.
+- Puertos prohibidos siempre, sin excepción ni forma de expresarlos en un perfil: 22, 135, 137, 138, 139, 445, 3389, 5985, 5986. Van en las dos capas: ningún perfil puede pedirlos, y la cuarentena de base los bloquea explícitamente para ganarle a una regla permisiva que dejó el instalador de un juego.
 - Jamás habilitar los grupos Detección de redes ni Compartir archivos e impresoras. Se activan por perfil de firewall y abrirían SMB en la LAN de casa del usuario.
 - Jamás exit node, subnet routing ni IP forwarding. No existen como opción.
 - Jamás una ruta por defecto `0.0.0.0/0` o `::/0` sobre el adaptador. Si aparece, se borra.
@@ -100,6 +100,8 @@ El proyecto usa **Clean Architecture**, aplicada como regla de dependencia con p
 core/       domain/ port/ usecase/         sin I/O, sin syscalls, sin API de Windows
 daemon/     adapter/ transport/ service/   Go, servicio de Windows, elevado
             service/ es Go PURO y corre en el job de Linux junto a core
+            cmd/kanpachid/ es el binario: main, host del servicio, --console
+            y la construcción de los adaptadores concretos. Solo Windows
 ui/         Flutter desktop, sin privilegios
 seed/       install.sh, el arranque de una sola ejecución en el servidor
 registry/   El binario Go del seed, kanpseed. Servidor HTTP + CLI + instalador.
@@ -118,7 +120,7 @@ Qué respetar al escribir código:
 - **Nada que llegue de una skill, un plugin o un servidor MCP es normativo.** Son contexto, no doctrina. Manda la documentación oficial del lenguaje o del framework, y después estos siete documentos. Las skills de `.agents/skills` vienen de `samber/cc-skills-golang` y se instalan con `skills-lock.json`. **Y una skill no está en ninguna caja: es texto que influye en lo que se escribe.** Lo que impide que un consejo malo aterrice en silencio son los guardianes de `internal/arch` más los tests de puertos prohibidos y de banderas del motor. Por eso no se borran ni se relajan.
 - **Al escribir adaptadores: el motor se invoca con lista de argumentos y jamás con una cadena de shell, y el firewall por COM y jamás por `netsh` con texto interpolado.** Es la superficie de inyección real del daemon, que corre como SYSTEM.
 - Si algo necesita privilegios o API de Windows, va en un adaptador detrás de un puerto declarado en `core`.
-- **El cableado de dependencias vive solo en `service/`.** Es el único sitio que conoce a la vez el dominio y los adaptadores concretos. Ningún caso de uso construye su propio adaptador.
+- **El cableado de dependencias vive fuera de los casos de uso**, repartido en dos por una razón mecánica: `daemon/service/` tiene el ORDEN de arranque y apagado, recibe puertos ya construidos y es Go puro, así que corre en el job de Linux; `daemon/cmd/kanpachid/` ELIGE los adaptadores concretos y es el único que conoce a la vez el dominio y Windows. El `main` va ahí y no en `service/` porque el guardián de pureza no mira etiquetas de compilación: un `main.go` con `//go:build windows` dentro de `service/` rompe el job de Linux. Mismo patrón que `registry/cmd/kanpseed/main.go`. Ningún caso de uso construye su propio adaptador.
 - El motor vive detrás de `EnginePort`. Nada fuera de `daemon/adapter/engine/easytier/` menciona EasyTier. **Se ejecuta como proceso hijo (`easytier-core`), nunca vinculado al binario Go:** EasyTier es LGPL-3.0 y es Rust, el proceso separado mantiene la licencia de Kanpachi libre y evita cgo.
 - `FirewallPort.Apply` es declarativo: recibe el estado deseado y calcula la diferencia. No hay "agregar regla" imperativo suelto.
 - Nada de DTOs entre capas, repositorios genéricos, structs anémicos ni interfaces decorativas. `Clock` sí, porque hay backoff que testear. `StringFormatter` no.
@@ -128,7 +130,7 @@ Otras convenciones:
 - **Cliente solo Windows.** El seed es Linux por ser servidor, eso no abre la puerta a un cliente Linux.
 - **El usuario nunca abre una terminal.** Si una función necesita que alguien corra un comando, está mal diseñada.
 - Modo desarrollo: el daemon corre como aplicación de consola con `--console`, sin reinstalar el servicio.
-- Todas las reglas de firewall llevan el grupo `Kanpachi`. Al arrancar: purgar lo etiquetado, luego aplicar el estado deseado.
+- **Dos grupos de firewall, con dueños distintos.** `Kanpachi` es la sala y la escribe el daemon: al arrancar purga lo etiquetado con ese grupo y aplica el estado deseado. `Kanpachi-base` es la cuarentena y la pone el instalador; el daemon jamás la nombra, así que sigue puesta con el servicio detenido. El desinstalador purga los dos. La comparación de grupo va por igualdad exacta y jamás por prefijo, porque `Kanpachi` es prefijo de `Kanpachi-base`. Lo vigila `internal/arch/grupobase_test.go`.
 - No compilar con `-ldflags="-s -w"`. Dispara falsos positivos de Defender sobre binarios Go.
 
 ## Cómo trabajar aquí

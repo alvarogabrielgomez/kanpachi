@@ -12,9 +12,11 @@
 │  kanpachi-daemon  (servicio Windows, SYSTEM)                       │
 │  ├── transport/   named pipe + protocolo JSON-RPC, y el canal de   │
 │  │                control de la sala                               │
-│  ├── service/     cableado de dependencias y el supervisor:        │
+│  ├── service/     el orden de arranque y el supervisor:            │
 │  │                latido, watchdog del motor, eventos de energía,  │
 │  │                de red y de identificación de red                │
+│  ├── cmd/         kanpachid: main, host del servicio y la          │
+│  │                elección de los adaptadores concretos            │
 │  ├── adapter/     lo único que conoce Windows y EasyTier:          │
 │  │                firewall por COM, netcfg, motor, Steam,          │
 │  │                iphlpapi, catálogo y estado en JSON              │
@@ -102,7 +104,11 @@ type FirewallPort interface {
     // idempotente, y que reaplicar el mismo conjunto REPARE lo que alguien
     // haya borrado o agregado por fuera
     Apply(ctx context.Context, desired domain.RuleSet) error
-    PurgeOwned(ctx context.Context) error                     // todo lo del grupo "Kanpachi"
+    // PurgeOwned borra todo lo del grupo "Kanpachi", por igualdad exacta y
+    // jamás por prefijo. NUNCA toca "Kanpachi-base": esa es la cuarentena que
+    // puso el instalador, y es lo que protege la máquina cuando el daemon no
+    // corre. Ver decisión 4
+    PurgeOwned(ctx context.Context) error
     AuditForeign(ctx context.Context, p domain.GameProfile) ([]domain.ForeignRule, error)
     SuspendForeign(ctx context.Context, r []domain.ForeignRule) error
     RestoreForeign(ctx context.Context) error
@@ -173,6 +179,11 @@ type SocketInspector interface {
 // ExposureAudit alimenta el módulo de alertas de la decisión 19. Cada método
 // responde una pregunta que Kanpachi no controla y que anula su promesa si
 // nadie la mira. Ninguno bloquea: devuelven hallazgos, jamás errores fatales.
+//
+// Que un método falle NO se calla: los dos primeros levantan AlertAuditFailed,
+// porque "no se pudo comprobar" y "todo en orden" se ven igual desde la
+// pantalla. El tercero no, y esa asimetría es deliberada: la mayoría de los
+// routers nunca contestan al IGD
 type ExposureAudit interface {
     FirewallEnabled(ctx context.Context) ([]domain.FirewallProfileState, error)
     OwnRulesIntact(ctx context.Context) (bool, error)
@@ -278,10 +289,17 @@ daemon/
     protocol/           la API local: mensajes y códigos, sin transporte
     control/            el canal de la sala: dos oyentes, dos alcances
     pipe/               el named pipe y su token
-  service/            main, host del servicio, cableado de dependencias
+  service/            el ORDEN de arranque y apagado, y el supervisor. Recibe
+                      puertos ya construidos. Go PURO, job de Linux
+  cmd/kanpachid/      el binario: main, host del servicio, --console, y la
+                      ELECCIÓN de los adaptadores concretos. Solo Windows
 ```
 
-El cableado vive en un solo sitio, `service/`. Es el único lugar del proyecto que conoce a la vez el dominio y los adaptadores concretos.
+El cableado vive fuera de los casos de uso y está partido en dos, con una frontera que no es de gusto: `service/` sabe en qué orden pasan las cosas y `cmd/kanpachid/` sabe con qué. Solo el segundo conoce a la vez el dominio y Windows.
+
+**Por qué el `main` no vive en `service/`.** El guardián de pureza parsea con `parser.ImportsOnly` y **no mira las etiquetas de compilación**, así que un `main.go` con `//go:build windows` que importe `golang.org/x/sys/windows/svc` hace fallar el test de pureza desde el job de Linux. Las dos salidas alternativas son peores: sacar `service/` de la lista de puros reduce la cobertura del guardián justo en la capa donde entra el código nuevo, y enseñarle a saltarse archivos con etiqueta abre el agujero exacto que existe para tapar, porque entonces cualquiera pone `//go:build windows` sobre un archivo de `core` y mete lo que quiera.
+
+Mover el `main` no inventa una convención: es la que el repo ya usa para su otro binario, `registry/cmd/kanpseed/main.go`.
 
 ### La regla verificada por un test
 
@@ -746,7 +764,7 @@ La puerta tiene que estar abierta a desconocidos por definición: quien está en
 
 Escucha en **TCP 57623**, en la interfaz virtual y en ninguna otra. Fijo y no negociado, por lo mismo que el `/24` del vestíbulo: quien entra tiene que llegar sin haber hablado antes con nadie, y el canal por el que se negociaría un puerto es justamente el que se está montando.
 
-La interfaz nace con deny all, así que **el host tiene que abrirle un hueco a su propia puerta**. Ese hueco es la única regla que Kanpachi crea sin que ningún perfil la pida, va en el mismo conjunto declarativo que las de juego, y se describe en la decisión 4. Calcularlo aparte de `BuildRuleSet` no es organización: aquella devuelve vacío cuando no hay juego activo, que es el estado normal de una sala recién creada.
+La interfaz nace en cuarentena, o sea sin ninguna regla de permiso, así que **el host tiene que abrirle un hueco a su propia puerta**. Ese hueco es la única regla que Kanpachi crea sin que ningún perfil la pida, va en el mismo conjunto declarativo que las de juego, y se describe en la decisión 4. Calcularlo aparte de `BuildRuleSet` no es organización: aquella devuelve vacío cuando no hay juego activo, que es el estado normal de una sala recién creada.
 
 #### La tabla de mensajes, cerrada y por dirección
 

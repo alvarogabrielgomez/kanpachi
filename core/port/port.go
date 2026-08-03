@@ -12,6 +12,10 @@
 //   - No existe crear ni borrar mapeos en el router. ExposureAudit solo lee.
 //   - No existe observar procesos. SocketInspector saca una foto puntual y
 //     únicamente lo llama el creador de perfiles.
+//   - No existe aplicar la cuarentena de base. La pone el instalador y el daemon
+//     jamás la toca, así que sigue puesta con el servicio detenido. Tampoco
+//     podría: necesita bloqueo y salida, y [domain.FirewallRule] no tiene cómo
+//     expresar ninguno de los dos. Ver [domain.FirewallGroupBase].
 //
 // Lo que no existe en la interfaz no se puede llamar por error.
 package port
@@ -105,9 +109,19 @@ type FirewallPort interface {
 	// Con un recuerdo en memoria, reaplicar un conjunto igual sería un no-op y
 	// la autorreparación del módulo de exposición no existiría.
 	Apply(ctx context.Context, desired domain.RuleSet) error
-	// PurgeOwned borra todo lo etiquetado con el grupo Kanpachi. Se llama al
+	// PurgeOwned borra todo lo etiquetado con [domain.FirewallGroup]. Se llama al
 	// arrancar el servicio, antes de aplicar nada: una muerte sucia del daemon
 	// nunca deja puertos huérfanos abiertos.
+	//
+	// **Jamás toca [domain.FirewallGroupBase].** Esa es la cuarentena que puso el
+	// instalador, y es lo único que protege la máquina mientras el daemon no
+	// corre: si la purga se la llevara, cada reinicio del servicio desarmaría la
+	// protección, y el fallo sería invisible porque todo seguiría funcionando
+	// igual.
+	//
+	// La comparación es por IGUALDAD EXACTA del grupo, jamás por prefijo.
+	// "Kanpachi" es prefijo de "Kanpachi-base", así que un HasPrefix acá borra la
+	// cuarentena. Lo vigila un guardián en internal/arch.
 	PurgeOwned(ctx context.Context) error
 
 	// AuditForeign busca reglas permisivas que dejó el instalador del juego o

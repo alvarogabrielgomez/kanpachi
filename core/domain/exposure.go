@@ -129,6 +129,20 @@ const (
 	// autorizándolo. Se avisa en vez de deshacer la mitad que sí funcionó,
 	// porque deshacerla volvería a autorizar a quien el host acaba de echar.
 	AlertKickIncomplete
+	// AlertAuditFailed: el módulo de exposición no pudo comprobar lo que existe
+	// para comprobar.
+	//
+	// **No dice que algo esté mal. Dice que nadie está mirando**, y esa
+	// distinción es toda la alerta. Las otras cinco son hallazgos; esta es la
+	// ausencia de hallazgo, que sin decirla se ve idéntica a "todo en orden".
+	//
+	// Existe porque el módulo que avisa que la promesa se rompió no podía avisar
+	// que él mismo había dejado de mirar: con las consultas fallando, la pantalla
+	// quedaba en verde. Cubre las dos comprobaciones que sostienen la promesa, el
+	// estado del firewall y las reglas propias. La del router NO entra: no
+	// contesta en la mayoría de las máquinas, y una alerta encendida en todas
+	// partes deja de significar algo.
+	AlertAuditFailed
 )
 
 // Sticky dice si la alerta sobrevive al refresco del módulo de exposición.
@@ -141,6 +155,12 @@ const (
 // Existe como predicado del dominio, con sus dos casos nombrados, para que
 // agregar un tercero sea una edición visible y no un `if` más colado dentro del
 // barrido.
+//
+// [AlertAuditFailed] NO es pegajosa, y es la que más invita a equivocarse: si lo
+// fuera, se quedaría encendida para siempre tras el primer fallo de COM, porque
+// solo [RoomState.DropAlerts] la quitaría y nadie tiene motivo para llamarla. Se
+// recalcula, así que en cuanto la consulta vuelve a contestar, el aviso se va
+// solo.
 func (k AlertKind) Sticky() bool {
 	return k == AlertLobbyConflict || k == AlertKickIncomplete
 }

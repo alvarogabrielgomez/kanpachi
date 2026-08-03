@@ -1382,11 +1382,90 @@ func TestUnaAuditoríaQueFallaNoRompeNada(t *testing.T) {
 	b.auditoría.err = errors.New("COM no responde")
 
 	st := b.sesión.RefreshAlerts(ctx())
-	if len(st.Alerts) != 0 {
-		t.Fatalf("una auditoría rota inventó alertas: %+v", st.Alerts)
+	for _, a := range st.Alerts {
+		if a.Kind != domain.AlertAuditFailed {
+			t.Errorf("una auditoría rota inventó un hallazgo que nadie midió: %+v", a)
+		}
 	}
 	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
 		t.Fatalf("una auditoría rota impidió crear la sala: %v", err)
+	}
+}
+
+// TestUnaAuditoríaQueFallaLoDice cubre el agujero exacto que tenía el módulo:
+// con las consultas fallando producía CERO alertas y la pantalla quedaba en
+// verde. El módulo que existe para avisar que la promesa se rompió no podía
+// avisar que él mismo había dejado de mirar.
+func TestUnaAuditoríaQueFallaLoDice(t *testing.T) {
+	b := nuevoBanco(t)
+	b.auditoría.err = errors.New("COM no responde")
+
+	st := b.sesión.RefreshAlerts(ctx())
+	if !tieneAlerta(st, domain.AlertAuditFailed) {
+		t.Fatalf("la auditoría entera falló y nadie se enteró: %+v", st.Alerts)
+	}
+}
+
+// TestLaAuditoríaCaídaSeVaSolaCuandoVuelve: no es pegajosa.
+//
+// Pegajosa se quedaría encendida para siempre tras el primer fallo de COM,
+// porque solo DropAlerts la quita y nadie tiene motivo para llamarla. Una alerta
+// eterna deja de ser información.
+func TestLaAuditoríaCaídaSeVaSolaCuandoVuelve(t *testing.T) {
+	b := nuevoBanco(t)
+	b.auditoría.err = errors.New("COM no responde")
+	if st := b.sesión.RefreshAlerts(ctx()); !tieneAlerta(st, domain.AlertAuditFailed) {
+		t.Fatalf("no avisó del fallo: %+v", st.Alerts)
+	}
+
+	b.auditoría.err = nil
+	b.auditoría.intactas = true
+	if st := b.sesión.RefreshAlerts(ctx()); tieneAlerta(st, domain.AlertAuditFailed) {
+		t.Errorf("la auditoría volvió a contestar y el aviso se quedó puesto: %+v", st.Alerts)
+	}
+}
+
+// TestElRouterQueNoContestaNoEsUnaAuditoríaCaída.
+//
+// La consulta al IGD falla en la mayoría de los routers del mundo, así que
+// contarla como auditoría caída dejaría la alerta encendida en casi todas las
+// máquinas, y una alerta que está siempre no significa nada.
+func TestElRouterQueNoContestaNoEsUnaAuditoríaCaída(t *testing.T) {
+	b := nuevoBanco(t)
+	b.auditoría.intactas = true
+	b.auditoría.errMapeos = errors.New("el router no contesta al IGD")
+
+	st := b.sesión.RefreshAlerts(ctx())
+	if tieneAlerta(st, domain.AlertAuditFailed) {
+		t.Errorf("un router mudo levantó el aviso de auditoría caída: %+v", st.Alerts)
+	}
+}
+
+// TestCadaComprobaciónLocalQueFallaLevantaElAviso, una por una: que el aviso
+// salga con las dos caídas no prueba que salga con una sola.
+func TestCadaComprobaciónLocalQueFallaLevantaElAviso(t *testing.T) {
+	casos := []struct {
+		qué   string
+		rompe func(*auditoríaFalsa)
+	}{
+		{"el estado del firewall", func(a *auditoríaFalsa) {
+			a.errPerfiles = errors.New("INetFwPolicy2 no responde")
+		}},
+		{"las reglas propias", func(a *auditoríaFalsa) {
+			a.errIntactas = errors.New("no se pudo enumerar el grupo")
+		}},
+	}
+	for _, c := range casos {
+		t.Run(c.qué, func(t *testing.T) {
+			b := nuevoBanco(t)
+			b.auditoría.intactas = true
+			c.rompe(b.auditoría)
+
+			st := b.sesión.RefreshAlerts(ctx())
+			if !tieneAlerta(st, domain.AlertAuditFailed) {
+				t.Fatalf("no se pudo comprobar %s y nadie lo dijo: %+v", c.qué, st.Alerts)
+			}
+		})
 	}
 }
 

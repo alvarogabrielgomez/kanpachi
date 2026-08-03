@@ -491,17 +491,38 @@ type auditoríaFalsa struct {
 	perfiles []domain.FirewallProfileState
 	intactas bool
 	mapeos   []domain.PortMapping
-	err      error
+
+	// err rompe los TRES métodos, que es el adaptador entero caído.
+	err error
+	// Y estos rompen uno solo. Hacen falta porque las tres comprobaciones no
+	// valen lo mismo: las dos locales sostienen la promesa y la del router falla
+	// en la mayoría de las máquinas, así que solo las dos primeras pueden
+	// levantar el aviso de auditoría caída. Sin errores por método, esa
+	// diferencia no se puede afirmar en un test.
+	errPerfiles error
+	errIntactas error
+	errMapeos   error
 }
 
 func (a *auditoríaFalsa) FirewallEnabled(context.Context) ([]domain.FirewallProfileState, error) {
-	return a.perfiles, a.err
+	return a.perfiles, primerError(a.errPerfiles, a.err)
 }
 
-func (a *auditoríaFalsa) OwnRulesIntact(context.Context) (bool, error) { return a.intactas, a.err }
+func (a *auditoríaFalsa) OwnRulesIntact(context.Context) (bool, error) {
+	return a.intactas, primerError(a.errIntactas, a.err)
+}
 
 func (a *auditoríaFalsa) RouterMappings(context.Context) ([]domain.PortMapping, error) {
-	return a.mapeos, a.err
+	return a.mapeos, primerError(a.errMapeos, a.err)
+}
+
+func primerError(errs ...error) error {
+	for _, e := range errs {
+		if e != nil {
+			return e
+		}
+	}
+	return nil
 }
 
 type inspectorFalso struct {

@@ -26,7 +26,7 @@ Lo que nunca ve: una terminal, un archivo de configuración, una pregunta del fi
 4. Arranca el servidor del juego como siempre: el dedicado de Zomboid, "Open to LAN" en Minecraft, lo que el juego pida.
 5. La UI dice en texto plano qué está expuesto: "Abierto solo dentro de Kanpachi: 16261-16262 UDP, visible para 4 personas. Tu router sigue cerrado".
 6. Si el instalador del juego dejó una regla que lo hace visible en la red de casa, aparece el aviso con la opción de desactivarla mientras dure la sala. Se restaura sola al salir.
-7. Al salir de la sala, los puertos se cierran, las reglas ajenas suspendidas vuelven a su estado previo y la interfaz regresa a deny all.
+7. Al salir de la sala, los puertos se cierran, las reglas ajenas suspendidas vuelven a su estado previo y la interfaz vuelve a quedar en cuarentena, sin ninguna regla de permiso.
 8. **Si la máquina se apaga de golpe**, la sala queda sin cerrar. Al volver a abrir Kanpachi, la app lo detecta y pregunta si reabrirla: vuelve con el mismo código, la misma red y el mismo juego, y quien siga esperando reconecta solo. Nunca reabre sola. Ver decisión 2.
 
 **Nada de esto toca el router.** Todas las conexiones se inician desde adentro hacia afuera, por eso el NAT deja pasar la respuesta sin reenvío de puertos ni UPnP. Nadie escucha en la IP pública de nadie.
@@ -42,7 +42,7 @@ Nota de rol: "host" es quien corre el servidor del juego. Cualquier miembro pued
 5. Política de recuperación del servicio: reiniciar a los 5 s, 10 s, 30 s.
 6. Crea el adaptador Wintun `kanpachi0`, fija su categoría de red en **Privada** y escribe `Category=1` en su perfil del registro. Hacerlo aquí evita el diálogo de "¿quieres que este equipo sea detectable?" a mitad de una partida.
 7. Fija la métrica del adaptador: IPv4 en 1, IPv6 en 20, `AutomaticMetric` desactivado en ambas pilas.
-8. Aplica el grupo base de reglas: deny all sobre la IP del adaptador, ICMP echo permitido, en los tres perfiles de firewall.
+8. Aplica la cuarentena de base, con el grupo `Kanpachi-base` y en los tres perfiles de firewall: bloqueo de los puertos prohibidos sobre la IP del adaptador **en las dos direcciones**, más ICMP echo permitido. **No es un deny-all**, y no puede serlo: los bloqueos ganan sobre los permisos sin desempate por especificidad, así que un bloqueo total taparía las reglas del juego activo que crea el propio daemon. Ver decisión 4.
 9. Genera el token de la API local en ProgramData.
 10. Accesos directos en Menú Inicio y escritorio.
 11. Arranca el servicio y abre la UI.
@@ -60,12 +60,14 @@ Distribución silenciosa para el grupo: `kanpachi-setup.exe /VERYSILENT /NORESTA
 | Binarios y wintun.dll | `Program Files\Kanpachi\` |
 | Servicio | `kanpachi-daemon`, automático retrasado |
 | Adaptador de red | `kanpachi0` (Wintun), categoría Privada |
-| Reglas de firewall | Grupo "Kanpachi", los tres perfiles |
+| Reglas de firewall | Grupo "Kanpachi" para la sala y "Kanpachi-base" para la cuarentena, los tres perfiles |
 | Datos y logs | `ProgramData\Kanpachi\` |
 
 ## Desinstalación
 
-En orden: detener y borrar el servicio, purgar todas las reglas del grupo "Kanpachi", eliminar el adaptador Wintun, borrar ProgramData, borrar Program Files. Criterio de calidad: instalar y desinstalar veinte veces seguidas en una VM sin dejar rastro.
+En orden: detener y borrar el servicio, purgar las reglas de **los dos grupos**, "Kanpachi" y "Kanpachi-base", eliminar el adaptador Wintun, borrar ProgramData, borrar Program Files. Criterio de calidad: instalar y desinstalar veinte veces seguidas en una VM sin dejar rastro.
+
+**El desinstalador es el único que borra los dos.** Es la razón por la que conviene que los nombres se parezcan, y también la trampa: la comparación va por igualdad exacta contra cada uno, jamás por prefijo contra "Kanpachi", porque el mismo atajo escrito dentro del daemon borraría la cuarentena en cada arranque.
 
 ## Configuración del droplet (kanpachi-seed)
 

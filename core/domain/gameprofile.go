@@ -24,11 +24,51 @@ const SchemaVersion = 2
 // firewall en la máquina de alguien.
 const MaxPortRanges = 8
 
-// FirewallGroup etiqueta toda regla que Kanpachi crea en el Firewall de
+// FirewallGroup etiqueta toda regla que el DAEMON crea en el Firewall de
 // Windows. Al arrancar el servicio se purga todo lo que lleve esta etiqueta y
 // después se aplica el estado deseado, así que una muerte sucia del daemon
 // nunca deja puertos huérfanos abiertos.
+//
+// Son las reglas de la SALA: van y vienen con el juego activo y con quién está
+// dentro. Su contraparte es [FirewallGroupBase], que es de la instalación.
 const FirewallGroup = "Kanpachi"
+
+// FirewallGroupBase etiqueta la cuarentena de base, que pone el INSTALADOR y el
+// daemon jamás toca.
+//
+// # Por qué son dos grupos y no uno
+//
+// Con un solo grupo, la purga del arranque desarma la cuarentena en cada
+// reinicio del servicio, y el fallo es invisible: todo sigue funcionando igual,
+// solo que sin protección. Separarlas hace que el reparto se lea en una frase:
+// el instalador pone la cuarentena, el daemon pone la sala, y ninguno toca lo
+// del otro.
+//
+// La otra mitad del argumento es de tipos: la base necesita BLOQUEO y necesita
+// SALIDA, y [FirewallRule] no puede expresar ninguno de los dos a propósito. Lo
+// que no cabe en un RuleSet no puede ser el daemon quien lo reponga, porque el
+// daemon solo sabe aplicar RuleSets.
+//
+// # Qué hay dentro, y por qué no es un deny-all
+//
+// La entrada ya viene bloqueada por defecto en los tres perfiles de Windows, o
+// sea que la ausencia de reglas de permiso YA ES el deny-all. La base hace lo
+// que la ausencia no puede: bloquear los puertos prohibidos en las dos
+// direcciones, que es lo que gana contra una regla permisiva que dejó el
+// instalador de un juego, más el permiso de ICMP echo para el diagnóstico.
+//
+// Un bloqueo total sobre la IP del adaptador NO sirve, y esto es documentación
+// de Microsoft y no una opinión: los bloqueos explícitos ganan sobre los
+// permisos, sin desempate por especificidad, así que la base taparía las reglas
+// de juego del propio Kanpachi. Ver decisión 4.
+//
+// # Cómo se compara
+//
+// Por IGUALDAD EXACTA, jamás por prefijo. [FirewallGroup] es prefijo de esta
+// cadena, así que una purga escrita con HasPrefix borraría la cuarentena y
+// dejaría la máquina expuesta sin que nadie lo note. Lo vigila un guardián en
+// internal/arch, que además comprueba que este nombre no aparezca en daemon/.
+const FirewallGroupBase = "Kanpachi-base"
 
 // forbiddenPorts son los puertos que ningún perfil puede pedir, jamás.
 //

@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 )
@@ -16,8 +17,12 @@ import (
 //
 // **Ninguna comprobación devuelve error fatal.** Cada una responde una pregunta
 // que Kanpachi no controla y que anula su promesa si nadie la mira, y que la
-// consulta falle no puede impedir entrar a una sala ni jugar. Lo que se pierde
-// es el aviso, y eso queda en el log.
+// consulta falle no puede impedir entrar a una sala ni jugar.
+//
+// **Que falle sí se dice.** Va al log y además levanta [domain.AlertAuditFailed],
+// porque una comprobación que no contesta y un resultado limpio se ven idénticos
+// desde la pantalla: las dos pintan verde. La excepción es la consulta al router,
+// que falla en condiciones normales.
 // TamperRepairLimit es cuántas veces se reponen las reglas propias antes de
 // dejar de intentarlo.
 //
@@ -31,8 +36,15 @@ const TamperRepairLimit = 3
 func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 	var found []domain.Alert
 
+	// Lo que no se pudo mirar. Se junta en UNA alerta y no en una por
+	// comprobación, porque es un solo hecho: el módulo dejó de vigilar. Dos
+	// filas en la pantalla por el mismo hecho invitan a leer una y descartar la
+	// otra.
+	var sinRespuesta []string
+
 	if estados, err := s.deps.Audit.FirewallEnabled(ctx); err != nil {
 		s.deps.Log.Warn("no se pudo comprobar si el firewall está encendido", "error", err)
+		sinRespuesta = append(sinRespuesta, "si el Firewall de Windows está encendido")
 	} else {
 		for _, e := range estados {
 			if !e.Enabled {
@@ -54,6 +66,7 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 	if intactas, err := s.deps.Audit.OwnRulesIntact(ctx); err != nil {
 		s.deps.Log.Warn("no se pudieron revisar las reglas propias", "error", err)
 		sePudoRevisar = false
+		sinRespuesta = append(sinRespuesta, "si las reglas de Kanpachi siguen puestas")
 	} else {
 		alteradas = !intactas
 	}
@@ -61,6 +74,11 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 	if mapeos, err := s.deps.Audit.RouterMappings(ctx); err != nil {
 		// Muchísimos routers no contestan al IGD, así que esto falla en
 		// condiciones normales y no vale ni un aviso al usuario.
+		//
+		// **Tampoco cuenta como auditoría caída**, y por lo mismo: una alerta
+		// encendida en la mayoría de las máquinas del mundo no informa de nada.
+		// Las otras dos comprobaciones son locales y solo fallan si algo está
+		// roto de verdad.
 		s.deps.Log.Info("el router no respondió a la consulta de mapeos", "detalle", err)
 	} else {
 		for _, m := range mapeos {
@@ -72,6 +90,17 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 					m.ExternalPort, m.InternalIP),
 			})
 		}
+	}
+
+	// El módulo que existe para avisar que la promesa se rompió tiene que poder
+	// avisar que él mismo dejó de mirar. Sin esto, con las consultas fallando la
+	// pantalla queda en verde, que es la peor de las dos mentiras posibles: la
+	// otra sería inventar un hallazgo falso, y esa al menos se investiga.
+	if len(sinRespuesta) > 0 {
+		found = append(found, domain.Alert{
+			Kind:   domain.AlertAuditFailed,
+			Detail: "no se pudo comprobar " + strings.Join(sinRespuesta, " ni "),
+		})
 	}
 
 	s.mu.Lock()

@@ -226,7 +226,7 @@ Lo que **dejó de ser cierto** es que quien tenga el código entre para siempre.
 
 **Elección:**
 
-- Deny all en la interfaz virtual, en ambas direcciones, desde la instalación.
+- Cuarentena en la interfaz virtual desde la instalación, en los tres perfiles.
 - Se abre únicamente lo que pide el perfil del juego activo, únicamente en el host, únicamente hacia las IPs de miembros presentes en la sala.
 - ICMP echo permitido, para que el diagnóstico funcione.
 - 445, 3389, 22 y todo lo no listado: cerrado siempre. La API no tiene forma de abrirlos.
@@ -234,22 +234,61 @@ Lo que **dejó de ser cierto** es que quien tenga el código entre para siempre.
 
 **La UI lo hace visible:** "Zomboid, 2 puertos UDP, visibles para 4 personas". La seguridad que no se ve no genera confianza.
 
+### La cuarentena NO es un deny-all, y la diferencia es funcional
+
+Este documento decía "deny all en la interfaz virtual, en ambas direcciones". Implementado literal, deja al host con la sala abierta y el juego sin conectar. La documentación del Firewall de Windows lo dice textual:
+
+> Explicit block rules take precedence over any conflicting allow rules. More specific rules take precedence over less specific rules, **except if there are explicit block rules**.
+>
+> — *Windows Firewall Rules*, Microsoft Learn
+
+O sea que un bloqueo entrante sobre la IP del adaptador gana sobre las reglas de permiso que Kanpachi crea para el juego activo. No hay desempate por especificidad y Windows tampoco admite orden asignado por el administrador: el bloqueo gana y punto. Con la dirección de salida pasa lo mismo por otro lado: bloquear la salida del adaptador virtual impide que un invitado marque al puerto del juego del host, que es el caso central del producto.
+
+**Lo que sostiene la promesa es la AUSENCIA.** La entrada ya viene bloqueada por defecto en los tres perfiles de Windows, así que no tener reglas de permiso ya es el deny-all, y es un deny-all que ninguna regla nuestra puede tapar. La cuarentena de base no tiene que declararlo, tiene que hacer lo que la ausencia no puede:
+
+| Qué | Por qué |
+|---|---|
+| Bloqueo **entrante** de los puertos prohibidos sobre la IP del adaptador | Es lo que gana contra una regla permisiva que dejó el instalador de un juego, que es el escenario de la decisión 19 |
+| Bloqueo **saliente** de los mismos puertos | Esto es el "en ambas direcciones" que sí se sostiene: impide que algo infectado en esta máquina barra SMB por la sala, sin tocar el tráfico del juego |
+| Permiso de **ICMP echo** | Para que el diagnóstico funcione |
+
+**Jamás se solapa con lo que Kanpachi abre**, y eso no es cuidado, es imposible por construcción: esos puertos no se pueden expresar en un perfil, lo impide `forbiddenPorts` en el dominio y lo recomprueba `BuildRuleSet`. Encima es un upgrade sobre lo que había escrito, porque convierte la invariante de puertos prohibidos de una ausencia ("no hay forma de abrirlos") en una presencia que gana sobre reglas ajenas.
+
+### Dos grupos, con dueños distintos
+
+Las tres reglas de arriba son estáticas: no cambian con la sala, ni con el juego, ni con los miembros. Y no pueden vivir en el conjunto declarativo, por dos razones que apuntan al mismo sitio.
+
+La primera es de tipos. La base necesita **bloqueo** y necesita **salida**, y `FirewallRule` no puede expresar ninguno de los dos, a propósito: no hay campo para acción ni para dirección, y esas ausencias son invariantes. Meterla en el `RuleSet` obliga a agregarle a un tipo cuya seguridad viene justamente de no tenerlos.
+
+La segunda es de ciclo de vida. El daemon purga por grupo al arrancar. Con un solo grupo, o la base sobrevive a la purga y entonces "purgar todo lo etiquetado" es falso, o no sobrevive y la cuarentena dura hasta el primer reinicio del servicio. El fallo sería invisible: con la base borrada todo sigue funcionando igual, solo que la máquina queda expuesta.
+
+| Grupo | Quién lo pone | Qué lleva | Cuándo se va |
+|---|---|---|---|
+| `Kanpachi` | El daemon, en cada cambio de sala | Las reglas del juego activo y el hueco del canal | Purga del arranque, o salir de la sala |
+| `Kanpachi-base` | El instalador, una vez | La cuarentena de arriba | El desinstalador |
+
+**El daemon jamás nombra el grupo base,** así que la cuarentena sigue puesta con el servicio detenido, deshabilitado o a medio desinstalar. Lo vigila `internal/arch/grupobase_test.go`, que además comprueba lo que un lector distraído rompería sin notarlo: `Kanpachi` es prefijo de `Kanpachi-base`, así que una purga escrita con `HasPrefix` en vez de igualdad se lleva la cuarentena por delante.
+
+**Alternativa descartada:** meter la base dentro del conjunto deseado que el daemon reaplica. Deja de existir cada vez que el daemon no está, que es justo cuando más hace falta, y paga el costo de agregarle acción y dirección a `FirewallRule`.
+
+**Consecuencia para el adaptador del firewall, cuando se escriba:** con el bloqueo explícito de puertos prohibidos puesto, `SuspendForeign` deja de hacer falta para SMB y RDP, porque el bloqueo ya gana sobre esas reglas ajenas. Le queda su caso real, que es una regla permisiva del propio juego en su propio puerto.
+
 ### El único hueco que no pide ningún perfil
 
-El canal de la sala de la decisión 23 necesita que el host escuche en un puerto de la interfaz virtual, y la interfaz nace con deny all. O sea que el deny-all tiene exactamente una excepción, y conviene nombrarla en vez de descubrirla:
+El canal de la sala de la decisión 23 necesita que el host escuche en un puerto de la interfaz virtual, y la interfaz nace en cuarentena. O sea que la cuarentena tiene exactamente una excepción que no pide ningún perfil, y conviene nombrarla en vez de descubrirla:
 
 | Regla | Dónde escucha | Quién puede llegar | Mientras |
 |---|---|---|---|
 | La puerta | La IP del host en el vestíbulo | El `/24` fijo del vestíbulo entero | Haya sala abierta |
 | La sala | La IP del host en `kanpachi0` | Solo las IPs de los miembros presentes | Haya al menos un miembro |
 
-**Solo en el host, y el puerto es del producto, no de ningún juego.** Un invitado no escucha nada, así que su deny-all queda literalmente intacto.
+**Solo en el host, y el puerto es del producto, no de ningún juego.** Un invitado no escucha nada, así que su cuarentena queda literalmente intacta.
 
 **La puerta es la única regla del programa que se expresa con un prefijo y no con una lista.** No hay alternativa: quien está entrando todavía no es miembro y su dirección en el vestíbulo es aleatoria, así que la regla tiene que existir antes de saber quién va a llegar. Lo que impide que ese campo se convierta en la forma de escribir "cualquiera" es que se valida contra el `/24` del vestíbulo, y cualquier otro prefijo se rechaza con un error propio. Lo que la acota de verdad no es la regla: es que por la puerta solo se puede pedir una cosa, una credencial.
 
 **Se recalcula con los miembros presentes, como las de juego.** Consecuencia buena y gratis: expulsar cierra el hueco para el expulsado en el firewall, y no solo en la lista del oyente. Son dos capas que fallan por motivos distintos, que es la doctrina de la decisión 26 aplicada acá.
 
-Lo que sigue viviendo en el adaptador del firewall y no en el conjunto declarativo: el deny-all de base, el ICMP echo, y la dirección saliente. Son la instalación, no la sala.
+Lo que NO vive en el conjunto declarativo: la cuarentena de base, o sea el bloqueo de los puertos prohibidos en las dos direcciones y el permiso de ICMP echo. La pone el instalador con el grupo `Kanpachi-base` y el daemon jamás la toca. Es la instalación, no la sala.
 
 ## 5. Cliente solo Windows en la v1
 
@@ -471,7 +510,8 @@ Qué revisa:
 | Firewall de Windows desactivado | `INetFwPolicy2`, perfil por perfil | Que la contención de Kanpachi vive ahí, y que conviene encenderlo |
 | Mapeo de puerto en el router | Consulta de solo lectura al IGD por UPnP o NAT-PMP | Que hay un puerto abierto a internet, y que Kanpachi no lo necesita |
 | Regla ajena permisiva del juego | Almacén de reglas del Firewall, por ruta de ejecutable | Que ese juego queda alcanzable fuera de Kanpachi, ver decisión 12 |
-| Reglas base de Kanpachi ausentes o alteradas | Autochequeo del grupo `Kanpachi` | Que la cuarentena no está aplicada |
+| Reglas de Kanpachi ausentes o alteradas | Autochequeo del grupo `Kanpachi` | Que la sala no está aplicada como se declaró |
+| Alguno de los dos chequeos locales no contestó | El propio módulo, al fallar la consulta | Que nadie está mirando, que no es lo mismo que "todo bien" |
 
 **Excepción explícita a "el router no se toca nunca".** La consulta al IGD es de **solo lectura**. Kanpachi jamás crea ni borra un mapeo, jamás pide uno. Leer para detectar una exposición sirve a la invariante, escribir la violaría. La distinción va en el código como dos operaciones separadas, con la de escritura inexistente.
 
@@ -488,6 +528,18 @@ De las cuatro, tres describen la máquina del usuario y Kanpachi las dice sin to
 **Reponerlas no es arreglarle la máquina al usuario, es volver a hacer cierta su propia declaración.** Un hallazgo que se denuncia y no se repara deja la cuarentena rota mientras el usuario lee el aviso. Funciona porque el puerto del firewall es declarativo y calcula la diferencia contra las reglas VIVAS del grupo, no contra un recuerdo en memoria: reaplicar el mismo conjunto repone lo que alguien borró y quita lo que alguien agregó.
 
 **Se repone tres veces y después se avisa.** Tres distingue los dos casos que producen el mismo síntoma: el toque puntual de alguien mirando la consola del firewall, que se arregla con una reaplicación, y algo que las quita en bucle, que suele ser un antivirus. Contra lo segundo, insistir es pelearse a golpe de COM y eso no lo gana nadie.
+
+### El módulo también avisa cuando deja de mirar
+
+**El agujero que esto tapa:** con las consultas fallando, el módulo producía **cero alertas** y la pantalla quedaba en verde. El módulo que existe para avisar que la promesa se rompió no podía avisar que él mismo había dejado de mirar, y desde la pantalla "no se pudo comprobar" y "todo en orden" se veían idénticos.
+
+**Elección:** una alerta propia, `AlertAuditFailed`, cuando falla cualquiera de los dos chequeos **locales**, el estado del firewall o las reglas propias.
+
+**No es pegajosa.** Se recalcula en cada barrido, igual que la del firewall apagado, así que en cuanto la consulta vuelve a contestar el aviso se va solo. Pegajosa se quedaría encendida para siempre tras el primer fallo de COM, porque solo `DropAlerts` la quita y nadie tendría motivo para llamarla, y una alerta eterna deja de ser información.
+
+**La consulta al router NO cuenta.** Falla en la mayoría de los routers del mundo, que nunca contestan al IGD, así que incluirla dejaría la alerta encendida en casi todas las máquinas. Una alerta que está siempre no significa nada, y peor, enseña a ignorar las que sí importan.
+
+**Alternativa descartada:** que un adaptador provisional devuelva datos falsos "en la dirección segura", tipo los tres perfiles apagados. Levanta `AlertFirewallOff`, que es **falso**, porque el firewall del usuario está encendido. Una alerta que miente rompe la decisión 19 más que el silencio: quien la investiga y no encuentra nada aprende a no investigar la siguiente.
 
 ## 20. La sala vive mientras haya alguien conectado
 
