@@ -73,7 +73,7 @@ func (f *Firewall) Apply(ctx context.Context, desired domain.RuleSet) error {
 		}
 		defer rules.Release()
 
-		live, byName, err := readOwn(rules)
+		live, shared, err := readOwn(rules)
 		if err != nil {
 			return err
 		}
@@ -83,23 +83,37 @@ func (f *Firewall) Apply(ctx context.Context, desired domain.RuleSet) error {
 			wanted[s.Name] = s
 		}
 
-		// Remove what nobody asked for, and what drifted. A drifted rule is
-		// removed and rewritten rather than patched: patching field by field
+		// Retire what nobody asked for, and what drifted. A drifted rule is
+		// retired and rewritten rather than patched field by field: patching
 		// leaves a window where the rule is half old and half new, and that
 		// window is on the wire.
-		for name, l := range live {
+		//
+		// retired tracks what actually went away. A rule that could not be
+		// retired must NOT be rewritten, or every Apply adds another copy of
+		// it and the store grows without bound.
+		retired := map[string]bool{}
+		for name := range live {
 			s, keep := wanted[name]
-			if keep && l.spec.sameScope(s) {
+			if keep && live[name].spec.sameScope(s) {
 				continue
 			}
-			if err := f.removeOwn(rules, name, byName); err != nil {
+			gone, err := f.retire(rules, name, shared[name])
+			if err != nil {
 				return err
 			}
+			retired[name] = gone
 		}
 
 		for _, s := range want {
-			if l, ok := live[s.Name]; ok && l.spec.sameScope(s) {
-				continue
+			if l, ok := live[s.Name]; ok {
+				if l.spec.sameScope(s) {
+					continue
+				}
+				if !retired[s.Name] {
+					// Could not be retired, so it is still there under that
+					// name. Writing another one would duplicate it forever.
+					continue
+				}
 			}
 			if err := addRule(rules, s); err != nil {
 				return fmt.Errorf("writing rule %q: %w", s.Name, err)
@@ -109,30 +123,54 @@ func (f *Firewall) Apply(ctx context.Context, desired domain.RuleSet) error {
 	})
 }
 
-// removeOwn deletes one of our rules by name, refusing when the name is shared.
+// retire takes one of our rules out of service, and says whether it is GONE.
 //
-// # Why the refusal is not paranoia
+// # Why this is not just Remove
 //
 // INetFwPolicy2.Rules.Remove takes a NAME, and Windows lets unrelated rules
 // share one. Measured the hard way on a real machine: removing a stale
-// "easytier-core" rule by name also took out a live one that happened to carry
-// the same name, because the API gives no way to say which.
+// "easytier-core" rule by name also took out a live rule carrying the same
+// name, because the API offers no way to say which one.
 //
-// PurgeOwned survives that because it deletes the whole group and the ambiguity
-// does not matter. Here it does, so the rule is: if any rule with this name
-// belongs to someone else, do not touch it. Leaving one of ours behind is a
-// stale allow that the next sweep reports; deleting someone else's is silent
-// damage to a machine Kanpachi does not own.
-func (f *Firewall) removeOwn(rules *ole.IDispatch, name string, byName map[string]int) error {
-	if byName[name] > 1 {
-		f.log.Warn("a rule was left in place because its name is shared with rules that are not ours",
-			"regla", name, "coincidencias", byName[name])
-		return nil
+// So when the name is unique in the whole store, Remove is safe and the rule is
+// gone. When it is shared, deleting would be a coin flip on someone else's
+// configuration, so instead our own rule object is DISABLED in place. Enumerating
+// hands us that exact object, which is the one precise handle the API gives.
+//
+// A disabled rule opens nothing, so the port is shut either way. What differs is
+// that it is still there under that name, and the caller must not write another
+// one on top: that is what the returned bool is for.
+//
+// Returning false is a functional failure -- the game's port will not open --
+// and it is the right trade. Kanpachi failing to open a port is visible and
+// recoverable; Kanpachi silently deleting a rule from a machine it does not own
+// is neither.
+func (f *Firewall) retire(rules *ole.IDispatch, name string, sharedWith int) (bool, error) {
+	if sharedWith <= 1 {
+		if _, err := oleutil.CallMethod(rules, "Remove", name); err != nil {
+			return false, fmt.Errorf("removing rule %q: %w", name, err)
+		}
+		return true, nil
 	}
-	if _, err := oleutil.CallMethod(rules, "Remove", name); err != nil {
-		return fmt.Errorf("removing rule %q: %w", name, err)
+
+	disabled := false
+	err := eachRule(rules, func(rule *ole.IDispatch) (bool, error) {
+		if strProp(rule, "Name") != name || strProp(rule, "Grouping") != domain.FirewallGroup {
+			return true, nil
+		}
+		if _, err := oleutil.PutProperty(rule, "Enabled", false); err != nil {
+			return false, fmt.Errorf("disabling rule %q: %w", name, err)
+		}
+		disabled = true
+		return true, nil
+	})
+	if err != nil {
+		return false, err
 	}
-	return nil
+
+	f.log.Warn("una regla se desactivó en vez de borrarse porque su nombre lo usa alguien más",
+		"regla", name, "coincidencias", sharedWith, "desactivada", disabled)
+	return false, nil
 }
 
 // readOwn returns our group's rules, and how many rules carry each name across
@@ -264,10 +302,17 @@ func (f *Firewall) PurgeOwned(ctx context.Context) error {
 		}
 		defer rules.Release()
 
-		var names []string
+		// Name and how many rules in the WHOLE store carry it. The count is
+		// what decides whether deleting is safe, exactly as in Apply: this
+		// loop used to call Remove blindly for every name in our group, which
+		// is the same coin flip on someone else's configuration.
+		var ours []string
+		shared := map[string]int{}
 		err = eachRule(rules, func(rule *ole.IDispatch) (bool, error) {
+			name := strProp(rule, "Name")
+			shared[name]++
 			if strProp(rule, "Grouping") == domain.FirewallGroup {
-				names = append(names, strProp(rule, "Name"))
+				ours = append(ours, name)
 			}
 			return true, nil
 		})
@@ -275,9 +320,10 @@ func (f *Firewall) PurgeOwned(ctx context.Context) error {
 			return err
 		}
 
-		for _, n := range names {
-			if _, err := oleutil.CallMethod(rules, "Remove", n); err != nil {
-				return fmt.Errorf("purging rule %q: %w", n, err)
+		names := ours
+		for _, n := range ours {
+			if _, err := f.retire(rules, n, shared[n]); err != nil {
+				return err
 			}
 		}
 		if len(names) > 0 {
