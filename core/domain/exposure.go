@@ -1,6 +1,9 @@
 package domain
 
-import "net/netip"
+import (
+	"net/netip"
+	"strings"
+)
 
 // FirewallProfile son los tres perfiles del Firewall de Windows.
 //
@@ -40,24 +43,158 @@ type FirewallProfileState struct {
 	Enabled bool
 }
 
-// ForeignRule es una regla de firewall que Kanpachi NO creó y que deja al
-// juego alcanzable por fuera de su control.
+// RuleClass dice DE QUÉ es una regla ajena, y de eso depende cómo la trata la
+// UI.
 //
-// La deja el instalador del juego o un diálogo previo de Windows que el
-// usuario despachó con "Permitir". Su efecto es que expulsar a alguien de la
-// sala no lo tapa: sigue alcanzando el juego desde la LAN de casa.
+// Existe porque tratarlas a todas igual era el bug: una regla de más para el
+// juego molesta, y una de escritorio remoto entrega la máquina.
+type RuleClass uint8
+
+const (
+	// ClassGame la dejó el instalador del juego o un diálogo de Windows. Es
+	// una fila más de la lista de la decisión 12.
+	ClassGame RuleClass = iota + 1
+	// ClassRemoteControl da teclado, pantalla y sistema de archivos. La UI la
+	// trata como BLOQUEANTE y ofrece suspenderla ANTES de abrir la sala.
+	ClassRemoteControl
+	ClassOther
+)
+
+func (c RuleClass) String() string {
+	switch c {
+	case ClassGame:
+		return "juego"
+	case ClassRemoteControl:
+		return "control remoto"
+	case ClassOther:
+		return "otra"
+	default:
+		return "clase-inválida"
+	}
+}
+
+// remoteAccessExes son los ejecutables que entregan la máquina entera.
+//
+// # Por qué esta lista existe y por qué no es una lista de puertos
+//
+// La cuarentena de base bloquea el escritorio remoto ESTÁNDAR por puerto: 3389
+// de RDP, 5985 y 5986 de WinRM, 445 de SMB. Eso alcanza para lo que trae
+// Windows.
+//
+// No alcanza para estos. Parsec, Sunshine, Moonlight, RustDesk y AnyDesk
+// escuchan en puertos ARBITRARIOS Y CONFIGURABLES, así que no hay lista negra
+// de puertos que los cubra. Lo único estable es el ejecutable.
+//
+// # El agujero que cierra
+//
+// [port.FirewallPort.AuditForeign] recibía un [GameProfile] y buscaba por la
+// ruta del ejecutable DEL JUEGO ACTIVO. Con eso, una regla permisiva de Parsec
+// no se miraba nunca, y ese es el único camino conocido por el que un miembro
+// de la sala consigue la máquina del host entera. El código de invitación no es
+// un secreto y no hay baneo, así que el vecindario no es de confianza plena.
+//
+// Se compara por NOMBRE DE ARCHIVO en minúsculas, jamás por ruta completa: la
+// ruta depende de dónde lo instaló cada uno.
+var remoteAccessExes = [...]string{
+	"parsecd.exe",
+	"parsec.exe",
+	"sunshine.exe",
+	"moonlight.exe",
+	"rustdesk.exe",
+	"anydesk.exe",
+	"teamviewer.exe",
+	"teamviewer_service.exe",
+	"vncserver.exe",
+	"winvnc.exe",
+	"tvnserver.exe",
+	"dwservice.exe",
+	"nomachine.exe",
+}
+
+// RemoteAccessExecutables es la lista que el adaptador tiene que buscar ADEMÁS
+// del ejecutable del juego activo. Devuelve una copia.
+func RemoteAccessExecutables() []string {
+	out := make([]string, len(remoteAccessExes))
+	copy(out, remoteAccessExes[:])
+	return out
+}
+
+// ClassifyForeign dice qué clase es una regla, a partir de su ejecutable.
+//
+// Es pura y vive en el dominio a propósito: la clasificación es POLÍTICA, y el
+// adaptador solo sabe leer el almacén de reglas de Windows.
+//
+// `gameExe` es la ruta del ejecutable del perfil activo, y puede ir vacía
+// cuando no hay juego activo. El control remoto gana sobre el juego: un
+// ejecutable que esté en las dos listas es lo peligroso de las dos.
+func ClassifyForeign(executable, gameExe string) RuleClass {
+	base := baseLower(executable)
+	if base == "" {
+		return ClassOther
+	}
+	for _, exe := range remoteAccessExes {
+		if base == exe {
+			return ClassRemoteControl
+		}
+	}
+	if g := baseLower(gameExe); g != "" && base == g {
+		return ClassGame
+	}
+	return ClassOther
+}
+
+// baseLower saca el nombre de archivo en minúsculas de una ruta de Windows.
+//
+// Acepta las dos barras porque una regla del almacén puede traer cualquiera de
+// las dos, y no usa filepath a propósito: este paquete compila y se testea en
+// Linux, donde filepath.Base no corta por barra invertida.
+func baseLower(ruta string) string {
+	if i := strings.LastIndexAny(ruta, `\/`); i >= 0 {
+		ruta = ruta[i+1:]
+	}
+	return strings.ToLower(strings.TrimSpace(ruta))
+}
+
+// ForeignRule es una regla de firewall que Kanpachi NO creó y que deja la
+// máquina alcanzable por fuera de su control.
+//
+// La deja el instalador del juego, el de una herramienta de escritorio remoto,
+// o un diálogo previo de Windows que el usuario despachó con "Permitir". Su
+// efecto es que expulsar a alguien de la sala no lo tapa: sigue alcanzando lo
+// que la regla abrió, desde la LAN de casa y desde la red virtual.
 //
 // La consulta va contra el ALMACÉN DE REGLAS del firewall, buscando por ruta
-// de ejecutable. No enumera procesos, no detecta si el juego está corriendo y
-// no le importa: la regla existe en disco haya o no partida.
+// de ejecutable. No enumera procesos, no detecta si el programa está corriendo
+// y no le importa: la regla existe en disco haya o no partida.
 type ForeignRule struct {
 	Name       string
 	Executable string
 	Profiles   []FirewallProfile
+	// Class decide el trato en la UI. La calcula [ClassifyForeign], que es
+	// dominio, y jamás el adaptador.
+	Class RuleClass
 	// WasEnabled es el estado previo, para restaurar. Se persiste ANTES de
 	// tocar nada, en suspended-rules.json, para poder deshacerlo tras una
 	// salida sucia.
 	WasEnabled bool
+}
+
+// Blocking dice si esta regla tiene que resolverse ANTES de abrir la sala.
+//
+// Solo el control remoto lo es. Una regla de más para el juego se muestra y se
+// ofrece suspender; una que entrega teclado y ficheros no se despacha con una
+// fila en una lista.
+func (r ForeignRule) Blocking() bool { return r.Class == ClassRemoteControl }
+
+// BlockingForeign filtra las que hay que resolver antes de abrir la sala.
+func BlockingForeign(rules []ForeignRule) []ForeignRule {
+	var out []ForeignRule
+	for _, r := range rules {
+		if r.Blocking() {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // PortMapping es un mapeo que existe en el router del usuario.

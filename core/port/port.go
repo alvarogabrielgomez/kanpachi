@@ -124,9 +124,24 @@ type FirewallPort interface {
 	// cuarentena. Lo vigila un guardián en internal/arch.
 	PurgeOwned(ctx context.Context) error
 
-	// AuditForeign busca reglas permisivas que dejó el instalador del juego o
-	// un diálogo previo de Windows. Consulta el almacén de reglas por ruta de
-	// ejecutable: no enumera procesos y no sabe si el juego está corriendo.
+	// AuditForeign busca reglas permisivas que Kanpachi no creó. Consulta el
+	// almacén de reglas por ruta de ejecutable: no enumera procesos y no sabe
+	// si el programa está corriendo.
+	//
+	// **Busca DOS cosas, y la segunda es la que importa de verdad.** El
+	// ejecutable del perfil activo, que es el caso obvio, y además todos los de
+	// [domain.RemoteAccessExecutables].
+	//
+	// Este método recibía SOLO el perfil, así que una regla de Parsec o de
+	// Sunshine no se miraba nunca. Y ese es el único camino conocido por el que
+	// alguien de la sala consigue teclado, pantalla y sistema de archivos del
+	// host: la cuarentena tapa el escritorio remoto ESTÁNDAR por puerto, y
+	// estas herramientas escuchan donde el usuario les diga.
+	//
+	// `p` puede ir vacío cuando no hay juego activo, y la auditoría de control
+	// remoto sigue valiendo igual. Cada hallazgo llega clasificado por
+	// [domain.ClassifyForeign], que es dominio: el adaptador lee Windows y no
+	// decide qué es peligroso.
 	AuditForeign(ctx context.Context, p domain.GameProfile) ([]domain.ForeignRule, error)
 	// SuspendForeign las desactiva, jamás las borra, y persiste el estado
 	// previo antes de tocar nada. Siempre con confirmación del usuario.

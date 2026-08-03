@@ -66,16 +66,23 @@ func (s *Session) ActivateProfile(ctx context.Context, gameID string) (domain.Ro
 	return s.snapshot(), nil
 }
 
-// ForeignRulesFor busca reglas que dejó el propio juego y que lo hacen
-// alcanzable sin pasar por Kanpachi.
+// ForeignRulesFor busca reglas ajenas que dejan la máquina alcanzable sin pasar
+// por Kanpachi.
 //
 // Se consulta y se MUESTRA. Nunca se desactiva sola: suspender una regla del
 // firewall del usuario es una decisión suya, y hacerlo automáticamente sería
 // tocarle la máquina por algo que él permitió alguna vez a propósito.
 //
 // La consulta va contra el almacén de reglas del firewall, buscando por ruta
-// de ejecutable. No enumera procesos y no le importa si el juego está
+// de ejecutable. No enumera procesos y no le importa si el programa está
 // corriendo: la regla existe en disco haya o no partida.
+//
+// **Busca dos cosas, no una.** El ejecutable del juego, y las herramientas de
+// control remoto. Ver [domain.RemoteAccessExecutables]: la cuarentena tapa el
+// escritorio remoto estándar por puerto, y Parsec o Sunshine escuchan donde el
+// usuario les diga, así que solo el ejecutable las identifica. Las de control
+// remoto vuelven marcadas como [domain.ClassRemoteControl], que la UI trata
+// como bloqueante.
 func (s *Session) ForeignRulesFor(ctx context.Context, gameID string) ([]domain.ForeignRule, error) {
 	s.mu.Lock()
 	p, ok := s.catalog.Find(gameID)
@@ -85,6 +92,23 @@ func (s *Session) ForeignRulesFor(ctx context.Context, gameID string) ([]domain.
 		return nil, fmt.Errorf("%w: %q", ErrUnknownGame, gameID)
 	}
 	return s.deps.Firewall.AuditForeign(ctx, p)
+}
+
+// BlockingForeignRules son las que hay que resolver ANTES de abrir la sala.
+//
+// Hoy es una sola clase, el control remoto, y tiene un motivo que ninguna otra
+// comparte: entrega teclado, pantalla y sistema de archivos. Despacharlo como
+// una fila más de una lista es tratarlo como si fuera una regla de más para el
+// juego, y no lo es.
+//
+// Devuelve lista vacía sin juego activo, y eso no significa que no haya nada:
+// significa que todavía no se preguntó. Quien decide cuándo preguntar es la UI.
+func (s *Session) BlockingForeignRules(ctx context.Context, gameID string) ([]domain.ForeignRule, error) {
+	rules, err := s.ForeignRulesFor(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+	return domain.BlockingForeign(rules), nil
 }
 
 // SuspendForeignRules desactiva las reglas ajenas que el usuario aceptó
