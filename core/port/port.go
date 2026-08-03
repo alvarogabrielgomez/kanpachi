@@ -279,7 +279,21 @@ type SocketInspector interface {
 // errores fatales que impidan entrar a una sala.
 type ExposureAudit interface {
 	FirewallEnabled(ctx context.Context) ([]domain.FirewallProfileState, error)
-	OwnRulesIntact(ctx context.Context) (bool, error)
+
+	// Enforcement devuelve lo que el sistema tiene puesto AHORA, medido en las
+	// dos capas: las reglas vivas del grupo propio y el filtro de paquetes
+	// acotado al adaptador virtual.
+	//
+	// **Mide, jamás juzga.** Quien decide si eso es lo que se pidió es
+	// [domain.Enforcement.Diff], que es dominio y se testea sin Windows. Esto
+	// reemplaza a un `OwnRulesIntact(bool)` que no podía decir QUÉ falta, y
+	// resulta que esa era la frase que la pantalla necesitaba.
+	//
+	// Que falle levanta [domain.AlertAuditFailed]. Un adaptador que devuelva el
+	// cero de [domain.Enforcement] está diciendo que no hay nada puesto y que
+	// la compuerta no se pudo comprobar, que es lo correcto para el que todavía
+	// no existe.
+	Enforcement(ctx context.Context) (domain.Enforcement, error)
 	// RouterMappings es la excepción de SOLO LECTURA a "el router no se toca
 	// nunca". No hay método para crear ni para borrar, y esa ausencia es
 	// deliberada.

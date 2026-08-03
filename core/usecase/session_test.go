@@ -1353,7 +1353,7 @@ func TestLasAlertasDeExposiciónLleganPorStatus(t *testing.T) {
 		{Profile: domain.ProfileDomain, Enabled: true},
 		{Profile: domain.ProfilePublic, Enabled: false},
 	}
-	b.auditoría.intactas = false
+	b.auditoría.tamper()
 	b.auditoría.mapeos = []domain.PortMapping{
 		{ExternalPort: 25565, InternalIP: netip.MustParseAddr("192.168.1.7")},
 	}

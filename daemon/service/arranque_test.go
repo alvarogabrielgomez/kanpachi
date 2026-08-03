@@ -190,8 +190,9 @@ func (r *registro) espera(t *testing.T, n int) {
 
 type bucleFalso struct{ orden *registro }
 
-func (b *bucleFalso) Run(ctx context.Context) error {
+func (b *bucleFalso) Run(ctx context.Context, ready chan<- struct{}) error {
 	b.orden.anota("bucle")
+	close(ready)
 	<-ctx.Done()
 	return ctx.Err()
 }

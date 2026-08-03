@@ -59,16 +59,17 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 		}
 	}
 
-	// Las reglas propias se COMPRUEBAN acá y se reponen más abajo, con el
-	// candado tomado, porque reponerlas es aplicar política y eso no se hace
-	// sin candado. La consulta sí va suelta, igual que las otras dos.
-	alteradas, sePudoRevisar := false, true
-	if intactas, err := s.deps.Audit.OwnRulesIntact(ctx); err != nil {
-		s.deps.Log.Warn("no se pudieron revisar las reglas propias", "error", err)
+	// Las reglas propias se MIDEN acá, suelto, igual que las otras dos
+	// consultas. El veredicto se calcula más abajo con el candado tomado,
+	// porque comparar contra el estado deseado exige leer el estado de la
+	// sesión, y reponerlas es aplicar política.
+	medido, sePudoRevisar := domain.Enforcement{}, true
+	if e, err := s.deps.Audit.Enforcement(ctx); err != nil {
+		s.deps.Log.Warn("no se pudo medir lo que el firewall tiene puesto", "error", err)
 		sePudoRevisar = false
 		sinRespuesta = append(sinRespuesta, "si las reglas de Kanpachi siguen puestas")
 	} else {
-		alteradas = !intactas
+		medido = e
 	}
 
 	if mapeos, err := s.deps.Audit.RouterMappings(ctx); err != nil {
@@ -111,6 +112,34 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 	// una sala que ya no existe y clearRoom ya dejó las alertas en nil.
 	if s.enforceDeadlinesLocked(ctx) {
 		return s.snapshot()
+	}
+
+	// El veredicto se calcula ACÁ y no en el adaptador: el adaptador mide y el
+	// dominio juzga. Y se compara contra el MISMO cálculo que se aplica, que es
+	// para lo que existe desiredRuleSetLocked.
+	//
+	// La compuerta solo se exige con sala abierta, porque sin sala no hay
+	// adaptador virtual y una alerta encendida en reposo enseña a ignorar la
+	// pantalla.
+	alteradas := false
+	if sePudoRevisar {
+		deseado, err := s.desiredRuleSetLocked()
+		if err != nil {
+			// Sin poder calcular lo deseado no hay veredicto posible, y
+			// inventar uno sería peor que callarse. Es la misma doctrina que
+			// no poder medir.
+			s.deps.Log.Warn("no se pudo calcular el conjunto deseado para comparar", "error", err)
+			sePudoRevisar = false
+		} else {
+			d := medido.Diff(deseado, s.state.Conn.InRoom())
+			alteradas = !d.Intact()
+			if d.GateUnchecked {
+				found = append(found, domain.Alert{
+					Kind:   domain.AlertAuditFailed,
+					Detail: "no se pudo comprobar si la compuerta del adaptador está puesta",
+				})
+			}
+		}
 	}
 
 	if alteradas || !sePudoRevisar {

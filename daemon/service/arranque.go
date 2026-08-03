@@ -36,9 +36,24 @@ type Entrada interface {
 	Close() error
 }
 
-// Bucle es lo que corre mientras el daemon vive. Lo implementa el supervisor.
+// Bucle is what runs for as long as the daemon lives. The supervisor
+// implements it.
+//
+// Run must close `ready` once the loop is actually up, and before doing any
+// work that can block. That signal is the whole reason this is not a bare
+// `Run(ctx)`: the entry point is the only surface reachable from outside the
+// process, and it must not open until the supervisor is running.
+//
+// Without it there was a real window, not a theoretical one. Start launched
+// both goroutines and returned, so the scheduler decided the order: the UI
+// could connect and ask to join a room while the firewall purge had not run
+// yet. A flaky ordering test is what surfaced it.
+//
+// Closing `ready` twice panics, so close it exactly once. An implementation
+// that returns early on error must close it on the way out, or Start blocks
+// forever.
 type Bucle interface {
-	Run(ctx context.Context) error
+	Run(ctx context.Context, ready chan<- struct{}) error
 }
 
 // Sala es lo que hay que cerrar al apagar. La implementa la sesión.
@@ -103,11 +118,22 @@ func Start(ctx context.Context, d Deps) (*Runtime, error) {
 
 	r := &Runtime{deps: d, fin: make(chan struct{})}
 
+	// The loop first, and the entry only once the loop says it is up. The
+	// order is the point: see the Bucle doc.
+	ready := make(chan struct{})
 	go func() {
-		if err := d.Bucle.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		if err := d.Bucle.Run(ctx, ready); err != nil && !errors.Is(err, context.Canceled) {
 			d.Log.Error("el supervisor se detuvo", "error", err)
 		}
 	}()
+
+	select {
+	case <-ready:
+	case <-ctx.Done():
+		// Cancelled before the loop came up. Nothing was opened, so there is
+		// nothing to unwind.
+		return nil, ctx.Err()
+	}
 
 	go func() {
 		defer close(r.fin)

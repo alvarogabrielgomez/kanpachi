@@ -489,8 +489,17 @@ func (c *controlFalso) alcanceActual() []netip.Addr {
 
 type auditoríaFalsa struct {
 	perfiles []domain.FirewallProfileState
+	// intactas true means "the system holds whatever was applied", which is
+	// the normal case for tests that are not exercising this layer. It is
+	// resolved by reading the fake firewall, so the domain diff actually runs
+	// instead of being short-circuited by a boolean.
 	intactas bool
-	mapeos   []domain.PortMapping
+	fw       *firewallFalso
+	// overrideRules replaces the above when a test IS exercising this layer.
+	overrideRules bool
+	puestas       []domain.AppliedRule
+	compuerta     domain.GateState
+	mapeos        []domain.PortMapping
 
 	// err rompe los TRES métodos, que es el adaptador entero caído.
 	err error
@@ -508,8 +517,43 @@ func (a *auditoríaFalsa) FirewallEnabled(context.Context) ([]domain.FirewallPro
 	return a.perfiles, primerError(a.errPerfiles, a.err)
 }
 
-func (a *auditoríaFalsa) OwnRulesIntact(context.Context) (bool, error) {
-	return a.intactas, primerError(a.errIntactas, a.err)
+func (a *auditoríaFalsa) Enforcement(context.Context) (domain.Enforcement, error) {
+	if err := primerError(a.errIntactas, a.err); err != nil {
+		return domain.Enforcement{}, err
+	}
+	e := domain.Enforcement{Gate: a.compuerta}
+	switch {
+	case a.overrideRules:
+		e.Rules = a.puestas
+	case a.intactas && a.fw != nil:
+		for _, r := range a.fw.estado().Rules {
+			e.Rules = append(e.Rules, domain.AppliedRule{
+				Name:    r.Name,
+				Layer:   domain.LayerFirewallRules,
+				Enabled: true,
+			})
+		}
+	}
+	if a.compuerta == domain.GateUnknown && a.intactas {
+		// El caso normal: el test dice "todo bien" y no le importa la compuerta.
+		e.Gate = domain.GatePresent
+	}
+	return e, nil
+}
+
+// tamper makes the audit report a rule nobody asked for.
+//
+// It exists because "tampered" is no longer a boolean the adapter hands over:
+// the verdict now comes from a real diff in the domain, so a test that wants a
+// tampered firewall has to produce an actual discrepancy.
+func (a *auditoríaFalsa) tamper() {
+	a.intactas = false
+	a.overrideRules = true
+	a.puestas = []domain.AppliedRule{{
+		Name:    "kanpachi-rule-nobody-asked-for",
+		Layer:   domain.LayerFirewallRules,
+		Enabled: true,
+	}}
 }
 
 func (a *auditoríaFalsa) RouterMappings(context.Context) ([]domain.PortMapping, error) {
@@ -670,6 +714,10 @@ func nuevoBanco(t interface{ Fatalf(string, ...any) }) *banco {
 		auditoría: &auditoríaFalsa{intactas: true},
 		reloj:     &relojFijo{ahora: time.Date(2026, 8, 2, 20, 0, 0, 0, time.UTC)},
 	}
+	// La auditoría refleja lo que el firewall tiene aplicado, que es lo que
+	// significa "intacto". Así el diff del dominio corre de verdad en los
+	// tests en vez de esquivarse con un booleano.
+	b.auditoría.fw = b.firewall
 	b.deps = Deps{
 		Engine:    b.motor,
 		Firewall:  b.firewall,

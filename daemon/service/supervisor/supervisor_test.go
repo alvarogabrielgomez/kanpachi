@@ -15,7 +15,9 @@ func corriendo(t *testing.T) (*banco, context.CancelFunc) {
 	t.Helper()
 	b := nuevoBanco()
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() { _ = b.sup.Run(ctx) }()
+	ready := make(chan struct{})
+	go func() { _ = b.sup.Run(ctx, ready) }()
+	<-ready
 	t.Cleanup(cancel)
 	return b, cancel
 }
@@ -277,7 +279,9 @@ func TestCancelarElContextoParaTodoSinFugarGoroutines(t *testing.T) {
 	b := nuevoBanco()
 	ctx, cancel := context.WithCancel(context.Background())
 	hecho := make(chan error, 1)
-	go func() { hecho <- b.sup.Run(ctx) }()
+	ready := make(chan struct{})
+	go func() { hecho <- b.sup.Run(ctx, ready) }()
+	<-ready
 
 	b.latidos <- time.Now()
 	esperaA(t, "el bucle arrancó", func() bool { return b.sala.veces("tick") >= 1 })

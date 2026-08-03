@@ -100,8 +100,8 @@ func TestElRestoDeProvisionalesFalla(t *testing.T) {
 	a := Audit{}
 	_, err = a.FirewallEnabled(ctx())
 	exigeFallo(t, "FirewallEnabled", err)
-	_, err = a.OwnRulesIntact(ctx())
-	exigeFallo(t, "OwnRulesIntact", err)
+	_, err = a.Enforcement(ctx())
+	exigeFallo(t, "Enforcement", err)
 	_, err = a.RouterMappings(ctx())
 	exigeFallo(t, "RouterMappings", err)
 

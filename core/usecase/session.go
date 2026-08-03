@@ -419,6 +419,22 @@ func (s *Session) planSubnet(ctx context.Context) (domain.AddressPlan, error) {
 //
 // Asume el candado tomado.
 func (s *Session) applyPolicy(ctx context.Context) error {
+	desired, err := s.desiredRuleSetLocked()
+	if err != nil {
+		return err
+	}
+	return s.applyRuleSetLocked(ctx, desired)
+}
+
+// desiredRuleSetLocked calcula el estado deseado sin aplicarlo.
+//
+// Existe separado porque hay DOS consumidores del mismo cálculo: aplicarlo, y
+// compararlo contra lo que el sistema tiene puesto. Que salgan del mismo lugar
+// es lo que hace que la comprobación de la decisión 19 mida lo que de verdad se
+// pidió, en vez de una segunda versión del cálculo que puede separarse.
+//
+// Asume el candado tomado.
+func (s *Session) desiredRuleSetLocked() (domain.RuleSet, error) {
 	desired, err := domain.BuildRuleSet(
 		s.state.Game,
 		s.state.Role,
@@ -426,7 +442,7 @@ func (s *Session) applyPolicy(ctx context.Context) error {
 		domain.MemberIPs(s.state.Peers),
 	)
 	if err != nil {
-		return err
+		return domain.RuleSet{}, err
 	}
 
 	// El canal de control va en el MISMO conjunto y no en una llamada aparte.
@@ -445,11 +461,14 @@ func (s *Session) applyPolicy(ctx context.Context) error {
 			domain.MemberIPs(s.state.Peers),
 		)
 		if err != nil {
-			return err
+			return domain.RuleSet{}, err
 		}
 		desired.Add(canal...)
 	}
+	return desired, nil
+}
 
+func (s *Session) applyRuleSetLocked(ctx context.Context, desired domain.RuleSet) error {
 	if err := s.deps.Firewall.Apply(ctx, desired); err != nil {
 		return fmt.Errorf("aplicando las reglas de firewall: %w", err)
 	}

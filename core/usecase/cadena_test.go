@@ -380,7 +380,7 @@ func TestUnInvitadoNoAnuncia(t *testing.T) {
 func TestReglasAlteradasSeReponenSolas(t *testing.T) {
 	b := salaCreada(t)
 	antes := b.firewall.veces()
-	b.auditoría.intactas = false
+	b.auditoría.tamper()
 
 	st := b.sesión.RefreshAlerts(ctx())
 	if b.firewall.veces() != antes+1 {
@@ -398,7 +398,7 @@ func TestReglasAlteradasSeReponenSolas(t *testing.T) {
 // antivirus a golpe de COM.
 func TestTrasTresReposicionesSeAvisaEnVezDeInsistir(t *testing.T) {
 	b := salaCreada(t)
-	b.auditoría.intactas = false
+	b.auditoría.tamper()
 
 	for i := 0; i < TamperRepairLimit; i++ {
 		b.sesión.RefreshAlerts(ctx())
@@ -420,7 +420,7 @@ func TestTrasTresReposicionesSeAvisaEnVezDeInsistir(t *testing.T) {
 func TestSinSalaLasReglasAlteradasSeAvisanYNoSeReponen(t *testing.T) {
 	b := nuevoBanco(t)
 	antes := b.firewall.veces()
-	b.auditoría.intactas = false
+	b.auditoría.tamper()
 
 	st := b.sesión.RefreshAlerts(ctx())
 	if b.firewall.veces() != antes {

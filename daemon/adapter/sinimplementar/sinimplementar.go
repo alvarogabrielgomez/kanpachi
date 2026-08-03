@@ -164,8 +164,8 @@ type Audit struct{}
 func (Audit) FirewallEnabled(context.Context) ([]domain.FirewallProfileState, error) {
 	return nil, falla("comprobar el estado del firewall")
 }
-func (Audit) OwnRulesIntact(context.Context) (bool, error) {
-	return false, falla("revisar las reglas propias")
+func (Audit) Enforcement(context.Context) (domain.Enforcement, error) {
+	return domain.Enforcement{}, falla("medir lo que el firewall tiene puesto")
 }
 func (Audit) RouterMappings(context.Context) ([]domain.PortMapping, error) {
 	return nil, falla("consultar los mapeos del router")

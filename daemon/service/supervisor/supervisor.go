@@ -244,11 +244,16 @@ func nuevo(d Deps, beats, sweeps <-chan time.Time) *Supervisor {
 //
 // Nunca devuelve por una fuente muerta. El usuario puede crear otra sala y el
 // bucle tiene que seguir ahí.
-func (s *Supervisor) Run(ctx context.Context) error {
+func (s *Supervisor) Run(ctx context.Context, ready chan<- struct{}) error {
 	defer s.stop()
 
 	s.resuscribir(ctx)
 	s.arrancarRelojes(ctx)
+
+	// Up: subscriptions and timers are live, so an order arriving now gets
+	// handled. The entry point opens on the back of this, never before. See
+	// the Bucle contract in daemon/service.
+	close(ready)
 
 	for {
 		// El despachador se relanza tras un pánico. Diez por minuto de tope,
