@@ -145,6 +145,31 @@ const (
 	AlertAuditFailed
 )
 
+// AllAlertKinds son todas las alertas que el producto sabe levantar.
+//
+// El conjunto es cerrado, y esta lista es lo que lo vuelve ENUMERABLE. De eso
+// dependen dos cosas que no son cosméticas: el test que exige que cada alerta
+// tenga nombre en la API local, y el que exige que la UI tenga un texto para
+// cada una.
+//
+// Sin la lista, agregar un valor al enum y olvidarse del resto no falla en
+// ningún sitio. La alerta viaja como "unknown", la pantalla no la pinta, y el
+// módulo de exposición avisa al vacío. Ya pasó una vez, con [AlertAuditFailed].
+//
+// Mantenerla al día no es disciplina: un guardián de internal/arch cuenta las
+// constantes del enum en el fuente y falla si esta lista tiene menos.
+func AllAlertKinds() []AlertKind {
+	return []AlertKind{
+		AlertFirewallOff,
+		AlertRulesTampered,
+		AlertRouterMapping,
+		AlertForeignRule,
+		AlertLobbyConflict,
+		AlertKickIncomplete,
+		AlertAuditFailed,
+	}
+}
+
 // Sticky dice si la alerta sobrevive al refresco del módulo de exposición.
 //
 // Las pegajosas describen algo que PASÓ y que nadie va a volver a medir. Las

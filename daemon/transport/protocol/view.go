@@ -283,7 +283,13 @@ func alertName(k domain.AlertKind) string {
 		return "lobby_conflict"
 	case domain.AlertKickIncomplete:
 		return "kick_incomplete"
+	case domain.AlertAuditFailed:
+		return "audit_failed"
 	default:
+		// Que este caso exista no lo vuelve aceptable: una alerta que llega como
+		// "unknown" no la pinta nadie, así que el módulo de exposición avisa al
+		// vacío. Lo impide TestCadaAlertaTieneNombreEnLaAPI, que recorre
+		// domain.AllAlertKinds() entera.
 		return "unknown"
 	}
 }
