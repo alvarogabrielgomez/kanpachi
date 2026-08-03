@@ -53,7 +53,13 @@ func correr(consola bool, datos, nombre string) error {
 			"instalado es peor que no tener daemon")
 	}
 	if !consola {
-		return fmt.Errorf("el host del servicio de Windows todavía no está escrito. Usa --console")
+		// El host del servicio está en `servicio_windows.go` y ya sabe reportar
+		// SERVICE_RUNNING en el momento correcto. Lo que todavía no existe es lo
+		// que tendría que arrancar: los adaptadores de verdad. Mientras
+		// `Presente` sea cierto no se llega hasta acá, así que esto se activa
+		// solo, el día que haya algo que servir.
+		return fmt.Errorf("faltan los adaptadores de verdad, así que no hay nada que servir " +
+			"como servicio todavía. Usa --console")
 	}
 
 	if nombre == "" {
