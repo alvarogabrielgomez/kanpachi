@@ -94,6 +94,54 @@ void main() {
     });
   });
 
+  group('las reglas ajenas del firewall', () {
+    test('cada clase trae título y cuerpo', () {
+      for (final RuleClass kind in RuleClass.values) {
+        final AppMessage m = AppMessages.foreignRule(kind, gameName: 'Zomboid');
+
+        expect(
+          m.isEmpty,
+          isFalse,
+          reason: 'la clase ${kind.wire} no tiene texto, así que el hallazgo '
+              'más importante que sabe hacer la auditoría no se pintaría',
+        );
+        expect(m.title, isNotNull, reason: '${kind.wire} no dice QUÉ pasó');
+        expect(
+          m.body.trim().length,
+          greaterThan(20),
+          reason: 'el cuerpo de ${kind.wire} es demasiado corto para explicar '
+              'qué significa y qué hacer',
+        );
+      }
+    });
+
+    test('la de control remoto nombra lo que se entrega', () {
+      // No es cosmética. "Riesgo de seguridad" se despacha; "tu teclado, tu
+      // pantalla y tus archivos" no. El aviso que bloquea abrir la sala tiene
+      // que ganarse el bloqueo explicando por qué.
+      final AppMessage m = AppMessages.foreignRule(RuleClass.remoteControl);
+      final String texto = '${m.title ?? ''} ${m.body}'.toLowerCase();
+
+      for (final String palabra in <String>['teclado', 'pantalla', 'archivos']) {
+        expect(
+          texto.contains(palabra),
+          isTrue,
+          reason: 'el aviso bloqueante no dice "$palabra": sin nombrar lo que '
+              'se entrega, el usuario no puede pesar la decisión',
+        );
+      }
+    });
+
+    test('sin nombre de juego el texto sigue siendo una frase', () {
+      // El daemon puede reportar una regla ajena sin que haya juego activo. Un
+      // título que quedara como "  dejó una regla" es peor que uno genérico.
+      final AppMessage m = AppMessages.foreignRule(RuleClass.game);
+      expect(m.title, isNotNull);
+      expect(m.title!.trim(), equals(m.title));
+      expect(m.title, startsWith('El juego'));
+    });
+  });
+
   group('la regla de microcopy', () {
     /// docs/05-ui.md: "cada error dice qué pasó, qué significa para el usuario
     /// y qué hacer, en ese orden, en español coloquial. Jamás un código de
@@ -103,6 +151,9 @@ void main() {
         ...AlertKind.values.map(AppMessages.alert),
         ...FailureCode.values.map(AppMessages.failure),
         ...ExitReason.values.map(AppMessages.exit),
+        ...RuleClass.values.map(
+          (RuleClass c) => AppMessages.foreignRule(c, gameName: 'Zomboid'),
+        ),
         AppMessages.unknown,
       ];
 
@@ -110,6 +161,7 @@ void main() {
       final Set<String> claves = <String>{
         ...AlertKind.values.map((AlertKind k) => k.wire),
         ...FailureCode.values.map((FailureCode c) => c.wire),
+        ...RuleClass.values.map((RuleClass c) => c.wire),
       };
 
       for (final AppMessage m in todos) {

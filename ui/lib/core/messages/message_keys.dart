@@ -60,6 +60,48 @@ enum AlertKind {
   }
 }
 
+/// De qué es una regla de firewall ajena. Espejo de `domain.RuleClass`.
+///
+/// # Por qué no basta con el booleano `blocking`
+///
+/// El booleano decide si la sala se puede abrir; la clase decide qué se le
+/// CUENTA al usuario. Son dos preguntas y solo una la contesta un `bool`: una
+/// regla de más para el juego y una que entrega teclado y ficheros se resuelven
+/// con acciones distintas y merecen textos distintos.
+///
+/// La decisión de si bloquea la toma el daemon y viaja hecha. Esto es solo el
+/// nombre de lo que se encontró.
+enum RuleClass {
+  /// La dejó el instalador del juego o un diálogo de Windows.
+  game('game'),
+
+  /// Da teclado, pantalla y sistema de archivos.
+  remoteControl('remote_control'),
+
+  /// Ni una cosa ni la otra.
+  other('other');
+
+  const RuleClass(this.wire);
+
+  /// La cadena exacta que viaja en el JSON, campo `class` de `ForeignView`.
+  final String wire;
+
+  /// El valor de reserva cuando el daemon manda una clase que esta versión no
+  /// conoce.
+  ///
+  /// Devuelve [RuleClass.remoteControl] y no [RuleClass.other], y la asimetría
+  /// es deliberada: una clase desconocida vino de un daemon más nuevo que
+  /// aprendió a detectar algo que esta UI no sabe nombrar, y de las dos formas
+  /// de equivocarse, tratarla como lo peor sobreavisa mientras que tratarla
+  /// como "otra" la esconde. La única que rompe la promesa es la segunda.
+  static RuleClass fromWire(String? wire) {
+    for (final RuleClass c in RuleClass.values) {
+      if (c.wire == wire) return c;
+    }
+    return RuleClass.remoteControl;
+  }
+}
+
 /// Por qué terminó la sesión anterior. Espejo de `domain.ExitReason`.
 ///
 /// Sin esto, que te expulsen, que el host cierre, que desaparezca veinte

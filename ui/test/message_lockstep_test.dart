@@ -54,6 +54,30 @@ void main() {
       );
     });
 
+    test('RuleClass tiene las mismas claves que ruleClassName en Go', () {
+      final Set<String> enGo = _cadenasDeLaFuncion(
+        repo: repo,
+        archivo: 'daemon/transport/protocol/params.go',
+        funcion: 'ruleClassName',
+      );
+      final Set<String> enDart =
+          RuleClass.values.map((RuleClass c) => c.wire).toSet();
+
+      expect(
+        enGo,
+        isNotEmpty,
+        reason: 'no se leyó ninguna clave de ruleClassName: la ruta cambió y '
+            'este test no está vigilando nada',
+      );
+      expect(
+        enDart,
+        equals(enGo),
+        reason: 'RuleClass y ruleClassName dejaron de coincidir. Una clase que '
+            'la UI no conoce cae en el valor de reserva, y aunque ese es el '
+            'lado seguro, el usuario lee un texto que no describe lo que tiene.',
+      );
+    });
+
     test('ExitReason tiene los mismos motivos que exitName en Go', () {
       final Set<String> enGo = _cadenasDeLaFuncion(
         repo: repo,
@@ -117,6 +141,7 @@ void main() {
     }
 
     sinRepetidos('AlertKind', AlertKind.values.map((AlertKind k) => k.wire).toList());
+    sinRepetidos('RuleClass', RuleClass.values.map((RuleClass c) => c.wire).toList());
     sinRepetidos('ExitReason', ExitReason.values.map((ExitReason r) => r.wire).toList());
     sinRepetidos('FailureCode', FailureCode.values.map((FailureCode c) => c.wire).toList());
   });

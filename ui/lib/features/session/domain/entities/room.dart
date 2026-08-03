@@ -92,6 +92,8 @@ class Room {
     this.hostLeft = false,
     this.network = ConnState.connected,
     this.foreignRule = ForeignRuleState.open,
+    this.foreignRuleClass = RuleClass.game,
+    this.foreignRuleProgram,
   });
 
   final String name;
@@ -115,6 +117,29 @@ class Room {
   final ConnState network;
   final ForeignRuleState foreignRule;
 
+  /// De qué es la regla ajena que se encontró.
+  ///
+  /// Decide qué se le cuenta al usuario y si puede despacharla. Una de más para
+  /// el juego se ofrece desactivar y se puede dejar; una de control remoto hay
+  /// que resolverla antes de abrir la sala, porque entrega teclado, pantalla y
+  /// archivos a cualquiera que tenga el código, y el código no es un secreto.
+  final RuleClass foreignRuleClass;
+
+  /// El programa al que apunta esa regla, para poder nombrarlo.
+  ///
+  /// `null` cuando el daemon no lo mandó. La pantalla no inventa uno: sin
+  /// nombre, el aviso se muestra igual y sin el detalle.
+  final String? foreignRuleProgram;
+
+  /// Si la regla ajena impide abrir la sala.
+  ///
+  /// Se deriva de la clase acá y no viene aparte porque el que decide es el
+  /// daemon: esta es la copia de su veredicto, y la única clase bloqueante hoy
+  /// es el control remoto.
+  bool get foreignRuleBlocks =>
+      foreignRule == ForeignRuleState.open &&
+      foreignRuleClass == RuleClass.remoteControl;
+
   /// La dirección que se pega en el juego: la del host y el puerto del juego.
   String get gameAddress {
     final Member host = members.firstWhere(
@@ -132,6 +157,8 @@ class Room {
     bool? hostLeft,
     ConnState? network,
     ForeignRuleState? foreignRule,
+    RuleClass? foreignRuleClass,
+    String? foreignRuleProgram,
   }) =>
       Room(
         name: name ?? this.name,
@@ -143,5 +170,7 @@ class Room {
         hostLeft: hostLeft ?? this.hostLeft,
         network: network ?? this.network,
         foreignRule: foreignRule ?? this.foreignRule,
+        foreignRuleClass: foreignRuleClass ?? this.foreignRuleClass,
+        foreignRuleProgram: foreignRuleProgram ?? this.foreignRuleProgram,
       );
 }

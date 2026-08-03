@@ -17,6 +17,7 @@ import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
 import 'package:kanpachi_ui/core/messages/message_catalog.dart';
+import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/features/room/presentation/widgets/copy_button.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
@@ -359,7 +360,13 @@ class _RoomStatus extends StatelessWidget {
       blocks.add(_GameCard(room: room));
       blocks.add(_ExposureCard(room: room));
       if (room.foreignRule == ForeignRuleState.open) {
-        blocks.add(_ForeignRuleNotice(gameName: room.game!.name));
+        blocks.add(
+          _ForeignRuleNotice(
+            kind: room.foreignRuleClass,
+            gameName: room.game!.name,
+            program: room.foreignRuleProgram,
+          ),
+        );
       } else if (room.foreignRule == ForeignRuleState.disabled) {
         blocks.add(
           const AppNotice.line(
@@ -728,58 +735,71 @@ class _ExposureTitle extends StatelessWidget {
   }
 }
 
-/// La regla que dejó el propio juego en el firewall.
+/// La regla de firewall que Kanpachi NO creó.
 ///
-/// Es el aviso más importante de la app: con ella puesta, el juego es
-/// alcanzable desde la red de casa y desde toda la sala SIN pasar por el
-/// control de Kanpachi, así que expulsar a alguien no lo tapa. Kanpachi no la
-/// borra por su cuenta — no es suya — pero sí ofrece desactivarla mientras
-/// dure la partida y devolverla al salir.
+/// Es el aviso más importante de la app, y desde que el daemon clasifica lo que
+/// encuentra son DOS avisos y no uno.
+///
+/// Con una regla del juego puesta, el juego es alcanzable desde la red de casa
+/// y desde toda la sala sin pasar por el control de Kanpachi, así que expulsar
+/// a alguien no lo tapa. Molesta, se ofrece arreglar, y se puede dejar así.
+///
+/// Con una de CONTROL REMOTO puesta, lo alcanzable no es el juego: es el
+/// escritorio. Quien tenga el código entra a la sala, y el código no es un
+/// secreto ni hay baneo. Esa no se puede dejar así, y por eso el segundo botón
+/// no dice "dejar así" sino que cambia de juego: la sala no se abre con eso
+/// puesto.
+///
+/// El copy vive en el catálogo y no acá. Antes estaba escrito dentro de este
+/// widget, que es justo lo que el catálogo existe para impedir.
 class _ForeignRuleNotice extends StatelessWidget {
-  const _ForeignRuleNotice({required this.gameName});
+  const _ForeignRuleNotice({
+    required this.kind,
+    this.gameName,
+    this.program,
+  });
 
-  final String gameName;
+  final RuleClass kind;
+  final String? gameName;
+
+  /// El ejecutable al que apunta la regla. Va como detalle y jamás sustituye al
+  /// cuerpo del mensaje.
+  final String? program;
 
   @override
   Widget build(BuildContext context) {
     final SessionCubit session = context.read<SessionCubit>();
-    return AppNotice(
-      title: null,
-      body: Text.rich(
-        TextSpan(
-          children: <InlineSpan>[
-            TextSpan(
-              text: 'El propio $gameName dejó una regla en tu firewall. ',
-              style: TextStyle(
-                color: context.colors.text,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const TextSpan(
-              text:
-                  'Con ella el juego es alcanzable desde tu red de casa y '
-                  'por toda la sala, sin pasar por el control de Kanpachi: '
-                  'expulsar a alguien no lo tapa. Podemos desactivarla '
-                  'mientras juegas y devolverla al salir.',
-            ),
-          ],
-        ),
+    final bool blocks = kind == RuleClass.remoteControl;
+
+    return AppMessageNotice(
+      message: AppMessages.foreignRule(
+        kind,
+        gameName: gameName,
+        detail: program,
       ),
+      pulse: blocks,
       actions: <Widget>[
         AppButton(
-          label: 'Desactivar mientras juego',
+          label: blocks
+              ? 'Desactivarlo mientras juego'
+              : 'Desactivar mientras juego',
           variant: AppButtonVariant.primaryFlat,
           height: 34,
           horizontalPadding: 15,
           onPressed: () => session.resolveForeignRule(disable: true),
         ),
-        AppButton(
-          label: 'Dejar así',
-          variant: AppButtonVariant.ghost,
-          height: 34,
-          horizontalPadding: 15,
-          onPressed: () => session.resolveForeignRule(disable: false),
-        ),
+        // La salida de la de control remoto NO es equivalente a la del juego.
+        // "Dejar así" abriría la sala con el escritorio del host alcanzable por
+        // cualquiera que tenga el código, así que ahí la única salida sin
+        // desactivar nada es no abrirla.
+        if (!blocks)
+          AppButton(
+            label: 'Dejar así',
+            variant: AppButtonVariant.ghost,
+            height: 34,
+            horizontalPadding: 15,
+            onPressed: () => session.resolveForeignRule(disable: false),
+          ),
       ],
     );
   }

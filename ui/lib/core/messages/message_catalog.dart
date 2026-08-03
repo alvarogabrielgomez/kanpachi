@@ -92,6 +92,57 @@ abstract final class AppMessages {
           ),
       };
 
+  /// Lo que se le cuenta al usuario sobre una regla de firewall que Kanpachi no
+  /// creó.
+  ///
+  /// Son textos distintos porque son problemas distintos, y tratarlos igual era
+  /// el bug: una regla de más para el juego molesta, y una de escritorio remoto
+  /// entrega la máquina. La segunda BLOQUEA abrir la sala, y el daemon manda ese
+  /// veredicto ya tomado.
+  ///
+  /// El `gameName` solo aparece en la del juego. En la de control remoto sobra:
+  /// lo que importa ahí no es qué juego dejó la regla sino qué programa la
+  /// tiene, y ese va en el `detail`.
+  static AppMessage foreignRule(RuleClass kind, {String? gameName, String? detail}) =>
+      _foreignRule(kind, gameName).withDetail(detail);
+
+  static AppMessage _foreignRule(RuleClass kind, String? gameName) =>
+      switch (kind) {
+        RuleClass.game => AppMessage(
+            severity: MessageSeverity.warn,
+            title: '${gameName ?? 'El juego'} dejó una regla en tu firewall',
+            body: 'Con ella el juego es alcanzable desde tu red de casa y por '
+                'toda la sala, sin pasar por el control de Kanpachi: expulsar '
+                'a alguien no lo tapa. Se puede desactivar mientras juegas y '
+                'se devuelve al salir.',
+          ),
+
+        // La única que impide abrir la sala, y por eso no ofrece "dejar así"
+        // como una opción equivalente a la otra. El texto nombra lo que se
+        // entrega en vez de decir "riesgo de seguridad", porque lo primero se
+        // entiende y lo segundo se despacha.
+        RuleClass.remoteControl => const AppMessage(
+            severity: MessageSeverity.warn,
+            title: 'Un programa de control remoto está abierto en tu firewall',
+            body: 'Quien entre a la sala puede llegar a él y quedarse con tu '
+                'teclado, tu pantalla y tus archivos, aunque lo expulses '
+                'después: el código de invitación no es un secreto. Hay que '
+                'resolverlo antes de abrir la sala. Se puede desactivar '
+                'mientras juegas y se devuelve al salir.',
+          ),
+
+        // Se muestra igual en vez de callarse. Kanpachi la encontró buscando lo
+        // que abre la máquina, así que decir "hay algo que no sé clasificar" es
+        // más honesto que no decir nada.
+        RuleClass.other => const AppMessage(
+            severity: MessageSeverity.neutral,
+            title: 'Hay una regla en tu firewall que Kanpachi no puso',
+            body: 'No es del juego ni de un programa de control remoto '
+                'conocido. Se puede desactivar mientras dure la sala y se '
+                'devuelve al salir.',
+          ),
+      };
+
   /// Por qué volviste a la portada, si la sesión anterior terminó sola.
   ///
   /// Las cuatro del medio llevan la misma coletilla sobre lo que se cerró, y es
