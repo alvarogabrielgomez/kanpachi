@@ -12,9 +12,9 @@ Cada decisión relevante, las alternativas consideradas y la razón de la elecci
 
 **Por qué subproceso y no vinculado.** Tres razones que apuntan al mismo lado:
 
-1. **Licencia.** EasyTier es **LGPL-3.0**, verificado en el repositorio oficial. Las menciones a Apache 2.0 que circulan vienen de forks antiguos y de metadatos rancios en crates.io, no las creas. Con LGPL, vincular estáticamente desde un binario Go obliga a permitir la revinculación, algo incómodo de cumplir con la compilación estática de Go. Ejecutarlo como proceso separado es mera agregación: no hay vinculación, la LGPL no se propaga al código de Kanpachi y su licencia queda libre.
+1. **Licencia.** EasyTier es **LGPL-3.0**, verificado en el `LICENSE` del propio tag v2.6.4 que tenemos fijado, que abre con `GNU LESSER GENERAL PUBLIC LICENSE Version 3`. No siempre lo fue: el proyecto era **Apache-2.0 hasta el 2025-06-07**, y el corte cae entre v2.3.1 y v2.3.2. O sea que el crate `2.0.3` que sigue publicado en crates.io es código de la era Apache de verdad, y no un metadato rancio, que es lo que afirmaba este párrafo antes de que alguien lo comprobara. Con LGPL, vincular estáticamente desde un binario Go obliga a permitir la revinculación, algo incómodo de cumplir con la compilación estática de Go. Ejecutarlo como proceso separado es mera agregación: no hay vinculación, la LGPL no se propaga al código de Kanpachi y su licencia queda libre.
 2. **Frontera de lenguaje.** EasyTier es Rust, el daemon es Go. La alternativa de vinculación implica cgo o FFI, con su costo de compilación cruzada, empaquetado y depuración. `easytier-go` existe y usa WebAssembly en vez de cgo, es muy joven y también LGPL-3.0, así que no resuelve el punto 1.
-3. **Aislamiento de fallos.** El watchdog del supervisor ya asume que el motor puede morir y reiniciarse. Eso solo tiene sentido con un proceso aparte: un `panic` de Rust dentro del mismo proceso se llevaría el servicio entero.
+3. **Aislamiento de fallos.** El watchdog del supervisor ya asume que el motor puede morir y reiniciarse. Eso solo tiene sentido con un proceso aparte: un `panic` de Rust dentro del mismo proceso se llevaría el servicio entero. Medido y no razonado: el workspace de EasyTier compila su perfil de release con `panic = "abort"`, así que no hay `catch_unwind` que pueda atajarlo.
 
 **Costos aceptados:**
 
@@ -41,7 +41,31 @@ Release oficial de EasyTier **v2.6.4**, Windows x86_64. SHA256:
 
 Los mismos valores viven en `internal/arch/easytier.sums`, y hay dos tests que los sostienen: uno verifica el disco contra el manifiesto, el otro verifica que el manifiesto y esta tabla no se separen. Actualizar de versión es cambiar las dos cosas a propósito, que es exactamente lo que tiene que costar.
 
-**De los siete, el daemon solo ejecuta `easytier-core.exe` y consulta con `easytier-cli.exe`.** `wintun.dll` es el adaptador virtual. Los tres restantes vienen en el release y no los usa nada: `easytier-web` es un panel, `Packet.dll` y `WinDivert64.sys` son captura de paquetes, o sea justo la capacidad que la decisión 1 difiere al no encender el descubrimiento LAN. Se listan igual porque están en el disco, y lo que se vigila es lo que está.
+**De los siete, el daemon solo ejecuta `easytier-core.exe` y consulta con `easytier-cli.exe`.** `wintun.dll` es el adaptador virtual, y no aparece en la tabla de importaciones porque el motor lo carga en caliente. `easytier-web` es un panel y no lo usa nada.
+
+**`Packet.dll` sí lo usa, y esto hay que decirlo distinto de como estaba.** Este documento afirmaba que `Packet.dll` y `WinDivert64.sys` venían en el release y no los usaba nada. Es falso, y se ve en el binario fijado con `dumpbin /imports`:
+
+```
+packet.dll
+      3 PacketGetAdapterNames
+     12 PacketSendPacket
+```
+
+Es una importación **dura**, sin sección de delay import en todo el ejecutable, o sea que `easytier-core.exe` no llega ni a arrancar si `Packet.dll` no está al lado. Y `PacketSendPacket` es inyección de paquetes crudos sobre un adaptador. La capacidad viaja dentro del motor desde el instante de la carga, se encienda o no el descubrimiento LAN.
+
+Del lado del fuente pasa lo mismo con el driver: `windivert` es una dependencia **no opcional** para Windows x86_64 (`easytier/Cargo.toml:274-277`), con la feature `static`, así que ninguna combinación de features de cargo lo saca del grafo. Lo que `--enable-udp-broadcast-relay` decide es si la capacidad se **usa**, jamás si viaja.
+
+Consecuencia práctica, y es la que importa: **la cuarentena del producto no puede apoyarse en que el motor sea incapaz.** Se apoya en el firewall y en que Kanpachi no encienda la bandera. Lo primero ya está en la decisión 4; lo segundo lo vigila `internal/arch/motor_test.go`.
+
+### Distribuirlos tiene una obligación, y hoy no se cumple
+
+El instalador reparte los binarios de EasyTier, que son **LGPL-3.0** desde el 2025-06-07. Repartirlos, incluso entre amigos, es *convey* según la GPLv3 sección 0. Eso obliga a tres cosas que hoy no están:
+
+1. **Aviso visible** de que el producto incluye EasyTier y de bajo qué licencia.
+2. **Copia de la LGPL-3.0 y de la GPLv3.** Las dos, porque la LGPL-3.0 está redactada como un conjunto de permisos adicionales sobre la GPLv3 y no se sostiene sola. El repo de EasyTier ni siquiera incluye la GPLv3, así que hay que traerla de gnu.org.
+3. **Acceso al fuente correspondiente.** Se cumple barato por la sección 6(d): un enlace al tag `v2.6.4` del repo oficial, publicado junto a la descarga del instalador.
+
+**Falta además revisar las otras tres.** `WinDivert64.sys`, `wintun.dll` y `Packet.dll` no son de EasyTier y llevan licencias propias, con términos de redistribución que nadie miró todavía. `Packet.dll` viene del linaje WinPcap/Npcap, que es el más restrictivo de los tres. Es trabajo pendiente e independiente de qué motor se termine usando.
 
 ### Los defaults del motor no son los nuestros
 
@@ -68,7 +92,22 @@ EasyTier mapea puertos en el router del usuario **salvo que se le prohíba expl�
 
 **Cómo arranca un cliente:** con `--no-listener`. El cliente jamás escucha en un puerto público. Comprobado que igual resuelve su dirección pública por STUN y perfora NAT, o sea la conectividad no depende de escuchar. **Solo el seed escucha.**
 
-**El portal RPC del motor es su panel de control.** Va fijado a `127.0.0.1` con `--rpc-portal-whitelist 127.0.0.1`. Si fuera alcanzable desde la red virtual, un miembro de la sala podría manejarle el motor a otro.
+**El portal RPC del motor es su panel de control, y su default es peor de lo que decía este documento.** Acá se leía que el portal "va fijado a `127.0.0.1`". Eso era una intención nuestra, jamás una descripción del motor, y el fuente del tag fijado lo desmiente en `easytier/src/rpc_service/api.rs:178-196`:
+
+```rust
+fn parse_rpc_portal(rpc_portal: Option<String>) -> anyhow::Result<SocketAddr> {
+    if let Some(Ok(port)) = rpc_portal.as_ref().map(|s| s.parse::<u16>()) {
+        Ok(SocketAddr::from(([0, 0, 0, 0], port)))     // <-- puerto a secas
+    } else {
+        ...
+        select_proper_rpc_port(&mut rpc_addr)?;         // <-- None => ([0,0,0,0], 0)
+```
+
+O sea que `--rpc-portal 15888` escucha en **todas las interfaces**, y no pasarla tampoco ayuda: sin bandera arma `0.0.0.0:0` y busca puerto libre entre 15888 y 15900. El texto de ayuda oficial dice *listen on 12345 of localhost*, y el código hace otra cosa.
+
+**Kanpachi tiene que pasar el par completo, `--rpc-portal 127.0.0.1:<puerto>`, siempre.** Un puerto suelto es un arranque expuesto a la LAN de casa y a la propia red virtual. El guardián tiene que exigir el par y no el literal `127.0.0.1` suelto.
+
+**La whitelist no cubre el hueco que de verdad preocupa.** `--rpc-portal-whitelist` filtra **después** del accept y su valor por defecto ya incluye `127.0.0.0/8`. Sirve contra un vecino de LAN, jamás contra otro proceso de la propia máquina, porque todos los procesos locales llegan como `127.0.0.1`. Y el portal **no tiene autenticación de ninguna clase**: fue pedida en el issue 925 y rechazada a propósito a favor de la whitelist, en el PR 929.
 
 **Segunda cerradura, a nivel del motor.** Existen `--tcp-whitelist` y `--udp-whitelist`, que restringen puertos dentro del propio motor, por debajo del Firewall de Windows. Es defensa en profundidad real: una regla de firewall mal calculada no alcanzaría para exponer un puerto que el motor también rechaza. Vale evaluarlas al construir `policy/`.
 

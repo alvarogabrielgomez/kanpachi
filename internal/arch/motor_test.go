@@ -43,6 +43,10 @@ import (
 // confirmación de la decisión 17.
 
 // banderasProhibidas expresan capacidades que el producto no tiene.
+//
+// La lista salió de leer la struct `Cli` del fuente de la v2.6.4, que es la
+// versión fijada, y no del texto de ayuda. Ahí aparecieron cuatro que este
+// guardián no vigilaba y que rompen invariantes igual de fuerte que las que sí.
 var banderasProhibidas = map[string]string{
 	"--enable-exit-node": "jamás exit node",
 	"--exit-nodes":       "jamás exit node",
@@ -54,6 +58,16 @@ var banderasProhibidas = map[string]string{
 		"jamás escucha en un puerto público. Solo el seed escucha",
 	"--enable-udp-broadcast-relay": "es capturar el tráfico de la red de casa del usuario " +
 		"con un driver de captura de paquetes. La decisión 1 lo difiere hasta que exista un juego que lo pida",
+
+	// Las cuatro que faltaban.
+	"--config-server": "haría que el motor se traiga su configuración de un servidor remoto, " +
+		"o sea que lo que corre en la máquina del usuario deja de decidirlo Kanpachi",
+	"--external-node": "su propia ayuda dice `use a public shared node to discover peers`, " +
+		"y Kanpachi apunta a su propio seed y jamás a un nodo público",
+	"--port-forward": "reenvía un puerto local hacia la red virtual POR DEBAJO del cálculo de " +
+		"reglas, así que abriría algo que el módulo de exposición no ve ni puede auditar",
+	"--mapped-listeners": "publica direcciones alcanzables desde fuera, que es lo mismo que " +
+		"escuchar en público con otro nombre",
 }
 
 // paresProhibidos son banderas que pierden todo su sentido con el valor
@@ -63,12 +77,31 @@ var paresProhibidos = map[string]string{
 	"--no-listener":  "false",
 }
 
+// paresObligatorios exigen que el VALOR de una bandera contenga algo.
+//
+// Existe por un agujero medido, no imaginado. `banderasObligatorias` pedía el
+// literal `127.0.0.1` en algún lugar del paquete, y eso pasaba en verde con
+// `--rpc-portal 15888`, que es exactamente el arranque malo:
+//
+//	// easytier/src/rpc_service/api.rs:178-181, en el tag v2.6.4
+//	if let Some(Ok(port)) = rpc_portal.as_ref().map(|s| s.parse::<u16>()) {
+//	    Ok(SocketAddr::from(([0, 0, 0, 0], port)))
+//
+// Un puerto suelto escucha en TODAS las interfaces. Comprobado con netstat
+// contra el binario fijado, con un fichero de configuración que no nombra el
+// portal en ninguna parte: `TCP 0.0.0.0:15888 LISTENING`. El texto de ayuda
+// oficial dice `localhost` y el binario hace otra cosa.
+var paresObligatorios = map[string]string{
+	"--rpc-portal": "127.0.0.1:",
+}
+
 // banderasObligatorias son las que no pueden faltar donde se arma el arranque.
 var banderasObligatorias = map[string]string{
 	"--disable-upnp": "EasyTier mapea puertos en el router del usuario por defecto, " +
 		"y la invariante dice que el router no se toca nunca",
 	"--no-listener": "el cliente jamás escucha en un puerto público. Solo el seed escucha",
-	"127.0.0.1":     "el portal RPC va fijado a loopback, en el cliente y en el seed",
+	"--rpc-portal": "sin la bandera el motor arma `0.0.0.0:0` y busca puerto libre entre 15888 " +
+		"y 15900, o sea que el panel de control del motor queda expuesto a la LAN de casa",
 }
 
 // nodosPúblicos son los peers compartidos de EasyTier. Vigila NUESTRO código.
@@ -118,10 +151,35 @@ func TestElArranqueDelMotorLlevaLoQueTieneQueLlevar(t *testing.T) {
 	}
 
 	// El valor, donde se puede verlo: los pares en orden dentro de un argv.
-	for _, par := range paresEnOrden(t, paquete) {
+	pares := paresEnOrden(t, paquete)
+	for _, par := range pares {
 		if malo, vigilada := paresProhibidos[par.bandera]; vigilada && par.valor == malo {
 			t.Errorf("%s: %s va con %q, que es lo mismo que no ponerla", paquete, par.bandera, par.valor)
 		}
+		if quiere, vigilada := paresObligatorios[par.bandera]; vigilada && !strings.Contains(par.valor, quiere) {
+			t.Errorf("%s: %s va con %q, y tiene que contener %q.\n"+
+				"  Un puerto suelto NO es loopback: el motor lo convierte en 0.0.0.0:<puerto> "+
+				"y escucha en todas las interfaces", paquete, par.bandera, par.valor, quiere)
+		}
+	}
+
+	// El entorno, que es la vía que este guardián no puede ver leyendo argv.
+	//
+	// Cada bandera de EasyTier tiene una gemela por variable de entorno:
+	// `--config-server` es `ET_CONFIG_SERVER`, `--port-forward` es
+	// `ET_PORT_FORWARD`, y así con todas. Un proceso hijo que HEREDA el entorno
+	// acepta en silencio cualquiera de ellas, y la lista de banderas prohibidas
+	// de arriba no se entera. `--disable-env-parsing` no lo tapa: su ayuda dice
+	// `disable environment variable parsing in config file`, o sea la
+	// interpolación dentro del fichero, que es otra cosa.
+	//
+	// La única defensa es armar el entorno del hijo a mano.
+	if !asignaEntorno(t, paquete) {
+		t.Errorf("%s arranca el motor sin fijarle el entorno.\n"+
+			"  Cada bandera de EasyTier tiene gemela por variable de entorno, así que un hijo "+
+			"que hereda el entorno acepta ET_CONFIG_SERVER, ET_PORT_FORWARD y las demás sin "+
+			"que nadie las escriba en el argv.\n"+
+			"  Asigna cmd.Env con una lista explícita, aunque sea vacía.", paquete)
 	}
 
 	// Y la garantía de valor de verdad, que este guardián no puede dar, vive en
@@ -187,6 +245,45 @@ func paresEnOrden(t *testing.T, dir string) []parDeArgumentos {
 		})
 	})
 	return out
+}
+
+// asignaEntorno dice si el paquete le fija el entorno a algo, o sea si en algún
+// lado hay un `algo.Env = ...`.
+//
+// Por AST y no por texto: mira que el lado IZQUIERDO de una asignación sea un
+// campo llamado `Env`, que es como se le pone el entorno a un `exec.Cmd`. Una
+// lista vacía cuenta, y es justo lo que hay que poner cuando el hijo no necesita
+// ninguna variable.
+func asignaEntorno(t *testing.T, dir string) bool {
+	t.Helper()
+	var encontrado bool
+
+	porArchivo(t, dir, func(_ string, archivo *ast.File) {
+		ast.Inspect(archivo, func(n ast.Node) bool {
+			asig, ok := n.(*ast.AssignStmt)
+			if !ok {
+				return true
+			}
+			for _, izq := range asig.Lhs {
+				if sel, ok := izq.(*ast.SelectorExpr); ok && sel.Sel.Name == "Env" {
+					encontrado = true
+				}
+			}
+			return true
+		})
+		// También vale construirlo de una, con `exec.Cmd{..., Env: ...}`.
+		ast.Inspect(archivo, func(n ast.Node) bool {
+			kv, ok := n.(*ast.KeyValueExpr)
+			if !ok {
+				return true
+			}
+			if id, ok := kv.Key.(*ast.Ident); ok && id.Name == "Env" {
+				encontrado = true
+			}
+			return true
+		})
+	})
+	return encontrado
 }
 
 // hayTestDeArgumentos dice si el paquete tiene un test que mire los argumentos.
