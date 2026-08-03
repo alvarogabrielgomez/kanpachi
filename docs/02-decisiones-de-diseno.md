@@ -2,11 +2,52 @@
 
 Cada decisión relevante, las alternativas consideradas y la razón de la elección. El formato es deliberado: cuando algo se cuestione en el futuro, aquí está el contexto completo para reabrirlo con criterio.
 
-## 1. Motor de red: EasyTier como subproceso, detrás de un puerto
+## 1. Motor de red: un binario propio sobre la librería de EasyTier, como subproceso
 
-**Alternativas:** Headscale envuelto con una API propia. Construir desde cero sobre wireguard-go. EasyTier vinculado al binario Go. EasyTier como proceso hijo gestionado.
+**Alternativas:** Headscale envuelto con una API propia. Construir desde cero sobre wireguard-go o sobre Nebula. EasyTier vinculado al binario Go por cgo. El `easytier-core.exe` oficial como proceso hijo. Un fork de EasyTier con parches propios. Un binario propio que use EasyTier como librería.
 
-**Elección:** EasyTier ejecutado como **proceso hijo** (`easytier-core`), gestionado por el daemon y accedido siempre a través de `EnginePort`.
+**Elección:** **`kanpachi-engine.exe`**, un binario propio en Rust que declara EasyTier como **librería** por `git` contra el tag `v2.6.4`, ejecutado como **proceso hijo** del daemon y accedido siempre a través de `EnginePort`. Vive en un repositorio aparte bajo LGPL-3.0.
+
+### Por qué el binario oficial no sirve
+
+El `easytier-core.exe` que se distribuye abre un **portal de administración sin autenticación de ninguna clase**. Por ahí, cualquier proceso local emite credenciales válidas de la red real, agrega nodos, reenvía puertos por debajo del cálculo de reglas, y pide el `network_secret`, que llega **en claro**.
+
+No es un descuido que vayan a arreglar. La autenticación se pidió en el issue 925 y se **rechazó a propósito** a favor de una lista blanca de IP, en el PR 929. Esa lista no sirve para esto: filtra **después** del accept y su valor por defecto ya incluye `127.0.0.0/8`, así que no distingue un proceso local de otro. Todos llegan como `127.0.0.1`.
+
+Y el default es peor de lo que dice su propia ayuda. Medido con `netstat` contra el binario fijado, usando un fichero de configuración que **no nombra el portal en ninguna parte**:
+
+```
+TCP    0.0.0.0:15888          0.0.0.0:0              LISTENING
+```
+
+Todas las interfaces, no `localhost`. O sea alcanzable desde la LAN de casa y desde la propia red virtual.
+
+### Por qué la librería sí
+
+El portal se construye en **un solo sitio de todo el árbol de EasyTier**, y ese sitio está dentro de su binario de línea de comandos. El arranque de red por librería no lo menciona. Comprobado con el mismo fichero de configuración, la misma máquina y el mismo momento:
+
+| Proceso | Sockets en escucha |
+|---|---|
+| `easytier-core.exe` v2.6.4 | `TCP 0.0.0.0:15888 LISTENING` |
+| Binario propio sobre la librería | ninguno |
+
+**El portal desaparece por omisión, no por configuración.** No hay bandera que apagar ni lista blanca que mantener.
+
+Lo que el producto necesita del motor sale entero de la librería, y se verificó uno por uno antes de comprometerse: arrancar y parar la red, emitir y revocar credenciales, la lista de pares, el diagnóstico de NAT, y un canal de eventos que empuja en vez de que haya que preguntar. Ese canal ni siquiera está disponible por el camino oficial, que lo descarta.
+
+La configuración entra por **stdin como TOML**, así que el secreto de la red no pisa la línea de comandos. Medido: el `CommandLine` del hijo solo muestra la ruta del ejecutable. Con el binario oficial el secreto es legible con el Administrador de tareas por cualquier usuario de la máquina.
+
+### Por qué NO un fork
+
+Un fork resuelve lo mismo y se paga para siempre. Entre el tag `v2.6.4` y la rama de desarrollo hay **606 ficheros y +129.000 líneas** movidas por un solo cambio, y el árbol entero del RPC se borró y renació en otro sitio. Cualquier parche nuestro habría que **reescribirlo**, no rebasarlo. Consumir la librería no tiene ese coste: se fija un tag y se sube cuando uno quiere.
+
+### La versión se fija a propósito
+
+`v2.6.4` es la **última publicada**, no una vieja. No hay tag posterior. Lo único más nuevo es la rama de desarrollo, sin versión, sin notas de cambios y sin binarios. La rama trae una forma elegante de apagar el portal al compilar; llegar a ella cuesta abandonar el tag y fijar un commit suelto, y esa conversación se abre cuando haya una razón, no antes.
+
+### El seed es el caso contrario
+
+En el droplet sigue corriendo `easytier-core` oficial sin modificar, y está bien que así sea: es una máquina nuestra, sin usuarios, donde el portal local no es una superficie que le importe a nadie más. La razón de todo lo anterior es la máquina **del usuario**.
 
 **Por qué EasyTier.** Ya resuelve lo difícil: NAT traversal por UDP, cifrado WireGuard, relay de respaldo, y un relay de broadcast UDP que hace funcionar el descubrimiento LAN de los juegos clásicos. Su modelo de identidad nativo es `--network-name` más `--network-secret`, exactamente lo que produce el código de sala. Headscale exigía envolver su modelo de usuarios y pre-auth keys para simular salas anónimas, trabajo que no aporta al producto. Desde cero eran meses para llegar a un ~70% de conexiones directas, contra el 90%+ que da un coordinador maduro.
 

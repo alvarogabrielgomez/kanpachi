@@ -80,7 +80,7 @@ Ese último es un asistente opt-in que corre una vez en la vida de un juego nuev
 │        │  named pipe + token                                         │
 │   kanpachi-daemon  (servicio, elevado)                               │
 │        ├── kanpachi-core  (identidad, catálogo, política)            │
-│        ├── easytier-core (proceso hijo) ── adaptador Wintun (kanpachi0) │
+│        ├── kanpachi-engine (proceso hijo) ─ adaptador Wintun (kanpachi0) │
 │        └── Windows Firewall  (reglas etiquetadas "Kanpachi")         │
 └──────────────────────────────│───────────────────────────────────────┘
                                │

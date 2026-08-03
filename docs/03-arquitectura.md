@@ -770,13 +770,24 @@ Lo que `netcfg` mantiene:
 
 **Conflicto de rango CGNAT.** Ver la sección de direccionamiento más abajo.
 
-### adapter/engine/easytier, implementa `EnginePort`
+### adapter/engine/kanpachi, implementa `EnginePort`
 
-**El único sitio del proyecto que menciona EasyTier.** Lo ejecuta como **proceso hijo** (`easytier-core`), no vinculado al binario Go. Razones en `02`, decisión 1: EasyTier es LGPL-3.0 y es Rust, así que un proceso separado mantiene la licencia de Kanpachi libre, evita cgo y aísla los fallos.
+**El único sitio del proyecto que menciona el motor.** Lo ejecuta como **proceso hijo**, no vinculado al binario Go. Razones en `02`, decisión 1: el motor es Rust y LGPL-3.0, así que un proceso separado mantiene la licencia de Kanpachi libre, evita cgo y aísla los fallos. Lo último dejó de ser un argumento y pasó a ser un hecho medido: el workspace del motor compila su perfil de release con `panic = "abort"`, o sea que un `panic` dentro del mismo proceso se llevaría el servicio sin que nada pueda atajarlo.
+
+**El hijo NO es `easytier-core.exe`.** Es `kanpachi-engine.exe`, un binario propio que usa EasyTier como **librería** y vive en su propio repositorio bajo LGPL-3.0. La diferencia no es de gusto, y se midió con el mismo fichero de configuración sobre la misma máquina:
+
+| Proceso | Sockets en escucha |
+|---|---|
+| `easytier-core.exe` v2.6.4 | `TCP 0.0.0.0:15888 LISTENING` |
+| El motor propio, sobre la librería | ninguno |
+
+Ese `15888` es el portal de administración del motor, **no tiene autenticación de ninguna clase**, y su valor por defecto escucha en todas las interfaces pese a que la ayuda oficial dice `localhost`. Por ahí cualquier proceso local emite credenciales de la red real, agrega nodos y pide el `network_secret` en claro. El portal se construye en un solo sitio del árbol de EasyTier, dentro de su binario de línea de comandos, y el arranque de red por librería no lo menciona: **desaparece por omisión, no por configuración.**
 
 Responsabilidades:
 
-- Traducir `domain.HostSpec`, `domain.RendezvousSpec` y `domain.GuestSpec` a los parámetros del proceso: `--network-name`, `--network-secret` y `--credential`, semillas con `-p`, y la dirección virtual del nodo.
+- Traducir `domain.HostSpec`, `domain.RendezvousSpec` y `domain.GuestSpec` a la configuración del motor, que viaja por **stdin como TOML** y jamás por la línea de comandos. Medido: el `CommandLine` del proceso hijo solo muestra la ruta del ejecutable, así que el secreto de la red deja de ser legible con el Administrador de tareas por cualquier usuario de la máquina.
+
+  El entorno del hijo se arma **explícito**, nunca heredado. Cada bandera de EasyTier tiene una gemela por variable de entorno, `ET_CONFIG_SERVER` y `ET_PORT_FORWARD` entre ellas, así que un hijo que hereda el entorno acepta capacidades prohibidas sin que nadie las escriba en el argv. Lo vigila `internal/arch/motor_test.go`.
 
   **No traduce el descubrimiento LAN, porque no llega hasta acá.** `HostSpec` y `GuestSpec` no tienen campo para él: encenderlo significa `--enable-udp-broadcast-relay`, o sea capturar el tráfico de la red de casa del usuario con un driver de captura de paquetes, y la decisión 1 lo difiere hasta que exista un juego que lo pida. El perfil sí declara `lan_discovery`, porque el catálogo es la capa de conocimiento; esta es la capa que decide qué se concede.
 - Ciclo de vida del hijo: arranque, supervisión, apagado limpio, y matar huérfanos al arrancar el servicio por si una salida sucia dejó uno vivo.
