@@ -60,6 +60,20 @@ const (
 	ClassOther
 )
 
+// AllRuleClasses son todas las clases que el producto sabe distinguir.
+//
+// El conjunto es cerrado y esta lista es lo que lo vuelve ENUMERABLE, por lo
+// mismo que [AllAlertKinds]: sin ella, agregar un valor al enum y olvidarse del
+// resto no falla en ningún sitio. La clase viaja a la UI como "unknown", la
+// pantalla la trata como una fila más, y si esa clase era bloqueante la sala se
+// abre con el agujero puesto.
+//
+// La mantiene al día un guardián de internal/arch que cuenta las constantes del
+// enum en el fuente y falla si esta lista tiene menos.
+func AllRuleClasses() []RuleClass {
+	return []RuleClass{ClassGame, ClassRemoteControl, ClassOther}
+}
+
 func (c RuleClass) String() string {
 	switch c {
 	case ClassGame:

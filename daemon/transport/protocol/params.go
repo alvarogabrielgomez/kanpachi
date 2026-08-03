@@ -19,6 +19,19 @@ type ForeignView struct {
 	Executable string   `json:"executable"`
 	Profiles   []string `json:"profiles"`
 	WasEnabled bool     `json:"was_enabled"`
+	// Class es DE QUÉ es la regla, y decide cómo la trata la pantalla: una de
+	// más para el juego es una fila de una lista, y una de escritorio remoto
+	// entrega la máquina y bloquea abrir la sala.
+	//
+	// **Sale, jamás entra.** Ver [foreignRules].
+	Class string `json:"class"`
+	// Blocking es el veredicto del dominio, ya calculado.
+	//
+	// Viaja hecho en vez de dejar que la UI lo deduzca de Class, y no es
+	// redundancia: el día que una segunda clase pase a ser bloqueante, la UI de
+	// una versión vieja seguiría dibujando un aviso despachable. La regla del
+	// producto se decide en un solo sitio, que es [domain.ForeignRule.Blocking].
+	Blocking bool `json:"blocking"`
 }
 
 func foreignViews(rs []domain.ForeignRule) []ForeignView {
@@ -28,6 +41,8 @@ func foreignViews(rs []domain.ForeignRule) []ForeignView {
 			Name:       r.Name,
 			Executable: r.Executable,
 			WasEnabled: r.WasEnabled,
+			Class:      ruleClassName(r.Class),
+			Blocking:   r.Blocking(),
 			Profiles:   make([]string, 0, len(r.Profiles)),
 		}
 		for _, p := range r.Profiles {
@@ -38,6 +53,27 @@ func foreignViews(rs []domain.ForeignRule) []ForeignView {
 	return out
 }
 
+// ruleClassName es el nombre de cable de una clase.
+//
+// Nombres estables y en inglés, como el resto del protocolo, y jamás el
+// String() del dominio: aquel es castellano para el log y cambiarlo por una
+// palabra mejor rompería la UI en silencio.
+//
+// Lo recorre entero TestCadaClaseDeReglaTieneNombreEnLaAPI: una clase que
+// llegue como "unknown" la pinta la pantalla como si fuera cualquier cosa.
+func ruleClassName(c domain.RuleClass) string {
+	switch c {
+	case domain.ClassGame:
+		return "game"
+	case domain.ClassRemoteControl:
+		return "remote_control"
+	case domain.ClassOther:
+		return "other"
+	default:
+		return "unknown"
+	}
+}
+
 // foreignRules vuelve al dominio.
 //
 // **Los perfiles de firewall se reconstruyen desde la tabla cerrada, jamás
@@ -45,6 +81,13 @@ func foreignViews(rs []domain.ForeignRule) []ForeignView {
 // descarta en silencio, y una regla que se quede sin perfiles no se suspende:
 // lo que entra por el pipe es entrada de fuera, y el peor resultado posible acá
 // sería desactivar una regla del usuario que él no eligió.
+//
+// **La clase NO se reconstruye, y esa ausencia es deliberada.** Es política del
+// dominio, calculada por [domain.ClassifyForeignAgainst] sobre lo que el
+// firewall tiene puesto. Aceptarla del cliente dejaría que quien habla por el
+// pipe reetiquetara una regla de escritorio remoto como una del juego, que es
+// justo la distinción que decide si la sala se puede abrir. Nadie río abajo la
+// necesita: suspender empareja por nombre y ejecutable.
 func foreignRules(vs []ForeignView) []domain.ForeignRule {
 	out := make([]domain.ForeignRule, 0, len(vs))
 	for _, v := range vs {

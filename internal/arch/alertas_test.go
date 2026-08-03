@@ -66,6 +66,46 @@ func TestLaListaDeAlertasTieneTodasLasDelEnum(t *testing.T) {
 	}
 }
 
+// TestLaListaDeClasesTieneTodasLasDelEnum es el mismo guardián para
+// [domain.RuleClass], y el precio de que falte es peor que en las alertas.
+//
+// Una alerta que llega como "unknown" no se pinta y se pierde un aviso. Una
+// CLASE que llega como "unknown" se pinta igual, como una fila más de la lista
+// de reglas ajenas, y si esa clase era bloqueante la sala se abre con el agujero
+// puesto: es la diferencia entre "el juego dejó una regla de más" y "cualquiera
+// de la sala tiene tu teclado y tus ficheros".
+func TestLaListaDeClasesTieneTodasLasDelEnum(t *testing.T) {
+	const archivo = "../../core/domain/exposure.go"
+
+	enElFuente := constantesConPrefijo(t, archivo, "Class")
+	if len(enElFuente) == 0 {
+		t.Fatalf("no se encontró ninguna constante Class* en %s: la ruta cambió y este test no vigila nada", archivo)
+	}
+
+	enLaLista := map[domain.RuleClass]bool{}
+	for _, c := range domain.AllRuleClasses() {
+		if enLaLista[c] {
+			t.Errorf("la clase %d aparece dos veces en AllRuleClasses", c)
+		}
+		enLaLista[c] = true
+	}
+
+	if len(enElFuente) != len(domain.AllRuleClasses()) {
+		t.Errorf("el enum declara %d clases y AllRuleClasses devuelve %d.\n"+
+			"  Constantes en %s: %s\n"+
+			"  Una clase fuera de la lista no la recorre ningún test de cobertura, así que\n"+
+			"  puede llegar a la UI como \"unknown\" y pintarse como si fuera inofensiva.",
+			len(enElFuente), len(domain.AllRuleClasses()), archivo, strings.Join(enElFuente, ", "))
+	}
+
+	for i := range enElFuente {
+		c := domain.RuleClass(i + 1)
+		if !enLaLista[c] {
+			t.Errorf("el valor %d del enum no está en AllRuleClasses", c)
+		}
+	}
+}
+
 // constantesConPrefijo devuelve los nombres de las constantes de un archivo que
 // empiezan con el prefijo dado.
 //

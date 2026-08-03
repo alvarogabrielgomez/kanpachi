@@ -76,3 +76,80 @@ func TestElNombreDeUnaAlertaQueNoExisteEsUnknown(t *testing.T) {
 		t.Errorf("alertName(%d) = %q, se esperaba \"unknown\"", inventada, nombre)
 	}
 }
+
+// TestCadaClaseDeReglaTieneNombreEnLaAPI es lo mismo para [domain.RuleClass],
+// y el precio de que falte es mayor.
+//
+// Una alerta sin nombre no se pinta: se pierde el aviso. Una CLASE sin nombre se
+// pinta igual, como una fila más de la lista de reglas ajenas, así que el fallo
+// no es una ausencia sino una minimización: lo que entrega la máquina entera se
+// muestra con el mismo peso que una regla de más para el juego.
+func TestCadaClaseDeReglaTieneNombreEnLaAPI(t *testing.T) {
+	todas := domain.AllRuleClasses()
+	if len(todas) == 0 {
+		t.Fatal("AllRuleClasses está vacía, así que este test no probaría nada")
+	}
+
+	vistos := map[string]domain.RuleClass{}
+	for _, c := range todas {
+		nombre := ruleClassName(c)
+
+		if nombre == "unknown" {
+			t.Errorf("la clase %d cae en el default de ruleClassName.\n"+
+				"  Viajaría a la UI como \"unknown\" y se pintaría como una fila cualquiera.", c)
+			continue
+		}
+		if nombre == "" {
+			t.Errorf("la clase %d se serializa como cadena vacía", c)
+			continue
+		}
+		if otra, repetido := vistos[nombre]; repetido {
+			t.Errorf("las clases %d y %d comparten el nombre %q: la UI no puede distinguirlas",
+				otra, c, nombre)
+			continue
+		}
+		vistos[nombre] = c
+
+		if nombre != strings.ToLower(nombre) || strings.ContainsAny(nombre, " -.") {
+			t.Errorf("el nombre %q de la clase %d no es una clave estable: minúsculas y guión bajo",
+				nombre, c)
+		}
+	}
+}
+
+// TestElNombreDeUnaClaseQueNoExisteEsUnknown comprueba el propio detector, por
+// lo mismo que su gemelo de las alertas.
+func TestElNombreDeUnaClaseQueNoExisteEsUnknown(t *testing.T) {
+	inventada := domain.RuleClass(200)
+	if nombre := ruleClassName(inventada); nombre != "unknown" {
+		t.Errorf("ruleClassName(%d) = %q, se esperaba \"unknown\"", inventada, nombre)
+	}
+}
+
+// TestLaClaseNoSeReconstruyeDesdeElCliente.
+//
+// La clase es política del dominio, calculada sobre lo que el firewall tiene
+// puesto. Si el camino de vuelta la aceptara, quien hable por el pipe podría
+// reetiquetar una regla de escritorio remoto como una del juego, y esa es justo
+// la distinción que decide si la sala se puede abrir.
+func TestLaClaseNoSeReconstruyeDesdeElCliente(t *testing.T) {
+	entrada := []ForeignView{{
+		Name:       "Parsec",
+		Executable: `C:\Program Files\Parsec\parsecd.exe`,
+		Profiles:   []string{"privado"},
+		Class:      "game",
+		Blocking:   false,
+	}}
+
+	vuelta := foreignRules(entrada)
+	if len(vuelta) != 1 {
+		t.Fatalf("la regla no sobrevivió la vuelta: %+v", vuelta)
+	}
+	if vuelta[0].Class != domain.RuleClass(0) {
+		t.Errorf("la clase volvió como %v en vez de quedar sin decidir: el cliente "+
+			"acaba de elegir cómo se clasifica una regla suya", vuelta[0].Class)
+	}
+	if vuelta[0].Blocking() {
+		t.Error("una clase sin decidir salió como bloqueante")
+	}
+}
