@@ -706,7 +706,20 @@ Sobre la primera: La llama el adaptador del canal de control cuando alguien toca
 
 - API COM `INetFwPolicy2`, nunca `netsh`: más rápida y sin dependencia del idioma del sistema.
 - Todas las reglas llevan `Grouping = "Kanpachi"`. Al arrancar el servicio: purgar todo lo etiquetado, luego aplicar el estado deseado. Una muerte sucia del daemon nunca deja puertos huérfanos abiertos.
-- Alcance por dirección, no por adaptador: la API de firewall de Windows no filtra por nombre de interfaz, así que cada regla lleva `LocalAddresses` = IP del adaptador kanpachi0 y `RemoteAddresses` = IPs de los miembros presentes.
+- **Alcance por adaptador Y por dirección.** Acá decía que la API de firewall de Windows no filtra por nombre de interfaz. Es falso: `INetFwRule` tiene la propiedad `Interfaces`, y la propia documentación dice *"the interfaces in the list are represented by their friendly name"*. Comprobado sobre el sistema, no leído: hay una regla viva de Microsoft acotada a un adaptador virtual, que es exactamente el caso de Kanpachi.
+
+  ```
+  HNS Container Networking - DNS (UDP-In)
+  Interfaces : vEthernet (WSL (Hyper-V firewall))
+  ```
+
+  Así que cada regla de permiso lleva `Interfaces = ["kanpachi0"]`, más `LocalAddresses` = IP del adaptador y `RemoteAddresses` = IPs de los miembros presentes. Los tres a la vez, porque cada uno falla de una forma distinta y el solapamiento es la defensa.
+
+  Por dentro Windows lo guarda como GUID del adaptador (`IF={...}` en el almacén de reglas) y lo devuelve resuelto a nombre. De ahí salen las dos propiedades que importan: sobrevive a que el usuario renombre la conexión, y **no** sobrevive a que el adaptador se recree con un GUID nuevo. Lo segundo es justo lo que hace `Apply` al reaplicar, que enumera lo vivo y calcula la diferencia.
+
+  **El alcance por interfaz va SOLO en los permisos, jamás en los bloqueos de `Kanpachi-base`.** No es simetría estética: si el alcance deja de casar, un permiso que deja de aplicar CIERRA y un bloqueo que deja de aplicar ABRE. La cuarentena del instalador se acota por dirección y nada más.
+
+  Esto importa de verdad por el direccionamiento: Kanpachi usa `100.64.0.0/10`, que es espacio CGNAT, y la decisión 10 ya anota que CGNAT domina en LatAm. Con acotar solo por IP, un router 4G que reparta `100.64.x` en la LAN de casa haría que el permiso del juego alcance también a la red física.
 - Reglas aplicadas a los tres perfiles de firewall (dominio, privado, público) y el adaptador fijado como red **Privada** desde el instalador. Si Windows clasificara el adaptador en otro perfil, las reglas seguirían aplicando.
 - **Auditoría de reglas ajenas.** Al activar un perfil, `netfw` busca reglas de entrada permisivas para el ejecutable del juego en los perfiles Privado y Público, creadas por el instalador del juego o por un diálogo previo de Windows. Esas reglas dejan al host alcanzable desde su LAN doméstica, fuera del control de Kanpachi.
 

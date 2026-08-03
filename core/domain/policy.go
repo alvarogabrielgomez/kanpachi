@@ -65,9 +65,27 @@ type FirewallRule struct {
 	From  uint16
 	To    uint16
 
-	// Local es la IP del adaptador kanpachi0. El alcance va por dirección y no
-	// por adaptador porque la API de firewall de Windows no filtra por nombre
-	// de interfaz.
+	// Local es la IP del adaptador kanpachi0.
+	//
+	// Acá decía que el alcance va por dirección y no por adaptador porque la
+	// API de firewall de Windows no filtra por nombre de interfaz. **Es
+	// falso.** `INetFwRule` tiene la propiedad `Interfaces`, y hay una regla
+	// viva de Microsoft usándola sobre un adaptador virtual:
+	//
+	//	HNS Container Networking - DNS (UDP-In)
+	//	Interfaces : vEthernet (WSL (Hyper-V firewall))
+	//
+	// La dirección se queda igual, y el nombre del adaptador se suma en el
+	// adaptador de firewall cuando se escriba. Los dos a la vez, porque el
+	// direccionamiento de Kanpachi sale de `100.64.0.0/10`, que es espacio
+	// CGNAT: un router 4G que reparta `100.64.x` en la LAN de casa hace que
+	// acotar solo por IP alcance también a la red física.
+	//
+	// El nombre del adaptador NO entra en este tipo, y esa ausencia es
+	// deliberada: es un dato del entorno de la máquina, igual que la IP la pone
+	// el motor. Acotar por interfaz vale SOLO para los permisos. En un bloqueo
+	// abriría, porque un alcance que deja de casar convierte el bloqueo en
+	// nada, y por eso la cuarentena de `FirewallGroupBase` no lo lleva.
 	Local netip.Addr
 	// Remote son las IPs virtuales de los miembros presentes.
 	Remote []netip.Addr
