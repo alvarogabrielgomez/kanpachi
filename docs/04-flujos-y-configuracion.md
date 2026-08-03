@@ -51,6 +51,22 @@ Nota de rol: "host" es quien corre el servidor del juego. Cualquier miembro pued
 
 Distribución silenciosa para el grupo: `kanpachi-setup.exe /VERYSILENT /NORESTART`.
 
+## Modo desarrollo
+
+El daemon corre como aplicación de consola, sin reinstalar el servicio. **Exige una consola elevada**, por dos motivos que se comprobaron a mano y no se dedujeron: el nombre del pipe vive bajo `ProtectedPrefix\Administrators`, que Windows no deja crear a un proceso sin elevar, y aceptar una conexión exige crear la instancia siguiente del pipe, cosa que el descriptor solo permite a SYSTEM y a los administradores.
+
+```
+go run ./daemon/cmd/kanpachid --console -data C:\ruta\a\datos
+go run ./internal/kanpctl -data C:\ruta\a\datos status
+go run ./internal/kanpctl -data C:\ruta\a\datos -no-token status
+```
+
+El daemon imprime el nombre del pipe y el token al arrancar. La segunda llamada tiene que ser rechazada, y al salir con Ctrl+C el archivo `api.token` desaparece: rota una vez por vida del proceso, así que uno que le sobreviva no abre nada y solo sería un secreto muerto en disco.
+
+**El modo consola usa otro nombre de pipe**, y eso no es cosmético: con el mismo, un proceso sin privilegios ocuparía el nombre de producción arrancando nuestro propio binario con `--console`, que es el squatting sin escribir un okupa. La bandera `--pipe` permite un nombre cualquiera y solo se lee en modo consola, para poder ejercer el saludo y los topes sin un UAC por cada prueba.
+
+**El directorio de datos no lo crea el daemon.** Lo crea el instalador con su ACL, y esa ACL es la mitad de la protección del token; crearlo por accidente desde el daemon la perdería en silencio. Para probar a mano hay que crearlo antes o pasar `-data`.
+
 **Lo que el instalador jamás hace:** agregar exclusiones de Windows Defender, ni habilitar los grupos de reglas de Detección de redes o Compartir archivos e impresoras. Lo primero es lo que hace el malware, y si el binario necesitara una exclusión el problema sería el binario. Lo segundo abriría SMB en la LAN doméstica del usuario, porque esos grupos se habilitan por perfil de firewall y no por adaptador.
 
 ## Qué queda instalado

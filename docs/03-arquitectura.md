@@ -289,11 +289,23 @@ daemon/
     protocol/           la API local: mensajes y códigos, sin transporte
     control/            el canal de la sala: dos oyentes, dos alcances
     pipe/               el named pipe y su token
+  adapter/sinimplementar/  los puertos sin adaptador todavía. Fallan en TODO
   service/            el ORDEN de arranque y apagado, y el supervisor. Recibe
                       puertos ya construidos. Go PURO, job de Linux
   cmd/kanpachid/      el binario: main, host del servicio, --console, y la
                       ELECCIÓN de los adaptadores concretos. Solo Windows
+
+internal/
+  kanpctl/            la herramienta con la que se prueba el pipe a mano. En
+                      internal/ para que el producto no la importe y el
+                      instalador no la distribuya
 ```
+
+**Los provisionales fallan en todo, y eso no es pereza.** Uno que devuelve éxito hace la cuarentena inverificable desde dentro del programa: un firewall que dice "purgado" sin purgar deja la pantalla en verde, al módulo de exposición sin encontrar nada y al producto entero afirmando una promesa que nadie cumplió. El daño no es que falten funciones, es que la mentira sea indistinguible de la verdad.
+
+`RestoreForeign` es el que más invita a la excepción, porque el arranque lo llama por si una salida sucia dejó algo desactivado. Falla igual: devolver `nil` haría que el daemon anotara "reglas ajenas restauradas" sin restaurar nada, y el usuario se quedaría con reglas de su juego apagadas creyendo que volvieron. La única excepción es `SystemEvents`, forzada por su firma, ya que sus tres métodos devuelven canales y no hay dónde poner un error; sus canales mudos dicen la verdad, que no hay eventos, y el supervisor ya reaplica por temporizador porque estas suscripciones no son fiables ni con el adaptador de verdad.
+
+**La etiqueta de compilación va al revés de lo intuitivo:** el build con provisionales es el por defecto y el de release lleva la etiqueta. Con la etiqueta del lado de los provisionales, olvidarla produce un binario de release silencioso que compila, se instala como servicio y no hace nada de lo que promete. Con esta dirección, olvidarla produce uno que se NIEGA a instalarse. El olvido tiene que doler del lado seguro. Y mientras `sinimplementar.Presente` sea cierto, `kanpachid` solo arranca con `--console`.
 
 El cableado vive fuera de los casos de uso y está partido en dos, con una frontera que no es de gusto: `service/` sabe en qué orden pasan las cosas y `cmd/kanpachid/` sabe con qué. Solo el segundo conoce a la vez el dominio y Windows.
 
@@ -592,6 +604,18 @@ transport/
 **El enmarcado vive una sola vez.** El pipe y el canal de la sala leen bytes de gente que no es este programa, los dos corren como SYSTEM, y los dos necesitan el mismo tratamiento: tope antes de deserializar y desincronización tratada como terminal. Lo único que cambia entre ellos es el tope, un mega por el pipe donde pasa un catálogo importado, ocho kilobytes por el canal donde el mensaje más grande son unos cientos de bytes. Por eso el tope es un parámetro y el código es uno: el día que una copia se arregle, la otra no.
 
 **La superficie es la mitigación principal:** la API solo puede aplicar perfiles del catálogo embebido. No existe la operación "abrir puerto arbitrario". Un proceso malicioso corriendo como el usuario puede, como máximo, unirse a una sala y aplicar el perfil de un juego, nunca abrir 445 ni nada fuera del catálogo. La frontera de seguridad honesta es la sesión del usuario, igual que en cualquier aplicación de escritorio.
+
+#### Lo que está medido, y no argumentado
+
+El nombre vive bajo `\\.\pipe\ProtectedPrefix\Administrators\kanpachi`. Cualquier proceso del usuario puede crear `\\.\pipe\kanpachi` y quedarse con el nombre antes que el servicio, y ahí la defensa sería ganar una carrera, que se pierde el día que el arranque va lento. Bajo el prefijo protegido no puede, y no porque lo comprobemos nosotros: **arrancar el daemon sin elevar falla con "Access is denied" al crear el nombre.** El modo consola usa otro nombre, porque con el mismo un proceso sin privilegios ocuparía el de producción arrancando nuestro propio binario con `--console`.
+
+El descriptor es `D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x12019b;;;IU)`. Al usuario interactivo se le da leer, escribir y sincronizar, **jamás `GENERIC_ALL`**, y la razón se comprobó sola: con el daemon corriendo como usuario normal, el pipe se crea y la primera conexión falla al aceptar, porque aceptar exige crear la instancia SIGUIENTE del pipe y eso el usuario no puede. Que es el punto entero, ya que crear instancias es cómo se secuestraría la conexión de la UI. Como SYSTEM sí tiene permiso y atiende normal. Probar a mano exige, por lo tanto, una consola elevada.
+
+Pasar el descriptor vacío es un error y no una opción: el descriptor por defecto de un named pipe da lectura a Everyone y a la cuenta anónima.
+
+**Los topes son constantes de compilación**, igual que los cortes automáticos: ocho conexiones, cinco segundos para saludar, diez minutos de ocio, cinco segundos por respuesta. El de escritura es por MENSAJE y no por escritura, porque `wire.Writer` escribe sobre un bufio y una respuesta grande sale en varios trozos; renovar el plazo en cada trozo deja que un cliente que lee un byte por segundo mantenga la conexión abierta para siempre.
+
+**Un pánico atendiendo una conexión no se lleva el daemon.** Sin ese recover, cualquier ruta de la API que reviente mata el proceso, y con él la sala: puertos cerrados, motor caído y la partida de todos al suelo porque una pantalla pidió algo raro. Lo encontró un test con la API a medio implementar, que es la forma exacta que tiene el daemon mientras queden adaptadores provisionales.
 
 #### El cliente, del lado de Flutter
 

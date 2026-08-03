@@ -129,7 +129,8 @@ Otras convenciones:
 
 - **Cliente solo Windows.** El seed es Linux por ser servidor, eso no abre la puerta a un cliente Linux.
 - **El usuario nunca abre una terminal.** Si una función necesita que alguien corra un comando, está mal diseñada.
-- Modo desarrollo: el daemon corre como aplicación de consola con `--console`, sin reinstalar el servicio.
+- Modo desarrollo: el daemon corre como aplicación de consola con `--console`, sin reinstalar el servicio, y **exige consola elevada**: el nombre del pipe vive bajo `ProtectedPrefix\Administrators` y aceptar una conexión exige crear la instancia siguiente, que el descriptor solo permite a SYSTEM y administradores. Usa otro nombre de pipe que producción, o un proceso sin privilegios ocuparía el nombre real arrancando nuestro propio binario. Ver `04-flujos-y-configuracion.md`.
+- **Un binario con adaptadores provisionales se niega a correr como servicio.** El riesgo nunca fue que fallen: es que uno con un firewall que dice que purgó termine instalado. La etiqueta de compilación va al revés de lo intuitivo a propósito, ver `03-arquitectura.md`.
 - **Dos grupos de firewall, con dueños distintos.** `Kanpachi` es la sala y la escribe el daemon: al arrancar purga lo etiquetado con ese grupo y aplica el estado deseado. `Kanpachi-base` es la cuarentena y la pone el instalador; el daemon jamás la nombra, así que sigue puesta con el servicio detenido. El desinstalador purga los dos. La comparación de grupo va por igualdad exacta y jamás por prefijo, porque `Kanpachi` es prefijo de `Kanpachi-base`. Lo vigila `internal/arch/grupobase_test.go`.
 - No compilar con `-ldflags="-s -w"`. Dispara falsos positivos de Defender sobre binarios Go.
 
