@@ -70,6 +70,27 @@ const FirewallGroup = "Kanpachi"
 // internal/arch, que además comprueba que este nombre no aparezca en daemon/.
 const FirewallGroupBase = "Kanpachi-base"
 
+// IsOwnFirewallGroup dice si un grupo del firewall es de Kanpachi, sea el de la
+// sala o el de la cuarentena.
+//
+// # Por qué es una función del dominio y no un `||` en el adaptador
+//
+// El adaptador necesita saberlo para lo contrario de lo que parece: para
+// EXCLUIR las reglas propias de todo lo que hace con las ajenas. Una regla del
+// grupo base no es una regla ajena, y desactivarla desarmaría lo único que
+// protege la máquina con el servicio parado.
+//
+// Escrito en el adaptador, ese `||` obliga al daemon a nombrar
+// [FirewallGroupBase], y hay un guardián en internal/arch que lo prohíbe con
+// razón: nombrarlo es todo lo que hace falta para tocarlo, y el guardián no
+// puede distinguir "lo nombro para escribirlo" de "lo nombro para saltármelo".
+//
+// Acá el daemon pregunta sin nombrar, la política de qué es propio queda en un
+// solo sitio, y el guardián sigue tan estricto como antes.
+func IsOwnFirewallGroup(group string) bool {
+	return group == FirewallGroup || group == FirewallGroupBase
+}
+
 // forbiddenPorts son los puertos que ningún perfil puede pedir, jamás.
 //
 // No hay campo en el esquema para saltárselos ni bandera que los habilite: la

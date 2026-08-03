@@ -5,11 +5,13 @@ package windowscom
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"github.com/go-ole/go-ole"
 	"github.com/go-ole/go-ole/oleutil"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/port"
 )
 
 // Firewall implements port.FirewallPort against INetFwPolicy2.
@@ -19,8 +21,16 @@ type Firewall struct {
 	// engine has created it, and an empty name means the permits go out without
 	// interface scope rather than scoped to a name that does not exist.
 	adapter string
-	log     Logger
+	// suspendPath is where the previous state of somebody else's rules is
+	// written before any of them is disabled. It lives on disk and not in
+	// memory because the caller that needs it most is the NEXT start of the
+	// service, after a dirty exit.
+	suspendPath string
+	log         Logger
 }
+
+// SuspendedRulesFile is the name of that record, inside the data directory.
+const SuspendedRulesFile = "suspended-rules.json"
 
 // Logger is the slice of the daemon log this adapter needs.
 type Logger interface {
@@ -30,13 +40,28 @@ type Logger interface {
 }
 
 // New opens the apartment. Close it to release the thread.
-func New(adapter string, log Logger) (*Firewall, error) {
+//
+// dataDir is where suspended-rules.json goes. It is required: without it the
+// adapter could disable somebody's rules and have no way to put them back.
+func New(dataDir, adapter string, log Logger) (*Firewall, error) {
+	if dataDir == "" {
+		return nil, fmt.Errorf("the firewall adapter needs a data directory to record suspended rules")
+	}
 	ap, err := newApartment()
 	if err != nil {
 		return nil, err
 	}
-	return &Firewall{ap: ap, adapter: adapter, log: log}, nil
+	return &Firewall{
+		ap:          ap,
+		adapter:     adapter,
+		suspendPath: filepath.Join(dataDir, SuspendedRulesFile),
+		log:         log,
+	}, nil
 }
+
+// The check that this still fits the port. If a signature in core changes, the
+// error comes out here and not where it gets wired.
+var _ port.FirewallPort = (*Firewall)(nil)
 
 func (f *Firewall) Close() error { return f.ap.Close() }
 
@@ -46,12 +71,6 @@ func (f *Firewall) Close() error { return f.ap.Close() }
 // session may legitimately run with no name, and rescoping later must not
 // require rebuilding the whole adapter.
 func (f *Firewall) SetAdapter(name string) { f.adapter = name }
-
-// liveRule is one rule of our own group as read back from the system.
-type liveRule struct {
-	spec  ruleSpec
-	group string
-}
 
 // Apply brings the firewall to the desired set.
 //
@@ -66,17 +85,18 @@ func (f *Firewall) Apply(ctx context.Context, desired domain.RuleSet) error {
 		return err
 	}
 
+	all, err := f.liveRules(ctx)
+	if err != nil {
+		return err
+	}
+	live, others := ownSpecs(all), foreignNames(all)
+
 	return f.ap.do(ctx, func(policy *ole.IDispatch) error {
 		rules, err := rulesOf(policy)
 		if err != nil {
 			return err
 		}
 		defer rules.Release()
-
-		live, shared, err := readOwn(rules)
-		if err != nil {
-			return err
-		}
 
 		wanted := make(map[string]ruleSpec, len(want))
 		for _, s := range want {
@@ -94,10 +114,10 @@ func (f *Firewall) Apply(ctx context.Context, desired domain.RuleSet) error {
 		retired := map[string]bool{}
 		for name := range live {
 			s, keep := wanted[name]
-			if keep && live[name].spec.sameScope(s) {
+			if keep && live[name].sameScope(s) {
 				continue
 			}
-			gone, err := f.retire(rules, name, shared[name])
+			gone, err := f.retire(rules, name, others[name])
 			if err != nil {
 				return err
 			}
@@ -106,7 +126,7 @@ func (f *Firewall) Apply(ctx context.Context, desired domain.RuleSet) error {
 
 		for _, s := range want {
 			if l, ok := live[s.Name]; ok {
-				if l.spec.sameScope(s) {
+				if l.sameScope(s) {
 					continue
 				}
 				if !retired[s.Name] {
@@ -132,10 +152,14 @@ func (f *Firewall) Apply(ctx context.Context, desired domain.RuleSet) error {
 // "easytier-core" rule by name also took out a live rule carrying the same
 // name, because the API offers no way to say which one.
 //
-// So when the name is unique in the whole store, Remove is safe and the rule is
-// gone. When it is shared, deleting would be a coin flip on someone else's
-// configuration, so instead our own rule object is DISABLED in place. Enumerating
-// hands us that exact object, which is the one precise handle the API gives.
+// So when every rule under that name is OURS, Remove is safe and the rule is
+// gone. When somebody else carries the name too, deleting would be a coin flip
+// on their configuration, so instead our own rule object is DISABLED in place.
+// Enumerating hands us that exact object, which is the one precise handle the
+// API gives.
+//
+// `others` is how many rules with this name are not ours, and not how many
+// exist. Two rules of our own group sharing a name are both ours to delete.
 //
 // A disabled rule opens nothing, so the port is shut either way. What differs is
 // that it is still there under that name, and the caller must not write another
@@ -145,8 +169,8 @@ func (f *Firewall) Apply(ctx context.Context, desired domain.RuleSet) error {
 // and it is the right trade. Kanpachi failing to open a port is visible and
 // recoverable; Kanpachi silently deleting a rule from a machine it does not own
 // is neither.
-func (f *Firewall) retire(rules *ole.IDispatch, name string, sharedWith int) (bool, error) {
-	if sharedWith <= 1 {
+func (f *Firewall) retire(rules *ole.IDispatch, name string, others int) (bool, error) {
+	if others == 0 {
 		if _, err := oleutil.CallMethod(rules, "Remove", name); err != nil {
 			return false, fmt.Errorf("removing rule %q: %w", name, err)
 		}
@@ -155,7 +179,12 @@ func (f *Firewall) retire(rules *ole.IDispatch, name string, sharedWith int) (bo
 
 	disabled := false
 	err := eachRule(rules, func(rule *ole.IDispatch) (bool, error) {
-		if strProp(rule, "Name") != name || strProp(rule, "Grouping") != domain.FirewallGroup {
+		r := propReader{rule: rule}
+		ruleName, group := r.str("Name"), r.str("Grouping")
+		if err := r.Err(); err != nil {
+			return false, err
+		}
+		if ruleName != name || group != domain.FirewallGroup {
 			return true, nil
 		}
 		if _, err := oleutil.PutProperty(rule, "Enabled", false); err != nil {
@@ -169,64 +198,8 @@ func (f *Firewall) retire(rules *ole.IDispatch, name string, sharedWith int) (bo
 	}
 
 	f.log.Warn("una regla se desactivó en vez de borrarse porque su nombre lo usa alguien más",
-		"regla", name, "coincidencias", sharedWith, "desactivada", disabled)
+		"regla", name, "reglas-ajenas-con-ese-nombre", others, "desactivada", disabled)
 	return false, nil
-}
-
-// readOwn returns our group's rules, and how many rules carry each name across
-// the WHOLE store, which is what makes removal safe.
-func readOwn(rules *ole.IDispatch) (map[string]liveRule, map[string]int, error) {
-	own := map[string]liveRule{}
-	byName := map[string]int{}
-
-	err := eachRule(rules, func(rule *ole.IDispatch) (bool, error) {
-		name := strProp(rule, "Name")
-		byName[name]++
-
-		// Exact equality on the group, never a prefix: "Kanpachi" is a prefix
-		// of "Kanpachi-base", and the base group is the installer's quarantine,
-		// which the daemon must never touch.
-		if strProp(rule, "Grouping") != domain.FirewallGroup {
-			return true, nil
-		}
-		own[name] = liveRule{
-			group: domain.FirewallGroup,
-			spec: ruleSpec{
-				Name:            name,
-				Group:           domain.FirewallGroup,
-				Direction:       intProp(rule, "Direction"),
-				Action:          intProp(rule, "Action"),
-				Protocol:        intProp(rule, "Protocol"),
-				LocalPorts:      strProp(rule, "LocalPorts"),
-				LocalAddresses:  strProp(rule, "LocalAddresses"),
-				RemoteAddresses: strProp(rule, "RemoteAddresses"),
-				Interfaces:      interfacesOf(rule),
-				Profiles:        intProp(rule, "Profiles"),
-				Enabled:         boolProp(rule, "Enabled"),
-			},
-		}
-		return true, nil
-	})
-	return own, byName, err
-}
-
-// interfacesOf reads the interface scope, which arrives as a VARIANT holding an
-// array of names and is empty on most rules.
-func interfacesOf(rule *ole.IDispatch) []string {
-	v, err := oleutil.GetProperty(rule, "Interfaces")
-	if err != nil {
-		return nil
-	}
-	defer func() { _ = v.Clear() }()
-	arr := v.ToArray()
-	if arr == nil {
-		return nil
-	}
-	vals := arr.ToStringArray()
-	if len(vals) == 0 {
-		return nil
-	}
-	return vals
 }
 
 func addRule(rules *ole.IDispatch, s ruleSpec) error {
@@ -295,6 +268,16 @@ func addRule(rules *ole.IDispatch, s ruleSpec) error {
 // Comparison is by exact equality: "Kanpachi" is a prefix of "Kanpachi-base",
 // so a prefix match here deletes the quarantine.
 func (f *Firewall) PurgeOwned(ctx context.Context) error {
+	all, err := f.liveRules(ctx)
+	if err != nil {
+		return err
+	}
+	// The same two reads Apply uses, and for the same reason: the count of
+	// rules that are NOT the daemon's is what decides whether deleting by name
+	// is safe. This used to call Remove blindly for every name in our group,
+	// which is the same coin flip on someone else's configuration.
+	live, others := ownSpecs(all), foreignNames(all)
+
 	return f.ap.do(ctx, func(policy *ole.IDispatch) error {
 		rules, err := rulesOf(policy)
 		if err != nil {
@@ -302,32 +285,13 @@ func (f *Firewall) PurgeOwned(ctx context.Context) error {
 		}
 		defer rules.Release()
 
-		// Name and how many rules in the WHOLE store carry it. The count is
-		// what decides whether deleting is safe, exactly as in Apply: this
-		// loop used to call Remove blindly for every name in our group, which
-		// is the same coin flip on someone else's configuration.
-		var ours []string
-		shared := map[string]int{}
-		err = eachRule(rules, func(rule *ole.IDispatch) (bool, error) {
-			name := strProp(rule, "Name")
-			shared[name]++
-			if strProp(rule, "Grouping") == domain.FirewallGroup {
-				ours = append(ours, name)
-			}
-			return true, nil
-		})
-		if err != nil {
-			return err
-		}
-
-		names := ours
-		for _, n := range ours {
-			if _, err := f.retire(rules, n, shared[n]); err != nil {
+		for name := range live {
+			if _, err := f.retire(rules, name, others[name]); err != nil {
 				return err
 			}
 		}
-		if len(names) > 0 {
-			f.log.Info("reglas propias purgadas", "cantidad", len(names))
+		if len(live) > 0 {
+			f.log.Info("reglas propias purgadas", "cantidad", len(live))
 		}
 		return nil
 	})

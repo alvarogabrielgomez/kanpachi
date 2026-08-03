@@ -168,29 +168,84 @@ func eachRule(rules *ole.IDispatch, fn func(rule *ole.IDispatch) (bool, error)) 
 	}
 }
 
-func strProp(d *ole.IDispatch, name string) string {
-	v, err := oleutil.GetProperty(d, name)
+// propReader reads properties off one rule and remembers the FIRST failure.
+//
+// # Why a failed read cannot return a zero value
+//
+// This started as three helpers that returned "" or 0 when GetProperty failed,
+// and that shape is dangerous in a very specific way: Action 0 IS
+// NET_FW_ACTION_BLOCK, so a failed read turns a live permissive rule into a
+// block, the audit drops it, and the screen says there is nothing to see.
+//
+// A measurement that failed must never be indistinguishable from a measurement
+// that came back clean. That is the whole reason [domain.AlertAuditFailed]
+// exists, and it would have been defeated one layer below it.
+//
+// The first error is kept and the rest of the reads run anyway, so the struct
+// is filled in one readable block instead of ten `if err != nil`.
+type propReader struct {
+	rule *ole.IDispatch
+	err  error
+}
+
+func (r *propReader) get(name string) (*ole.VARIANT, bool) {
+	v, err := oleutil.GetProperty(r.rule, name)
 	if err != nil {
+		if r.err == nil {
+			r.err = fmt.Errorf("reading property %s of a firewall rule: %w", name, err)
+		}
+		return nil, false
+	}
+	return v, true
+}
+
+func (r *propReader) str(name string) string {
+	v, ok := r.get(name)
+	if !ok {
 		return ""
 	}
 	defer func() { _ = v.Clear() }()
+	// ToString guards on the type itself and hands back "" for VT_NULL, which
+	// is what a rule with no program has in ApplicationName. That is not a
+	// failure, it is the honest answer.
 	return v.ToString()
 }
 
-func intProp(d *ole.IDispatch, name string) int32 {
-	v, err := oleutil.GetProperty(d, name)
-	if err != nil {
+func (r *propReader) int32(name string) int32 {
+	v, ok := r.get(name)
+	if !ok {
 		return 0
 	}
 	defer func() { _ = v.Clear() }()
 	return int32(v.Val)
 }
 
-func boolProp(d *ole.IDispatch, name string) bool {
-	v, err := oleutil.GetProperty(d, name)
-	if err != nil {
+func (r *propReader) bool(name string) bool {
+	v, ok := r.get(name)
+	if !ok {
 		return false
 	}
 	defer func() { _ = v.Clear() }()
 	return v.Value() == true
 }
+
+// strs reads a property that arrives as a VARIANT holding an array of strings.
+// Empty is normal and is not an error: most rules carry no interface scope.
+func (r *propReader) strs(name string) []string {
+	v, ok := r.get(name)
+	if !ok {
+		return nil
+	}
+	defer func() { _ = v.Clear() }()
+	arr := v.ToArray()
+	if arr == nil {
+		return nil
+	}
+	vals := arr.ToStringArray()
+	if len(vals) == 0 {
+		return nil
+	}
+	return vals
+}
+
+func (r *propReader) Err() error { return r.err }

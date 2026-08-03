@@ -128,6 +128,21 @@ func RemoteAccessExecutables() []string {
 // cuando no hay juego activo. El control remoto gana sobre el juego: un
 // ejecutable que esté en las dos listas es lo peligroso de las dos.
 func ClassifyForeign(executable, gameExe string) RuleClass {
+	return ClassifyForeignAgainst(executable, []string{gameExe})
+}
+
+// ClassifyForeignAgainst es la misma decisión contra TODOS los ejecutables de
+// un perfil.
+//
+// Existe porque [Detect.Executables] es una lista: un juego reparte cliente,
+// servidor dedicado y lanzador en binarios distintos, y una regla permisiva
+// puede apuntar a cualquiera de ellos. Recorrer esa lista es política y por eso
+// vive acá: el adaptador lee el almacén de reglas de Windows y no decide qué es
+// peligroso.
+//
+// El control remoto se comprueba PRIMERO y gana, así que un ejecutable que
+// estuviera en las dos listas vuelve como lo peligroso de las dos.
+func ClassifyForeignAgainst(executable string, gameExes []string) RuleClass {
 	base := baseLower(executable)
 	if base == "" {
 		return ClassOther
@@ -137,8 +152,10 @@ func ClassifyForeign(executable, gameExe string) RuleClass {
 			return ClassRemoteControl
 		}
 	}
-	if g := baseLower(gameExe); g != "" && base == g {
-		return ClassGame
+	for _, g := range gameExes {
+		if b := baseLower(g); b != "" && base == b {
+			return ClassGame
+		}
 	}
 	return ClassOther
 }
