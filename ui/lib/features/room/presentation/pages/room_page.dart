@@ -15,6 +15,8 @@ import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/density_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
+import 'package:kanpachi_ui/core/messages/message_catalog.dart';
 import 'package:kanpachi_ui/features/room/presentation/widgets/copy_button.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
@@ -47,18 +49,14 @@ class RoomScreen extends StatelessWidget {
           _RoomHeader(room: room),
           SizedBox(height: d.gap),
           if (room.hostLeft && !room.selfIsHost) ...<Widget>[
-            AppNotice(
-              tone: AppNoticeTone.neutral,
-              title: '${room.hostName ?? 'El host'} salió de la sala',
-              body: const Text(
-                'El juego corría en su PC, así que no hay a qué conectarse '
-                'hasta que vuelva. La sala sigue en pie.',
-              ),
-            ),
+            AppMessageNotice(message: AppMessages.hostLeft(room.hostName)),
             SizedBox(height: d.gap),
           ],
-          if (room.network != NetworkHealth.ok) ...<Widget>[
-            AppNotice.line(body: Text(room.network.message), pulse: true),
+          if (!AppMessages.connection(room.network).isEmpty) ...<Widget>[
+            AppMessageNotice(
+              message: AppMessages.connection(room.network),
+              pulse: true,
+            ),
             SizedBox(height: d.gap),
           ],
           LayoutBuilder(

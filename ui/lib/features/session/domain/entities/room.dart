@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 
 /// Cómo llega el tráfico hasta un miembro.
@@ -59,16 +60,11 @@ class Member {
   }
 }
 
-/// El estado de la conexión con el resto de la sala.
-enum NetworkHealth {
-  ok(''),
-  degraded('Conexión inestable, reintentando'),
-  reconnecting('Reconectando…');
-
-  const NetworkHealth(this.message);
-
-  final String message;
-}
+// El estado de la conexión ya no vive acá: es `ConnState`, en
+// core/messages/message_keys.dart, porque lo dice el daemon y no lo deduce la
+// pantalla. Llevaba su propio texto dentro, que es copy escondido dentro del
+// dominio: el enum decidía cómo se explica un estado, y eso lo decide el
+// catálogo de mensajes.
 
 /// Qué se hizo con la regla de firewall que dejó el propio juego.
 enum ForeignRuleState {
@@ -94,7 +90,7 @@ class Room {
     this.game,
     this.hostName,
     this.hostLeft = false,
-    this.network = NetworkHealth.ok,
+    this.network = ConnState.connected,
     this.foreignRule = ForeignRuleState.open,
   });
 
@@ -116,7 +112,7 @@ class Room {
   /// su PC no hay a qué conectarse.
   final bool hostLeft;
 
-  final NetworkHealth network;
+  final ConnState network;
   final ForeignRuleState foreignRule;
 
   /// La dirección que se pega en el juego: la del host y el puerto del juego.
@@ -134,7 +130,7 @@ class Room {
     Game? game,
     bool clearGame = false,
     bool? hostLeft,
-    NetworkHealth? network,
+    ConnState? network,
     ForeignRuleState? foreignRule,
   }) =>
       Room(

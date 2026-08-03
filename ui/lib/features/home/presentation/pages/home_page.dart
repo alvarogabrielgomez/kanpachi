@@ -8,8 +8,10 @@ import 'package:kanpachi_ui/core/design_system/atoms/app_field.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_kicker.dart';
 import 'package:kanpachi_ui/features/games/presentation/widgets/game_views.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_list.dart';
-import 'package:kanpachi_ui/core/design_system/molecules/app_notice.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
+import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
+import 'package:kanpachi_ui/core/messages/message_catalog.dart';
+import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/invite_code.dart';
@@ -195,7 +197,15 @@ class _JoinAndCreate extends StatelessWidget {
         ),
         if (showAlerts) ...<Widget>[
           const SizedBox(height: AppSpacing.x5l),
-          const _HealthAlerts(),
+          // Las dos de la maqueta, hasta que el daemon las reporte de verdad.
+          // Cuando exista, esta lista sale de RoomState.alerts y lo único que
+          // cambia es de dónde viene: el texto ya no vive acá.
+          const _HealthAlerts(
+            alerts: <AlertKind>[
+              AlertKind.firewallOff,
+              AlertKind.routerMapping,
+            ],
+          ),
         ],
       ],
     );
@@ -209,57 +219,27 @@ class _JoinAndCreate extends StatelessWidget {
 /// no puede cumplirla si está apagado. Y avisa de un puerto abierto en el
 /// router aunque no sea cosa suya, porque es justo lo que Kanpachi existe para
 /// no tener que hacer.
+///
+/// **El texto no está acá.** Lo trae `AppMessages`, que es el único sitio del
+/// programa donde se escribe copy de aviso. Esta clase decide QUÉ alertas se
+/// muestran y en qué orden; qué dicen lo decide el catálogo, y de dónde salen
+/// las alertas lo dirá el daemon cuando exista.
 class _HealthAlerts extends StatelessWidget {
-  const _HealthAlerts();
+  const _HealthAlerts({required this.alerts});
+
+  final List<AlertKind> alerts;
 
   @override
   Widget build(BuildContext context) {
-    // El enlace no lleva a ningún sitio todavía: el diseño lo pone con
-    // `href="#"`, o sea que la página de ayuda aún no existe. Va como span de
-    // acento y sin gesto, porque un enlace que se puede pulsar y no hace nada
-    // es peor que uno que sólo señala dónde mirar. Cuando exista el destino,
-    // se extrae el átomo con recognizer.
-    final Color accento = context.colors.accent;
     return Column(
       children: <Widget>[
-        AppNotice(
-          titleStyle: context.type.strongSm,
-          title: 'Tu Firewall de Windows está apagado',
-          body: Text.rich(
-            TextSpan(
-              children: <InlineSpan>[
-                const TextSpan(
-                  text: 'Kanpachi se apoya en él para que nadie de la sala '
-                      'alcance tu PC. Sin él, no puede protegerte. ',
-                ),
-                TextSpan(
-                  text: 'Cómo activarlo',
-                  style: TextStyle(color: accento),
-                ),
-              ],
-            ),
+        for (int i = 0; i < alerts.length; i++) ...<Widget>[
+          if (i > 0) const SizedBox(height: AppSpacing.lg),
+          AppMessageNotice(
+            message: AppMessages.alert(alerts[i]),
+            titleStyle: context.type.strongSm,
           ),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        AppNotice(
-          titleStyle: context.type.strongSm,
-          title: 'Tu router tiene abierto el puerto 16261 hacia internet',
-          body: Text.rich(
-            TextSpan(
-              children: <InlineSpan>[
-                const TextSpan(
-                  text: 'Kanpachi no lo necesita: hace el túnel sin abrir '
-                      'nada. Mientras siga así, cualquiera en internet llega '
-                      'a ese puerto. ',
-                ),
-                TextSpan(
-                  text: 'Cómo cerrarlo',
-                  style: TextStyle(color: accento),
-                ),
-              ],
-            ),
-          ),
-        ),
+        ],
       ],
     );
   }
