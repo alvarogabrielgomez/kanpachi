@@ -393,6 +393,7 @@ A7K2M9QX@seed.midominio.com       → ese seed
 
 - Pegar un código puede conectarte al servidor de un desconocido. Ese servidor ve tu IP pública, el invite ID que consultaste y la red de encuentro que le corresponde. Jamás ve el secreto de la sala real, así que no puede unirse a ella. La confirmación dentro de la app es obligatoria y no se recuerda, ver decisión 17.
 - El manejador `kanpachi://` es superficie de ataque clásica. Validación estricta de todo lo que entre por ahí.
+- **El seed tiene que ser un nombre y no una dirección.** Salió de la auditoría de ciberseguridad: de ese valor salen dos destinos, la consulta al registro y los `--peers` con los que arranca el motor, así que un literal de IP hace que el daemon, que corre como SYSTEM, hable con la red de casa de quien pegó el código o con su propia máquina. Se exige que la última etiqueta lleve una letra, que cierra también las formas legadas que el resolver acepta y un comprobador de IP bien formada deja pasar, `127.1` y `0x7f.0.0.1` entre ellas. Quien hospede el suyo necesita un nombre, que es gratis. Un nombre bien formado puede resolver igual a una dirección privada, y eso lo comprueba el adaptador al conectar con `domain.CheckSeedAddr`, en cada uso.
 - Un código pelado siempre usa el seed por defecto, nunca el último usado. Recordar el último produce fallos inexplicables cuando un amigo manda un código de otra procedencia.
 
 ## 17. La página de invitación, con el invite ID en la ruta

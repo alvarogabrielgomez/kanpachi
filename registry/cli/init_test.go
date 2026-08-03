@@ -10,16 +10,31 @@ import (
 
 // puertoLibreDePrueba devuelve un puerto que nadie tiene tomado. Se abre y se
 // cierra de verdad, porque un número inventado puede estar en uso.
+//
+// **Se comprueba con el MISMO criterio que usa el código**, y ese detalle era un
+// fallo real de este archivo. Pedir un efímero en loopback y dárselo a
+// `decidirPuertos`, que lo mide con [setup.PuertoPublicoLibre] en 0.0.0.0 y
+// además en UDP, hace que a veces el test se contradiga solo: en Windows hay
+// rangos que el sistema reserva y que cambian en cada arranque, así que un
+// puerto libre en loopback puede no serlo en todas las interfaces. Cuando pasaba,
+// init preguntaba por consola y el test fallaba sin que nadie hubiera roto nada.
 func puertoLibreDePrueba(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("no se pudo pedir un puerto libre: %v", err)
+	for intento := 0; intento < 20; intento++ {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("no se pudo pedir un puerto libre: %v", err)
+		}
+		_, p, _ := net.SplitHostPort(l.Addr().String())
+		l.Close()
+
+		n, _ := strconv.Atoi(p)
+		if setup.PuertoPublicoLibre(n) {
+			return n
+		}
 	}
-	defer l.Close()
-	_, p, _ := net.SplitHostPort(l.Addr().String())
-	n, _ := strconv.Atoi(p)
-	return n
+	t.Skip("esta máquina no dio ningún puerto efímero libre en todas las interfaces")
+	return 0
 }
 
 // puertoOcupadoDePrueba deja un listener ABIERTO durante todo el test, que es

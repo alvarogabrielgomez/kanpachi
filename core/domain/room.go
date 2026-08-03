@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"strings"
 )
 
@@ -165,6 +166,30 @@ func (r Room) UsesDefaultSeed() bool { return r.Seed == DefaultSeedHost }
 // Sin puerto a propósito: ninguna de las seis formas documentadas lo lleva, el
 // seed siempre escucha en 11010, y aceptarlo sería superficie de parseo a
 // cambio de nada.
+//
+// # Es un NOMBRE, jamás una dirección
+//
+// El host del código lo elige quien manda el código, así que es un destino que
+// un desconocido apunta a donde quiera. De acá salen DOS cosas: el cliente HTTP
+// que consulta el registro, y los `--peers` con los que arranca el motor. Un
+// literal de IP privada o de loopback convertiría a las dos en una forma de
+// hacer que el daemon, que corre como SYSTEM, hable con la red de casa del
+// usuario o consigo mismo.
+//
+// Se exige que la última etiqueta lleve al menos una letra, y eso es lo que
+// cierra la familia entera de formas legadas de escribir una IP, no solo la
+// obvia. El resolver del sistema acepta cosas que `netip.ParseAddr` rechaza:
+// `127.1` es 127.0.0.1, `0x7f.0.0.1` también, y las dos pasarían un filtro que
+// solo mirara si el texto es una IP bien formada. Ninguna forma de escribir una
+// dirección IPv4 termina en una etiqueta con letras, y ningún dominio real
+// termina en una etiqueta sin ellas.
+//
+// **El costo aceptado:** quien hospede su propio seed necesita un nombre, no le
+// alcanza con la IP. Un nombre es gratis y esta comprobación cubre a los dos
+// consumidores de una vez, así que el cambio vale lo que cuesta.
+//
+// Esto es la PRIMERA capa. La segunda vive en los adaptadores y es [CheckSeedAddr]:
+// un nombre impecable puede resolver a 192.168.1.1, y eso solo se ve al resolver.
 func parseSeedHost(h string) (string, error) {
 	h = strings.ToLower(strings.TrimSuffix(h, "."))
 	if h == "" || len(h) > maxHostLen {
@@ -175,7 +200,8 @@ func parseSeedHost(h string) (string, error) {
 	if !strings.Contains(h, ".") {
 		return "", ErrSeedHost
 	}
-	for _, label := range strings.Split(h, ".") {
+	etiquetas := strings.Split(h, ".")
+	for _, label := range etiquetas {
 		if label == "" || len(label) > 63 {
 			return "", ErrSeedHost
 		}
@@ -191,5 +217,116 @@ func parseSeedHost(h string) (string, error) {
 			}
 		}
 	}
+	if !tieneLetra(etiquetas[len(etiquetas)-1]) {
+		return "", fmt.Errorf("%w: %q no es un nombre, y el seed tiene que serlo", ErrSeedHost, h)
+	}
 	return h, nil
+}
+
+func tieneLetra(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 'a' && s[i] <= 'z' {
+			return true
+		}
+	}
+	return false
+}
+
+// ErrSeedAddrReserved es que el seed resolvió a una dirección que no es de
+// internet.
+var ErrSeedAddrReserved = errors.New("el servidor del código apunta a una dirección reservada")
+
+// reservados son los rangos a los que el seed NO puede resolver, con el motivo
+// por el que cada uno está.
+//
+// La lista es explícita en vez de delegar entera en los helpers de netip, porque
+// dos de las entradas no tienen helper y son justo las que más importan acá: el
+// espacio compartido de RFC 6598, que es donde viven las salas de Kanpachi, y el
+// endpoint de metadatos de las nubes, que es el destino clásico de este ataque y
+// cae dentro del enlace local.
+var reservados = []struct {
+	red    netip.Prefix
+	motivo string
+}{
+	{netip.MustParsePrefix("0.0.0.0/8"), "esta red"},
+	{netip.MustParsePrefix("10.0.0.0/8"), "red privada"},
+	{netip.MustParsePrefix("100.64.0.0/10"), "espacio compartido, que es donde viven las salas"},
+	{netip.MustParsePrefix("127.0.0.0/8"), "loopback, o sea la propia máquina"},
+	{netip.MustParsePrefix("169.254.0.0/16"), "enlace local, incluye el endpoint de metadatos de las nubes"},
+	{netip.MustParsePrefix("172.16.0.0/12"), "red privada"},
+	{netip.MustParsePrefix("192.0.0.0/24"), "asignaciones de protocolo"},
+	{netip.MustParsePrefix("192.0.2.0/24"), "documentación"},
+	{netip.MustParsePrefix("192.88.99.0/24"), "anycast de relé 6to4"},
+	{netip.MustParsePrefix("192.168.0.0/16"), "red privada"},
+	{netip.MustParsePrefix("198.18.0.0/15"), "pruebas de rendimiento"},
+	{netip.MustParsePrefix("198.51.100.0/24"), "documentación"},
+	{netip.MustParsePrefix("203.0.113.0/24"), "documentación"},
+	{netip.MustParsePrefix("240.0.0.0/4"), "reservado, incluye el broadcast"},
+
+	{netip.MustParsePrefix("::1/128"), "loopback"},
+	{netip.MustParsePrefix("fc00::/7"), "direcciones locales únicas"},
+	{netip.MustParsePrefix("fe80::/10"), "enlace local"},
+	{netip.MustParsePrefix("fec0::/10"), "site-local, deprecado y sin helper en netip"},
+	{netip.MustParsePrefix("100::/64"), "agujero negro por definición"},
+	{netip.MustParsePrefix("2001:db8::/32"), "documentación"},
+	{netip.MustParsePrefix("3fff::/20"), "documentación, la ampliación de 2024"},
+	{netip.MustParsePrefix("5f00::/16"), "identificadores de segmento de SRv6"},
+
+	// Las cuatro familias de meter una IPv4 DENTRO de una IPv6.
+	//
+	// Existen justamente para eso, así que sin ellas la tabla de arriba no
+	// gobierna nada: los 32 bits bajos de una dirección NAT64 son una IPv4 que
+	// elige quien escribe el registro AAAA, y `64:ff9b::192.168.1.1` es la LAN
+	// de casa del usuario escrita de otra forma.
+	//
+	// Se bloquea el prefijo entero en vez de extraer la IPv4 y volver a
+	// comprobarla, y es deliberado: un seed que solo se alcanza por un mecanismo
+	// de transición no es un seed que este producto quiera, así que la respuesta
+	// correcta es la misma en los dos casos y el código que la da es más corto.
+	{netip.MustParsePrefix("::/96"), "IPv4 compatible, deprecada, lleva una IPv4 dentro"},
+	{netip.MustParsePrefix("64:ff9b::/96"), "NAT64, lleva una IPv4 dentro"},
+	{netip.MustParsePrefix("64:ff9b:1::/48"), "NAT64 local, lleva una IPv4 dentro"},
+	{netip.MustParsePrefix("2002::/16"), "6to4, lleva una IPv4 dentro y la encapsula hacia ella"},
+	{netip.MustParsePrefix("2001::/23"), "asignaciones de protocolo IETF, Teredo entre ellas"},
+}
+
+// CheckSeedAddr es la SEGUNDA capa, y la llama el adaptador con lo que resolvió
+// el nombre, antes de conectar.
+//
+// Hace falta aparte de [parseSeedHost] porque un nombre bien formado puede
+// apuntar a donde quiera: nada impide registrar un dominio cuyo A apunte a
+// 192.168.1.1, y ese es el camino por el que un código fabricado convertiría al
+// daemon en un escáner de la red de casa del usuario.
+//
+// Vive en el dominio y no en cada adaptador porque son al menos dos los que
+// tienen que llamarla, el cliente del registro y el motor, y una política
+// repetida en dos sitios es una política que un día difiere.
+//
+// **Se comprueba en CADA uso, no solo la primera vez.** `last-room.json` guarda
+// el código con su seed, así que volver a la última sala vuelve a hablarle, y el
+// DNS pudo cambiar entre una vez y la otra.
+func CheckSeedAddr(a netip.Addr) error {
+	if !a.IsValid() {
+		return fmt.Errorf("%w: dirección vacía", ErrSeedAddrReserved)
+	}
+
+	// Las dos normalizaciones van ANTES de mirar nada, y las dos son necesarias.
+	//
+	// Unmap desenvuelve `::ffff:a.b.c.d`, que es UNA de las cuatro formas de
+	// disfrazar una IPv4. Las otras tres son prefijos y están en la tabla.
+	//
+	// La zona se quita porque `netip.Prefix.Contains` devuelve false para
+	// CUALQUIER dirección zonificada, o sea que `fd00::1%eth0` desactivaba la
+	// tabla entera en silencio. Silencio es la palabra: no fallaba, aprobaba.
+	a = a.Unmap().WithZone("")
+
+	if a.IsMulticast() || a.IsUnspecified() || a.IsLoopback() || a.IsLinkLocalUnicast() {
+		return fmt.Errorf("%w: %s", ErrSeedAddrReserved, a)
+	}
+	for _, r := range reservados {
+		if r.red.Contains(a) {
+			return fmt.Errorf("%w: %s cae en %s, %s", ErrSeedAddrReserved, a, r.red, r.motivo)
+		}
+	}
+	return nil
 }

@@ -61,12 +61,14 @@ Están en los docs con su razón. Se listan aquí porque romperlas es el error m
 - **El cliente nunca escucha en un puerto público.** Arranca con `--no-listener`. Solo el seed escucha.
 - **El canal de control solo escucha en el host,** en TCP 57623 de la interfaz virtual. Los invitados marcan hacia afuera y no abren nada. Ese código corre como SYSTEM y parsea entrada de la sala: tope de tamaño antes de deserializar, tabla de mensajes cerrada, esquema estricto, y solo IPs de miembros presentes en la sala. La puerta del vestíbulo acepta desconocidos y ahí solo se puede pedir una credencial.
 - **El único hueco del deny-all que no pide ningún perfil es el del canal de control,** y va en el mismo conjunto declarativo que las reglas de juego. La puerta se acota al `/24` del vestíbulo y la sala a los miembros presentes. Ver decisión 4.
-- Flags del motor que expresan capacidades prohibidas y van siempre apagadas: `--enable-exit-node`, `--exit-nodes`, `--proxy-networks`, `--vpn-portal`, `--socks5`, `--accept-dns`. El portal RPC va fijado a `127.0.0.1`, en el cliente y en el seed. Hubo un intento con Docker que obligó a sacarlo del loopback, y esa fue una de las razones para dejar Docker: ver `03-arquitectura.md`.
+- Flags del motor que expresan capacidades prohibidas y van siempre apagadas: `--enable-exit-node`, `--exit-nodes`, `--proxy-networks`, `--vpn-portal`, `--socks5`, `--accept-dns`, `--listeners`. Esa última deshace `--no-listener` y es la que más riesgo tiene de aparecer sin que nadie la lea como prohibida. El portal RPC va fijado a `127.0.0.1`, en el cliente y en el seed. Hubo un intento con Docker que obligó a sacarlo del loopback, y esa fue una de las razones para dejar Docker: ver `03-arquitectura.md`.
 
 **Privilegios y canales**
 
 - Nada que llegue de fuera de la app surte efecto sin confirmación dentro de la app. Siempre, sin estado recordado que permita saltarla.
 - El manejador `kanpachi://` es entrada hostil: solo el formato exacto del código, tope de longitud, nada de rutas ni argumentos.
+- **El seed de un código es un NOMBRE, jamás una dirección.** Se exige que la última etiqueta lleve una letra, que es lo que cierra `127.1`, `0x7f.0.0.1` y `169.254.169.254`. Eso ya está puesto en `ParseRoom` y corre hoy.
+- **La segunda capa la deben los adaptadores y todavía no la paga nadie.** `domain.CheckSeedAddr` está escrita y probada, y **ningún adaptador la llama porque ninguno existe**. Cuando se escriban, la llaman sobre lo que resolvió el DNS y en CADA uso, porque un nombre impecable puede apuntar a `192.168.1.1`. Vale para los dos destinos del seed, el cliente del registro y los `--peers` del motor, y en el segundo no alcanza con comprobar: hay que **resolver acá, comprobar, y pasarle al motor la dirección ya elegida**, porque si se le pasa el nombre lo resuelve él por su cuenta y la comprobación no gobierna nada.
 - La API local acepta únicamente perfiles del catálogo. No existe la operación "abrir puerto arbitrario".
 - El daemon no observa procesos fuera del creador de perfiles. No detecta que abriste un juego.
 
