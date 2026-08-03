@@ -1,6 +1,7 @@
 package windowscom
 
 import (
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -389,6 +390,73 @@ func TestOwnSpecsTakesOnlyWhatTheDaemonWrote(t *testing.T) {
 	if _, ok := own["kanpachi-udp-16261"]; !ok {
 		t.Error("the daemon's own rule is not in the set it diffs against, so Apply " +
 			"would write a second copy of it on every heartbeat")
+	}
+}
+
+func TestTheAuditMeasuresOnlyWhatTheDaemonWrote(t *testing.T) {
+	// The quarantine must NOT be in here. The diff compares this against the
+	// active room's desired set, and the quarantine is in neither, so every one
+	// of its rules would come back as Extra: the screen would tell the user
+	// somebody had tampered with their firewall, on every single sweep.
+	store := []liveRule{
+		named("kanpachi-udp-16261", domain.FirewallGroup),
+		named("Kanpachi-base: bloqueo 445", domain.FirewallGroupBase),
+		named("Parsec", ""),
+	}
+
+	got := appliedRules(store)
+	if len(got) != 1 {
+		t.Fatalf("measured %d rules, want only the daemon's: %+v", len(got), got)
+	}
+	if got[0].Name != "kanpachi-udp-16261" || got[0].Layer != domain.LayerFirewallRules {
+		t.Errorf("measured %+v", got[0])
+	}
+
+	// And the whole point of measuring instead of judging: run it through the
+	// domain's own diff and it has to come out intact.
+	var want domain.RuleSet
+	want.Add(domain.FirewallRule{
+		Name:   "kanpachi-udp-16261",
+		Proto:  domain.ProtoUDP,
+		From:   16261,
+		To:     16261,
+		Local:  addr("100.64.1.1"),
+		Remote: []netip.Addr{addr("100.64.1.5")},
+	})
+	if d := (domain.Enforcement{Rules: got}).Diff(want, false); !d.Intact() {
+		t.Errorf("the measurement of an untouched machine came back altered: %+v", d)
+	}
+}
+
+func TestADisabledOwnRuleIsMeasuredAsDisabled(t *testing.T) {
+	// Missing and disabled both leave the port shut, and only one of them means
+	// somebody was there. The domain needs to be able to tell them apart, so the
+	// measurement has to carry it.
+	off := named("kanpachi-udp-16261", domain.FirewallGroup)
+	off.Enabled = false
+
+	got := appliedRules([]liveRule{off})
+	if len(got) != 1 || got[0].Enabled {
+		t.Fatalf("a disabled rule was measured as %+v", got)
+	}
+}
+
+func TestEveryProfileHasAMask(t *testing.T) {
+	// Asking Windows about the wrong profile still answers, and the answer looks
+	// fine, so a missing case here would be silent.
+	seen := map[int32]bool{}
+	for _, p := range domain.AllFirewallProfiles() {
+		mask, err := profileMask(p)
+		if err != nil {
+			t.Fatalf("%v has no mask: %v", p, err)
+		}
+		if seen[mask] {
+			t.Errorf("%v shares a mask with another profile", p)
+		}
+		seen[mask] = true
+	}
+	if _, err := profileMask(domain.FirewallProfile(0)); err == nil {
+		t.Error("an invalid profile got a mask instead of an error")
 	}
 }
 
