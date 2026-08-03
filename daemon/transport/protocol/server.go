@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/netip"
+	"sync/atomic"
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
@@ -64,13 +65,30 @@ type Server struct {
 	clock port.Clock
 	log   port.Logger
 
-	saludó bool
+	// saludó es ATÓMICO porque se lee desde otra goroutine.
+	//
+	// Quien vigila el plazo del saludo no puede ser el hilo que atiende: ese
+	// está bloqueado en Read, esperando justo el mensaje que tendría que
+	// vigilar. Así que el vigilante corre aparte y pregunta por [Server.Greeted],
+	// mientras esta goroutine lo escribe en el hello.
+	//
+	// Con un bool suelto sería una carrera de las que el job de Linux detecta
+	// con -race, y de las que en producción se manifiestan una vez cada mil
+	// arranques.
+	saludó atomic.Bool
 }
 
 // NewServer arma el servidor de UNA conexión.
 func NewServer(api API, token string, clock port.Clock, log port.Logger) *Server {
 	return &Server{api: api, token: token, clock: clock, log: log}
 }
+
+// Greeted dice si esta conexión ya saludó con el token válido.
+//
+// Existe para el vigilante del plazo del saludo, que vive en el transporte:
+// este paquete no sabe qué hacer con una conexión que se calla, porque cerrarla
+// es cosa de quien tiene el socket.
+func (s *Server) Greeted() bool { return s.saludó.Load() }
 
 // Serve atiende hasta que la conexión se cierre o el contexto se cancele.
 //
@@ -132,7 +150,7 @@ func (s *Server) handle(ctx context.Context, linea []byte) Response {
 		resp.Result, resp.Error = s.hello(req.Params)
 		return resp
 	}
-	if !s.saludó {
+	if !s.saludó.Load() {
 		resp.Error = &Error{Code: CodeUnauthorized, Message: "hay que saludar con el token antes de pedir nada"}
 		return resp
 	}
@@ -159,7 +177,7 @@ func (s *Server) hello(params json.RawMessage) (json.RawMessage, *Error) {
 		s.log.Warn("saludo rechazado por token inválido")
 		return nil, &Error{Code: CodeUnauthorized, Message: "token inválido"}
 	}
-	s.saludó = true
+	s.saludó.Store(true)
 	return result(struct {
 		OK bool `json:"ok"`
 	}{true})
