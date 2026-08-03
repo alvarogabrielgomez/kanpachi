@@ -593,6 +593,14 @@ transport/
 
 **La superficie es la mitigación principal:** la API solo puede aplicar perfiles del catálogo embebido. No existe la operación "abrir puerto arbitrario". Un proceso malicioso corriendo como el usuario puede, como máximo, unirse a una sala y aplicar el perfil de un juego, nunca abrir 445 ni nada fuera del catálogo. La frontera de seguridad honesta es la sesión del usuario, igual que en cualquier aplicación de escritorio.
 
+#### El cliente, del lado de Flutter
+
+Vive en `ui/lib/features/session/infra/daemon/` y repite la misma separación: `daemon_codec.dart` es el enmarcado y los mensajes, `daemon_client.dart` es la conversación, y `daemon_transport.dart` es una interfaz de tres métodos. Con eso, el saludo, la correlación y los plazos se prueban enteros sobre un transporte de memoria, sin pipe, sin daemon y sin Windows.
+
+Tres cosas que el cliente resuelve y que parecen detalles hasta que faltan. **El saludo va primero**, porque el daemon rechaza todo método antes del `hello` y sin esa espera la primera petición de cada conexión falla con `unauthorized`. **Las respuestas se emparejan por id y jamás por orden de llegada**, que es correcto hasta el día que dos pantallas preguntan a la vez. **Toda petición tiene plazo**, porque un daemon vivo que dejó de contestar es indistinguible de uno muerto desde el otro lado.
+
+**El transporte de Windows todavía no se puede escribir con `dart:io`, y eso está verificado.** No hay `Socket` ni `File` que sirva: el soporte de IPC multiplataforma sigue siendo una petición abierta en el SDK de Dart (dart-lang/sdk#47310), y el atajo que existía, `File(r'\\.\pipe\...').openSync()`, funcionaba hasta Flutter 3.24.5 y **está roto desde 3.27** con `PathNotFoundException ... errno = 53`, sin arreglo (flutter/flutter#163539). Quedan dos caminos y los dos pasan por `dart:ffi` con `CreateFileW`, `ReadFile` y `WriteFile`: escribirlo en el repo sin dependencias, o tomar `dart_ipc`, que ya lo hace con E/S superpuesta y tiene siete likes en pub. Meter una dependencia con esa adopción en la superficie de la API local de un daemon que corre como SYSTEM es una decisión del dueño del proyecto, no un detalle de implementación. Lo que sí está decidido: **la lectura no puede bloquear el isolate de la UI**, así que va en un isolate aparte o con E/S superpuesta.
+
 #### Las cuatro reglas del parseo, que son las mismas del catálogo
 
 Este código corre como SYSTEM y lee de un pipe al que puede hablarle cualquier proceso del usuario, así que se trata como entrada hostil de punta a punta:
