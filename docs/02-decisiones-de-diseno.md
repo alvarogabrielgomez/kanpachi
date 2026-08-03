@@ -322,13 +322,13 @@ Este documento decía "deny all en la interfaz virtual, en ambas direcciones". I
 >
 > — *Windows Firewall Rules*, Microsoft Learn
 
-O sea que un bloqueo entrante sobre la IP del adaptador gana sobre las reglas de permiso que Kanpachi crea para el juego activo. No hay desempate por especificidad y Windows tampoco admite orden asignado por el administrador: el bloqueo gana y punto. Con la dirección de salida pasa lo mismo por otro lado: bloquear la salida del adaptador virtual impide que un invitado marque al puerto del juego del host, que es el caso central del producto.
+O sea que un bloqueo entrante gana sobre las reglas de permiso que Kanpachi crea para el juego activo. No hay desempate por especificidad y Windows tampoco admite orden asignado por el administrador: el bloqueo gana y punto. Con la dirección de salida pasa lo mismo por otro lado: bloquear la salida del adaptador virtual impide que un invitado marque al puerto del juego del host, que es el caso central del producto.
 
 **Lo que sostiene la promesa es la AUSENCIA.** La entrada ya viene bloqueada por defecto en los tres perfiles de Windows, así que no tener reglas de permiso ya es el deny-all, y es un deny-all que ninguna regla nuestra puede tapar. La cuarentena de base no tiene que declararlo, tiene que hacer lo que la ausencia no puede:
 
 | Qué | Por qué |
 |---|---|
-| Bloqueo **entrante** de los puertos prohibidos sobre la IP del adaptador | Es lo que gana contra una regla permisiva que dejó el instalador de un juego, que es el escenario de la decisión 19 |
+| Bloqueo **entrante** de los puertos prohibidos, en todas las interfaces | Es lo que gana contra una regla permisiva que dejó el instalador de un juego, que es el escenario de la decisión 19. **No se acota ni por IP ni por adaptador**, y la razón es la misma que ya está en `core/domain/policy.go`: un bloqueo acotado que deja de casar ABRE. El instalador tampoco podría acotarlo, porque la `/24` de la sala se elige en tiempo de ejecución |
 | Bloqueo **saliente** de los mismos puertos | Esto es el "en ambas direcciones" que sí se sostiene: impide que algo infectado en esta máquina barra SMB por la sala, sin tocar el tráfico del juego |
 | Permiso de **ICMP echo** | Para que el diagnóstico funcione |
 

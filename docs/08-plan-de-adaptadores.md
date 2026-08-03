@@ -55,7 +55,7 @@ expulsado que vuelve porque el código no es secreto y no hay baneo, consigue
 violada entera, con Kanpachi funcionando impecable.
 
 Los puertos que dan escritorio remoto **estándar** ya están tapados por
-`forbiddenPorts` (22, 135, 137-139, 445, 3389, 5985, 5986). Los de estas
+`forbiddenPorts` (22, 135, 137-139, 445, 3389, 3702, 5357-5358, 5985, 5986). Los de estas
 herramientas son **arbitrarios y configurables**, así que no hay lista negra que
 sirva.
 
@@ -226,13 +226,13 @@ nada al usuario.
 **Nunca en `ALE_AUTH_CONNECT`**: bloquear la salida impediría que el invitado
 marque al host.
 
-## Un bloqueante documental que hay que arreglar antes
+## Un bloqueante documental que hay que arreglar antes: HECHO
 
-`docs/04` paso 8 le pide al instalador bloquear **"sobre la IP del adaptador"**.
+`docs/04` paso 8 le pedía al instalador bloquear **"sobre la IP del adaptador"**.
 El instalador no puede saber esa IP: la `/24` se elige **por sala, en tiempo de
-ejecución**. Se borra esa frase. La cuarentena de base no se acota ni por IP ni
-por adaptador, y la razón ya está escrita en `core/domain/policy.go`: un bloqueo
-acotado que deja de casar **abre**.
+ejecución**. Corregido en `docs/04` y en la tabla de la decisión 4. La cuarentena
+de base no se acota ni por IP ni por adaptador, y la razón ya está escrita en
+`core/domain/policy.go`: un bloqueo acotado que deja de casar **abre**.
 
 ## El orden
 

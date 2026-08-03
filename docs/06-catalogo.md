@@ -157,7 +157,7 @@ No existe campo en el esquema para esto, y es deliberado:
 
 Estas viven en código y no tienen campo equivalente en el JSON, a propósito:
 
-1. **Puertos prohibidos siempre:** 22, 135, 137, 138, 139, 445, 3389, 5985, 5986. Un perfil que los pida se rechaza entero.
+1. **Puertos prohibidos siempre:** 22, 135, 137, 138, 139, 445, 3389, 3702, 5357, 5358, 5985, 5986. Un perfil que los pida se rechaza entero. Los tres del medio son el descubrimiento de dispositivos de Windows, que publica qué máquina es esta y qué comparte. **1900 y 5353 no están a propósito:** son SSDP y mDNS, y por ahí descubren la partida en la LAN varios juegos del catálogo.
 2. **Máximo 8 rangos por perfil.** Un perfil con 40 rangos está mal escrito o es malicioso.
 3. **`RemoteAddresses` siempre son los miembros presentes.** No existe forma de expresar "cualquiera".
 4. **Solo reglas entrantes.** No hay campo para salientes ni para reenvío.

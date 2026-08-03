@@ -103,7 +103,22 @@ func IsOwnFirewallGroup(group string) bool {
 //	137-139, 445  NetBIOS y SMB. Son el escenario que Kanpachi existe para evitar
 //	3389  Escritorio remoto
 //	5985, 5986  WinRM
-var forbiddenPorts = [...]uint16{22, 135, 137, 138, 139, 445, 3389, 5985, 5986}
+//	3702  WS-Discovery
+//	5357, 5358  WSDAPI, o sea Function Discovery sobre HTTP y HTTPS
+//
+// # Los tres últimos, y los dos que NO están
+//
+// 3702, 5357 y 5358 son el descubrimiento de dispositivos de Windows. Publican
+// qué máquina es esta, qué comparte y qué servicios expone, a cualquiera que
+// escuche, y ningún juego los necesita: son la superficie que hizo falta tapar
+// junto a SMB, no una tercera cosa.
+//
+// **1900 y 5353 quedan FUERA a propósito, y no es un olvido.** 1900 es SSDP y
+// 5353 es mDNS, y por ahí es por donde descubren la partida en la LAN media
+// docena de juegos del catálogo. Prohibirlos rompería la funcionalidad que
+// Kanpachi existe para dar, y a cambio taparía un descubrimiento que solo llega
+// a la propia red virtual, donde ya están los miembros de la sala.
+var forbiddenPorts = [...]uint16{22, 135, 137, 138, 139, 445, 3389, 3702, 5357, 5358, 5985, 5986}
 
 // Proto es el protocolo de transporte de un rango de puertos.
 type Proto uint8

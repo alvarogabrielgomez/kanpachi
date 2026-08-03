@@ -42,7 +42,9 @@ Nota de rol: "host" es quien corre el servidor del juego. Cualquier miembro pued
 5. Política de recuperación del servicio: reiniciar a los 5 s, 10 s, 30 s.
 6. Crea el adaptador Wintun `kanpachi0`, fija su categoría de red en **Privada** y escribe `Category=1` en su perfil del registro. Hacerlo aquí evita el diálogo de "¿quieres que este equipo sea detectable?" a mitad de una partida.
 7. Fija la métrica del adaptador: IPv4 en 1, IPv6 en 20, `AutomaticMetric` desactivado en ambas pilas.
-8. Aplica la cuarentena de base, con el grupo `Kanpachi-base` y en los tres perfiles de firewall: bloqueo de los puertos prohibidos sobre la IP del adaptador **en las dos direcciones**, más ICMP echo permitido. **No es un deny-all**, y no puede serlo: los bloqueos ganan sobre los permisos sin desempate por especificidad, así que un bloqueo total taparía las reglas del juego activo que crea el propio daemon. Ver decisión 4.
+8. Aplica la cuarentena de base, con el grupo `Kanpachi-base` y en los tres perfiles de firewall: bloqueo de los puertos prohibidos **en las dos direcciones**, sin acotar por dirección ni por adaptador, más ICMP echo permitido. **No es un deny-all**, y no puede serlo: los bloqueos ganan sobre los permisos sin desempate por especificidad, así que un bloqueo total taparía las reglas del juego activo que crea el propio daemon. Ver decisión 4.
+
+   **Por qué la cuarentena no se acota.** Este paso decía "sobre la IP del adaptador" y era imposible de cumplir: la `/24` de la red se elige **por sala y en tiempo de ejecución**, contra las redes que ya tiene la máquina, así que el instalador no puede conocerla. La razón de fondo es más fuerte que la mecánica, y ya está escrita en `core/domain/policy.go`: **un bloqueo acotado que deja de casar ABRE.** Un permiso acotado que deja de casar cierra, que es el lado correcto de fallar. Por eso el alcance por interfaz va solo en los permisos que crea el daemon, jamás en los bloqueos.
 9. Genera el token de la API local en ProgramData.
 10. Accesos directos en Menú Inicio y escritorio.
 11. Arranca el servicio y abre la UI.
