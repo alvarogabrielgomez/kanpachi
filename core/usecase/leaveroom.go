@@ -36,7 +36,13 @@ func (s *Session) LeaveRoom(ctx context.Context) domain.RoomState {
 			s.deps.Log.Warn("no se pudo avisar del cierre de la sala", "error", err)
 		}
 	}
-	return s.leaveLocked(ctx, "el usuario salió de la sala", domain.ExitUser)
+	s.leaveLocked(ctx, "el usuario salió de la sala", domain.ExitUser)
+	// Se comprueba DESPUÉS de salir, no solo al arrancar. El barrido periódico
+	// no cubre este momento: exige sala para juzgar, corre por temporizador, y
+	// si el daemon se apaga justo después de salir, que es lo que la gente hace
+	// al terminar de jugar, nadie vuelve a medir nunca.
+	s.verifyClosedLocked(ctx)
+	return s.snapshot()
 }
 
 // OnRoomNotice aplica un aviso del host. Lo llama el supervisor cuando llega
