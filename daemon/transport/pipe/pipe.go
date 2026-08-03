@@ -84,6 +84,18 @@ const ConsoleName = `\\.\pipe\ProtectedPrefix\Administrators\kanpachi-console`
 // por defecto de un named pipe da lectura a Everyone y a la cuenta anónima. Por
 // eso [Listen] se niega a arrancar sin descriptor en vez de tratarlo como una
 // opción.
+//
+// # Comprobado a mano, y el resultado es mejor de lo esperado
+//
+// Con el daemon corriendo como usuario NORMAL, el pipe se crea y el token se
+// escribe, y la primera conexión falla al aceptar con "Access is denied". El
+// motivo es que aceptar exige crear la instancia SIGUIENTE del pipe, y el
+// usuario interactivo no puede: solo tiene leer, escribir y sincronizar.
+//
+// O sea que el descriptor cumple su promesa tan literalmente que impide
+// probarlo sin elevar. En producción el daemon corre como SYSTEM, que sí tiene
+// GENERIC_ALL, y por eso ahí sí atiende. Para probar a mano hace falta una
+// consola elevada.
 const SecurityDescriptor = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x12019b;;;IU)"
 
 // Los topes. Constantes de compilación, como los cortes automáticos: nada que
