@@ -26,7 +26,7 @@ jobs:
           cache: true
 
       - name: go vet
-        run: go vet ./core/... ./internal/... ./daemon/service/... ./daemon/transport/protocol/... ./daemon/transport/wire/... ./daemon/transport/control/... ./daemon/adapter/safewrite/... ./daemon/adapter/state/... ./daemon/adapter/catalog/... ./registry/...
+        run: go vet ./core/... ./internal/... ./daemon/service/... ./daemon/transport/protocol/... ./daemon/transport/wire/... ./daemon/transport/control/... ./daemon/transport/pipe/... ./daemon/adapter/sinimplementar/... ./daemon/adapter/safewrite/... ./daemon/adapter/state/... ./daemon/adapter/catalog/... ./registry/...
 
       - name: Test de pureza de imports
         # Se ejecuta aparte y primero para que su fallo sea inconfundible en el
@@ -43,14 +43,19 @@ jobs:
       #   transport/protocol/ el protocolo se define aparte de su transporte
       #   transport/wire/     enmarcado de mensajes, io.Reader e io.Writer
       #   transport/control/  el canal de la sala: sockets y bytes, sin Windows
+      #   transport/pipe/     TODO menos crear el pipe: plazas, plazos y cierre
+      #                       son lógica sobre net.Listener, y la lógica que solo
+      #                       corre en la máquina donde se programa no tiene CI
+      #   adapter/sinimplementar/  que los provisionales fallen en todo es lo
+      #                       que hace la cuarentena verificable desde dentro
       #   adapter/{safewrite,state,catalog}/  son rutas y bytes, no API de Windows
       #
       # Correrlos en Ubuntu es lo que convierte esas frases en algo comprobable.
       # Con -race porque el supervisor y el canal de la sala son los dos
       # paquetes del proyecto con goroutines de larga vida.
       #
-      # La lista es explícita a propósito: el motor, el firewall por COM, netcfg
-      # y el named pipe son solo Windows y sus paquetes no compilan acá.
+      # La lista es explícita a propósito: el motor, el firewall por COM y
+      # netcfg son solo Windows y sus paquetes no compilan acá.
       - name: Tests de lo portable de daemon
         run: >-
           go test -race -count=1
@@ -58,6 +63,8 @@ jobs:
           ./daemon/transport/protocol/...
           ./daemon/transport/wire/...
           ./daemon/transport/control/...
+          ./daemon/transport/pipe/...
+          ./daemon/adapter/sinimplementar/...
           ./daemon/adapter/safewrite/...
           ./daemon/adapter/state/...
           ./daemon/adapter/catalog/...
