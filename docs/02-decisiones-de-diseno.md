@@ -1030,6 +1030,38 @@ Todo con dos PCs en la misma red, el invitado conectando contra el host.
 
 **Ningún filtro sale sin alcance, y se comprueba por tres vías.** Es argumento obligatorio del único constructor, se revalida justo antes de llegar a la API de Windows, y un guardián de arquitectura prohíbe construir un filtro a mano fuera del fichero que los define. La redundancia es deliberada: un filtro sin alcance compila, pasa los tests funcionales, pinta verde, y aplica a todos los adaptadores de la máquina. Con un bloqueo duro, eso deja al usuario sin la entrada de su red de casa. Leyendo el diff tampoco se ve, porque la diferencia entre el filtro correcto y el catastrófico es un campo que NO está.
 
+**Un alcance RELLENO no es un alcance que acote.** `0.0.0.0/0` es un prefijo perfectamente válido y casa con toda dirección local de la máquina: el mismo desastre de arriba, pasando por delante del guardián porque el campo está puesto y el tipo es correcto. Así que el rango de la sala se exige del tamaño de una sala y dentro de los espacios donde las salas viven. Un `/16` del espacio compartido tampoco vale: bloquearía 255 salas ajenas de las que esta máquina no sabe nada.
+
+### Las dos trampas de cómo WFP combina condiciones
+
+**Condiciones del MISMO campo se unen con O; las de campos distintos, con Y.** De ahí sale casi todo lo demás.
+
+Es lo que se quiere para los miembros: tres direcciones remotas son tres condiciones y significan "cualquiera de estas". No existe una condición con varios valores dentro, y creer que sí produciría un permiso que abre solo para el primer miembro.
+
+Y es una trampa para el alcance local: un filtro que llevara a la vez el rango de la sala y la dirección del host no acota dos veces, **ensancha**. En un permiso eso abre el puerto a toda la sala en vez de a la IP del host, y el filtro se lee perfectamente razonable. Está prohibido llevar las dos.
+
+**Una condición de dirección IPv4 en la capa IPv6 no casa con nada, y no falla.** El bloqueo de IPv6 quedaría puesto sin bloquear, y la medición lo contaría como presente. También está prohibido.
+
+### La clave de un filtro sale de su RANURA, no de su nombre
+
+Es lo que permite limpiar sin recordar nada entre arranques, que es de lo que depende que una muerte sucia del daemon no deje nada abierto.
+
+Derivando la clave del nombre, el permiso espejo lleva dentro el nombre de la regla, o sea el juego. **Cambiar de juego cambia las claves y deja huérfanos los filtros del juego anterior**: un puerto abierto que ya nadie pidió, invisible, porque un filtro de WFP no sale ni en `wf.msc` ni en `Get-NetFirewallRule`.
+
+Con la clave por ranura el conjunto de claves posibles es fijo y conocido, así que barrer las ranuras borra todo lo que la compuerta pueda haber puesto alguna vez, sin enumerar nada. Hay un tope de ranuras, y emitir de más se rechaza en vez de recortarse: un conjunto aplicado a medias deja al usuario creyendo que la sala está configurada mientras un jugador no puede entrar.
+
+El nombre sigue siendo descriptivo y viaja al nombre visible del filtro, que es lo que se lee en `netsh wfp show filters`. Uno identifica y el otro explica.
+
+### La sesión y la transacción
+
+**La sesión NO es dinámica y NO es persistente**, y las dos mitades son por motivos distintos.
+
+No dinámica, porque los filtros de una sesión dinámica se borran cuando el proceso muere. Eso quitaría justo lo que hace falta: que una muerte sucia del daemon deje la sala **contenida** en vez de abierta, y que la limpieza al arrancar sea una operación de verdad. Es la misma doctrina que la purga del grupo propio en las reglas del firewall.
+
+No persistente, porque así reiniciar la máquina se lo lleva todo. Es la red de seguridad final: si el cierre falla y la limpieza falla, un reinicio deja la máquina como estaba.
+
+**Aplicar reescribe el conjunto entero dentro de una transacción.** Un filtro de WFP no se puede editar en sitio, así que cambiar algo es borrar y volver a poner, y entre las dos cosas hay una ventana donde el bloqueo no está. Esa ventana está en el cable. Con transacción no existe: se publica el conjunto entero o no se publica nada. De paso, reaplicar el mismo conjunto REPARA lo que alguien haya borrado por fuera, igual que en las reglas del firewall.
+
 ### Consecuencia para el dominio
 
 `OwnRulesIntact(bool)` no vale para esto: un booleano no puede decir QUÉ falta ni en qué capa. Lo reemplaza `Enforcement()`, que devuelve lo MEDIDO en las dos capas y deja que juzgue `Enforcement.Diff`, que es dominio y se testea sin Windows. El adaptador mide y el dominio juzga, por la misma razón por la que `Apply` calcula la diferencia contra las reglas vivas y jamás contra un recuerdo en memoria.

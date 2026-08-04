@@ -741,7 +741,13 @@ hecho y la otra es ceguera, y se muestran distinto.
 
 ### adapter/firewall/wfp, la compuerta
 
-Decide QUÉ filtros se ponen, sin tocar Windows. Es Go puro y lo prueba el job de Linux, por la misma razón que la capa pura del adaptador COM: lo que se puede equivocar de forma cara se decide donde hay tests.
+Tres ficheros, y la línea que los separa es la misma que en el adaptador COM: **lo que decide va en Go puro que prueba el job de Linux, y lo que llama a la API va detrás de `//go:build windows`**.
+
+| Fichero | Qué hace |
+|---|---|
+| `spec.go` | Decide QUÉ filtros se ponen: qué acción, qué peso, qué alcance |
+| `conditions.go` | Decide CÓMO se compara cada condición: campo, tipo de comparación y valor |
+| `gate_windows.go` | Copia eso a las estructuras de WFP y llama. No decide nada |
 
 Emite tres cosas fijas más un permiso por regla: bloqueo de todo en IPv4 por adaptador, el mismo por rango de la sala, bloqueo de todo en IPv6 por adaptador, y los permisos espejo. El porqué de cada pieza está en la decisión 27.
 
@@ -749,7 +755,11 @@ El tipo `Layer` no tiene valor para `ALE_AUTH_CONNECT` y no lo va a tener. Lo qu
 
 `FilterSpec` se construye en un solo sitio, con el alcance como argumento obligatorio, y `Validate` lo recomprueba antes de que llegue a la API. Un guardián prohíbe literales fuera de ese fichero: un literal puede omitir el alcance y compilar igual.
 
-Las claves de los filtros son deterministas a partir de su etiqueta. Al arrancar hay que poder borrar lo que dejó la ejecución anterior, y guardarlas en disco añadiría un fichero que puede desincronizarse del sistema.
+**Por qué `conditions.go` está separado.** Ahí se deciden cuatro cosas que se equivocan calladas, y ninguna necesita Windows para comprobarse: el orden de bytes de una dirección, que al revés produce un filtro válido que casa con otra red; la máscara de un prefijo, donde un bit de corrimiento duplica el alcance de un bloqueo; rango contra igualdad en el puerto, que pedido mal abre solo el primero de un rango; y cuántas condiciones salen de qué campo, que es lo que decide si WFP las une con Y o con O.
+
+Las claves de los filtros salen de la **ranura** que ocupan, y no de su etiqueta. Ver la decisión 27: derivarlas de la etiqueta deja huérfanos los filtros del juego anterior cada vez que se cambia de juego.
+
+`Measure` recibe el conjunto deseado, y no es un atajo: las ranuras son posiciones y no nombres, así que para poder decir "falta el permiso de tal regla" hay que saber qué regla ocupaba esa ranura. El sistema sigue siendo el que contesta si el filtro está.
 
 ### adapter/firewall/windowscom, implementa `FirewallPort`
 

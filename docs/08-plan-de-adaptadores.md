@@ -221,7 +221,9 @@ nada al usuario.
 |---|---|---|
 | Instalador | COM, grupo `Kanpachi-base` | Los 9 puertos prohibidos en las dos direcciones, **todas** las interfaces, más ICMP echo. **No cambia nada.** |
 | Daemon, permisos | COM, grupo `Kanpachi` | `Apply(RuleSet)` igual que hoy. Son los que **abren**. Se suma `Interfaces = ["kanpachi0"]`. |
-| Daemon, compuerta | Sesión WFP dinámica | `blockAll` a peso 0 sobre `kanpachi0`, más permisos espejo soft del **mismo** `RuleSet`. Solo en `ALE_AUTH_RECV_ACCEPT_V4/V6`. |
+| Daemon, compuerta | Sesión WFP propia | `blockAll` sobre `kanpachi0`, más permisos espejo soft del **mismo** `RuleSet`. Solo en `ALE_AUTH_RECV_ACCEPT_V4/V6`. |
+
+**La sesión NO acabó siendo dinámica**, que es lo que decía este plan antes de escribirla. Con sesión dinámica los filtros se borran al morir el proceso, y eso quita justo lo que hace falta: que una muerte sucia del daemon deje la sala contenida y no abierta, y que la limpieza al arrancar sea una operación de verdad. La red de seguridad que aporta el reinicio se conserva igual, porque la sesión tampoco es persistente. Ver decisión 27.
 
 **Nunca en `ALE_AUTH_CONNECT`**: bloquear la salida impediría que el invitado
 marque al host.
@@ -244,24 +246,35 @@ de base no se acota ni por IP ni por adaptador, y la razón ya está escrita en
 3. ~~**Paso 2, spike fuera del repo**~~: **HECHO el 2026-08-03 y salió que sí.**
    Ver "La prueba que lo decide" más abajo. El bloqueo duro le gana al permiso
    vivo del Firewall de Windows.
-4. **Paso 3, piso de WFP**: ~500-700 líneas, vendorizando y podando
-   `wireguard-windows` bajo MIT con atribución. Solo dos capas y cinco
-   condiciones.
-5. **Paso 4, el `blockAll` solo**: ~120 líneas. **Vale por sí solo**: con esto y
-   nada más, `kanpachi0` queda inalcanzable salvo por lo que los permisos COM
-   abran. Es el 80% del valor. **Medido funcionando el 2026-08-04.**
-6. **Paso 5, permisos espejo**: ~250 líneas, con transacción y diff por
-   `providerKey`. **Medido funcionando el 2026-08-04**: un permiso propio SOFT
+4. ~~**Paso 3, piso de WFP**~~: **HECHO.** Salió sin vendorizar nada:
+   `wireguard-windows` habría traído su propio árbol de tipos por cinco
+   condiciones y dos capas, y las llamadas ya estaban medidas en el spike. Son
+   `fwpuclnt.dll` por `LazySystemDLL` y las estructuras escritas a mano.
+5. ~~**Paso 4, el `blockAll` solo**~~: **HECHO**, y no entró solo: pasos 4 y 5
+   son el mismo `Apply` porque la reescritura es del conjunto entero dentro de
+   una transacción, y partirla habría dejado una ventana con el bloqueo puesto
+   y los permisos sin poner. **Medido funcionando el 2026-08-04.**
+6. ~~**Paso 5, permisos espejo**~~: **HECHO.** El diff por `providerKey` que
+   pedía este plan no hizo falta: reescribir entero dentro de la transacción es
+   más simple, repara lo que alguien borró por fuera, y ahorra la superficie de
+   API de enumerar. **Medido funcionando el 2026-08-04**: un permiso propio SOFT
    sobrevive junto al bloqueo propio HARD, y el veto del usuario le sigue
    ganando a los dos.
 7. **Paso 6**: `Enforcement()` en la pantalla, con marca de cuándo se midió, y el
    botón que vale más que toda la pantalla: **"probar desde otra PC"**, que corre
    en el invitado contra la IP virtual del host.
-8. **Paso 7, guardián nuevo** en `internal/arch`: ningún filtro se construye sin
-   condición de alcance. Un filtro sin alcance **no falla en ningún test** y
-   aplica a todos los adaptadores de la máquina; con hard block eso deja al
-   usuario sin red de casa. Es el fallo más caro posible y no se ve leyendo el
-   diff.
+8. ~~**Paso 7, guardián nuevo** en `internal/arch`~~: **HECHO**, y encontró tres
+   cosas que este plan no había previsto. Un filtro sin alcance **no falla en
+   ningún test** y aplica a todos los adaptadores de la máquina; con hard block
+   eso deja al usuario sin red de casa. Lo que apareció al escribirlo:
+
+   - El propio guardián estaba roto. Eximía por nombre de fichero y no por ruta,
+     y en `daemon/` hay varios `spec.go`, así que pasaba en verde con el literal
+     prohibido delante. Solo lo encontró envenenarlo.
+   - `Scope.Valid()` aceptaba `0.0.0.0/0`. Un prefijo relleno no es un prefijo
+     que acote, y ese caso caminaba por delante del guardián.
+   - Las claves salían de la etiqueta, o sea que cambiar de juego dejaba
+     huérfanos los filtros del juego anterior. Ahora salen de la ranura.
 
 ## Lo que NO se hace, decidido explícitamente
 
@@ -419,9 +432,9 @@ propia herramienta.
    comprobado por los dos lados, acotando a la interfaz por la que llega el
    invitado y a otra distinta. Lo que queda sin medir es más estrecho: que la
    condición llegue vacía al **reautorizar un flujo YA existente**, tras
-   reiniciar el servicio o al cambiar el adaptador. La mitigación de 20 líneas
-   sigue en pie por si acaso: emitir el `blockAll` **dos veces**, por LUID y por
-   dirección local sobre el `/24` de la sala.
+   reiniciar el servicio o al cambiar el adaptador. **La mitigación ya está
+   escrita**: el `blockAll` sale dos veces, por LUID y por dirección local sobre
+   el `/24` de la sala, con un test que falla si alguien deja uno solo.
 
 ---
 
