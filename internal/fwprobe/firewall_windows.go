@@ -52,12 +52,6 @@ func abrirPermisos(dataDir string) (*windowscom.Firewall, error) {
 	return windowscom.New(dataDir, "", logConsola{})
 }
 
-type logConsola struct{}
-
-func (logConsola) Info(msg string, kv ...any)  { fmt.Println("info ", msg, kv) }
-func (logConsola) Warn(msg string, kv ...any)  { fmt.Println("aviso", msg, kv) }
-func (logConsola) Error(msg string, kv ...any) { fmt.Println("error", msg, kv) }
-
 // adapters lista lo que hace falta para elegir un alcance.
 //
 // El LUID es lo que WFP entiende, y no el nombre ni el índice. Se saca por el

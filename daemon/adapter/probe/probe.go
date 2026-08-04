@@ -75,6 +75,75 @@ func (p *Prober) Probe(ctx context.Context, at netip.AddrPort) (domain.ProbeOutc
 	return classify(ctx, err), elapsed
 }
 
+// ProbeCanary marca el canario del host, por los DOS protocolos.
+//
+// # Por qué UDP necesita mandar algo y TCP no
+//
+// Porque UDP no tiene apretón de manos. En TCP, que el `Dial` vuelva sin error ya
+// prueba que se llegó a ese socket, y por eso el sondeo normal no manda un byte.
+// En UDP no hay nada equivalente: un datagrama que sale y nadie contesta se ve
+// igual bloqueado que entregado. La única forma de tener respuesta es que del
+// otro lado alguien devuelva algo, y eso es lo que hace el canario.
+//
+// El número que se manda ATA la pregunta con la respuesta. Sin él, cualquier
+// datagrama suelto que llegara en ese momento se leería como que el canario
+// contestó, o sea como una fuga que no existe.
+//
+// Devuelve los dos resultados por separado a propósito. Que uno pase y el otro
+// no es información de verdad sobre el firewall, y juntarlos en un booleano la
+// tiraría.
+func (p *Prober) ProbeCanary(ctx context.Context, at netip.AddrPort, nonce [16]byte) (tcp, udp domain.ProbeOutcome) {
+	tcp, _ = p.Probe(ctx, at)
+	udp = p.probeUDP(ctx, at, nonce)
+	return tcp, udp
+}
+
+// probeUDP manda el número y espera el eco.
+//
+// Va sobre un socket CONECTADO y no sobre uno suelto, y eso da dos cosas: que el
+// sistema descarte los datagramas que vengan de otro sitio, y que un ICMP de
+// puerto inalcanzable aparezca como error en la lectura en vez de perderse.
+func (p *Prober) probeUDP(ctx context.Context, at netip.AddrPort, nonce [16]byte) domain.ProbeOutcome {
+	deadline := p.deadline
+	if deadline <= 0 {
+		deadline = domain.ProbeDeadline
+	}
+
+	var d net.Dialer
+	inner, cancel := context.WithTimeout(ctx, deadline)
+	defer cancel()
+
+	conn, err := d.DialContext(inner, "udp", at.String())
+	if err != nil {
+		// Un `Dial` de UDP no manda nada, así que fallar acá es de esta máquina.
+		return domain.ProbeFailed
+	}
+	defer func() { _ = conn.Close() }()
+
+	if dl, ok := inner.Deadline(); ok {
+		if err := conn.SetDeadline(dl); err != nil {
+			return domain.ProbeFailed
+		}
+	}
+	if _, err := conn.Write(nonce[:]); err != nil {
+		return classify(ctx, err)
+	}
+
+	// Se lee EXACTAMENTE el largo esperado. Un buffer que dependiera de lo que
+	// llega sería superficie regalada en el lado que marca.
+	buf := make([]byte, len(nonce))
+	n, err := conn.Read(buf)
+	if err != nil {
+		return classify(ctx, err)
+	}
+	if n != len(nonce) || [16]byte(buf) != nonce {
+		// Contestó algo que no es lo nuestro. No es el canario, así que no
+		// prueba que el canario sea alcanzable.
+		return domain.ProbeSilent
+	}
+	return domain.ProbeAnswered
+}
+
 // classify traduce el error del dial a lo que significa para el sondeo.
 //
 // La distinción que importa es entre "el otro extremo calló" y "esta máquina no

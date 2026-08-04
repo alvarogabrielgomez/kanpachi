@@ -73,6 +73,10 @@ func run(cmd string, args []string) error {
 		return listen(args)
 	case "probe":
 		return sondear(args)
+	case "canary":
+		return canario(args)
+	case "canary-probe":
+		return canarioSonda(args)
 	case "help", "-h", "--help":
 		usage()
 		return nil
@@ -88,6 +92,10 @@ func usage() {
     adapters                       lista los adaptadores con su LUID y su IPv4
     listen  -ports 45871,45872     queda escuchando. NO se para hasta el final
     probe   -host IP -ports 1,2    marca con la sonda del producto y dice qué contestó
+
+  El canario, que es la comprobación que SÍ prueba algo:
+    canary       -addr IP          abre un oyente que la compuerta debe bloquear
+    canary-probe -host IP -port N -nonce HEX   lo marca desde la otra máquina
 
   Elevado, en el host:
     audit                          reglas ajenas de escritorio remoto, clasificadas
@@ -227,3 +235,13 @@ func parsePorts(spec string) ([]uint16, error) {
 	}
 	return out, nil
 }
+
+// logConsola es el log de este binario. Vive en el fichero portable porque lo
+// necesita el canario, que no es de Windows: dejarlo en `firewall_windows.go`
+// hacía que la compilación para Linux fallara, y la otra máquina de la medición
+// es Linux.
+type logConsola struct{}
+
+func (logConsola) Info(msg string, kv ...any)  { fmt.Println("info ", msg, kv) }
+func (logConsola) Warn(msg string, kv ...any)  { fmt.Println("aviso", msg, kv) }
+func (logConsola) Error(msg string, kv ...any) { fmt.Println("error", msg, kv) }
