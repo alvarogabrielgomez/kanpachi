@@ -4,6 +4,7 @@ package windowscom
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime"
 
@@ -150,7 +151,7 @@ func eachRule(rules *ole.IDispatch, fn func(rule *ole.IDispatch) (bool, error)) 
 
 	for {
 		v, length, err := enum.Next(1)
-		if err != nil {
+		if err != nil && !isEndOfEnum(err) {
 			return fmt.Errorf("advancing the rule enumerator: %w", err)
 		}
 		if length == 0 {
@@ -166,6 +167,34 @@ func eachRule(rules *ole.IDispatch, fn func(rule *ole.IDispatch) (bool, error)) 
 			return nil
 		}
 	}
+}
+
+// sFalse is S_FALSE, and it is a SUCCESS code even though it is not zero.
+//
+// IEnumVARIANT::Next returns it to say "I gave you fewer items than you asked
+// for", which is exactly what happens on the last call of every enumeration.
+const sFalse = 1
+
+// isEndOfEnum says whether an error from Next is really the end of the walk.
+//
+// # Why this exists, and what it cost not to have it
+//
+// go-ole turns ANY non-zero HRESULT into an error, S_FALSE included. So the
+// normal, unavoidable end of every enumeration arrived here as a failure, and
+// the message it carried was "Incorrect function", because 1 read as a system
+// error code is ERROR_INVALID_FUNCTION.
+//
+// The effect was total: every sweep of the rule store ended in an error, so
+// Apply, PurgeOwned, AuditForeign and Enforcement all failed on any real
+// machine, always. Not one test caught it, and none could have: the whole thing
+// lives inside a COM call. It took running the adapter for the first time.
+//
+// The check is on the code and not on the message, because the message is
+// localised and this program refuses to parse localised text. That is the same
+// reason the adapter uses COM instead of netsh.
+func isEndOfEnum(err error) bool {
+	var oleErr *ole.OleError
+	return errors.As(err, &oleErr) && oleErr.Code() == sFalse
 }
 
 // propReader reads properties off one rule and remembers the FIRST failure.
@@ -230,22 +259,64 @@ func (r *propReader) bool(name string) bool {
 }
 
 // strs reads a property that arrives as a VARIANT holding an array of strings.
-// Empty is normal and is not an error: most rules carry no interface scope.
+//
+// Empty is normal and is not an error: most rules carry no interface scope, and
+// Windows answers those with VT_EMPTY rather than an array of length zero.
+//
+// # Why this does not call ToStringArray, which is the obvious call
+//
+// Because INetFwRule::get_Interfaces hands back VT_ARRAY|VT_VARIANT, an array of
+// VARIANTs that each hold a BSTR, and not the VT_ARRAY|VT_BSTR that the name
+// suggests. ToStringArray reads every element as if it were a BSTR pointer, so
+// on the first interface-scoped rule it dereferences the low bytes of a VARIANT
+// header as an address and the process dies with an access violation.
+//
+// This is not theoretical and it is not rare. It crashed on the FIRST real run,
+// on a machine whose only interface-scoped rules are the ones Microsoft ships
+// for the WSL virtual switch. In the daemon that is a process running as SYSTEM
+// taking down the whole firewall layer, and no unit test would have found it:
+// the crash is inside the COM call.
+//
+// ToValueArray asks the SAFEARRAY itself what its elements are, so it handles
+// both shapes and there is nothing here left to guess.
 func (r *propReader) strs(name string) []string {
 	v, ok := r.get(name)
 	if !ok {
 		return nil
 	}
 	defer func() { _ = v.Clear() }()
+
+	if v.VT&ole.VT_ARRAY == 0 {
+		// VT_EMPTY or VT_NULL: no interface scope. The honest answer.
+		return nil
+	}
 	arr := v.ToArray()
 	if arr == nil {
 		return nil
 	}
-	vals := arr.ToStringArray()
-	if len(vals) == 0 {
+	// No Release on arr: the VARIANT owns the array and v.Clear frees it.
+
+	vals := arr.ToValueArray()
+	out := make([]string, 0, len(vals))
+	for i, raw := range vals {
+		s, ok := raw.(string)
+		if !ok {
+			// Not dropped quietly. An interface that vanishes from the list makes
+			// a scoped rule look unscoped, and the diff would then rewrite it on
+			// every heartbeat forever.
+			if r.err == nil {
+				r.err = fmt.Errorf("element %d of property %s is a %T and not a string", i, name, raw)
+			}
+			return nil
+		}
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
 		return nil
 	}
-	return vals
+	return out
 }
 
 func (r *propReader) Err() error { return r.err }

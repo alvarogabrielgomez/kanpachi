@@ -124,6 +124,11 @@ const (
 	fwpErrFilterNotFound   = 0x80320003
 	fwpErrSubLayerNotFound = 0x80320007
 	fwpErrAlreadyExists    = 0x80320009
+
+	// errAccessDenied es ERROR_ACCESS_DENIED, y llega CRUDO y no como HRESULT.
+	// Es 0x5 y no 0x80070005, que es lo que se esperaría de una API que devuelve
+	// HRESULT en todo lo demás. Medido, ver [Open].
+	errAccessDenied = 0x5
 )
 
 // Tipos de dato de WFP, de FWP_DATA_TYPE.
@@ -284,9 +289,20 @@ type Gate struct {
 
 // Open abre la sesión contra el motor de filtrado.
 //
-// Exige administrador, y no de forma parcial: WFP pide elevación hasta para
-// mirar. Un daemon como servicio del sistema ya la tiene; una consola de
-// desarrollo sin elevar falla acá y no más adelante, que es lo correcto.
+// # Qué necesita elevación y qué no, MEDIDO
+//
+// Acá decía que WFP exige administrador para todo, incluso para mirar. Es falso,
+// y lo desmintió correr esto por primera vez en una consola sin elevar el
+// 2026-08-04:
+//
+//	FwpmEngineOpen0        sin elevar, funciona
+//	FwpmFilterGetByKey0    sin elevar, funciona: contesta que el filtro no está
+//	FwpmTransactionBegin0  sin elevar, 0x5, o sea ERROR_ACCESS_DENIED
+//
+// O sea que la frontera está entre LEER y ESCRIBIR, y no en abrir la sesión. No
+// es un detalle de implementación: significa que [Gate.Measure] la puede correr
+// un usuario normal, y eso es justo lo que hace falta para que la pantalla de
+// exposición sirva sin pedir un UAC cada vez que se abre.
 func Open(log Logger) (*Gate, error) {
 	if log == nil {
 		return nil, fmt.Errorf("la compuerta necesita un log: sin él, un filtro que no se " +
@@ -299,9 +315,7 @@ func Open(log Logger) (*Gate, error) {
 	// Ver el comentario de arriba del archivo para el porqué de las dos mitades.
 	r, _, _ := procEngineOpen.Call(0, 0xFFFFFFFF, 0, 0, uintptr(unsafe.Pointer(&h)))
 	if c := hr(r); c != 0 {
-		return nil, fmt.Errorf("FwpmEngineOpen0 devolvió 0x%X. Casi siempre es que el "+
-			"proceso no está elevado: WFP exige administrador para todo, incluso para "+
-			"mirar", c)
+		return nil, fmt.Errorf("FwpmEngineOpen0 devolvió 0x%X", c)
 	}
 	return &Gate{h: h, log: log}, nil
 }
@@ -483,6 +497,13 @@ func (g *Gate) inTransaction(fn func() error) error {
 	defer runtime.UnlockOSThread()
 
 	if r, _, _ := procTransactionBegin.Call(uintptr(g.h), 0); hr(r) != 0 {
+		if hr(r) == errAccessDenied {
+			// Es donde aparece la falta de elevación, y no al abrir la sesión.
+			// Medido el 2026-08-04, ver [Open].
+			return fmt.Errorf("FwpmTransactionBegin0 devolvió ERROR_ACCESS_DENIED. Este "+
+				"proceso puede LEER los filtros y no escribirlos, así que hay que correrlo "+
+				"como administrador (0x%X)", hr(r))
+		}
 		return fmt.Errorf("FwpmTransactionBegin0 devolvió 0x%X", hr(r))
 	}
 

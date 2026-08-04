@@ -85,6 +85,21 @@ func (f *Firewall) AuditForeign(ctx context.Context, p domain.GameProfile) ([]do
 		}
 	}
 	sortForeign(out)
+
+	// How many rules were SWEPT, and not only how many were found.
+	//
+	// "Nothing found" and "nothing looked at" produce the same empty slice, and
+	// on this particular audit the second one means the one hole that hands
+	// somebody keyboard, screen and files went unreported. A sweep that returns
+	// zero rules on a real Windows machine is impossible: the store ships with
+	// hundreds. So the count is what tells the two apart, and it belongs in the
+	// log rather than in a return value nobody would check.
+	f.log.Info("reglas ajenas auditadas", "revisadas", len(live), "halladas", len(out))
+	if len(live) == 0 {
+		return nil, fmt.Errorf("el almacén de reglas devolvió CERO reglas, y una máquina " +
+			"Windows real trae cientos. Eso no es una auditoría limpia, es una auditoría " +
+			"que no miró nada")
+	}
 	return out, nil
 }
 

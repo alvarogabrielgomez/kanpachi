@@ -169,6 +169,54 @@ func TestThePermitMirrorsTheRule(t *testing.T) {
 	}
 }
 
+func TestTheLobbyDoorLivesOutsideTheRoomRange(t *testing.T) {
+	// La puerta del vestíbulo está en el `/24` FIJO del vestíbulo, sobre el mismo
+	// adaptador, y el rango de la sala es otro. O sea que la dirección local de
+	// un permiso legítimo cae FUERA de `Scope.Net`.
+	//
+	// Existe para congelar eso: exigir que la dirección local esté dentro del
+	// rango de la sala se lee como una comprobación obvia de coherencia, y
+	// dejaría al host escuchando detrás de su propio bloqueo sin poder entregar
+	// una credencial a nadie. Quien lo cubre es el bloqueo por adaptador, que sí
+	// casa, y el permiso le gana por peso.
+	r := domain.FirewallRule{
+		Name:  domain.FirewallGroup + ": canal de control puerta",
+		Proto: domain.ProtoTCP,
+		From:  domain.ControlPort,
+		To:    domain.ControlPort,
+		Local: domain.RendezvousSubnet.Addr().Next(),
+		Nets:  []netip.Prefix{domain.RendezvousSubnet},
+	}
+	if roomScope().Net.Contains(r.Local) {
+		t.Fatalf("este test no prueba nada: %v cae dentro de %v", r.Local, roomScope().Net)
+	}
+
+	var rs domain.RuleSet
+	rs.Rules = append(rs.Rules, r)
+
+	specs, err := SpecsFor(rs, roomScope())
+	if err != nil {
+		t.Fatalf("se rechazó la puerta del vestíbulo: %v", err)
+	}
+
+	var permiso *FilterSpec
+	for i := range specs {
+		if specs[i].Action == Permit {
+			permiso = &specs[i]
+		}
+	}
+	if permiso == nil {
+		t.Fatal("la puerta del vestíbulo no produjo permiso")
+	}
+	if permiso.Conditions.LUID != roomScope().LUID {
+		t.Error("el permiso de la puerta no lleva el adaptador, que es lo único que lo cubre")
+	}
+	if len(permiso.Conditions.RemoteNets) != 1 {
+		t.Errorf("el alcance remoto de la puerta es %v, y es el /24 del vestíbulo entero",
+			permiso.Conditions.RemoteNets)
+	}
+}
+
 func TestAPermitWithNoRemoteScopeIsRefused(t *testing.T) {
 	// El dominio ya lo prohíbe. Se recomprueba porque un permiso sin alcance
 	// remoto abriría el puerto a cualquiera que alcance el adaptador, que es
