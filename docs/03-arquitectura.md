@@ -313,6 +313,22 @@ El cableado vive fuera de los casos de uso y está partido en dos, con una front
 
 Mover el `main` no inventa una convención: es la que el repo ya usa para su otro binario, `registry/cmd/kanpseed/main.go`.
 
+### Qué está cableado de verdad hoy
+
+Cinco puertos tienen adaptador real y siete siguen en `sinimplementar`, fallando en todo a propósito. Arranca, purga el firewall de verdad, atiende el pipe, y el motor provisional falla ruidosamente mientras el supervisor reintenta con espera creciente.
+
+| Puerto | Adaptador |
+|---|---|
+| `FirewallPort` | `adapter/firewall`, las dos capas compuestas |
+| `ExposureAudit` | el firewall para dos preguntas, `sinimplementar` para la del router |
+| `CatalogStore` | `adapter/catalog/jsonfile` |
+| `StateStore` | `adapter/state/jsonfile` |
+| `ControlChannel` | `transport/control` |
+
+**La auditoría se compone en el binario y no dentro del firewall.** `ExposureAudit` hace tres preguntas y el firewall solo puede contestar dos: `RouterMappings` le habla al router del usuario por IGD, que es otro protocolo sobre otra red. Contestarla `nil, nil` desde dentro del firewall haría que "no hay mapeos" y "nadie miró" fueran indistinguibles, en la única pantalla cuyo trabajo es distinguir esas dos cosas. Se compone explícita y no por embebido, para que el objeto que solo mide no cargue además con `Apply` y `PurgeOwned`.
+
+**Apagar limpio es SALIR.** `LeaveRoomOnShutdown` cierra los puertos, restaura las reglas ajenas suspendidas, revierte los ajustes, borra `room.json` y **vuelve a medir**. Devuelve error, a diferencia de salir de la sala, y la razón es que al apagar no hay nadie mirando la pantalla: una alerta añadida a un estado que el proceso va a tirar en un segundo no es un informe. Y borra el archivo porque su ausencia es lo que dice que la salida fue limpia: conservarlo haría que todo apagado se leyera como una muerte sucia, y el aviso de "quedó una sala abierta" dejaría de significar nada por salir siempre.
+
 ### La regla verificada por un test
 
 Esto es lo que evita que la arquitectura se degrade en tres meses. Un test que falla si `core` importa algo que no debe:
