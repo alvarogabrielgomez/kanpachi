@@ -620,6 +620,22 @@ type sondaFalsa struct {
 	respuesta map[uint16]domain.ProbeOutcome
 	marcados  []netip.AddrPort
 	espera    chan struct{}
+
+	// Lo del canario va aparte de `respuesta` porque se pregunta por dirección y
+	// no solo por puerto: los tests del lado del invitado comprueban que se marque
+	// AL HOST y a nadie más.
+	canarios               []canarioMarcado
+	canarioTCP, canarioUDP domain.ProbeOutcome
+}
+
+// canarioMarcado es un sondeo de canario que ya ocurrió, con su número.
+//
+// El número se guarda porque su viaje intacto es media medición: uno mal copiado
+// convierte el eco de UDP en un datagrama que no cuadra, y esa mitad se perdería
+// en silencio.
+type canarioMarcado struct {
+	at    netip.AddrPort
+	nonce domain.CanaryNonce
 }
 
 func (p *sondaFalsa) Probe(ctx context.Context, at netip.AddrPort) (domain.ProbeOutcome, time.Duration) {
@@ -640,6 +656,36 @@ func (p *sondaFalsa) Probe(ctx context.Context, at netip.AddrPort) (domain.Probe
 		return domain.ProbeSilent, domain.ProbeDeadline
 	}
 	return out, 12 * time.Millisecond
+}
+
+func (p *sondaFalsa) ProbeCanary(ctx context.Context, at netip.AddrPort, nonce domain.CanaryNonce) (domain.ProbeOutcome, domain.ProbeOutcome) {
+	p.mu.Lock()
+	p.canarios = append(p.canarios, canarioMarcado{at: at, nonce: nonce})
+	tcp, udp, espera := p.canarioTCP, p.canarioUDP, p.espera
+	p.mu.Unlock()
+
+	if espera != nil {
+		select {
+		case <-espera:
+		case <-ctx.Done():
+			return domain.ProbeFailed, domain.ProbeFailed
+		}
+	}
+	// El cero significa "lo normal", que es el silencio de una máquina blindada.
+	// Un test que quiera una fuga tiene que pedirla explícito, igual que en Probe.
+	if tcp == 0 {
+		tcp = domain.ProbeSilent
+	}
+	if udp == 0 {
+		udp = domain.ProbeSilent
+	}
+	return tcp, udp
+}
+
+func (p *sondaFalsa) canariosMarcados() []canarioMarcado {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]canarioMarcado(nil), p.canarios...)
 }
 
 func (p *sondaFalsa) contesta(port uint16, out domain.ProbeOutcome) {

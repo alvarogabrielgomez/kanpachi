@@ -111,7 +111,10 @@ func canarioSonda(args []string) error {
 	if err != nil || len(raw) != canary.NonceSize {
 		return fmt.Errorf("-nonce tiene que ser %d bytes en hexadecimal", canary.NonceSize)
 	}
-	var nonce canary.Nonce
+	// Del dominio y no de `canary.Nonce`: este subcomando es el que SONDEA, o sea
+	// el lado del invitado, y ese lado no abre ningún oyente. Los dos tipos miden
+	// lo mismo y viven en capas distintas a propósito.
+	var nonce domain.CanaryNonce
 	copy(nonce[:], raw)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*domain.ProbeDeadline)

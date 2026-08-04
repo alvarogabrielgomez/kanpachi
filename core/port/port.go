@@ -324,6 +324,61 @@ type Prober interface {
 	// La duración solo tiene sentido con [domain.ProbeAnswered]: en el silencio
 	// lo que mide es el plazo, que ya se sabe de antemano.
 	Probe(ctx context.Context, at netip.AddrPort) (domain.ProbeOutcome, time.Duration)
+
+	// ProbeCanary marca el canario de OTRA máquina por los DOS protocolos.
+	//
+	// Va acá y no en una interfaz aparte, y la razón es que así los dos no
+	// pueden cablearse a objetos distintos: es el mismo adaptador, con la misma
+	// doctrina de devolver tipos del dominio y jamás un error. Una interfaz
+	// propia le daría a Deps un campo que siempre vale lo mismo, y a validate()
+	// una dependencia que no puede faltar por su cuenta.
+	//
+	// Los dos protocolos y no uno, porque la compuerta no mira el protocolo: sus
+	// bloqueos llevan condición de adaptador y de rango, y ninguna de protocolo.
+	// Comprobar los dos con una sola pregunta hace que el resultado valga
+	// también para UDP, que es por donde habla la herramienta que más preocupa.
+	//
+	// El número hace falta por UDP, que no tiene conexión: sin él, cualquier
+	// paquete suelto que llegara en ese momento se leería como que el canario
+	// contestó, o sea como una fuga que no existe.
+	ProbeCanary(ctx context.Context, at netip.AddrPort, nonce domain.CanaryNonce) (tcp, udp domain.ProbeOutcome)
+}
+
+// CanaryPort abre el oyente que existe PARA SER BLOQUEADO.
+//
+// Existe porque en Windows un puerto callado no distingue "bloqueado" de "no hay
+// nadie escuchando", que está medido. Poner un oyente detrás de la puerta a
+// propósito es lo único que le deja al silencio una sola lectura. Ver
+// `daemon/adapter/canary`.
+type CanaryPort interface {
+	// Listen liga en `at`, en un puerto libre en TCP y UDP a la vez, y esquiva
+	// los que `avoid` rechace.
+	//
+	// `at` es la dirección de la sala, y una sin especificar la rechaza el
+	// adaptador: ligar en todas las interfaces abriría un puerto en la red de
+	// casa del usuario, que es justo lo que este producto promete no hacer.
+	//
+	// `avoid` es [domain.RuleSet.Allows] del conjunto que se está aplicando. Un
+	// puerto que la propia Kanpachi abrió contestaría con toda razón, y esa
+	// respuesta se leería como una fuga.
+	Listen(at netip.Addr, nonce domain.CanaryNonce, ttl time.Duration,
+		avoid func(uint16) bool) (Canary, error)
+}
+
+// Canary es un oyente abierto.
+//
+// Las dos lecturas del toque se leen igual que [context.Context]: Touched como
+// Done, y WasTouched como Err. Y por el mismo motivo, que una es para esperar y
+// la otra para concluir después de que todo terminó.
+type Canary interface {
+	Port() uint16
+	// Touched se cierra en el primer toque. Cerrar el canario NO lo cierra, y esa
+	// omisión es de seguridad: un canal cerrado se lee como listo.
+	Touched() <-chan struct{}
+	// WasTouched es el hecho, y vale también después de cerrar, que es cuando el
+	// host lo mira.
+	WasTouched() bool
+	Close() error
 }
 
 // RendezvousProvider resuelve un invite ID a la identidad de ENCUENTRO, jamás

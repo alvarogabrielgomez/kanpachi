@@ -92,7 +92,7 @@ func (p *Prober) Probe(ctx context.Context, at netip.AddrPort) (domain.ProbeOutc
 // Devuelve los dos resultados por separado a propósito. Que uno pase y el otro
 // no es información de verdad sobre el firewall, y juntarlos en un booleano la
 // tiraría.
-func (p *Prober) ProbeCanary(ctx context.Context, at netip.AddrPort, nonce [16]byte) (tcp, udp domain.ProbeOutcome) {
+func (p *Prober) ProbeCanary(ctx context.Context, at netip.AddrPort, nonce domain.CanaryNonce) (tcp, udp domain.ProbeOutcome) {
 	tcp, _ = p.Probe(ctx, at)
 	udp = p.probeUDP(ctx, at, nonce)
 	return tcp, udp
@@ -103,7 +103,7 @@ func (p *Prober) ProbeCanary(ctx context.Context, at netip.AddrPort, nonce [16]b
 // Va sobre un socket CONECTADO y no sobre uno suelto, y eso da dos cosas: que el
 // sistema descarte los datagramas que vengan de otro sitio, y que un ICMP de
 // puerto inalcanzable aparezca como error en la lectura en vez de perderse.
-func (p *Prober) probeUDP(ctx context.Context, at netip.AddrPort, nonce [16]byte) domain.ProbeOutcome {
+func (p *Prober) probeUDP(ctx context.Context, at netip.AddrPort, nonce domain.CanaryNonce) domain.ProbeOutcome {
 	deadline := p.deadline
 	if deadline <= 0 {
 		deadline = domain.ProbeDeadline
@@ -136,7 +136,7 @@ func (p *Prober) probeUDP(ctx context.Context, at netip.AddrPort, nonce [16]byte
 	if err != nil {
 		return classify(ctx, err)
 	}
-	if n != len(nonce) || [16]byte(buf) != nonce {
+	if n != len(nonce) || domain.CanaryNonce(buf) != nonce {
 		// Contestó algo que no es lo nuestro. No es el canario, así que no
 		// prueba que el canario sea alcanzable.
 		return domain.ProbeSilent
