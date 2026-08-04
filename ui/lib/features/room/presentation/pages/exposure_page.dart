@@ -1,0 +1,225 @@
+import 'package:flutter/material.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_kicker.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_spinner.dart';
+import 'package:kanpachi_ui/core/design_system/molecules/app_list.dart';
+import 'package:kanpachi_ui/core/design_system/molecules/app_notice.dart';
+import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
+import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
+import 'package:kanpachi_ui/core/messages/message_catalog.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
+
+/// La pantalla que contesta "¿qué tiene abierto mi PC?".
+///
+/// # Las dos filas, y por qué la de abajo vale tanto como la lista
+///
+/// Arriba, lo que Kanpachi abrió y para quién. Abajo, que **todo lo demás del
+/// adaptador virtual está cerrado**. La lista sola es cierta y engañosa a la
+/// vez: enumera lo propio sin decir nada de la puerta de al lado, que es
+/// justamente por donde entra el único agujero que este producto tiene que
+/// impedir.
+///
+/// # Lo que esta pantalla NO hace
+///
+/// Cuando la medición falla, no enseña la última lista buena. Dice que Kanpachi
+/// no pudo leer lo que tiene puesto y deja la lista fuera. Es la misma doctrina
+/// que el aviso de auditoría caída: una lista vieja pintada de verde es peor que
+/// una pantalla que admite no saber.
+class ExposurePage extends StatefulWidget {
+  const ExposurePage({required this.load, super.key});
+
+  /// De dónde sale la medición. Entra por parámetro y no de un contenedor para
+  /// que un test la pueda pintar con un informe ciego sin levantar nada.
+  final Future<ExposureReport> Function() load;
+
+  @override
+  State<ExposurePage> createState() => _ExposurePageState();
+}
+
+class _ExposurePageState extends State<ExposurePage> {
+  ExposureReport? _report;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    setState(() => _loading = true);
+    final ExposureReport r = await widget.load();
+    if (!mounted) return;
+    setState(() {
+      _report = r;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ExposureReport? report = _report;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _Header(report: report, busy: _loading, onRefresh: _refresh),
+        const SizedBox(height: AppSpacing.md),
+        if (report == null)
+          const Center(child: AppSpinner())
+        else
+          _Body(report: report),
+      ],
+    );
+  }
+}
+
+class _Header extends StatelessWidget {
+  const _Header({required this.report, required this.busy, required this.onRefresh});
+
+  final ExposureReport? report;
+  final bool busy;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final ExposureReport? r = report;
+    final String when = r == null || !r.measured ? '' : r.measuredLabel;
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const AppKicker('LO QUE ESTA PC TIENE ABIERTO'),
+              if (when.isNotEmpty)
+                Text(
+                  'Medido a las $when',
+                  style: context.type.bodySm.copyWith(color: context.colors.textMuted),
+                ),
+            ],
+          ),
+        ),
+        AppButton(
+          label: busy ? 'Midiendo…' : 'Volver a medir',
+          onPressed: busy ? null : onRefresh,
+          variant: AppButtonVariant.ghost,
+        ),
+      ],
+    );
+  }
+}
+
+class _Body extends StatelessWidget {
+  const _Body({required this.report});
+
+  final ExposureReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    // Ciego: el aviso y nada más. Sin lista, porque la única lista que se
+    // podría enseñar acá es una que no se midió.
+    if (!report.measured) {
+      return AppMessageNotice(message: AppMessages.gate(report.gate));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (report.ports.isEmpty)
+          const AppNotice.line(
+            tone: AppNoticeTone.neutral,
+            body: Text('Ahora mismo no hay ningún puerto abierto por Kanpachi.'),
+          )
+        else
+          AppRowList(
+            children: <Widget>[
+              for (final ExposedPort p in report.ports) _PortRow(port: p),
+            ],
+          ),
+        const SizedBox(height: AppSpacing.md),
+        AppMessageNotice(message: AppMessages.gate(report.gate)),
+        if (report.unexpected.isNotEmpty) ...<Widget>[
+          const SizedBox(height: AppSpacing.md),
+          _UnexpectedNotice(names: report.unexpected),
+        ],
+      ],
+    );
+  }
+}
+
+class _PortRow extends StatelessWidget {
+  const _PortRow({required this.port});
+
+  final ExposedPort port;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppRow(
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(port.label, style: context.type.body),
+                Text(
+                  _who(port),
+                  style: context.type.bodySm.copyWith(color: context.colors.textMuted),
+                ),
+              ],
+            ),
+          ),
+          if (!port.applied) const _NotApplied(),
+        ],
+      ),
+    );
+  }
+
+  /// Para quién está abierto, en una línea.
+  ///
+  /// La lista vacía JAMÁS significa cualquiera: el daemon no puede expresar eso
+  /// y una regla sin alcance remoto no llega a existir. Si llegara vacía, decir
+  /// "nadie" es el lado seguro, porque el puerto no le sirve a nadie.
+  static String _who(ExposedPort p) {
+    final String quien = p.reachableBy.isEmpty ? 'nadie' : p.reachableBy.join(', ');
+    return p.isControl ? 'Canal de la sala · $quien' : 'Abierto para $quien';
+  }
+}
+
+/// La marca de un puerto que tenía que estar abierto y no lo está.
+///
+/// Es la fila que explica por qué un amigo se queda fuera, y sin ella el
+/// síntoma es "a mí no me conecta" sin nada que mirar.
+class _NotApplied extends StatelessWidget {
+  const _NotApplied();
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: AppMessages.portNotApplied().body,
+      child: Text(
+        'no está puesto',
+        style: context.type.bodySm.copyWith(color: context.colors.warn),
+      ),
+    );
+  }
+}
+
+class _UnexpectedNotice extends StatelessWidget {
+  const _UnexpectedNotice({required this.names});
+
+  final List<String> names;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppNotice(
+      title: 'Hay reglas de Kanpachi que Kanpachi no pidió',
+      body: Text(
+        'Kanpachi es el único que escribe en su grupo del firewall, así que '
+        'estas sobran: ${names.join(', ')}. Suele ser resto de un cierre '
+        'sucio, y salir de la sala y volver a entrar las quita.',
+      ),
+    );
+  }
+}

@@ -65,6 +65,7 @@ const (
 	MethodSuspendForeignRules Method = "suspend_foreign_rules"
 	MethodDiagReport          Method = "diag_report"
 	MethodObserveGame         Method = "observe_game"
+	MethodExposure            Method = "exposure"
 
 	MethodPendingRoom        Method = "pending_room"
 	MethodResumeRoom         Method = "resume_room"
@@ -94,6 +95,7 @@ var métodos = map[Method]bool{
 	MethodSuspendForeignRules: true,
 	MethodDiagReport:          true,
 	MethodObserveGame:         true,
+	MethodExposure:            true,
 	MethodPendingRoom:         true,
 	MethodResumeRoom:          true,
 	MethodDiscardPendingRoom:  true,

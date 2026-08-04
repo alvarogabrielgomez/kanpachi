@@ -47,6 +47,10 @@ type API interface {
 	ForeignRulesFor(ctx context.Context, gameID string) ([]domain.ForeignRule, error)
 	SuspendForeignRules(ctx context.Context, rules []domain.ForeignRule) error
 	Diagnose(ctx context.Context) (domain.NetCheck, error)
+	// Exposure no devuelve error a propósito: la pantalla tiene que decir algo
+	// siempre, y lo que dice cuando la medición falla ya viaja dentro del
+	// informe. Ver [domain.ExposureReport].
+	Exposure(ctx context.Context) domain.ExposureReport
 	ObserveGame(ctx context.Context, root domain.ProcessRef, tree map[int]bool, keepSteam bool) ([]domain.PortRange, error)
 
 	PendingRoom() (domain.PersistedRoom, bool)
@@ -368,6 +372,9 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 			return nil, &Error{Code: CodeUnavailable, Message: err.Error()}
 		}
 		return result(netView(check))
+
+	case MethodExposure:
+		return result(exposureView(s.api.Exposure(ctx)))
 
 	case MethodObserveGame:
 		return s.observe(ctx, req.Params)

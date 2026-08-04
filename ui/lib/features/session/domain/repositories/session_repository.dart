@@ -1,3 +1,4 @@
+import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 
@@ -43,6 +44,15 @@ abstract interface class SessionRepository {
   Future<Room> resolveForeignRule(Room room, {required bool disable});
 
   Future<void> leaveRoom(Room room);
+
+  /// Lo que la máquina tiene abierto AHORA, medido.
+  ///
+  /// No devuelve error a propósito: la pantalla que lo enseña tiene que decir
+  /// algo siempre, y lo que dice cuando la medición falla ya viaja dentro del
+  /// informe. Un error obligaría a quien llama a inventar qué pintar, y la
+  /// respuesta cómoda sería enseñar la última lista buena, que es exactamente
+  /// la mentira que hay que impedir.
+  Future<ExposureReport> exposure();
 
   /// Da de alta un juego que no estaba en el catálogo.
   Future<Game> saveManualGame(Game game);

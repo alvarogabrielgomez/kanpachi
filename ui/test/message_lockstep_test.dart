@@ -115,6 +115,25 @@ void main() {
       );
     });
 
+    test('GateState tiene los mismos estados que gateName en Go', () {
+      final Set<String> enGo = _cadenasDeLaFuncion(
+        repo: repo,
+        archivo: 'daemon/transport/protocol/view.go',
+        funcion: 'gateName',
+      );
+      final Set<String> enDart =
+          GateState.values.map((GateState s) => s.wire).toSet();
+
+      expect(enGo, isNotEmpty, reason: 'no se leyó ningún estado de gateName');
+      expect(
+        enDart,
+        equals(enGo),
+        reason: 'GateState y gateName dejaron de coincidir. La segunda fila de '
+            'la pantalla de exposición es la que dice que todo lo demás está '
+            'cerrado, y un estado que la UI no conoce la deja en blanco.',
+      );
+    });
+
     test('FailureCode tiene los mismos códigos que protocol.Code en Go', () {
       final Set<String> enGo = _codigosDelProtocolo(repo);
       final Set<String> enDart =

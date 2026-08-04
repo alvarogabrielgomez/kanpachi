@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'package:kanpachi_ui/core/messages/message_keys.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
@@ -185,6 +187,39 @@ class FakeSessionRepository implements SessionRepository {
 
   @override
   Future<void> leaveRoom(Room room) async {}
+
+  /// Una medición plausible, con el hueco del canal incluido.
+  ///
+  /// Lleva la fila del canal de control a propósito: es la que el usuario no va
+  /// a encontrar en el perfil de su juego, así que es justo la que la pantalla
+  /// tiene que saber explicar sin que nadie tenga una sala real abierta.
+  @override
+  Future<ExposureReport> exposure() async {
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    return ExposureReport(
+      measured: true,
+      measuredAt: DateTime.now(),
+      gate: GateState.present,
+      ports: const <ExposedPort>[
+        ExposedPort(
+          proto: 'udp',
+          from: 16261,
+          to: 16262,
+          applied: true,
+          isControl: false,
+          reachableBy: <String>['100.64.1.5', '100.64.1.6'],
+        ),
+        ExposedPort(
+          proto: 'tcp',
+          from: 57623,
+          to: 57623,
+          applied: true,
+          isControl: true,
+          reachableBy: <String>['100.64.1.5', '100.64.1.6'],
+        ),
+      ],
+    );
+  }
 
   @override
   Future<Game> saveManualGame(Game game) async {

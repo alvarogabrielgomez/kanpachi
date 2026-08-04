@@ -287,6 +287,50 @@ abstract final class AppMessages {
           ),
       };
 
+  /// La segunda fila de la pantalla de exposición: qué pasa con todo lo que no
+  /// está en la lista de arriba.
+  ///
+  /// # Por qué esta fila existe
+  ///
+  /// Porque la lista de puertos abiertos, sola, es cierta y engañosa a la vez:
+  /// enumera lo que Kanpachi abrió sin decir nada de la puerta de al lado. Es
+  /// esta fila la que convierte "lo que Kanpachi abrió" en "lo que hay
+  /// abierto", y por eso vale tanto como la lista.
+  static AppMessage gate(GateState state) => switch (state) {
+        GateState.present => const AppMessage(
+            severity: MessageSeverity.done,
+            title: 'Todo lo demás está cerrado',
+            body: 'Nadie de la sala puede alcanzar ningún otro puerto de esta '
+                'PC por la red de Kanpachi, ni aunque algún programa haya '
+                'dejado su propio permiso puesto.',
+          ),
+        GateState.absent => const AppMessage(
+            severity: MessageSeverity.warn,
+            title: 'Solo está abierto lo de arriba, y no está cerrado el resto',
+            body: 'Los puertos de la lista son los que Kanpachi abrió. Lo que '
+                'otro programa haya abierto por su cuenta sigue abierto para '
+                'la gente de la sala.',
+            hint: 'Salir de la sala y volver a entrar suele reponerlo.',
+          ),
+        GateState.unknown => const AppMessage(
+            severity: MessageSeverity.warn,
+            title: 'Kanpachi no pudo leer lo que tiene puesto',
+            body: 'Esto no dice que algo esté mal: dice que nadie está '
+                'mirando. La lista de arriba puede estar incompleta.',
+          ),
+      };
+
+  /// Un puerto que Kanpachi pidió abrir y que el sistema no tiene puesto.
+  ///
+  /// No es un detalle técnico: es la explicación de por qué un amigo se queda
+  /// fuera, y sin ella el síntoma es "a mí no me conecta" sin nada que mirar.
+  static AppMessage portNotApplied() => const AppMessage(
+        severity: MessageSeverity.warn,
+        title: 'Este puerto tenía que estar abierto y no lo está',
+        body: 'Quien intente entrar por acá no va a poder. Suele arreglarse '
+            'volviendo a elegir el juego.',
+      );
+
   /// El host se fue y el juego corría en su PC.
   ///
   /// Lleva el nombre dentro, así que es de los pocos que reciben un dato. El

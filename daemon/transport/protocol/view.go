@@ -147,6 +147,101 @@ func roomView(st domain.RoomState, missing string, now time.Time) RoomView {
 	return v
 }
 
+// ExposureView es lo que Kanpachi tiene abierto, para la pantalla que lo
+// enseña.
+//
+// # El campo que decide cómo se pinta la pantalla entera
+//
+// `Measured`. En false, la lista de puertos va VACÍA y la pantalla dice que
+// Kanpachi no pudo leer lo que tiene puesto, jamás la última lista buena. Un
+// booleano explícito y no "la lista está vacía", porque una lista vacía también
+// es el estado normal de una sala sin juego activo, y confundir esas dos cosas
+// es enseñar tranquilidad donde hay ceguera.
+type ExposureView struct {
+	Measured bool `json:"measured"`
+	// MeasuredAtMS es cuándo se midió, en milisegundos desde la época. Cero si
+	// no se midió. Va absoluto y no como "hace tanto" porque el que lo pinta
+	// tiene reloj y sabe cuánto tarda en llegar.
+	MeasuredAtMS int64 `json:"measured_at_ms,omitempty"`
+
+	Ports []ExposedPortView `json:"ports"`
+	// Gate es "present", "absent" o "unknown". Es la segunda fila de la
+	// pantalla, y sin ella la lista de arriba es cierta y engañosa a la vez.
+	Gate string `json:"gate"`
+	// Unexpected son reglas del grupo propio que nadie pidió.
+	Unexpected []string `json:"unexpected,omitempty"`
+}
+
+type ExposedPortView struct {
+	Proto string `json:"proto"`
+	From  uint16 `json:"from"`
+	To    uint16 `json:"to"`
+	// Members y Nets son para quién está abierto. Que vengan vacíos JAMÁS
+	// significa cualquiera: el dominio no puede expresar eso.
+	Members []string `json:"members,omitempty"`
+	Nets    []string `json:"nets,omitempty"`
+	// Applied es si el sistema lo tiene puesto AHORA. False significa que
+	// Kanpachi lo pidió y no está, o sea que alguien no va a poder entrar.
+	Applied bool `json:"applied"`
+	// Control distingue el hueco del canal de la sala de un puerto de juego.
+	Control bool `json:"control"`
+}
+
+func exposureView(r domain.ExposureReport) ExposureView {
+	v := ExposureView{
+		Measured: !r.Blind(),
+		Gate:     gateName(r.Gate),
+		Ports:    make([]ExposedPortView, 0, len(r.Ports)),
+	}
+	if r.Blind() {
+		// Ni puertos ni hora. Que el informe ciego no pueda llevar una lista es
+		// invariante del dominio, y se repite acá porque este es el formato que
+		// cruza a otro proceso: lo que no se pueda expresar mal, mejor.
+		return v
+	}
+	v.MeasuredAtMS = r.MeasuredAt.UnixMilli()
+	v.Unexpected = r.Unexpected
+
+	for _, p := range r.Ports {
+		pv := ExposedPortView{
+			Proto:   p.Proto.String(),
+			From:    p.From,
+			To:      p.To,
+			Applied: p.Applied,
+			Control: p.Control,
+		}
+		for _, m := range p.Members {
+			pv.Members = append(pv.Members, m.String())
+		}
+		for _, n := range p.Nets {
+			pv.Nets = append(pv.Nets, n.String())
+		}
+		v.Ports = append(v.Ports, pv)
+	}
+	return v
+}
+
+func gateName(g domain.GateState) string {
+	switch g {
+	case domain.GatePresent:
+		return "present"
+	case domain.GateAbsent:
+		return "absent"
+	case domain.GateUnknown:
+		// Explícito y no metido en el default, aunque devuelvan lo mismo. "Sin
+		// comprobar" es un estado de verdad del dominio, y el `default` es el
+		// respaldo para lo que no se reconoce: el candado que compara esta
+		// función con el enum de Dart corta justo ahí, así que esconderlo abajo
+		// haría que la UI no pudiera declararlo sin romper el candado.
+		return "unknown"
+	default:
+		// Un estado nuevo sin nombre acá viaja como sin comprobar, que es el
+		// lado seguro: la pantalla dice que no lo sabe en vez de afirmar algo
+		// que no midió.
+		return "unknown"
+	}
+}
+
 // GameView es un perfil del catálogo, para la lista de juegos.
 type GameView struct {
 	ID          string      `json:"id"`

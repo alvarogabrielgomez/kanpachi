@@ -458,6 +458,11 @@ type apiFalsa struct {
 	guardados int
 	activados int
 	errKick   error
+
+	// exposición nil devuelve el informe CIEGO, que es lo correcto para un
+	// falso que no está ejercitando esta capa: el cero no puede leerse como
+	// "no hay nada abierto".
+	exposición *domain.ExposureReport
 }
 
 func (a *apiFalsa) Now() time.Time { return a.ahora }
@@ -524,6 +529,13 @@ func (a *apiFalsa) Diagnose(context.Context) (domain.NetCheck, error) {
 	return domain.NetCheck{NATKind: "cone"}, nil
 }
 
+func (a *apiFalsa) Exposure(context.Context) domain.ExposureReport {
+	if a.exposición != nil {
+		return *a.exposición
+	}
+	return domain.BlindExposure()
+}
+
 func (a *apiFalsa) ObserveGame(context.Context, domain.ProcessRef, map[int]bool, bool) ([]domain.PortRange, error) {
 	return nil, nil
 }
@@ -541,4 +553,105 @@ func (a *apiFalsa) LastRoom() (domain.LastRoom, bool)                    { retur
 // usecase por una aserción.
 func TestLaSesiónDeVerdadSatisfaceLaAPI(t *testing.T) {
 	var _ API = (*usecase.Session)(nil)
+}
+
+// TestLaExposiciónCiegaNoViajaConLista.
+//
+// Es el campo que decide cómo se pinta la pantalla entera. Si un informe ciego
+// pudiera llevar puertos, la UI enseñaría la última lista buena sobre una
+// medición que no ocurrió, que es justo la mentira que el tipo existe para
+// impedir.
+func TestLaExposiciónCiegaNoViajaConLista(t *testing.T) {
+	s, api := servidor(t)
+	saluda(t, s, tokenDePrueba)
+
+	ciego := domain.BlindExposure()
+	api.exposición = &ciego
+
+	var v ExposureView
+	lee(t, pide(t, s, `{"id":30,"method":"exposure"}`), &v)
+
+	switch {
+	case v.Measured:
+		t.Error("un informe ciego viajó como medido")
+	case len(v.Ports) != 0:
+		t.Errorf("un informe ciego viajó con %d puertos", len(v.Ports))
+	case v.MeasuredAtMS != 0:
+		t.Errorf("un informe ciego viajó con hora de medición %d", v.MeasuredAtMS)
+	case v.Gate != "unknown":
+		t.Errorf("un informe ciego dice que la compuerta está %q", v.Gate)
+	}
+}
+
+// TestLaExposiciónMedidaLlevaPuertosYAlcance.
+//
+// Un puerto abierto sin decir para quién es la mitad de la información que
+// importa, y es justo la mitad que sostiene la promesa del producto.
+func TestLaExposiciónMedidaLlevaPuertosYAlcance(t *testing.T) {
+	s, api := servidor(t)
+	saluda(t, s, tokenDePrueba)
+
+	var rs domain.RuleSet
+	rs.Rules = append(rs.Rules, domain.FirewallRule{
+		Name:   "kanpachi-udp-16261",
+		Proto:  domain.ProtoUDP,
+		From:   16261,
+		To:     16262,
+		Local:  netip.MustParseAddr("100.64.1.1"),
+		Remote: []netip.Addr{netip.MustParseAddr("100.64.1.5")},
+	})
+	informe := domain.NewExposureReport(
+		rs,
+		domain.Enforcement{
+			Rules: []domain.AppliedRule{{
+				Name: "kanpachi-udp-16261", Layer: domain.LayerFirewallRules, Enabled: true,
+			}},
+			Gate: domain.GatePresent,
+		},
+		true,
+		api.ahora,
+	)
+	api.exposición = &informe
+
+	var v ExposureView
+	lee(t, pide(t, s, `{"id":31,"method":"exposure"}`), &v)
+
+	switch {
+	case !v.Measured:
+		t.Fatal("un informe medido viajó como ciego")
+	case v.Gate != "present":
+		t.Errorf("gate = %q", v.Gate)
+	case v.MeasuredAtMS != api.ahora.UnixMilli():
+		t.Errorf("measured_at_ms = %d", v.MeasuredAtMS)
+	case len(v.Ports) != 1:
+		t.Fatalf("puertos = %+v", v.Ports)
+	}
+
+	p := v.Ports[0]
+	switch {
+	case p.Proto != "udp" || p.From != 16261 || p.To != 16262:
+		t.Errorf("el rango viajó como %s/%d-%d", p.Proto, p.From, p.To)
+	case !p.Applied:
+		t.Error("un puerto que el sistema tiene puesto viajó como no aplicado")
+	case len(p.Members) != 1 || p.Members[0] != "100.64.1.5":
+		t.Errorf("el alcance remoto viajó como %v", p.Members)
+	}
+}
+
+// TestCadaEstadoDeLaCompuertaTieneNombreEnLaAPI.
+//
+// Por lo mismo que las alertas: un estado que llega como "unknown" sin serlo
+// hace que la pantalla diga "no se pudo comprobar" sobre algo que sí se
+// comprobó, y el usuario aprende a ignorarla.
+func TestCadaEstadoDeLaCompuertaTieneNombreEnLaAPI(t *testing.T) {
+	quiero := map[domain.GateState]string{
+		domain.GatePresent: "present",
+		domain.GateAbsent:  "absent",
+		domain.GateUnknown: "unknown",
+	}
+	for estado, nombre := range quiero {
+		if got := gateName(estado); got != nombre {
+			t.Errorf("gateName(%v) = %q, se esperaba %q", estado, got, nombre)
+		}
+	}
 }

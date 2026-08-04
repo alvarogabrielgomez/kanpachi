@@ -244,3 +244,43 @@ enum FailureCode {
     return null;
   }
 }
+
+/// Si la compuerta del adaptador virtual está puesta. Espejo de
+/// `domain.GateState`.
+///
+/// # Por qué "sin comprobar" no es "ausente"
+///
+/// Ausente es un hecho: se miró y no está, y con eso la contención degrada a lo
+/// que hacen las reglas del Firewall de Windows, que es lo que el producto tenía
+/// antes de que la compuerta existiera. Nada nuevo queda abierto.
+///
+/// Sin comprobar es ceguera, y se pinta distinto a propósito. La misma doctrina
+/// que [AlertKind.auditFailed]: una medición que no ocurrió jamás se enseña como
+/// una que salió bien.
+enum GateState {
+  /// Puesta. Todo lo que no esté permitido en el adaptador está cerrado.
+  present('present'),
+
+  /// Se midió y no está.
+  absent('absent'),
+
+  /// No se pudo medir.
+  unknown('unknown');
+
+  const GateState(this.wire);
+
+  /// La cadena exacta que viaja en el JSON, campo `gate` de `ExposureView`.
+  final String wire;
+
+  /// Lo que no se reconoce cae en [GateState.unknown], y no en `absent`.
+  ///
+  /// Es el lado seguro por dos motivos: una versión vieja de la UI contra un
+  /// daemon nuevo dice "no pude comprobarlo", que es verdad, en vez de afirmar
+  /// una ausencia que no midió.
+  static GateState fromWire(String? wire) {
+    for (final GateState state in GateState.values) {
+      if (state.wire == wire) return state;
+    }
+    return GateState.unknown;
+  }
+}
