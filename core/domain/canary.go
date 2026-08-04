@@ -68,13 +68,20 @@ type CanaryRequest struct {
 	Port uint16
 	// Nonce ata la pregunta con la respuesta, y hace falta por UDP, que no
 	// tiene conexión. Ver `daemon/adapter/canary`.
-	Nonce [CanaryNonceSize]byte
+	Nonce CanaryNonce
 }
 
 // CanaryNonceSize es el largo del número, y es fijo a propósito: por UDP se lee
 // exactamente esta cantidad, así que nada de lo que llegue de fuera decide
 // cuánta memoria se toca.
 const CanaryNonceSize = 16
+
+// CanaryNonce es el número que ata la pregunta con la respuesta.
+//
+// Tipo con nombre y no un `[16]byte` suelto, para que la firma del puerto diga
+// qué espera: un arreglo anónimo del mismo largo lo satisface cualquier cosa que
+// pase por ahí, y este número decide si un datagrama cuenta como toque.
+type CanaryNonce [CanaryNonceSize]byte
 
 // Valid comprueba lo que el adaptador no puede dar por bueno.
 //
@@ -89,7 +96,7 @@ func (r CanaryRequest) Valid() error {
 	if r.Port == 0 {
 		return fmt.Errorf("canario: puerto cero")
 	}
-	if r.Nonce == ([CanaryNonceSize]byte{}) {
+	if r.Nonce == (CanaryNonce{}) {
 		// Un número en ceros lo puede adivinar cualquiera, y por UDP el número
 		// es lo único que distingue el eco del canario de un paquete suelto.
 		return fmt.Errorf("canario: el número viene en ceros")
@@ -161,6 +168,41 @@ func AllCanaryVerdicts() []CanaryVerdict {
 	return []CanaryVerdict{CanaryBlind, CanaryLeaking, CanaryClean, CanaryUnconfirmed, CanaryMismatch}
 }
 
+// CanaryAsked es alguien a quien se le preguntó en una ronda.
+//
+// Lleva la DIRECCIÓN y no solo el apodo, y esa elección es de seguridad. El
+// apodo lo elige quien entra: [Nickname] valida largo y alfabeto y NO valida
+// unicidad, así que un miembro puede tomar el de otro. Como clave para saber
+// quién contestó, un apodo lo controla el atacante. La dirección la rellena el
+// adaptador desde la conexión, y esa no se puede pedir.
+type CanaryAsked struct {
+	At   netip.Addr
+	Name Nickname
+}
+
+// CanaryAnswer es lo que contestó UNO de los preguntados.
+type CanaryAnswer struct {
+	// From es la conexión por la que llegó, y es la clave de identidad.
+	From netip.Addr
+	// Name es para la pantalla, que tiene que poder decir "desde la PC de
+	// Fulano". No sirve para identificar. Ver [CanaryAsked].
+	Name Nickname
+
+	TCP ProbeOutcome
+	UDP ProbeOutcome
+}
+
+// Reach dice si este informe afirma que ALGÚN protocolo llegó.
+func (a CanaryAnswer) Reach() bool { return a.TCP.Reached() || a.UDP.Reached() }
+
+// Measured dice si este informe MIDIÓ algo.
+//
+// [ProbeFailed] en los dos protocolos significa que esa máquina no pudo ni
+// preguntar: su adaptador estaba caído, no había ruta, o el intento no llegó a
+// hacerse. Eso NO es silencio, es la ausencia de medición, y las dos cosas dicen
+// lo contrario la una de la otra.
+func (a CanaryAnswer) Measured() bool { return a.TCP != ProbeFailed || a.UDP != ProbeFailed }
+
 // CanaryCheck es una comprobación entera, con las dos fuentes por separado.
 type CanaryCheck struct {
 	// MeasuredAt en CERO es que no se comprobó, igual que en [ExposureReport].
@@ -168,51 +210,133 @@ type CanaryCheck struct {
 
 	// Port es el puerto que se abrió, para poder decirlo en un log.
 	Port uint16
-	// Asked es a quién se le pidió. Va para que la pantalla pueda decir "desde
-	// la PC de Fulano", que es lo que hace la frase creíble.
-	Asked Nickname
+
+	// Asked son TODOS a los que se preguntó, y el plural es del diseño.
+	//
+	// Preguntarle a uno sorteado lo elige un adversario que sostenga varias
+	// membresías, porque el código de invitación no es secreto, no hay baneo y
+	// volver a entrar es gratis.
+	Asked []CanaryAsked
 
 	// Touched es lo que vio el HOST. Hecho propio, no falsificable.
 	Touched bool
 
-	// Answered es si el invitado llegó a contestar el mensaje.
-	//
-	// Va aparte de los dos resultados porque "no contestó" y "contestó que hubo
-	// silencio" son cosas distintas: la primera no midió nada y la segunda sí
-	// dice algo, aunque sea un dicho.
-	Answered bool
-	// ReportedTCP y ReportedUDP son lo que DIJO el invitado. Una pista.
-	ReportedTCP ProbeOutcome
-	ReportedUDP ProbeOutcome
+	// Answers son los informes admitidos, COMO MUCHO UNO por dirección
+	// preguntada. Esa unicidad la sostiene [CanaryCheck.Record] y la comprueba
+	// [CanaryCheck.AllAnswered].
+	Answers []CanaryAnswer
 }
 
 // Blind dice si esto es una comprobación o nada.
 func (c CanaryCheck) Blind() bool { return c.MeasuredAt.IsZero() }
 
-// ReportedReach dice si el invitado afirma que ALGÚN protocolo llegó.
-func (c CanaryCheck) ReportedReach() bool {
-	return c.ReportedTCP.Reached() || c.ReportedUDP.Reached()
+// Record admite un informe y dice si lo admitió. Es LA PUERTA, y sus tres
+// negativas son de seguridad.
+//
+//	puerto ajeno      es el informe tardío de un canario ya cerrado
+//	no preguntado     nadie informa por una pregunta que no se le hizo
+//	ya contestó       es lo que sostiene [CanaryCheck.AllAnswered]
+//
+// La tercera cierra un agujero de verdad. La ronda cierra temprano cuando
+// contestaron todos, así que sin deduplicar, UN miembro que mande tantos
+// informes como miembros haya llena el contador, la ronda cierra en
+// milisegundos, y los honestos nunca llegan a marcar. Eso no fabrica una alarma
+// falsa: **esconde una fuga real**, que es la peor clase de fallo de este
+// producto.
+//
+// Se queda con el PRIMERO por dirección, así que una inundación tampoco puede
+// pisar una respuesta honesta que ya llegó.
+func (c *CanaryCheck) Record(r CanaryReport) bool {
+	if r.Port != c.Port {
+		return false
+	}
+	name, asked := c.askedName(r.From)
+	if !asked {
+		return false
+	}
+	for _, a := range c.Answers {
+		if a.From == r.From {
+			return false
+		}
+	}
+	c.Answers = append(c.Answers, CanaryAnswer{From: r.From, Name: name, TCP: r.TCP, UDP: r.UDP})
+	return true
 }
 
-// ReportedMeasured dice si el informe MIDIÓ algo.
+func (c CanaryCheck) askedName(at netip.Addr) (Nickname, bool) {
+	for _, q := range c.Asked {
+		if q.At == at {
+			return q.Name, true
+		}
+	}
+	return Nickname{}, false
+}
+
+// Answered dice si contestó ALGUIEN.
 //
-// [ProbeFailed] en los dos protocolos significa que esa máquina no pudo ni
-// preguntar: su adaptador estaba caído, no había ruta, o el intento no llegó a
-// hacerse. Eso NO es silencio, es la ausencia de medición, y las dos cosas dicen
-// lo contrario la una de la otra.
+// Existe aparte de los resultados porque "no contestó" y "contestó que hubo
+// silencio" son cosas distintas: la primera no midió nada y la segunda sí dice
+// algo, por dicho que sea.
+func (c CanaryCheck) Answered() bool { return len(c.Answers) > 0 }
+
+// AllAnswered exige un REMITENTE DISTINTO por cada uno a los que se preguntó.
+//
+// Cuenta direcciones, jamás informes ni apodos, y la ronda la usa para cerrar
+// temprano. Contar informes le dejaría a UN miembro cerrar la ronda solo. Contar
+// apodos vale lo mismo que nada, porque un miembro puede tomar el de otro.
+//
+// La comprobación vive acá y no solo en el sitio que llama a propósito: quien
+// agregue a Answers mañana sin pasar por [CanaryCheck.Record] reabriría el
+// agujero en silencio, y un comentario no lo impide.
+func (c CanaryCheck) AllAnswered() bool {
+	if len(c.Asked) == 0 {
+		return false
+	}
+	seen := make(map[netip.Addr]bool, len(c.Answers))
+	for _, a := range c.Answers {
+		seen[a.From] = true
+	}
+	for _, q := range c.Asked {
+		if !seen[q.At] {
+			return false
+		}
+	}
+	return true
+}
+
+// ReportedReach dice si ALGUIEN afirma que llegó.
+func (c CanaryCheck) ReportedReach() bool {
+	for _, a := range c.Answers {
+		if a.Reach() {
+			return true
+		}
+	}
+	return false
+}
+
+// ReportedMeasured dice si ALGUIEN midió.
 //
 // Existe porque no estaba y era un fallo real: una ronda en la que nadie pudo
 // preguntar caía en la misma rama que una ronda callada y salía como "sin
 // evidencia de fuga". Lo encontró una revisión adversaria del diseño el
 // 2026-08-04, leyendo el código y no ejecutándolo.
 func (c CanaryCheck) ReportedMeasured() bool {
-	return c.ReportedTCP != ProbeFailed || c.ReportedUDP != ProbeFailed
+	for _, a := range c.Answers {
+		if a.Measured() {
+			return true
+		}
+	}
+	return false
 }
 
 // Verdict concluye, y el ORDEN es todo el diseño.
 //
 // Primero el hecho propio, porque es el único que no se puede mentir. Después el
 // informe, y solo para distinguir "no hay evidencia" de "no se comprobó".
+//
+// [CanaryCheck.AllAnswered] NO entra acá, y es deliberado: exigir que contesten
+// todos para dar por buena una ronda le daría a un miembro callado el veto sobre
+// cada ronda, que es justo la palanca que el plural existe para quitar.
 func (c CanaryCheck) Verdict() CanaryVerdict {
 	if c.Blind() {
 		return CanaryBlind
@@ -222,17 +346,17 @@ func (c CanaryCheck) Verdict() CanaryVerdict {
 	if c.Touched {
 		return CanaryLeaking
 	}
-	if !c.Answered {
+	if !c.Answered() {
 		return CanaryUnconfirmed
 	}
-	// Contestó "no pude ni preguntar" por los dos lados. Eso no es silencio: es
-	// una ronda que no midió, y contarla como buena sería sumar tranquilidad de
-	// una comprobación que no ocurrió.
+	// Todos contestaron "no pude ni preguntar". Eso no es silencio: es una ronda
+	// que no midió, y contarla como buena sería sumar tranquilidad de una
+	// comprobación que no ocurrió.
 	if !c.ReportedMeasured() {
 		return CanaryUnconfirmed
 	}
-	// Dijo que llegó y al canario no lo tocó nadie. No puede ser una fuga,
-	// porque no llegó nada; y tampoco cuenta como comprobación buena.
+	// Alguien dijo que llegó y al canario no lo tocó nadie. No puede ser una
+	// fuga, porque no llegó nada; y tampoco cuenta como comprobación buena.
 	if c.ReportedReach() {
 		return CanaryMismatch
 	}
@@ -248,3 +372,20 @@ func (c CanaryCheck) NeedsAttention() bool {
 	v := c.Verdict()
 	return v == CanaryLeaking || v == CanaryMismatch
 }
+
+// ClearsAlarm dice si esta comprobación puede APAGAR la alarma.
+//
+// Solo una ronda que MIDIÓ y volvió limpia. Borrar una medición con una
+// no-medición es esconder, y esconder es justo lo que el resto de este archivo
+// existe para impedir.
+//
+// Deja fuera a [CanaryUnconfirmed], a [CanaryMismatch] y al cero, y los tres
+// importan por separado:
+//
+//   - Sin lo primero, un miembro apaga una fuga YA DEMOSTRADA con solo quedarse
+//     callado: su silencio deja la ronda sin confirmar y la alerta se iría. Eso
+//     invierte la doctrina de arriba, donde el techo de daño de callarse es
+//     esconder información y jamás borrarla.
+//   - Sin lo último, una ronda que ni llegó a abrirse produce el cero, y el cero
+//     apagaría la alarma él solo.
+func (c CanaryCheck) ClearsAlarm() bool { return c.Verdict() == CanaryClean }

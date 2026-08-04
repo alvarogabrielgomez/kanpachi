@@ -133,6 +133,31 @@ func (rs *RuleSet) Add(rules ...FirewallRule) {
 	sort.Slice(rs.Rules, func(i, j int) bool { return rs.Rules[i].Name < rs.Rules[j].Name })
 }
 
+// Allows dice si este conjunto deja ese puerto alcanzable para ALGUIEN.
+//
+// Lo usa el canario para no ligarse a un puerto que la propia Kanpachi abrió: un
+// oyente en un puerto permitido contesta con toda razón, y esa respuesta se
+// leería como que la compuerta no contiene. Ver `daemon/adapter/canary`.
+//
+// # Por qué ignora el protocolo y a quién se le abrió
+//
+// A propósito, y por asimetría de costos. El canario liga los dos protocolos a
+// la vez, y cualquier miembro de la sala puede ser el que marque, así que la
+// lectura correcta es "permitido para alguien por algún protocolo".
+//
+// Descartar un puerto de más cuesta un efímero más, que el sistema tiene de
+// sobra. Aceptar uno de menos cuesta **una alarma que grita con todo bien**, y
+// una alarma que se enciende en falso enseña al usuario a ignorar la única
+// comprobación que atraviesa la red de verdad.
+func (rs RuleSet) Allows(port uint16) bool {
+	for _, r := range rs.Rules {
+		if r.From <= port && port <= r.To {
+			return true
+		}
+	}
+	return false
+}
+
 // BuildRuleSet traduce perfil + rol + miembros presentes al estado deseado.
 //
 // Es la capa de política, y su contraparte es el catálogo, que es la capa de

@@ -305,3 +305,57 @@ func TestLasReglasDelCanalNoSeMezclanConLasDelJuego(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// RuleSet.Allows, que es lo que evita que el canario se ligue a un puerto que
+// la propia Kanpachi abrió
+// ---------------------------------------------------------------------------
+
+func TestUnPuertoDelJuegoActivoCuentaComoPermitido(t *testing.T) {
+	rs, err := BuildRuleSet(perfilEstrella(), RoleHost, ipLocal, []netip.Addr{ipUno})
+	if err != nil {
+		t.Fatalf("BuildRuleSet: %v", err)
+	}
+
+	// El perfil de estrella pide 16261-16262. Los bordes de adentro tienen que
+	// contar, y los de afuera no: un rango mal leído por uno deja al canario
+	// eligiendo justo el puerto que el juego abrió.
+	for _, p := range []uint16{16261, 16262} {
+		if !rs.Allows(p) {
+			t.Errorf("Allows(%d) = false, y el juego activo lo tiene abierto", p)
+		}
+	}
+	for _, p := range []uint16{16260, 16263} {
+		if rs.Allows(p) {
+			t.Errorf("Allows(%d) = true, y está fuera del rango del perfil", p)
+		}
+	}
+}
+
+// El conjunto vacío es el caso NORMAL: una sala sin juego elegido. Si acá
+// dijera que sí, el canario no encontraría ningún puerto aceptable y no se
+// abriría nunca.
+func TestElConjuntoVacíoNoPermiteNada(t *testing.T) {
+	var rs RuleSet
+	for _, p := range []uint16{0, 1, 49152, 57623, 65535} {
+		if rs.Allows(p) {
+			t.Errorf("Allows(%d) = true sobre un conjunto sin reglas", p)
+		}
+	}
+}
+
+// El hueco del canal de la sala también cuenta, y este test existe porque ese
+// puerto es el que más caro sale pisar: el canario ligándose ahí competiría con
+// el oyente de la sala, y su respuesta se leería como una fuga.
+func TestElHuecoDelCanalDeLaSalaCuentaComoPermitido(t *testing.T) {
+	canal, err := ControlRules(RoleHost, RendezvousHostAddress, ipLocal, []netip.Addr{ipUno})
+	if err != nil {
+		t.Fatalf("ControlRules: %v", err)
+	}
+	var rs RuleSet
+	rs.Add(canal...)
+
+	if !rs.Allows(ControlPort) {
+		t.Fatalf("Allows(%d) = false, y es el puerto del canal de la sala", ControlPort)
+	}
+}
