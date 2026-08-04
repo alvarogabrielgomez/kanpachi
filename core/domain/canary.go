@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"fmt"
+	"net/netip"
+	"time"
+)
 
 // La comprobación con canario, y por qué el informe del invitado NO es prueba.
 //
@@ -45,6 +49,68 @@ import "time"
 //
 // Por eso el estado bueno se llama [CanaryClean] y no "bloqueando": describe que
 // no hay evidencia de fuga, que es lo que de verdad se sabe.
+
+// CanaryRequest es lo que el host le pide a un miembro: que le marque.
+//
+// # El campo que NO viaja, y es la invariante entera
+//
+// [CanaryRequest.Host] la rellena el ADAPTADOR con la dirección de la conexión
+// que el invitado ya tiene abierta contra el host. **En el cable no existe un
+// campo de dirección.**
+//
+// Sin esa regla, este mensaje convertiría el canal de la sala en un escáner de
+// puertos por encargo: cualquiera de la sala le pediría a los demás que marcaran
+// a una máquina de fuera, y el tráfico saldría de las casas de otros. Lo que
+// impide eso no es una comprobación, es que no hay forma de expresarlo.
+type CanaryRequest struct {
+	// Host es a quién marcar, y sale de la CONEXIÓN. Ver arriba.
+	Host netip.Addr
+	Port uint16
+	// Nonce ata la pregunta con la respuesta, y hace falta por UDP, que no
+	// tiene conexión. Ver `daemon/adapter/canary`.
+	Nonce [CanaryNonceSize]byte
+}
+
+// CanaryNonceSize es el largo del número, y es fijo a propósito: por UDP se lee
+// exactamente esta cantidad, así que nada de lo que llegue de fuera decide
+// cuánta memoria se toca.
+const CanaryNonceSize = 16
+
+// Valid comprueba lo que el adaptador no puede dar por bueno.
+//
+// Un puerto en cero abriría un sondeo a "cualquier puerto", y una dirección sin
+// rellenar significa que el adaptador no supo de qué conexión venía, que es
+// justo el caso en el que este mensaje no se puede atender.
+func (r CanaryRequest) Valid() error {
+	if !r.Host.IsValid() {
+		return fmt.Errorf("canario: sin dirección del host. Tiene que salir de la conexión, " +
+			"y que llegue vacía significa que no se supo de qué conexión venía")
+	}
+	if r.Port == 0 {
+		return fmt.Errorf("canario: puerto cero")
+	}
+	if r.Nonce == ([CanaryNonceSize]byte{}) {
+		// Un número en ceros lo puede adivinar cualquiera, y por UDP el número
+		// es lo único que distingue el eco del canario de un paquete suelto.
+		return fmt.Errorf("canario: el número viene en ceros")
+	}
+	return nil
+}
+
+// CanaryReport es lo que el miembro contesta.
+//
+// [CanaryReport.From] también la rellena el adaptador desde la conexión, por lo
+// mismo: sin eso, un miembro podría informar en nombre de otro y el host no
+// tendría cómo saber quién midió.
+//
+// Es una PISTA y no una prueba. Lo que el host da por cierto es lo que vio él,
+// que es [CanaryCheck.Touched].
+type CanaryReport struct {
+	From netip.Addr
+	Port uint16
+	TCP  ProbeOutcome
+	UDP  ProbeOutcome
+}
 
 // CanaryVerdict es la conclusión de una comprobación con canario.
 type CanaryVerdict uint8

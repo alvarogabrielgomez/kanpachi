@@ -40,9 +40,14 @@ const (
 	KindNotice Kind = "notice"
 	// KindCode es el invite ID nuevo tras renovarlo, sellado.
 	KindCode Kind = "code"
-	// KindAck es el acuse de un aviso. Es lo único que un miembro manda por la
-	// sala.
+	// KindAck es el acuse de un aviso.
 	KindAck Kind = "ack"
+
+	// KindCanaryRequest es el host pidiéndole a un miembro que le marque al
+	// canario. Ver [domain.CanaryRequest].
+	KindCanaryRequest Kind = "canary_request"
+	// KindCanaryReport es lo que ese miembro contesta.
+	KindCanaryReport Kind = "canary_report"
 )
 
 // Las cuatro tablas de admisión. Son cuatro y no una porque hay dos oyentes con
@@ -59,12 +64,14 @@ var (
 	// Un anuncio o un aviso que llegue por acá se descarta sin interpretarse:
 	// aceptarlos le permitiría a un miembro modificado cambiarle el juego
 	// activo a la máquina donde se abren los puertos.
-	admitidoEnLaSala = map[Kind]bool{KindAck: true}
+	admitidoEnLaSala = map[Kind]bool{KindAck: true, KindCanaryReport: true}
 	// admitidoDeLaPuerta es lo que el INVITADO acepta mientras está en el
 	// vestíbulo.
 	admitidoDeLaPuerta = map[Kind]bool{KindCredentialResponse: true}
 	// admitidoDelHost es lo que el INVITADO acepta por la conexión de la sala.
-	admitidoDelHost = map[Kind]bool{KindAnnounce: true, KindNotice: true, KindCode: true}
+	admitidoDelHost = map[Kind]bool{
+		KindAnnounce: true, KindNotice: true, KindCode: true, KindCanaryRequest: true,
+	}
 )
 
 // envelope es el sobre. Kind primero, contenido opaco hasta saber que el tipo
@@ -144,6 +151,100 @@ type codeMsg struct {
 type roomMsg struct {
 	InviteID string `json:"invite_id"`
 	Seed     string `json:"seed"`
+}
+
+// canaryRequestMsg es el host pidiéndole a un miembro que le marque al canario.
+//
+// # Lo que NO lleva, y es toda la invariante
+//
+// **No hay campo de dirección.** El invitado marca a la dirección de la conexión
+// que ya tiene abierta con el host, y no hay forma de pedirle otra cosa.
+//
+// Con un campo de dirección acá, este mensaje convertiría el canal de la sala en
+// un escáner de puertos por encargo: cualquiera de la sala le pediría a los
+// demás que marcaran a una máquina de fuera, y el tráfico saldría de las casas
+// de otros. Lo que lo impide no es una comprobación que alguien pueda quitar: es
+// que el tipo no lo puede expresar.
+type canaryRequestMsg struct {
+	Port  uint16 `json:"port"`
+	Nonce []byte `json:"nonce"`
+}
+
+// canaryReportMsg es lo que ese miembro contesta.
+//
+// Tampoco lleva quién lo manda, por lo mismo: el host lo saca de la conexión. Si
+// viajara en el mensaje, un miembro podría informar en nombre de otro.
+//
+// Lleva el puerto para que el host descarte una respuesta que llega tarde, de un
+// canario que ya cerró. Sin eso, un informe atrasado se leería como el de la
+// comprobación en curso.
+type canaryReportMsg struct {
+	Port uint16 `json:"port"`
+	TCP  string `json:"tcp"`
+	UDP  string `json:"udp"`
+}
+
+// probeOutcomes es la tabla cerrada de resultados, en las dos direcciones.
+//
+// Como cadenas y no como el número del iota, por lo mismo que [noticeKinds]:
+// agregar un resultado en medio del bloque le cambiaría el significado a todos
+// los de abajo en una versión ya instalada del otro lado.
+var probeOutcomes = map[string]domain.ProbeOutcome{
+	"answered": domain.ProbeAnswered,
+	"refused":  domain.ProbeRefused,
+	"silent":   domain.ProbeSilent,
+	"failed":   domain.ProbeFailed,
+}
+
+func probeOutcomeName(o domain.ProbeOutcome) (string, bool) {
+	for nombre, valor := range probeOutcomes {
+		if valor == o {
+			return nombre, true
+		}
+	}
+	return "", false
+}
+
+// probeOutcomeFrom interpreta lo que llegó, y lo desconocido cae en
+// [domain.ProbeFailed].
+//
+// En "no se pudo preguntar" y jamás en "silencio", que es el lado seguro: un
+// resultado que no se sabe leer no puede contarse como que el puerto está
+// cerrado. Lo desconocido tiene que restar confianza, no darla.
+func probeOutcomeFrom(s string) domain.ProbeOutcome {
+	if o, ok := probeOutcomes[s]; ok {
+		return o
+	}
+	return domain.ProbeFailed
+}
+
+// canaryRequestFromWire reconstruye el pedido PONIENDO la dirección desde la
+// conexión, que es el único sitio de donde puede salir.
+func canaryRequestFromWire(host netip.Addr, m canaryRequestMsg) (domain.CanaryRequest, error) {
+	if len(m.Nonce) != domain.CanaryNonceSize {
+		return domain.CanaryRequest{}, fmt.Errorf("%w: el número del canario mide %d y "+
+			"tiene que medir %d", errShape, len(m.Nonce), domain.CanaryNonceSize)
+	}
+	req := domain.CanaryRequest{Host: host, Port: m.Port}
+	copy(req.Nonce[:], m.Nonce)
+
+	// El dominio recomprueba lo suyo. Los tipos del dominio se reconstruyen por
+	// sus validadores y jamás se creen, que es la regla 5 de este paquete.
+	if err := req.Valid(); err != nil {
+		return domain.CanaryRequest{}, fmt.Errorf("%w: %v", errShape, err)
+	}
+	return req, nil
+}
+
+// canaryReportFromWire reconstruye el informe, con el remitente sacado de la
+// conexión por el mismo motivo.
+func canaryReportFromWire(from netip.Addr, m canaryReportMsg) domain.CanaryReport {
+	return domain.CanaryReport{
+		From: from,
+		Port: m.Port,
+		TCP:  probeOutcomeFrom(m.TCP),
+		UDP:  probeOutcomeFrom(m.UDP),
+	}
 }
 
 // noticeKinds es la tabla cerrada de avisos, en las dos direcciones.

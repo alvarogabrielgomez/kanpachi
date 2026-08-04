@@ -353,10 +353,17 @@ type controlFalso struct {
 	avisosEntrantes chan domain.RoomNotice
 	códigos         []domain.Room
 	códigosEntantes chan domain.Room
-	errNotify       error
-	errCódigo       error
-	credencial      domain.Credential
-	cierres         int
+
+	// El canario.
+	pedidosCanario   []canarioPedido
+	informesMandados []domain.CanaryReport
+	informesCanario  chan domain.CanaryReport
+	pedidosEntrantes chan domain.CanaryRequest
+	errCanario       error
+	errNotify        error
+	errCódigo        error
+	credencial       domain.Credential
+	cierres          int
 
 	errServe error
 	errDial  error
@@ -365,10 +372,12 @@ type controlFalso struct {
 
 func nuevoControl() *controlFalso {
 	return &controlFalso{
-		presencia:       make(chan bool, 4),
-		entrantes:       make(chan domain.RoomAnnounce, 4),
-		avisosEntrantes: make(chan domain.RoomNotice, 4),
-		códigosEntantes: make(chan domain.Room, 4),
+		presencia:        make(chan bool, 4),
+		entrantes:        make(chan domain.RoomAnnounce, 4),
+		avisosEntrantes:  make(chan domain.RoomNotice, 4),
+		códigosEntantes:  make(chan domain.Room, 4),
+		informesCanario:  make(chan domain.CanaryReport, 4),
+		pedidosEntrantes: make(chan domain.CanaryRequest, 4),
 	}
 }
 
@@ -428,6 +437,30 @@ func (c *controlFalso) AnnounceCode(_ context.Context, r domain.Room) error {
 }
 
 func (c *controlFalso) Codes() <-chan domain.Room { return c.códigosEntantes }
+
+// El canario. `pedidos` guarda a quién se le pidió y qué, que es lo que un test
+// necesita para afirmar que el destino salió de la conexión y no de un campo.
+func (c *controlFalso) RequestCanary(_ context.Context, to netip.Addr, req domain.CanaryRequest) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.pedidosCanario = append(c.pedidosCanario, canarioPedido{A: to, Req: req})
+	return c.errCanario
+}
+
+func (c *controlFalso) CanaryReports() <-chan domain.CanaryReport   { return c.informesCanario }
+func (c *controlFalso) CanaryRequests() <-chan domain.CanaryRequest { return c.pedidosEntrantes }
+
+func (c *controlFalso) SendCanaryReport(_ context.Context, r domain.CanaryReport) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.informesMandados = append(c.informesMandados, r)
+	return nil
+}
+
+type canarioPedido struct {
+	A   netip.Addr
+	Req domain.CanaryRequest
+}
 
 func (c *controlFalso) códigosRepartidos() []domain.Room {
 	c.mu.Lock()

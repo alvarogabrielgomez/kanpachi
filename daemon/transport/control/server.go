@@ -348,12 +348,67 @@ func (s *server) read(pc *peerConn) {
 			s.ch.log().Warn("mensaje descartado en la sala", "tipo", string(e.Kind), "ip", pc.addr.String())
 			continue
 		}
-		ack, err := payloadOf[ackMsg](e)
-		if err != nil {
-			return
+		switch e.Kind {
+		case KindAck:
+			ack, err := payloadOf[ackMsg](e)
+			if err != nil {
+				return
+			}
+			s.deliverAck(ack.Seq)
+
+		case KindCanaryReport:
+			msg, err := payloadOf[canaryReportMsg](e)
+			if err != nil {
+				return
+			}
+			// El remitente sale de la CONEXIÓN, `pc.addr`, y jamás del mensaje.
+			// Con un campo de remitente, un miembro podría informar en nombre
+			// de otro y el host no tendría cómo saber quién midió.
+			emitir(s.ch, s.ch.canaryReports, canaryReportFromWire(pc.addr, msg), "informe del canario")
 		}
-		s.deliverAck(ack.Seq)
 	}
+}
+
+// RequestCanary le pide a UN miembro que marque al canario. SOLO el host.
+//
+// # Por qué a uno y no a todos
+//
+// Porque el canario es un socket abierto con plazo, y pedírselo a la sala entera
+// multiplicaría los que marcan sin agregar información: el hecho que decide es
+// si el paquete cruzó, y con uno que cruce ya está. Preguntarle a varios sirve
+// para otra cosa, para acotar la mentira, y eso es política y vive en el caso de
+// uso, que llama a esto una vez por cada uno.
+//
+// # Lo que NO se le manda
+//
+// La dirección. Ver [canaryRequestMsg]: el invitado marca a la conexión que ya
+// tiene abierta contra este host, y no hay forma de pedirle otro destino.
+func (c *Channel) RequestCanary(ctx context.Context, to netip.Addr, req domain.CanaryRequest) error {
+	s, err := c.host()
+	if err != nil {
+		return err
+	}
+	if !to.IsValid() {
+		// Sin destino no se difunde: un pedido a todos abriría tantos sondeos
+		// como miembros haya contra un canario que espera uno.
+		return fmt.Errorf("hay que decir a quién pedírselo")
+	}
+	if req.Port == 0 {
+		return fmt.Errorf("el canario no dio puerto")
+	}
+
+	pc, ok := s.peer(to)
+	if !ok {
+		return fmt.Errorf("no hay canal abierto con %s", to)
+	}
+	sobre, err := wrap(KindCanaryRequest, canaryRequestMsg{
+		Port:  req.Port,
+		Nonce: req.Nonce[:],
+	})
+	if err != nil {
+		return err
+	}
+	return pc.write(sobre)
 }
 
 func (s *server) deliverAck(seq uint64) {

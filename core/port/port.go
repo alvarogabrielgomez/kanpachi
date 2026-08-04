@@ -426,6 +426,30 @@ type ControlChannel interface {
 	// adaptador solo emite lo que llegó por la conexión al host.
 	Codes() <-chan domain.Room
 
+	// RequestCanary le pide a UN miembro que marque al canario del host. SOLO
+	// el host, y a uno por llamada.
+	//
+	// **En el cable NO viaja ninguna dirección**, y esa ausencia es la
+	// invariante: el invitado marca a la dirección de la conexión que ya tiene
+	// abierta contra el host. Con un campo de destino, este mensaje convertiría
+	// el canal de la sala en un escáner de puertos por encargo contra terceros,
+	// y el tráfico saldría de las casas de los miembros.
+	RequestCanary(ctx context.Context, to netip.Addr, req domain.CanaryRequest) error
+	// CanaryReports es el lado del HOST. El remitente lo pone el adaptador
+	// desde la conexión, así que un miembro no puede informar por otro.
+	//
+	// Lo que llega por acá es una PISTA. Lo que el host da por cierto es lo que
+	// vio su propio canario. Ver [domain.CanaryCheck].
+	CanaryReports() <-chan domain.CanaryReport
+
+	// CanaryRequests es el lado del INVITADO. Cada pedido llega con la
+	// dirección del host ya puesta desde la conexión.
+	CanaryRequests() <-chan domain.CanaryRequest
+	// SendCanaryReport contesta por la conexión de la sala. No espera acuse:
+	// perder un informe cuesta que esa ronda quede sin confirmar, que ya es un
+	// estado del dominio.
+	SendCanaryReport(ctx context.Context, r domain.CanaryReport) error
+
 	// RequestCredential es el paso 5 del canje. El adaptador rellena la llave
 	// pública desde identity.key antes de firmar: esa llave vive en disco con
 	// ACL propia y core no la conoce, que es justo lo que la decisión 25

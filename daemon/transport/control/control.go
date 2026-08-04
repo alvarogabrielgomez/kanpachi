@@ -143,6 +143,12 @@ type Channel struct {
 	announces chan domain.RoomAnnounce
 	notices   chan domain.RoomNotice
 	codes     chan domain.Room
+	// canaryReqs es lo que el HOST le pide a este invitado, y canaryReports lo
+	// que los invitados le contestan a este host. Nunca están los dos vivos en
+	// la misma máquina, y van igual como dos canales: uno solo obligaría a
+	// mirar el rol para saber qué llegó.
+	canaryReqs    chan domain.CanaryRequest
+	canaryReports chan domain.CanaryReport
 }
 
 // New arma el canal. Todavía no escucha ni marca nada.
@@ -159,6 +165,9 @@ func New(deps Deps) *Channel {
 		announces: make(chan domain.RoomAnnounce, outBuffer),
 		notices:   make(chan domain.RoomNotice, outBuffer),
 		codes:     make(chan domain.Room, outBuffer),
+
+		canaryReqs:    make(chan domain.CanaryRequest, outBuffer),
+		canaryReports: make(chan domain.CanaryReport, outBuffer),
 	}
 }
 
@@ -177,6 +186,20 @@ func (c *Channel) HostPresence() <-chan bool                 { return c.presence
 func (c *Channel) Announcements() <-chan domain.RoomAnnounce { return c.announces }
 func (c *Channel) Notices() <-chan domain.RoomNotice         { return c.notices }
 func (c *Channel) Codes() <-chan domain.Room                 { return c.codes }
+
+// CanaryRequests es el lado del INVITADO: lo que el host le pide marcar.
+//
+// Cada pedido llega con la dirección del host YA PUESTA por el adaptador, desde
+// la conexión. En el cable no viaja ninguna dirección, así que quien lea de este
+// canal no puede recibir un destino que el host no sea. Ver
+// [domain.CanaryRequest].
+func (c *Channel) CanaryRequests() <-chan domain.CanaryRequest { return c.canaryReqs }
+
+// CanaryReports es el lado del HOST: lo que contestan los miembros.
+//
+// Igual que arriba, el remitente sale de la conexión. Es una PISTA y no una
+// prueba: lo que el host da por cierto es lo que vio su propio canario.
+func (c *Channel) CanaryReports() <-chan domain.CanaryReport { return c.canaryReports }
 func (c *Channel) log() port.Logger                          { return c.deps.Log }
 func (c *Channel) now() time.Time                            { return c.deps.Clock.Now() }
 func (c *Channel) dial(ctx context.Context, to netip.AddrPort) (net.Conn, error) {

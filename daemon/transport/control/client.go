@@ -170,6 +170,43 @@ func (c *client) adopt(conn net.Conn) {
 	c.conn, c.w = conn, wire.NewWriter(conn, MaxMessage)
 }
 
+// SendCanaryReport le cuenta al host lo que se vio. SOLO el invitado.
+//
+// Va por la conexión de la SALA, que es la única abierta contra el host, así que
+// no hace falta decir a quién: el host saca el remitente de esa misma conexión.
+//
+// No espera acuse, a diferencia de un aviso de expulsión. Perder un informe
+// cuesta que el host no confirme esa ronda, y eso ya tiene su estado
+// ([domain.CanaryUnconfirmed]). Esperar acuse acá metería una espera en el
+// camino de un miembro cualquiera, que es lo último que conviene en el código
+// que corre como SYSTEM del otro lado.
+func (c *Channel) SendCanaryReport(ctx context.Context, r domain.CanaryReport) error {
+	c.mu.Lock()
+	cli := c.cli
+	c.mu.Unlock()
+
+	if cli == nil || cli.puerta {
+		// Por la puerta no: ahí solo se pide credencial, y el canario es de la
+		// sala. Ver [admitidoEnLaPuerta].
+		return ErrNotDialed
+	}
+
+	tcp, ok := probeOutcomeName(r.TCP)
+	if !ok {
+		return fmt.Errorf("resultado de TCP desconocido: %d", r.TCP)
+	}
+	udp, ok := probeOutcomeName(r.UDP)
+	if !ok {
+		return fmt.Errorf("resultado de UDP desconocido: %d", r.UDP)
+	}
+
+	sobre, err := wrap(KindCanaryReport, canaryReportMsg{Port: r.Port, TCP: tcp, UDP: udp})
+	if err != nil {
+		return err
+	}
+	return cli.write(sobre)
+}
+
 func (c *client) write(e envelope) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -260,6 +297,26 @@ func (c *client) reparte(e envelope) bool {
 		emitir(c.ch, c.ch.notices, domain.RoomNotice{
 			Kind: kind, Reason: domain.ClampRoomName(msg.Reason),
 		}, "aviso")
+
+	case KindCanaryRequest:
+		msg, err := payloadOf[canaryRequestMsg](e)
+		if err != nil {
+			return false
+		}
+		// **Acá vive la invariante entera de esta función.** El destino sale de
+		// `c.at.Addr()`, que es la dirección A LA QUE ESTA MÁQUINA MARCÓ para
+		// entrar a la sala. No sale del mensaje, y no puede salir del mensaje
+		// porque [canaryRequestMsg] no tiene campo de dirección.
+		//
+		// Sin eso, este mensaje convertiría el canal de la sala en un escáner
+		// por encargo: un host modificado le pediría a todos los miembros que
+		// marcaran a una máquina de fuera, y el tráfico saldría de sus casas.
+		req, err := canaryRequestFromWire(c.at.Addr(), msg)
+		if err != nil {
+			c.ch.log().Warn("llegó un pedido de canario mal formado")
+			return true
+		}
+		emitir(c.ch, c.ch.canaryReqs, req, "pedido de canario")
 
 	case KindCode:
 		msg, err := payloadOf[codeMsg](e)
