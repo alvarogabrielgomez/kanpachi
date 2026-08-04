@@ -249,9 +249,11 @@ de base no se acota ni por IP ni por adaptador, y la razón ya está escrita en
    condiciones.
 5. **Paso 4, el `blockAll` solo**: ~120 líneas. **Vale por sí solo**: con esto y
    nada más, `kanpachi0` queda inalcanzable salvo por lo que los permisos COM
-   abran. Es el 80% del valor.
+   abran. Es el 80% del valor. **Medido funcionando el 2026-08-04.**
 6. **Paso 5, permisos espejo**: ~250 líneas, con transacción y diff por
-   `providerKey`.
+   `providerKey`. **Medido funcionando el 2026-08-04**: un permiso propio SOFT
+   sobrevive junto al bloqueo propio HARD, y el veto del usuario le sigue
+   ganando a los dos.
 7. **Paso 6**: `Enforcement()` en la pantalla, con marca de cuándo se midió, y el
    botón que vale más que toda la pantalla: **"probar desde otra PC"**, que corre
    en el invitado contra la IP virtual del host.
@@ -297,22 +299,72 @@ en el Firewall de Windows. Lo único que podía tirar ese paquete era el filtro.
 sublayer de Windows, sin tocarlo y sin pedirle nada al usuario.** Es la
 asimetría documentada por Microsoft, y ahora también medida acá.
 
-### Lo que esto NO prueba todavía
+### Las tres que faltaban, medidas el 2026-08-04
 
-Se dice explícito para que nadie lo lea como un cheque en blanco:
+Las cuatro salieron del lado bueno. **El diseño híbrido queda validado entero.**
 
-1. **El filtro se instaló SIN condición de interfaz** (`luid = 0`), o sea que
-   aplicaba a todos los adaptadores. El riesgo número 5 de la lista de abierto
-   sigue intacto: si la condición de interfaz llega vacía al reautorizar un
-   flujo, el `blockAll` deja de casar **en silencio**. Eso no se midió.
-2. **Se midió un bloqueo de UN puerto, no un `blockAll`.** El diseño real
-   necesita bloquear todo salvo lo permitido, y ahí entran los permisos espejo,
-   que en nuestro sublayer son SOFT. Que un soft permit propio sobreviva junto a
-   un hard block propio no está comprobado.
-3. **No se probó que el veto del usuario siga ganando.** La decisión 4 dice que
-   sus bloqueos ganan sobre los nuestros. Con el sublayer a peso 0x8000 y sin
-   hard permits debería seguir siendo cierto, y "debería" no es "se midió".
-4. **No se usó Parsec de verdad**, sino un listener propio. Para el arbitraje da
+**1. La condición de interfaz SÍ se aplica.** Era el riesgo que podía dejar todo
+el trabajo en cero.
+
+| Alcance del bloqueo del 45871 | 45871 | 45872 |
+|---|---|---|
+| `-adapter "Wi-Fi"`, por donde llega el invitado | **NO CONECTA** 6.001s | CONECTA 6ms |
+| `-adapter "Tailscale"`, otro adaptador | **CONECTA** 8ms | CONECTA 5ms |
+
+Mismo filtro, mismo puerto, misma máquina: lo único que cambió fue el LUID y el
+resultado se dio la vuelta. Una sola variable.
+
+De regalo, la fila de arriba prueba que la condición de PUERTO y la de INTERFAZ
+se combinan bien: el 45872 siguió conectando mientras el 45871 estaba bloqueado.
+Si el filtro casara con todo, habrían caído los dos.
+
+**2. El `blockAll` con permiso espejo funciona, y las dos mitades importan.**
+
+| Puerto | Resultado con `blockall -adapter "Wi-Fi" -except 45871` |
+|---|---|
+| 45872 | **NO CONECTA** 6.001s, con el permiso del Firewall de Windows vivo |
+| 45871 | **CONECTA** 6ms, por el permiso espejo SOFT |
+
+Que el 45872 caiga prueba el bloqueo total. Que el 45871 pase prueba que un
+permiso propio SOFT sobrevive junto a un bloqueo propio HARD, que es la parte de
+la que depende que el juego pueda abrir su puerto y que nadie había comprobado.
+
+**3. El veto del usuario sigue ganando.** Con el `blockAll` y el permiso espejo
+puestos, se añadió un bloqueo del usuario en su Firewall sobre el 45871: pasó de
+conectar a **NO CONECTAR**. Otra comparación de una sola variable, con nuestro
+permiso intacto. La decisión 4 se sostiene.
+
+### Un control que apareció solo
+
+Durante las mediciones 2 y 3 había además dos reglas `Query User{...}` de tipo
+Allow que el diálogo de Windows había creado sobre el binario. **Eso hace el
+resultado más fuerte y no más débil**: había TRES permisos cubriendo esos puertos
+y el `blockAll` les ganó igual.
+
+Y dejó un control perfecto sin buscarlo: el 45871 y el 45872 tenían exactamente
+la misma cobertura en el Firewall de Windows, y lo único que los diferenciaba era
+nuestro permiso espejo. Uno conectó y el otro no, lo que aísla ese permiso como
+la única causa posible.
+
+Se confirmaron vivas por otro camino, y este cerró el círculo entero. Tras un
+`clean` el invitado **seguía conectando**, porque esas reglas cubren el binario
+completo en cualquier puerto y `clean` no las conoce: no son suyas. Quitadas a
+mano, y con el listener todavía vivo y sin ningún permiso puesto, el invitado
+**dejó de conectar a los dos puertos**.
+
+Eso confirma tres cosas de golpe: que esas reglas eran lo que dejaba pasar el
+tráfico, que el deny-all por defecto de Windows está operando de verdad, y que la
+máquina quedó limpia según una medición externa y no solo según lo que dice la
+propia herramienta.
+
+### Lo que sigue sin probarse
+
+1. **La reautorización de un flujo YA existente.** Lo medido son conexiones
+   nuevas. El riesgo escrito era más fino: que la condición de interfaz llegue
+   vacía al reautorizar, por ejemplo tras reiniciar el servicio o al cambiar el
+   adaptador. La mitigación de emitir el bloqueo dos veces, por LUID y por
+   dirección local del `/24`, sigue valiendo como cinturón y tirantes.
+2. **No se usó Parsec de verdad**, sino un listener propio. Para el arbitraje da
    igual, porque una regla por programa y una por puerto viven las dos en el
    sublayer de Windows, y eso no cambia quién gana.
 
@@ -362,11 +414,14 @@ Se dice explícito para que nadie lo lea como un cheque en blanco:
    interfaz abre. **Sigue siendo cierto.** Lo que cambia es la consecuencia,
    porque los permisos COM quedan debajo. Hay que escribirlo así o en seis meses
    alguien lo "arregla" al revés.
-5. **El riesgo que puede dejar el trabajo en cero.** Si la condición de interfaz
-   llega vacía al reautorizar un flujo, el `blockAll` deja de casar **en
-   silencio** y la pantalla diría verde. No se cerró leyendo la doc. Mitigación
-   de 20 líneas: emitir el `blockAll` **dos veces**, por LUID y por dirección
-   local sobre el `/24` de la sala.
+5. **El riesgo que podía dejar el trabajo en cero, ahora acotado.** Medido el
+   2026-08-04: la condición de interfaz **sí se aplica** en conexiones nuevas,
+   comprobado por los dos lados, acotando a la interfaz por la que llega el
+   invitado y a otra distinta. Lo que queda sin medir es más estrecho: que la
+   condición llegue vacía al **reautorizar un flujo YA existente**, tras
+   reiniciar el servicio o al cambiar el adaptador. La mitigación de 20 líneas
+   sigue en pie por si acaso: emitir el `blockAll` **dos veces**, por LUID y por
+   dirección local sobre el `/24` de la sala.
 
 ---
 
