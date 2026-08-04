@@ -51,7 +51,9 @@ func canario(args []string) error {
 		return fmt.Errorf("no se pudo generar el número del canario: %w", err)
 	}
 
-	c, err := canary.Listen(at, nonce, canary.TTLMax, logConsola{})
+	// Sin `avoid`: este arnés no tiene un RuleSet del que sacar qué puertos
+	// abrió el juego activo. El que sí lo tiene es el daemon, por `opener`.
+	c, err := canary.Listen(at, nonce, canary.TTLMax, nil, logConsola{})
 	if err != nil {
 		return err
 	}
@@ -64,18 +66,22 @@ func canario(args []string) error {
 		at, c.Port(), hex.EncodeToString(nonce[:]))
 	fmt.Printf("  se cierra solo en %v\n\n", canary.TTLMax)
 
-	// Se espera al plazo duro o a que corten. Lo que importa al final es
-	// `Touched`, que es un hecho PROPIO: si alguien llegó hasta el socket, el
-	// paquete cruzó la compuerta, lo diga quien lo diga desde la otra máquina.
+	// Se corta con lo primero de tres: que lo toquen, el plazo duro, o Ctrl+C.
+	// Cortar en el toque es lo que hace que el script de dos máquinas termine
+	// enseguida en la fase con la compuerta purgada, en vez de esperar el plazo.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
 	select {
+	case <-c.Touched():
 	case <-sig:
 	case <-time.After(canary.TTLMax):
 	}
 
+	// Lo que importa al final es `WasTouched`, que es un hecho PROPIO: si alguien
+	// llegó hasta el socket, el paquete cruzó la compuerta, lo diga quien lo diga
+	// desde la otra máquina.
 	fmt.Println()
-	if c.Touched() {
+	if c.WasTouched() {
 		fmt.Println("  LO TOCARON. El paquete cruzó: la compuerta no está bloqueando.")
 		return nil
 	}

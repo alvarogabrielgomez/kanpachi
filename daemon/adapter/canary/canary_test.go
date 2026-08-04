@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -27,7 +28,7 @@ func nonceDePrueba() Nonce {
 
 func abrir(t *testing.T) *Canary {
 	t.Helper()
-	c, err := Listen(aquí(), nonceDePrueba(), 5*time.Second, logMudo{})
+	c, err := Listen(aquí(), nonceDePrueba(), 5*time.Second, nil, logMudo{})
 	if err != nil {
 		t.Fatalf("no se pudo abrir el canario: %v", err)
 	}
@@ -66,7 +67,7 @@ func TestElCanarioSeNiegaALigarEnTodasLasInterfaces(t *testing.T) {
 		"::":            netip.MustParseAddr("::"),
 	}
 	for nombre, at := range casos {
-		if c, err := Listen(at, nonceDePrueba(), time.Second, logMudo{}); err == nil {
+		if c, err := Listen(at, nonceDePrueba(), time.Second, nil, logMudo{}); err == nil {
 			_ = c.Close()
 			t.Errorf("%s: el canario ligó y no debía", nombre)
 		}
@@ -76,7 +77,7 @@ func TestElCanarioSeNiegaALigarEnTodasLasInterfaces(t *testing.T) {
 func TestUnaConexionTCPCuentaComoToque(t *testing.T) {
 	c := abrir(t)
 
-	if c.Touched() {
+	if c.WasTouched() {
 		t.Fatal("nació tocado")
 	}
 	conn, err := net.DialTimeout("tcp", destino(c), 2*time.Second)
@@ -163,7 +164,7 @@ func TestUnDatagramaQueNoCuadraNiVuelveNiCuentaComoToque(t *testing.T) {
 	if n, err := conn.Read(buf); err == nil {
 		t.Fatalf("el canario contestó %d bytes a un número que no era el suyo", n)
 	}
-	if c.Touched() {
+	if c.WasTouched() {
 		t.Fatal("un datagrama que no cuadra contó como toque. Cualquier paquete " +
 			"perdido encendería la alarma")
 	}
@@ -172,7 +173,7 @@ func TestUnDatagramaQueNoCuadraNiVuelveNiCuentaComoToque(t *testing.T) {
 // Lo llama el camino normal y también el plazo duro, y los dos pueden ganar la
 // carrera.
 func TestCerrarDosVecesNoRompeNada(t *testing.T) {
-	c, err := Listen(aquí(), nonceDePrueba(), time.Second, logMudo{})
+	c, err := Listen(aquí(), nonceDePrueba(), time.Second, nil, logMudo{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +188,7 @@ func TestCerrarDosVecesNoRompeNada(t *testing.T) {
 // El plazo duro existe porque el oyente lo abre un proceso que corre como
 // SYSTEM: si quien tenía que cerrarlo se muere, el socket no puede quedar vivo.
 func TestElCanarioSeCierraSoloAlVencerElPlazo(t *testing.T) {
-	c, err := Listen(aquí(), nonceDePrueba(), 150*time.Millisecond, logMudo{})
+	c, err := Listen(aquí(), nonceDePrueba(), 150*time.Millisecond, nil, logMudo{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +210,7 @@ func TestElCanarioSeCierraSoloAlVencerElPlazo(t *testing.T) {
 func TestElPlazoSeRecortaAlTope(t *testing.T) {
 	// Un plazo enorme no puede dejar el socket abierto una hora. Se comprueba
 	// por el efecto y no por un campo, que es lo que de verdad importa.
-	c, err := Listen(aquí(), nonceDePrueba(), 10*time.Hour, logMudo{})
+	c, err := Listen(aquí(), nonceDePrueba(), 10*time.Hour, nil, logMudo{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,14 +222,120 @@ func TestElPlazoSeRecortaAlTope(t *testing.T) {
 	}
 }
 
+// esperarToque espera por el CANAL, que es como lo espera la ronda de verdad.
+//
+// Sondear `WasTouched` en un bucle también funcionaría y probaría menos: el
+// canal es lo que hace que una ronda corte en el primer toque en vez de esperar
+// su plazo entero, y si nunca se cerrara, este arnés no lo notaría.
 func esperarToque(t *testing.T, c *Canary) {
 	t.Helper()
-	plazo := time.Now().Add(2 * time.Second)
-	for time.Now().Before(plazo) {
-		if c.Touched() {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
+	select {
+	case <-c.Touched():
+	case <-time.After(2 * time.Second):
+		t.Fatal("el canario no avisó del toque por su canal")
 	}
-	t.Fatal("el canario no registró el toque")
+	if !c.WasTouched() {
+		t.Fatal("avisó por el canal y el hecho quedó en falso")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// El canal de toque
+// ---------------------------------------------------------------------------
+
+// LA TRAMPA.
+//
+// Un canal cerrado se lee como listo. Si `Close` cerrara el canal de toque, toda
+// ronda concluiría que hubo fuga en cuanto cerrara su canario, o sea siempre, y
+// la alarma que este producto tiene para el caso más grave se encendería en cada
+// comprobación.
+func TestCerrarNoHaceQueUnCanarioSinTocarParezcaTocado(t *testing.T) {
+	c, err := Listen(aquí(), nonceDePrueba(), 5*time.Second, nil, logMudo{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatalf("el cierre falló: %v", err)
+	}
+
+	select {
+	case <-c.Touched():
+		t.Fatal("cerrar el canario lo hizo parecer tocado. Así, toda ronda termina " +
+			"en alarma y la única comprobación que cruza la red deja de valer")
+	default:
+	}
+	if c.WasTouched() {
+		t.Error("cerrar no puede cambiar el hecho")
+	}
+}
+
+// El canal se cierra UNA vez. Cerrarlo dos veces es un pánico, y esto corre
+// dentro de un proceso que corre como SYSTEM.
+func TestVariosToquesNoEntranEnPanico(t *testing.T) {
+	c := abrir(t)
+
+	for i := 0; i < 3; i++ {
+		conn, err := net.DialTimeout("tcp", destino(c), 2*time.Second)
+		if err != nil {
+			t.Fatalf("conexión %d: %v", i, err)
+		}
+		_ = conn.Close()
+	}
+
+	udp, err := net.DialTimeout("udp", destino(c), 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer udp.Close()
+	nonce := nonceDePrueba()
+	if _, err := udp.Write(nonce[:]); err != nil {
+		t.Fatal(err)
+	}
+
+	esperarToque(t, c)
+}
+
+// ---------------------------------------------------------------------------
+// La exclusión de puertos
+// ---------------------------------------------------------------------------
+
+// Un puerto que el juego activo tiene abierto contestaría con toda razón, y esa
+// respuesta se leería como que la compuerta dejó de contener.
+func TestElCanarioEsquivaLosPuertosQueSeLeProhiben(t *testing.T) {
+	var ofrecidos []uint16
+	// Rechaza los tres primeros que ofrezca el sistema, sean cuales sean. Así el
+	// test no depende de qué números salgan, que cambian en cada corrida.
+	avoid := func(p uint16) bool {
+		ofrecidos = append(ofrecidos, p)
+		return len(ofrecidos) <= 3
+	}
+
+	c, err := Listen(aquí(), nonceDePrueba(), 5*time.Second, avoid, logMudo{})
+	if err != nil {
+		t.Fatalf("no se pudo abrir esquivando tres puertos: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	if len(ofrecidos) < 4 {
+		t.Fatalf("se consultó %d veces, y se rechazaron los tres primeros: "+
+			"el predicado no se está consultando en cada intento", len(ofrecidos))
+	}
+	for _, p := range ofrecidos[:3] {
+		if c.Port() == p {
+			t.Fatalf("quedó ligado en %d, que es uno de los que se prohibieron", p)
+		}
+	}
+}
+
+// Prohibirlos todos tiene que fallar en voz alta. Un canario ligado a un puerto
+// prohibido sería peor que ninguno.
+func TestSinPuertoAceptableFalla(t *testing.T) {
+	c, err := Listen(aquí(), nonceDePrueba(), 5*time.Second, func(uint16) bool { return true }, logMudo{})
+	if err == nil {
+		_ = c.Close()
+		t.Fatal("ligó igual con todos los puertos prohibidos")
+	}
+	if !strings.Contains(err.Error(), "juego activo") {
+		t.Errorf("el error no dice por qué falló: %v", err)
+	}
 }

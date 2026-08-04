@@ -98,6 +98,15 @@ type Canary struct {
 	timer     *time.Timer
 	log       Logger
 
+	// touch se CIERRA en el primer toque y jamás se escribe.
+	//
+	// Cerrar es nivel y no flanco: quien llegue tarde a seleccionar lo ve igual,
+	// así que la ronda no puede perderse un toque por no estar mirando todavía.
+	// Un envío se perdería en ese caso, y un segundo toque dejaría bloqueada una
+	// goroutine servidora dentro de un proceso que corre como SYSTEM.
+	touch     chan struct{}
+	touchOnce sync.Once
+
 	mu      sync.Mutex
 	touched bool
 }
@@ -117,8 +126,15 @@ type Canary struct {
 // RESERVA y que cambian en cada arranque, así que un número que parece libre
 // puede no serlo.
 //
+// # El puerto que NO sirve
+//
+// `avoid` dice qué números hay que descartar, y en nil no descarta ninguno.
+// Existe porque un efímero que caiga dentro de un rango que el juego activo
+// tiene abierto sería alcanzable A PROPÓSITO, y su respuesta se leería como que
+// la compuerta dejó de contener. Ver `domain.RuleSet.Allows`.
+//
 // `ttl` se recorta a [TTLMax]. En cero vale [TTLMax].
-func Listen(at netip.Addr, nonce Nonce, ttl time.Duration, log Logger) (*Canary, error) {
+func Listen(at netip.Addr, nonce Nonce, ttl time.Duration, avoid func(uint16) bool, log Logger) (*Canary, error) {
 	if !at.IsValid() {
 		return nil, errors.New("canary: sin dirección de la sala no hay dónde ligar, y ligar " +
 			"en todas las interfaces abriría un puerto en la red de casa del usuario")
@@ -132,12 +148,19 @@ func Listen(at netip.Addr, nonce Nonce, ttl time.Duration, log Logger) (*Canary,
 		ttl = TTLMax
 	}
 
-	tcp, udp, port, err := bindBoth(at)
+	tcp, udp, port, err := bindBoth(at, avoid)
 	if err != nil {
 		return nil, err
 	}
 
-	c := &Canary{port: port, nonce: nonce, tcp: tcp, udp: udp, log: log}
+	c := &Canary{
+		port:  port,
+		nonce: nonce,
+		tcp:   tcp,
+		udp:   udp,
+		log:   log,
+		touch: make(chan struct{}),
+	}
 	go c.serveTCP()
 	go c.serveUDP()
 
@@ -163,7 +186,20 @@ func Listen(at netip.Addr, nonce Nonce, ttl time.Duration, log Logger) (*Canary,
 // Port es el puerto que quedó, para poder decírselo al invitado.
 func (c *Canary) Port() uint16 { return c.port }
 
-// Touched dice si ALGUIEN llegó hasta el socket.
+// Touched es el AVISO de que alguien llegó hasta el socket, y se lee igual que
+// [context.Context.Done]: se cierra una vez y queda cerrado.
+//
+// Existe para que una ronda pueda cortar en el primer toque en vez de esperar su
+// plazo entero. Con la compuerta rota, cada segundo de más es un socket
+// alcanzable de verdad por la sala.
+//
+// **Cerrar el canario NO cierra este canal**, y esa omisión es de seguridad: un
+// canal cerrado se lee como listo, así que un [Canary.Close] que lo cerrara haría
+// que todo canario intacto concluyera que hubo fuga.
+func (c *Canary) Touched() <-chan struct{} { return c.touch }
+
+// WasTouched es el HECHO, y se lee igual que [context.Context.Err]: vale también
+// después de cerrar, que es justo cuando el host lo mira.
 //
 // Es la segunda mitad de la medición y no sobra, porque el invitado puede
 // mentir. Lo que ve el host acá es un hecho propio: si el canario fue tocado, el
@@ -172,7 +208,7 @@ func (c *Canary) Port() uint16 { return c.port }
 // Ojo con la asimetría, que es la parte importante: que NO haya sido tocado no
 // prueba que la compuerta funcione, porque a lo mejor el invitado nunca marcó.
 // Sirve para desmentir un "no contestó" falso, no para confirmarlo.
-func (c *Canary) Touched() bool {
+func (c *Canary) WasTouched() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.touched
@@ -193,8 +229,11 @@ func (c *Canary) Close() error {
 		if t != nil {
 			t.Stop()
 		}
+		// Los dos sockets y NADA MÁS. `c.touch` se queda como está, y esa
+		// omisión es la que evita el peor fallo posible de este paquete: ver
+		// [Canary.Touched].
 		err = errors.Join(c.tcp.Close(), c.udp.Close())
-		c.log.Info("canario cerrado", "puerto", c.port, "lo tocaron", c.Touched())
+		c.log.Info("canario cerrado", "puerto", c.port, "lo tocaron", c.WasTouched())
 	})
 	return err
 }
@@ -203,6 +242,10 @@ func (c *Canary) mark() {
 	c.mu.Lock()
 	c.touched = true
 	c.mu.Unlock()
+	// Fuera del candado y con un Once, así dos toques a la vez no cierran dos
+	// veces el mismo canal, que sería un pánico dentro de un proceso que corre
+	// como SYSTEM.
+	c.touchOnce.Do(func() { close(c.touch) })
 }
 
 // serveTCP acepta y cierra, sin leer NI UN BYTE.
@@ -249,19 +292,23 @@ func (c *Canary) serveUDP() {
 	}
 }
 
-// bindBoth busca un puerto libre en TCP y en UDP a la vez, en esa dirección.
+// bindBoth busca un puerto libre en TCP y en UDP a la vez, en esa dirección, y
+// que además `avoid` no rechace.
 //
 // Se pide un efímero al sistema en TCP y se intenta el mismo número en UDP. Que
-// el sistema elija evita inventar números, y reintentar cubre el caso de que ese
-// número esté tomado en UDP.
-func bindBoth(at netip.Addr) (net.Listener, net.PacketConn, uint16, error) {
+// el sistema elija evita inventar números, y reintentar cubre los dos motivos
+// por los que un número puede no servir: que esté tomado en UDP, y que sea uno
+// que el juego activo tiene abierto.
+func bindBoth(at netip.Addr, avoid func(uint16) bool) (net.Listener, net.PacketConn, uint16, error) {
 	host := at.String()
 
 	const intentos = 20
-	// Se guarda el ÚLTIMO error de UDP para poder contarlo. Un mensaje que diga
-	// "20 intentos" y no diga por qué falló cada uno no sirve para nada el día
-	// que falle en la máquina de un usuario.
+	// Se guarda el ÚLTIMO error de UDP y cuántos se descartaron por chocar, para
+	// poder contarlo. Un mensaje que diga "20 intentos" y no diga por qué falló
+	// cada uno no sirve para nada el día que falle en la máquina de un usuario, y
+	// las dos causas piden arreglos distintos.
 	var último error
+	descartados := 0
 
 	for i := 0; i < intentos; i++ {
 		tcp, err := net.Listen("tcp", net.JoinHostPort(host, "0"))
@@ -270,6 +317,14 @@ func bindBoth(at netip.Addr) (net.Listener, net.PacketConn, uint16, error) {
 		}
 
 		port := uint16(tcp.Addr().(*net.TCPAddr).Port)
+		if avoid != nil && avoid(port) {
+			// Ese número lo abrió la propia Kanpachi. Un oyente ahí contestaría
+			// con toda razón, y esa respuesta se leería como una fuga.
+			descartados++
+			_ = tcp.Close()
+			continue
+		}
+
 		udp, err := net.ListenPacket("udp", net.JoinHostPort(host, fmt.Sprint(port)))
 		if err == nil {
 			return tcp, udp, port, nil
@@ -277,6 +332,12 @@ func bindBoth(at netip.Addr) (net.Listener, net.PacketConn, uint16, error) {
 		último = err
 		_ = tcp.Close()
 	}
+
+	if último == nil {
+		return nil, nil, 0, fmt.Errorf("canary: los %d puertos que ofreció el sistema en %s "+
+			"caían todos en un rango que el juego activo tiene abierto", intentos, host)
+	}
 	return nil, nil, 0, fmt.Errorf("canary: no salió ningún puerto libre en TCP y UDP a la vez "+
-		"en %s tras %d intentos. Lo último que dijo UDP: %w", host, intentos, último)
+		"en %s tras %d intentos, con %d descartados por chocar con el juego activo. "+
+		"Lo último que dijo UDP: %w", host, intentos, descartados, último)
 }
