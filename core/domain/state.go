@@ -189,6 +189,27 @@ type RoomState struct {
 	Net    NetCheck
 	Alerts []Alert
 
+	// Canary es la última ronda del canario. El cero es que no se comprobó.
+	//
+	// Va en el estado y no detrás de un método como el sondeo, porque esto lo
+	// produce el daemon SOLO, igual que las alertas. El usuario no va a pulsar
+	// un botón para descubrir que su protección se cayó.
+	Canary CanaryCheck
+
+	// Gen sube en CADA vaciado de la sala, e identifica a la sala viva.
+	//
+	// Existe por la ronda del canario, que suelta el candado hasta diez segundos
+	// para salir a la red. En ese hueco el host puede salir y crear otra sala, y
+	// sin esto la ronda vieja despertaría y escribiría su conclusión en la sala
+	// nueva: un verde medido contra otros miembros y otras reglas, con la hora de
+	// ahora. La simétrica es peor, una alarma colgada de una sala que ya no
+	// existe.
+	//
+	// Sube en [RoomState.clearRoom] y no en cada llamador a propósito: así lo
+	// heredan por construcción los cinco caminos que llegan a Idle, y ninguno
+	// futuro se puede olvidar. Es interno y no viaja por el cable.
+	Gen uint64
+
 	// LastExit es por qué se volvió a Idle, y sobrevive a limpiar la sala.
 	// Sin esto, que te expulsen, que el host desaparezca y salir por tu cuenta
 	// se ven exactamente igual desde la pantalla de inicio.
@@ -217,6 +238,12 @@ func (r RoomState) Clone() RoomState {
 	out.Game.HostPorts = append([]PortRange(nil), r.Game.HostPorts...)
 	out.Game.ClientPorts = append([]PortRange(nil), r.Game.ClientPorts...)
 	out.Game.Detect.Executables = append([]string(nil), r.Game.Detect.Executables...)
+	// La comprobación del canario lleva dos slices, y la ronda los ESCRIBE
+	// mientras Status() entrega esta copia al serializador del pipe. Es el mismo
+	// aliasing del que avisa el párrafo de arriba, con un escritor más real
+	// todavía: acá el que muta corre en otra goroutine por diseño.
+	out.Canary.Asked = append([]CanaryAsked(nil), r.Canary.Asked...)
+	out.Canary.Answers = append([]CanaryAnswer(nil), r.Canary.Answers...)
 	return out
 }
 
@@ -273,6 +300,13 @@ func (r *RoomState) clearRoom() {
 	r.Game = GameProfile{}
 	r.LocalIP = netip.Addr{}
 	r.Alerts = nil
+	r.Canary = CanaryCheck{}
+
+	// Y se sube la generación, que es lo que le deja a una ronda en vuelo saber
+	// que la sala que estaba midiendo ya no existe. Va acá, en el único sitio que
+	// vacía, para que los cinco caminos que llegan a Idle lo hereden sin que
+	// nadie tenga que acordarse. Ver [RoomState.Gen].
+	r.Gen++
 }
 
 // IsHost es la propiedad que decide qué operaciones se admiten. Solo el host

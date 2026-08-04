@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/port"
 )
 
 // Los dobles de prueba de core.
@@ -462,6 +463,18 @@ type canarioPedido struct {
 	Req domain.CanaryRequest
 }
 
+func (c *controlFalso) pedidosDeCanario() []canarioPedido {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]canarioPedido(nil), c.pedidosCanario...)
+}
+
+func (c *controlFalso) informesEnviados() []domain.CanaryReport {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]domain.CanaryReport(nil), c.informesMandados...)
+}
+
 func (c *controlFalso) códigosRepartidos() []domain.Room {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -740,8 +753,132 @@ type banco struct {
 	control   *controlFalso
 	auditoría *auditoríaFalsa
 	sonda     *sondaFalsa
+	canario   *aperturaFalsa
 	reloj     *relojFijo
 	sesión    *Session
+}
+
+// aperturaFalsa es el port.CanaryPort de los tests.
+//
+// Guarda cada apertura, incluido el predicado de exclusión, porque comprobar
+// QUÉ puertos se le prohibieron al canario es lo que impide la alarma que grita
+// con todo bien.
+type aperturaFalsa struct {
+	mu        sync.Mutex
+	aberturas []aperturaCanario
+	err       error
+
+	// puerto es el que devuelve el canario falso. Fijo para que los informes de
+	// los tests puedan nombrarlo.
+	puerto uint16
+}
+
+type aperturaCanario struct {
+	at    netip.Addr
+	nonce domain.CanaryNonce
+	ttl   time.Duration
+	avoid func(uint16) bool
+	c     *canarioFalso
+}
+
+func nuevaApertura() *aperturaFalsa { return &aperturaFalsa{puerto: 51234} }
+
+func (a *aperturaFalsa) Listen(at netip.Addr, nonce domain.CanaryNonce, ttl time.Duration,
+	avoid func(uint16) bool) (port.Canary, error) {
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.err != nil {
+		return nil, a.err
+	}
+	c := &canarioFalso{puerto: a.puerto, toque: make(chan struct{})}
+	a.aberturas = append(a.aberturas, aperturaCanario{at: at, nonce: nonce, ttl: ttl, avoid: avoid, c: c})
+	return c, nil
+}
+
+func (a *aperturaFalsa) veces() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.aberturas)
+}
+
+// esperarApertura bloquea hasta que se abra un canario DESPUÉS de `desde`, y
+// devuelve el nuevo.
+//
+// Existe porque tocar el canario es lo que hace un paquete cruzando la
+// compuerta, y eso pasa mientras la ronda ya está esperando. Se llama desde una
+// goroutine, así que no puede usar t.Fatalf.
+func (a *aperturaFalsa) esperarApertura(desde int) (*canarioFalso, bool) {
+	plazo := time.Now().Add(5 * time.Second)
+	for time.Now().Before(plazo) {
+		a.mu.Lock()
+		n := len(a.aberturas)
+		var c *canarioFalso
+		if n > desde {
+			c = a.aberturas[n-1].c
+		}
+		a.mu.Unlock()
+		if c != nil {
+			return c, true
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return nil, false
+}
+
+// última es la apertura más reciente. Los tests la usan para tocar el canario o
+// para preguntarle al predicado qué habría rechazado.
+func (a *aperturaFalsa) última(t interface{ Fatalf(string, ...any) }) aperturaCanario {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if len(a.aberturas) == 0 {
+		t.Fatalf("no se abrió ningún canario")
+	}
+	return a.aberturas[len(a.aberturas)-1]
+}
+
+// canarioFalso imita al de verdad, incluida la parte que más importa: cerrar NO
+// cierra el canal de toque.
+type canarioFalso struct {
+	puerto uint16
+
+	mu      sync.Mutex
+	tocado  bool
+	cerrado int
+
+	toque     chan struct{}
+	toqueOnce sync.Once
+}
+
+func (c *canarioFalso) Port() uint16             { return c.puerto }
+func (c *canarioFalso) Touched() <-chan struct{} { return c.toque }
+
+func (c *canarioFalso) WasTouched() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.tocado
+}
+
+func (c *canarioFalso) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cerrado++
+	return nil
+}
+
+func (c *canarioFalso) cierres() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.cerrado
+}
+
+// tocar es alguien llegando hasta el socket, o sea el paquete cruzando la
+// compuerta.
+func (c *canarioFalso) tocar() {
+	c.mu.Lock()
+	c.tocado = true
+	c.mu.Unlock()
+	c.toqueOnce.Do(func() { close(c.toque) })
 }
 
 // estadoFalso es el disco de room.json y last-room.json.
@@ -839,6 +976,7 @@ func nuevoBanco(t interface{ Fatalf(string, ...any) }) *banco {
 		control:   nuevoControl(),
 		auditoría: &auditoríaFalsa{intactas: true},
 		sonda:     &sondaFalsa{},
+		canario:   nuevaApertura(),
 		reloj:     &relojFijo{ahora: time.Date(2026, 8, 2, 20, 0, 0, 0, time.UTC)},
 	}
 	// La auditoría refleja lo que el firewall tiene aplicado, que es lo que
@@ -858,6 +996,7 @@ func nuevoBanco(t interface{ Fatalf(string, ...any) }) *banco {
 		Audit:     b.auditoría,
 		Inspector: inspectorFalso{},
 		Prober:    b.sonda,
+		Canary:    b.canario,
 		Clock:     b.reloj,
 		Log:       logMudo{},
 		// Un lector constante hace que la subred y las claves salgan siempre

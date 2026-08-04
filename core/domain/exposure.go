@@ -311,6 +311,17 @@ const (
 	// contesta en la mayoría de las máquinas, y una alerta encendida en todas
 	// partes deja de significar algo.
 	AlertAuditFailed
+	// AlertCanaryLeaking: la compuerta NO está conteniendo el adaptador, y se
+	// intentó reponerla sin que aguantara.
+	//
+	// Es la única alerta que sale de una medición POR LA RED, y la única que ve
+	// el caso que ninguna otra puede ver: el filtro existe por su clave y no
+	// contiene nada. [AlertRulesTampered] pregunta si el filtro está; esta ve el
+	// paquete cruzar.
+	//
+	// La levanta el socket propio del host y jamás el informe de un miembro. Un
+	// mensaje se puede mentir; que alguien haya llegado hasta el oyente, no.
+	AlertCanaryLeaking
 )
 
 // AllAlertKinds son todas las alertas que el producto sabe levantar.
@@ -335,6 +346,7 @@ func AllAlertKinds() []AlertKind {
 		AlertLobbyConflict,
 		AlertKickIncomplete,
 		AlertAuditFailed,
+		AlertCanaryLeaking,
 	}
 }
 
@@ -345,17 +357,21 @@ func AllAlertKinds() []AlertKind {
 // cada barrido, así que conservarlas mostraría hallazgos de hace diez minutos
 // como si fueran de ahora.
 //
-// Existe como predicado del dominio, con sus dos casos nombrados, para que
-// agregar un tercero sea una edición visible y no un `if` más colado dentro del
-// barrido.
+// Existe como predicado del dominio, con sus casos nombrados, para que agregar
+// uno sea una edición visible y no un `if` más colado dentro del barrido.
 //
 // [AlertAuditFailed] NO es pegajosa, y es la que más invita a equivocarse: si lo
 // fuera, se quedaría encendida para siempre tras el primer fallo de COM, porque
 // solo [RoomState.DropAlerts] la quitaría y nadie tiene motivo para llamarla. Se
 // recalcula, así que en cuanto la consulta vuelve a contestar, el aviso se va
 // solo.
+// [AlertCanaryLeaking] SÍ es pegajosa, y por el motivo opuesto: describe algo
+// que el host MIDIÓ desde la red, y nada de lo que corre en el barrido lo vuelve
+// a medir. Sin pegajosa, el barrido la borraría sesenta segundos después de la
+// única prueba que este producto sabe producir. Lo que la apaga es una ronda del
+// canario que midió y volvió limpia.
 func (k AlertKind) Sticky() bool {
-	return k == AlertLobbyConflict || k == AlertKickIncomplete
+	return k == AlertLobbyConflict || k == AlertKickIncomplete || k == AlertCanaryLeaking
 }
 
 // Alert es un hallazgo del módulo de exposición.
@@ -367,6 +383,16 @@ func (k AlertKind) Sticky() bool {
 type Alert struct {
 	Kind   AlertKind
 	Detail string
+}
+
+// HasAlert dice si hay alguna alerta de ese tipo encendida.
+func (r *RoomState) HasAlert(k AlertKind) bool {
+	for _, a := range r.Alerts {
+		if a.Kind == k {
+			return true
+		}
+	}
+	return false
 }
 
 // DropAlerts quita todas las alertas de un tipo.

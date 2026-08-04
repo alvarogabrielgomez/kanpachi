@@ -77,6 +77,7 @@ type Deps struct {
 	Audit     port.ExposureAudit
 	Inspector port.SocketInspector
 	Prober    port.Prober
+	Canary    port.CanaryPort
 	Clock     port.Clock
 	Log       port.Logger
 
@@ -110,6 +111,7 @@ func (d Deps) validate() error {
 	nombrar("Control", d.Control != nil)
 	nombrar("Audit", d.Audit != nil)
 	nombrar("Inspector", d.Inspector != nil)
+	nombrar("Canary", d.Canary != nil)
 	nombrar("Prober", d.Prober != nil)
 	nombrar("Clock", d.Clock != nil)
 	nombrar("Log", d.Log != nil)
@@ -194,6 +196,22 @@ type Session struct {
 	// es pelearse con un antivirus a golpe de COM, y eso no lo gana nadie.
 	tamperRepairs int
 
+	// canaryRepairs son las veces que se repuso la protección tras un TOQUE del
+	// canario en esta sala.
+	//
+	// Existe por lo mismo que tamperRepairs, con una diferencia que decide el
+	// tope: acá la evidencia es mucho más fuerte. Aquella dice "falta una clave",
+	// que sale en falso por carreras normales; esta dice que un paquete cruzó de
+	// verdad, medido desde otra máquina. Ver [CanaryRepairLimit].
+	canaryRepairs int
+
+	// canaryDue avisa de que se acaba de aplicar la protección y toca comprobarla.
+	//
+	// Amortiguado a UNO y escrito sin bloquear, porque se emite con el candado
+	// tomado desde applyRuleSetLocked: no puede esperar a nadie, y diez Apply
+	// seguidos tienen que programar una ronda en vez de diez.
+	canaryDue chan struct{}
+
 	// pending es la sala que quedó abierta en el arranque anterior, si la hubo.
 	//
 	// Se lee al construir la sesión y NO se actúa sobre ella. Reanudar es una
@@ -241,7 +259,7 @@ func NewSession(ctx context.Context, d Deps) (*Session, error) {
 	if err := d.validate(); err != nil {
 		return nil, err
 	}
-	s := &Session{deps: d}
+	s := &Session{deps: d, canaryDue: make(chan struct{}, 1)}
 
 	if err := d.Firewall.PurgeOwned(ctx); err != nil {
 		return nil, fmt.Errorf("purgando las reglas de la ejecución anterior: %w", err)
@@ -480,6 +498,19 @@ func (s *Session) applyRuleSetLocked(ctx context.Context, desired domain.RuleSet
 	s.state.DropAlerts(domain.AlertKickIncomplete)
 	s.deps.Log.Info("reglas aplicadas",
 		"juego", s.state.Game.ID, "rol", s.state.Role.String(), "reglas", len(desired.Rules))
+
+	// Y se programa una ronda del canario, que es la ÚNICA comprobación que sale
+	// a la red a ver si la compuerta contiene de verdad.
+	//
+	// Acá y no en cada llamador: así lo heredan los diez sitios que llaman a
+	// applyPolicy y todos los futuros, sin que nadie tenga que acordarse. El
+	// envío es no bloqueante sobre un canal amortiguado a UNO, así que esto corre
+	// con el candado tomado sin poder esperar a nadie, y diez Apply seguidos
+	// programan una ronda en vez de diez.
+	select {
+	case s.canaryDue <- struct{}{}:
+	default:
+	}
 	return nil
 }
 
