@@ -1,0 +1,25 @@
+//go:build !windows
+
+package main
+
+// El firewall de Kanpachi es el Firewall de Windows más una sesión de WFP, así
+// que fuera de Windows no hay adaptador posible ni lo va a haber.
+//
+// Existe para que `go build ./...` siga compilando en el job de Linux, que es
+// el que corre los tests del dominio, del orden de arranque y del canal de la
+// sala. Devuelve error en vez de un provisional que finja: un firewall que dice
+// que purgó sin purgar hace la cuarentena inverificable, que es la razón de que
+// `sinimplementar` falle en todo.
+
+import (
+	"fmt"
+
+	"github.com/accentiostudios/kanpachi/core/port"
+)
+
+func realFirewall(string, port.Logger, port.ExposureAudit) (
+	port.FirewallPort, port.ExposureAudit, func() error, error) {
+
+	return nil, nil, nil, fmt.Errorf("el firewall de Kanpachi son las reglas del Firewall " +
+		"de Windows y una sesión de WFP, así que este binario solo sirve en Windows")
+}

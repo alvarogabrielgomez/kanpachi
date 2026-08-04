@@ -39,29 +39,44 @@ import (
 //
 // Assumes the lock is held.
 func (s *Session) verifyClosedLocked(ctx context.Context) {
-	e, err := s.deps.Audit.Enforcement(ctx)
-	if err != nil {
+	blind, extra := s.checkClosedLocked(ctx)
+	switch {
+	case blind != nil:
 		// Blindness right where it matters most. Say so rather than assume the
 		// purge worked, which is the same doctrine as AlertAuditFailed.
-		s.deps.Log.Warn("could not verify the firewall was left closed", "error", err)
+		s.deps.Log.Warn("could not verify the firewall was left closed", "error", blind)
 		s.state.Alerts = append(s.state.Alerts, domain.Alert{
 			Kind:   domain.AlertAuditFailed,
 			Detail: "no se pudo comprobar que el firewall quedó cerrado al salir de la sala",
 		})
-		return
+	case len(extra) > 0:
+		s.deps.Log.Error("rules survived leaving the room", "rules", extra)
+		s.state.Alerts = append(s.state.Alerts, domain.Alert{
+			Kind: domain.AlertKickIncomplete,
+			Detail: "al salir de la sala quedaron reglas puestas que Kanpachi no pudo quitar: " +
+				strings.Join(extra, ", "),
+		})
 	}
+}
 
+// checkClosedLocked measures and returns the finding, without judging what to
+// do with it.
+//
+// Split out of verifyClosedLocked because the shutdown path needs the same
+// measurement and cannot use an alert: appending one to a state nobody will
+// ever read is not a report. See [Session.LeaveRoomOnShutdown].
+//
+// Returns the blindness separately from the finding, because they are different
+// facts. One says the measurement failed and the other says the measurement
+// succeeded and found something.
+//
+// Assumes the lock is held.
+func (s *Session) checkClosedLocked(ctx context.Context) (blind error, extra []string) {
+	e, err := s.deps.Audit.Enforcement(ctx)
+	if err != nil {
+		return err, nil
+	}
 	// The desired set with no room is the empty one, and the gate is not
 	// demanded because there is no adapter to scope it to.
-	d := e.Diff(domain.RuleSet{}, false)
-	if len(d.Extra) == 0 {
-		return
-	}
-
-	s.deps.Log.Error("rules survived leaving the room", "rules", d.Extra)
-	s.state.Alerts = append(s.state.Alerts, domain.Alert{
-		Kind: domain.AlertKickIncomplete,
-		Detail: "al salir de la sala quedaron reglas puestas que Kanpachi no pudo quitar: " +
-			strings.Join(d.Extra, ", "),
-	})
+	return nil, e.Diff(domain.RuleSet{}, false).Extra
 }

@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"flag"
 	"fmt"
 	"os"
@@ -17,10 +18,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/usecase"
+	catalogstore "github.com/accentiostudios/kanpachi/daemon/adapter/catalog/jsonfile"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/sinimplementar"
+	statestore "github.com/accentiostudios/kanpachi/daemon/adapter/state/jsonfile"
+	"github.com/accentiostudios/kanpachi/daemon/service"
+	"github.com/accentiostudios/kanpachi/daemon/service/supervisor"
+	"github.com/accentiostudios/kanpachi/daemon/transport/control"
 	"github.com/accentiostudios/kanpachi/daemon/transport/pipe"
-	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
 )
 
 func main() {
@@ -52,20 +57,10 @@ func correr(consola bool, datos, nombre string) error {
 			"  Un provisional que devuelve éxito hace la cuarentena inverificable, y eso " +
 			"instalado es peor que no tener daemon")
 	}
-	if !consola {
-		// El host del servicio está en `servicio_windows.go` y ya sabe reportar
-		// SERVICE_RUNNING en el momento correcto. Lo que todavía no existe es lo
-		// que tendría que arrancar: los adaptadores de verdad. Mientras
-		// `Presente` sea cierto no se llega hasta acá, así que esto se activa
-		// solo, el día que haya algo que servir.
-		return fmt.Errorf("faltan los adaptadores de verdad, así que no hay nada que servir " +
-			"como servicio todavía. Usa --console")
-	}
 
 	if nombre == "" {
 		nombre = pipe.ConsoleName
 	}
-
 	if datos == "" {
 		datos = filepath.Join(os.Getenv("ProgramData"), "Kanpachi")
 	}
@@ -74,6 +69,61 @@ func correr(consola bool, datos, nombre string) error {
 	if _, err := os.Stat(datos); err != nil {
 		return fmt.Errorf("el directorio de datos %s no está.\n"+
 			"  Lo crea el instalador con su ACL. Para probar, créalo a mano o pasa --data", datos)
+	}
+
+	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer parar()
+
+	log := logConsola{}
+
+	// El firewall ANTES que nada, y no por orden de lectura: construir la sesión
+	// purga las reglas de la ejecución anterior, así que si el firewall no se
+	// puede abrir hay que enterarse acá y no a mitad del arranque.
+	fw, audit, cerrarFirewall, err := realFirewall(datos, log, sinimplementar.Audit{})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = cerrarFirewall() }()
+
+	eventos := sinimplementar.NewEvents()
+	defer func() { _ = eventos.Close() }()
+
+	canal := control.New(control.Deps{Clock: relojReal{}, Log: log})
+	motor := sinimplementar.Engine{}
+
+	// NewSession PURGA el firewall antes de devolver, así que a partir de acá la
+	// máquina está en el estado que este arranque decidió y no en el que dejó el
+	// anterior. Que la purga esté dentro del constructor y no en una llamada
+	// aparte es lo que hace que no se pueda saltar.
+	sesion, err := usecase.NewSession(ctx, usecase.Deps{
+		Engine:    motor,
+		Firewall:  fw,
+		NetCfg:    sinimplementar.NetConfig{},
+		Routes:    sinimplementar.Routing{},
+		Store:     catalogstore.New(dirDelBinario(), datos, log),
+		State:     statestore.New(datos),
+		Library:   sinimplementar.Library{},
+		Directory: sinimplementar.Directory{},
+		Control:   canal,
+		Audit:     audit,
+		Inspector: sinimplementar.Inspector{},
+		Clock:     relojReal{},
+		Log:       log,
+		Rand:      rand.Reader,
+	})
+	if err != nil {
+		return err
+	}
+
+	bucle, err := supervisor.New(supervisor.Deps{
+		Room:    sesion,
+		Engine:  motor,
+		Control: canal,
+		System:  eventos,
+		Log:     log,
+	})
+	if err != nil {
+		return err
 	}
 
 	// El token rota una vez por vida del proceso y se borra en TODO camino de
@@ -88,9 +138,8 @@ func correr(consola bool, datos, nombre string) error {
 	}
 	defer func() { _ = pipe.RemoveToken(datos) }()
 
-	log := logConsola{}
 	ln, err := pipe.Listen(pipe.Deps{
-		API:   apiConsola{},
+		API:   sesion,
 		Token: token,
 		Clock: relojReal{},
 		Log:   log,
@@ -99,10 +148,17 @@ func correr(consola bool, datos, nombre string) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = ln.Close() }()
 
-	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer parar()
+	rt, err := service.Start(ctx, service.Deps{
+		Bucle:   bucle,
+		Entrada: ln,
+		Sala:    sesion,
+		Log:     log,
+	})
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
 
 	fmt.Printf("kanpachid en modo consola\n  pipe:  %s\n  token: %s\n  datos: %s\n\n"+
 		"Ctrl+C para salir. Prueba con:  go run ./internal/kanpctl -data %q status\n\n",
@@ -110,20 +166,31 @@ func correr(consola bool, datos, nombre string) error {
 
 	go func() {
 		<-ctx.Done()
-		_ = ln.Close()
+		// El apagado tiene su PROPIO contexto dentro de service, porque el de
+		// acá ya viene cancelado y con él cada cierre de puerto sería un no-op.
+		if err := rt.Shutdown(ctx); err != nil {
+			log.Error("el apagado no terminó bien", "error", err)
+		}
 	}()
-	return ln.Serve(ctx)
+	return rt.Wait()
 }
 
-// apiConsola es lo que se puede atender hoy.
+// dirDelBinario es donde vive el catálogo que trajo el instalador.
 //
-// Embebe la interfaz en vez de implementarla entera: lo que no está escrito
-// entra en pánico, y el pipe lo recoge cortando SOLO esa conexión. Es lo que
-// hace que probar el transporte no dependa de que exista el resto del daemon.
-type apiConsola struct{ protocol.API }
-
-func (apiConsola) Status() domain.RoomState { return domain.RoomState{Conn: domain.StateIdle} }
-func (apiConsola) MissingGame() string      { return "" }
+// Junto al ejecutable y no en el directorio de datos: ese archivo es del
+// instalador, se actualiza con la app, y el daemon no lo escribe jamás. Ver
+// [catalogstore.Store] para por qué son dos rutas y no una.
+func dirDelBinario() string {
+	exe, err := os.Executable()
+	if err != nil {
+		// Sin ruta del ejecutable el catálogo que vino con la app no se lee, y
+		// el producto sigue funcionando con el del usuario. Se devuelve el
+		// directorio actual, que es lo que hace que `go run` encuentre uno si
+		// lo hay al lado.
+		return "."
+	}
+	return filepath.Dir(exe)
+}
 
 type relojReal struct{}
 
