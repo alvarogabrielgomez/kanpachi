@@ -3,6 +3,7 @@ package supervisor
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"runtime"
 	"testing"
 	"time"
@@ -326,4 +327,161 @@ func TestElWatchdogTerminaAntesDelPlazoDeCore(t *testing.T) {
 	if Beat >= domain.HostSilenceLimit {
 		t.Fatalf("el latido (%v) no muestrea el plazo más corto (%v)", Beat, domain.HostSilenceLimit)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// La ronda del canario
+// ---------------------------------------------------------------------------
+
+// El barrido comprueba la protección, además de refrescar las alertas.
+func TestElBarridoPideUnaRondaDeCanario(t *testing.T) {
+	b, _ := corriendo(t)
+	b.barridos <- time.Now()
+
+	esperaA(t, "el barrido pidió la ronda", func() bool { return b.sala.veces("canario") >= 1 })
+
+	rondas := b.sala.rondasCorridas()
+	if rondas[0] {
+		t.Error("el barrido pidió la ronda como si viniera de aplicar. Esa distinción " +
+			"es la que deja que una ronda corra con la alarma puesta")
+	}
+}
+
+// Aplicar las reglas programa la comprobación, que es el disparador que importa:
+// alguien entró, o cambió el juego.
+func TestAplicarLasReglasPideUnaRondaDeCanario(t *testing.T) {
+	b, _ := corriendo(t)
+	b.sala.CanaryDue() // lo crea si no estaba
+	b.sala.canarioDue <- struct{}{}
+
+	esperaA(t, "se pidió la ronda", func() bool { return b.sala.veces("canario") >= 1 })
+
+	rondas := b.sala.rondasCorridas()
+	if !rondas[0] {
+		t.Fatal("la ronda tras aplicar tiene que saber que viene de aplicar: es la " +
+			"única que corre con la alarma puesta, y sin eso reponer no se puede comprobar")
+	}
+}
+
+// EL TEST QUE JUSTIFICA CORRER LA RONDA FUERA DEL DESPACHADOR.
+//
+// Una ronda dura hasta diez segundos. Corriéndola dentro del despachador, que
+// es de un solo hilo, el latido de quince segundos que hace vencer el corte de
+// los veinte minutos se quedaría esperando a la red.
+func TestUnaRondaLentaNoParaElLatido(t *testing.T) {
+	b, _ := corriendo(t)
+	b.sala.bloquear = make(chan struct{})
+	defer close(b.sala.bloquear)
+
+	b.barridos <- time.Now()
+	esperaA(t, "la ronda arrancó", func() bool { return b.sala.veces("canario") >= 1 })
+
+	// Con la ronda colgada, el latido tiene que seguir corriendo.
+	b.latidos <- time.Now()
+	esperaA(t, "el latido corrió con una ronda en vuelo", func() bool {
+		return b.sala.veces("tick") >= 1
+	})
+}
+
+// Dos disparos no abren dos rondas. Cada una abre un socket y le pregunta a
+// todos, así que solaparlas sería multiplicar el ruido sin medir más.
+func TestDosDisparosNoAbrenDosRondasALaVez(t *testing.T) {
+	b, _ := corriendo(t)
+	b.sala.bloquear = make(chan struct{})
+
+	b.barridos <- time.Now()
+	esperaA(t, "la primera ronda arrancó", func() bool { return b.sala.veces("canario") >= 1 })
+
+	b.sala.CanaryDue()
+	b.sala.canarioDue <- struct{}{}
+	b.barridos <- time.Now()
+
+	// Se espera a que el despachador haya tenido tiempo de atender los dos
+	// disparos, comprobando algo que SÍ corre: el barrido refresca alertas.
+	esperaA(t, "los disparos siguientes se atendieron", func() bool {
+		return b.sala.veces("alertas") >= 2
+	})
+	if n := b.sala.veces("canario"); n != 1 {
+		t.Fatalf("se abrieron %d rondas a la vez, se esperaba 1", n)
+	}
+
+	// Y cuando la primera termina, se vuelve a poder.
+	//
+	// Se insiste con el barrido en vez de mandar uno solo, y eso dice algo real
+	// del diseño: un disparo que llega con una ronda en vuelo se DESCARTA, no se
+	// encola. La liberación de la bandera vuelve por el mismo canal de trabajo,
+	// así que un barrido mandado justo antes se atendería con la bandera todavía
+	// puesta. En producción el barrido siguiente llega solo a los sesenta
+	// segundos.
+	b.sala.mu.Lock()
+	bloqueo := b.sala.bloquear
+	b.sala.bloquear = nil
+	b.sala.mu.Unlock()
+	close(bloqueo)
+
+	esperaA(t, "tras terminar la primera se puede otra", func() bool {
+		select {
+		case b.barridos <- time.Now():
+		default:
+		}
+		return b.sala.veces("canario") >= 2
+	})
+}
+
+// Un pánico dentro de la ronda corre en una goroutine que `atender` NO cubre, y
+// se llevaría el proceso entero, que corre como SYSTEM. Además tiene que
+// liberar la bandera, o la comprobación queda apagada en silencio para siempre.
+func TestUnPánicoEnLaRondaNoSeLlevaElBucleNiDejaLaBanderaPuesta(t *testing.T) {
+	b, _ := corriendo(t)
+	b.sala.pánicoEn = "canario"
+	b.sala.máximos = 1
+
+	b.barridos <- time.Now()
+	esperaA(t, "la ronda explotó", func() bool { return b.sala.veces("canario") >= 1 })
+
+	// El bucle sigue.
+	b.latidos <- time.Now()
+	esperaA(t, "el latido siguió tras el pánico", func() bool { return b.sala.veces("tick") >= 1 })
+
+	// Y se puede volver a comprobar: la bandera se liberó pese al pánico.
+	b.barridos <- time.Now()
+	esperaA(t, "se pudo abrir otra ronda tras el pánico", func() bool {
+		return b.sala.veces("canario") >= 2
+	})
+}
+
+// El lado del invitado: el pedido del host llega intacto.
+func TestUnPedidoDeCanarioLlegaAlInvitado(t *testing.T) {
+	b, _ := corriendo(t)
+	req := domain.CanaryRequest{
+		Host:  netip.MustParseAddr("10.77.0.1"),
+		Port:  51234,
+		Nonce: domain.CanaryNonce{1, 2, 3},
+	}
+	b.control.pedidos <- req
+
+	esperaA(t, "el invitado atendió el pedido", func() bool {
+		return b.sala.veces("canario:pedido") >= 1
+	})
+
+	recibidos := b.sala.pedidosDeCanario()
+	if recibidos[0] != req {
+		t.Fatalf("el pedido llegó cambiado: %+v", recibidos[0])
+	}
+}
+
+// Atender un pedido también dura segundos, así que tampoco puede correr dentro
+// del despachador.
+func TestUnPedidoLentoNoParaElLatido(t *testing.T) {
+	b, _ := corriendo(t)
+	b.sala.bloquear = make(chan struct{})
+	defer close(b.sala.bloquear)
+
+	b.control.pedidos <- domain.CanaryRequest{Port: 1, Nonce: domain.CanaryNonce{1}}
+	esperaA(t, "el pedido arrancó", func() bool { return b.sala.veces("canario:pedido") >= 1 })
+
+	b.latidos <- time.Now()
+	esperaA(t, "el latido corrió con un pedido en vuelo", func() bool {
+		return b.sala.veces("tick") >= 1
+	})
 }

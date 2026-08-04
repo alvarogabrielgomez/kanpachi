@@ -39,6 +39,17 @@ type Room interface {
 	OnCodeRotated(ctx context.Context, r domain.Room) domain.RoomState
 	SetHostPresent(present bool) domain.RoomState
 	ReapplyAdapter(ctx context.Context) error
+
+	// CanaryDue avisa de que se acaba de aplicar la protección y toca
+	// comprobarla. La sesión no lanza goroutines propias: quién corre la ronda
+	// es política de ciclo de vida, y eso vive acá.
+	CanaryDue() <-chan struct{}
+	// RunCanaryRound comprueba desde la red que la compuerta contiene. Tarda
+	// hasta CanaryRoundDeadline, así que NO puede correr dentro del despachador.
+	RunCanaryRound(ctx context.Context, afterApply bool) domain.CanaryCheck
+	// OnCanaryRequest es el lado del invitado: marca al host y contesta. Tarda
+	// hasta seis segundos, por lo mismo.
+	OnCanaryRequest(ctx context.Context, req domain.CanaryRequest) error
 }
 
 // EngineSource es lo único que el supervisor le puede pedir al motor.
@@ -57,6 +68,16 @@ type ControlSource interface {
 	Announcements() <-chan domain.RoomAnnounce
 	Notices() <-chan domain.RoomNotice
 	Codes() <-chan domain.Room
+	// CanaryRequests son los pedidos del host, que solo le llegan a un invitado.
+	//
+	// CanaryReports NO está acá y es deliberado: un informe solo significa algo
+	// dentro de una ronda abierta, correlacionado por puerto. Drenado por el
+	// supervisor habría que aparcarlo en algún sitio hasta que una ronda lo
+	// pidiera, que es un segundo estado con su propia caducidad. La ronda lee ese
+	// canal directo durante sus diez segundos, y fuera de una ronda el emisor del
+	// adaptador descarta con aviso en vez de bloquear, que es lo correcto: un
+	// informe sin ronda abierta es el de un canario ya cerrado.
+	CanaryRequests() <-chan domain.CanaryRequest
 }
 
 // ErrNotWired es que falta algún puerto. Un supervisor a medias no arranca:
@@ -151,6 +172,17 @@ const (
 	tagBeat     tag = "latido"
 	tagSweep    tag = "barrido"
 	tagRestart  tag = "reinicio"
+
+	// tagCanaryDue es "se aplicó la protección, toca comprobarla".
+	tagCanaryDue tag = "canario-tras-aplicar"
+	// tagCanaryAsk es el host pidiéndole a este invitado que marque.
+	tagCanaryAsk tag = "canario-pedido"
+	// tagCanaryDone vuelve por el canal de trabajo cuando la ronda termina.
+	//
+	// Vuelve por acá y no libera la bandera desde su propia goroutine para que
+	// canarioVivo lo siga tocando SOLO el despachador, igual que intentos y
+	// latidos. Así el supervisor sigue siendo de un solo hilo para su estado.
+	tagCanaryDone tag = "canario-terminado"
 )
 
 type item struct {
@@ -185,6 +217,15 @@ type Supervisor struct {
 	intentos int
 	latidos  int
 	fuentes  map[tag]any
+
+	// canarioVivo es el single-flight de la ronda.
+	//
+	// Se comparte entre la ronda del host y la atención del pedido en el
+	// invitado, y alcanza con una: una máquina no es host e invitado de la misma
+	// sala. Descartar un pedido mientras hay algo en vuelo es lo correcto, porque
+	// el host se queda sin informe de ese miembro y lo cuenta como sin confirmar,
+	// que es el lado seguro.
+	canarioVivo bool
 }
 
 // New arma el supervisor con sus relojes de verdad.
@@ -355,6 +396,17 @@ func (s *Supervisor) manejar(ctx context.Context, it item) {
 
 	case tagSweep:
 		s.deps.Room.RefreshAlerts(ctx)
+		s.rondaCanario(ctx, false)
+
+	case tagCanaryDue:
+		s.rondaCanario(ctx, true)
+
+	case tagCanaryAsk:
+		req, _ := it.value.(domain.CanaryRequest)
+		s.atenderPedidoCanario(ctx, req)
+
+	case tagCanaryDone:
+		s.canarioVivo = false
 
 	case tagRestart:
 		s.reiniciarMotor(ctx)
@@ -390,6 +442,86 @@ func (s *Supervisor) latido(ctx context.Context) {
 	// aplicado al propio supervisor: nada depende de que la capa anterior haya
 	// funcionado, ni siquiera esto.
 	s.resuscribir(ctx)
+}
+
+// rondaCanario lanza la comprobación FUERA del despachador.
+//
+// # Por qué fuera, y no es estilo
+//
+// Una ronda dura hasta diez segundos y el despachador es de un solo hilo.
+// Corriéndola dentro, el latido de quince segundos que hace vencer el corte de
+// los veinte minutos se quedaría esperando a la red. Un latido perdido es
+// exactamente lo que el corte automático no se puede permitir.
+//
+// # El estado sigue siendo de un solo hilo
+//
+// `canarioVivo` lo lee y lo escribe SOLO el despachador: se pone acá, y se quita
+// con un [tagCanaryDone] que vuelve por el mismo canal de trabajo que todo lo
+// demás. Nadie toca ese campo desde la goroutine lanzada.
+//
+// # El recover es propio y no sobra
+//
+// El de [Supervisor.atender] cubre la llamada a esto, no a la goroutine que esto
+// lanza. Un pánico ahí dentro se llevaría el proceso entero, que corre como
+// SYSTEM.
+func (s *Supervisor) rondaCanario(ctx context.Context, trasAplicar bool) {
+	if s.canarioVivo {
+		return
+	}
+	s.canarioVivo = true
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				s.deps.Log.Error("pánico en la ronda del canario, el bucle sigue",
+					"pánico", fmt.Sprint(r), "pila", string(debug.Stack()))
+			}
+			// Y se libera SIEMPRE, por el canal de trabajo. Un pánico que dejara
+			// la bandera puesta apagaría la comprobación para el resto de la vida
+			// del proceso, en silencio.
+			s.terminóElCanario(ctx)
+		}()
+		s.deps.Room.RunCanaryRound(ctx, trasAplicar)
+	}()
+}
+
+// atenderPedidoCanario marca al host y contesta, también fuera del despachador.
+//
+// Son hasta seis segundos de red en la máquina del invitado, o sea el mismo
+// motivo que arriba. Comparte el single-flight: una máquina no es host e
+// invitado de la misma sala, así que una bandera alcanza.
+func (s *Supervisor) atenderPedidoCanario(ctx context.Context, req domain.CanaryRequest) {
+	if s.canarioVivo {
+		// El host se queda sin informe de este miembro y lo cuenta como sin
+		// confirmar, que es el lado seguro de equivocarse.
+		s.deps.Log.Info("se descarta un pedido de canario porque ya hay uno en curso")
+		return
+	}
+	s.canarioVivo = true
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				s.deps.Log.Error("pánico atendiendo un pedido de canario, el bucle sigue",
+					"pánico", fmt.Sprint(r), "pila", string(debug.Stack()))
+			}
+			s.terminóElCanario(ctx)
+		}()
+		if err := s.deps.Room.OnCanaryRequest(ctx, req); err != nil {
+			s.deps.Log.Warn("no se pudo contestar el pedido de canario", "error", err)
+		}
+	}()
+}
+
+// terminóElCanario devuelve la liberación de la bandera al despachador.
+//
+// Sin bloquear contra el apagado: si el bucle ya se está yendo, no hay nada que
+// liberar y quedarse esperando dejaría una goroutine colgada.
+func (s *Supervisor) terminóElCanario(ctx context.Context) {
+	select {
+	case s.work <- item{tag: tagCanaryDone}:
+	case <-ctx.Done():
+	}
 }
 
 func (s *Supervisor) reaplicarAdaptador(ctx context.Context, motivo string) {
@@ -489,6 +621,13 @@ func (s *Supervisor) fuenteCerrada(ctx context.Context, de tag) {
 		s.deps.Log.Warn("el canal de presencia del host se cerró")
 		s.deps.Room.SetHostPresent(false)
 
+	case tagCanaryDue:
+		// Perderlo significa que el canario deja de comprobar justo después de
+		// aplicar, que es cuando más importa. El barrido de sesenta segundos
+		// sigue siendo el respaldo, y este aviso es lo que lo hace visible.
+		s.deps.Log.Warn("se cerró el aviso de comprobar la protección: " +
+			"a partir de ahora solo la comprueba el barrido")
+
 	default:
 		// Los demás se pierden sin más. El silencio pasa a medirlo
 		// HostSilenceLimit, que es el respaldo que existe justo para esto, y
@@ -510,6 +649,8 @@ func (s *Supervisor) resuscribir(ctx context.Context) {
 	drenarSi(s, ctx, tagAnnounce, s.deps.Control.Announcements())
 	drenarSi(s, ctx, tagNotice, s.deps.Control.Notices())
 	drenarSi(s, ctx, tagCode, s.deps.Control.Codes())
+	drenarSi(s, ctx, tagCanaryDue, s.deps.Room.CanaryDue())
+	drenarSi(s, ctx, tagCanaryAsk, s.deps.Control.CanaryRequests())
 	drenarSi(s, ctx, tagNetID, s.deps.System.NetworkIdentified())
 	drenarSi(s, ctx, tagResume, s.deps.System.Resumed())
 	drenarSi(s, ctx, tagNetChg, s.deps.System.NetworkChanged())

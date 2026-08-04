@@ -24,6 +24,14 @@ type salaFalsa struct {
 	pánicoEn string
 	pánicos  int
 	máximos  int
+
+	// Lo del canario.
+	canarioDue     chan struct{}
+	rondas         []bool // trasAplicar de cada ronda
+	pedidosCanario []domain.CanaryRequest
+	// bloquear detiene la ronda hasta que se cierre, para probar que el latido
+	// sigue corriendo mientras tanto.
+	bloquear chan struct{}
 }
 
 func (r *salaFalsa) anota(s string) {
@@ -118,6 +126,53 @@ func (r *salaFalsa) ReapplyAdapter(context.Context) error {
 	return nil
 }
 
+func (r *salaFalsa) CanaryDue() <-chan struct{} {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.canarioDue == nil {
+		r.canarioDue = make(chan struct{}, 1)
+	}
+	return r.canarioDue
+}
+
+func (r *salaFalsa) RunCanaryRound(_ context.Context, trasAplicar bool) domain.CanaryCheck {
+	r.mu.Lock()
+	bloquear := r.bloquear
+	r.rondas = append(r.rondas, trasAplicar)
+	r.mu.Unlock()
+
+	r.anota("canario")
+	if bloquear != nil {
+		<-bloquear
+	}
+	return domain.CanaryCheck{}
+}
+
+func (r *salaFalsa) OnCanaryRequest(_ context.Context, req domain.CanaryRequest) error {
+	r.mu.Lock()
+	bloquear := r.bloquear
+	r.pedidosCanario = append(r.pedidosCanario, req)
+	r.mu.Unlock()
+
+	r.anota("canario:pedido")
+	if bloquear != nil {
+		<-bloquear
+	}
+	return nil
+}
+
+func (r *salaFalsa) rondasCorridas() []bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]bool(nil), r.rondas...)
+}
+
+func (r *salaFalsa) pedidosDeCanario() []domain.CanaryRequest {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]domain.CanaryRequest(nil), r.pedidosCanario...)
+}
+
 type motorFalso struct {
 	mu        sync.Mutex
 	eventos   chan domain.EngineEvent
@@ -163,6 +218,7 @@ type controlFalso struct {
 	anuncios  chan domain.RoomAnnounce
 	avisos    chan domain.RoomNotice
 	códigos   chan domain.Room
+	pedidos   chan domain.CanaryRequest
 }
 
 func nuevoControl() *controlFalso {
@@ -171,6 +227,7 @@ func nuevoControl() *controlFalso {
 		anuncios:  make(chan domain.RoomAnnounce, 4),
 		avisos:    make(chan domain.RoomNotice, 4),
 		códigos:   make(chan domain.Room, 4),
+		pedidos:   make(chan domain.CanaryRequest, 4),
 	}
 }
 
@@ -178,6 +235,8 @@ func (c *controlFalso) HostPresence() <-chan bool                 { return c.pre
 func (c *controlFalso) Announcements() <-chan domain.RoomAnnounce { return c.anuncios }
 func (c *controlFalso) Notices() <-chan domain.RoomNotice         { return c.avisos }
 func (c *controlFalso) Codes() <-chan domain.Room                 { return c.códigos }
+
+func (c *controlFalso) CanaryRequests() <-chan domain.CanaryRequest { return c.pedidos }
 
 type sistemaFalso struct {
 	red      chan struct{}
