@@ -95,8 +95,11 @@ func (a *Audit) Enforcement(ctx context.Context) (domain.Enforcement, error) {
 // the Windows Firewall rules, which is what the product had before the gate was
 // designed. Nothing new is open.
 //
-// When the WFP floor lands, this becomes a real query for our own filters. If
-// somebody adds the floor and forgets this function, the screen reports a gate
-// that is missing while it is present: a false alarm, never a false green.
-// That is the direction this is allowed to fail in.
+// The gate now exists, and this function is deliberately NOT the place that
+// measures it: the gate is a WFP session that this adapter does not own and
+// cannot see. What overwrites this answer with the real measurement is the
+// composition of the two layers, in the parent package. Reading this adapter on
+// its own therefore reports a gate that is missing while it may be present: a
+// false alarm, never a false green. That is the direction this is allowed to
+// fail in.
 func (a *Audit) gate() domain.GateState { return domain.GateAbsent }
