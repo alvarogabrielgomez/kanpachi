@@ -2,6 +2,7 @@ package wfp
 
 import (
 	"net/netip"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -29,13 +30,20 @@ func TestTheGateRefusesToExistWithoutScope(t *testing.T) {
 	var rs domain.RuleSet
 	rs.Rules = append(rs.Rules, gameRule())
 
+	const luid = 0x47008000000000
 	cases := []struct {
 		nombre string
 		scope  Scope
 	}{
 		{"nada", Scope{}},
-		{"solo el adaptador", Scope{LUID: 0x47008000000000}},
+		{"solo el adaptador", Scope{LUID: luid}},
 		{"solo el rango", Scope{Net: pfx("100.64.1.0/24")}},
+		// Los tres de abajo tienen los dos campos PUESTOS, y ninguno acota. Son
+		// los que un `!= 0 && IsValid()` deja pasar, y los tres terminan en un
+		// bloqueo duro sobre una red que no es de Kanpachi.
+		{"todo internet", Scope{LUID: luid, Net: pfx("0.0.0.0/0")}},
+		{"255 salas ajenas", Scope{LUID: luid, Net: pfx("100.64.0.0/16")}},
+		{"la LAN de casa", Scope{LUID: luid, Net: pfx("192.168.1.0/24")}},
 	}
 	for _, c := range cases {
 		t.Run(c.nombre, func(t *testing.T) {
@@ -228,6 +236,113 @@ func TestAPermitWithNoPortIsRefused(t *testing.T) {
 	}
 }
 
+func TestTheKeyDoesNotDependOnTheGame(t *testing.T) {
+	// El guardián de los huérfanos, y es el motivo de que la clave salga de la
+	// RANURA y no de la etiqueta.
+	//
+	// Derivándola de la etiqueta, el permiso espejo lleva dentro el nombre de la
+	// regla, o sea el juego. Cambiar de juego cambiaría las claves y los filtros
+	// del juego anterior quedarían puestos y sin dueño: un puerto abierto que ya
+	// nadie pidió, invisible, porque un filtro de WFP no sale ni en `wf.msc` ni
+	// en `Get-NetFirewallRule`.
+	uno, dos := gameRule(), gameRule()
+	dos.Name = "kanpachi-otro-juego-tcp-7777"
+	dos.From, dos.To = 7777, 7777
+	dos.Proto = domain.ProtoTCP
+
+	var a, b domain.RuleSet
+	a.Rules = append(a.Rules, uno)
+	b.Rules = append(b.Rules, dos)
+
+	specsA, err := SpecsFor(a, roomScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	specsB, err := SpecsFor(b, roomScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(specsA) != len(specsB) {
+		t.Fatalf("los dos conjuntos tienen %d y %d filtros", len(specsA), len(specsB))
+	}
+	for i := range specsA {
+		if specsA[i].Key != specsB[i].Key {
+			t.Errorf("la ranura %d cambia de clave al cambiar de juego: %q contra %q.\n"+
+				"  Los filtros del juego anterior quedarían huérfanos y abiertos",
+				i, specsA[i].Label, specsB[i].Label)
+		}
+	}
+	// Y las etiquetas SÍ cambian, que es lo que hace legible `netsh wfp show
+	// filters`. Si fueran iguales, este test estaría comparando nada.
+	if specsA[3].Label == specsB[3].Label {
+		t.Error("las etiquetas no distinguen una regla de otra")
+	}
+}
+
+func TestTheFixedSlotsAreWhereEnforcementLooks(t *testing.T) {
+	// Medir si la compuerta está puesta preguntando por UNA clave conocida solo
+	// funciona si la ranura cero es siempre el bloqueo por adaptador.
+	var rs domain.RuleSet
+	rs.Rules = append(rs.Rules, gameRule())
+
+	specs, err := SpecsFor(rs, roomScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if specs[0].Slot != 0 || specs[0].Action != Block || specs[0].Conditions.LUID == 0 {
+		t.Fatalf("la ranura 0 es %+v, y tiene que ser el bloqueo por adaptador", specs[0])
+	}
+	for i, s := range specs {
+		if s.Slot != i {
+			t.Errorf("el filtro %d dice ocupar la ranura %d", i, s.Slot)
+		}
+	}
+}
+
+func TestTheSweepCoversEverythingThatCanBeEmitted(t *testing.T) {
+	// La limpieza al arrancar barre ranuras, no un conjunto recordado. Si un
+	// filtro pudiera caer fuera del barrido, quedaría puesto para siempre.
+	var rs domain.RuleSet
+	for i := 0; i < domain.MaxPortRanges*2; i++ {
+		r := gameRule()
+		r.Name = "kanpachi-udp-" + strconv.Itoa(30000+i)
+		r.From, r.To = uint16(30000+i), uint16(30000+i)
+		rs.Rules = append(rs.Rules, r)
+	}
+
+	specs, err := SpecsFor(rs, roomScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	barrido := map[[16]byte]bool{}
+	for _, k := range AllKeys() {
+		barrido[k] = true
+	}
+	for _, s := range specs {
+		if !barrido[s.Key] {
+			t.Errorf("la clave de %q (ranura %d) no está en el barrido de %d ranuras",
+				s.Label, s.Slot, MaxFilters)
+		}
+	}
+}
+
+func TestTooManyFiltersAreRefusedInsteadOfTruncated(t *testing.T) {
+	// Recortar dejaría la sala configurada a medias, y el jugador que no entra
+	// no tendría nada que mirar.
+	var rs domain.RuleSet
+	for i := 0; i <= MaxFilters; i++ {
+		r := gameRule()
+		r.Name = "kanpachi-udp-" + strconv.Itoa(40000+i)
+		r.From, r.To = uint16(40000+i), uint16(40000+i)
+		rs.Rules = append(rs.Rules, r)
+	}
+
+	if _, err := SpecsFor(rs, roomScope()); err == nil {
+		t.Fatal("se aceptaron más filtros de los que la limpieza barre")
+	}
+}
+
 func TestKeysAreStableAndDistinct(t *testing.T) {
 	// La limpieza al arrancar tiene que encontrar lo que dejó la ejecución
 	// anterior sin recordar nada entre arranques.
@@ -284,5 +399,64 @@ func TestValidateCatchesWhatTheConstructorCannot(t *testing.T) {
 	}
 	if err := permisoFlojo.Validate(); err == nil {
 		t.Fatal("un permiso que no le gana al bloqueo pasó la validación")
+	}
+}
+
+func TestTheTwoLocalConditionsTogetherAreRefused(t *testing.T) {
+	// WFP une con O las condiciones del MISMO campo. La red local y la dirección
+	// local son el mismo campo, así que pedir las dos ENSANCHA en vez de acotar:
+	// un permiso pensado para la IP del host abriría el rango entero de la sala.
+	// Y se lee perfectamente razonable.
+	ancho := FilterSpec{
+		Label: "acota dos veces y abre", Layer: RecvAcceptV4, Action: Permit,
+		Weight: WeightPermit,
+		Conditions: Conditions{
+			LUID:      1,
+			LocalNet:  pfx("100.64.1.0/24"),
+			LocalAddr: addr("100.64.1.1"),
+		},
+	}
+	if err := ancho.Validate(); err == nil {
+		t.Fatal("se aceptó un filtro con red local Y dirección local")
+	} else if !strings.Contains(err.Error(), "ENSANCHA") {
+		t.Errorf("el error no dice qué pasa de verdad: %v", err)
+	}
+}
+
+func TestAnIPv4ConditionInTheIPv6LayerIsRefused(t *testing.T) {
+	// Un bloqueo IPv6 con una condición de dirección IPv4 no casa con nada y no
+	// falla: quedaría puesto sin bloquear, y la medición lo contaría como
+	// presente.
+	mudo := FilterSpec{
+		Label: "bloqueo IPv6 que no bloquea", Layer: RecvAcceptV6, Action: Block,
+		Weight:     WeightBlockAll,
+		Conditions: Conditions{LUID: 1, LocalNet: pfx("100.64.1.0/24")},
+	}
+	if err := mudo.Validate(); err == nil {
+		t.Fatal("se aceptó un filtro IPv6 con condiciones IPv4")
+	}
+}
+
+func TestTheMirrorNamesTheRuleItMirrors(t *testing.T) {
+	// La medición nombra lo que encontró con esto, en vez de recortar la etiqueta
+	// con un corte de cadena que se rompe el día que cambie el prefijo.
+	var rs domain.RuleSet
+	rs.Rules = append(rs.Rules, gameRule())
+
+	specs, err := SpecsFor(rs, roomScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range specs {
+		switch s.Action {
+		case Block:
+			if s.Rule != "" {
+				t.Errorf("el bloqueo %q dice espejar la regla %q", s.Label, s.Rule)
+			}
+		case Permit:
+			if s.Rule != gameRule().Name {
+				t.Errorf("el permiso %q dice espejar %q", s.Label, s.Rule)
+			}
+		}
 	}
 }

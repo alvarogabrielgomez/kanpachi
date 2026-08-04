@@ -121,13 +121,19 @@ func TestLaCompuertaJamasSeInstalaEnLaCapaDeSalida(t *testing.T) {
 
 	for _, dir := range []string{"../../daemon", "../../core"} {
 		for ruta, literales := range literalesPorArchivo(t, dir) {
+			// El primero que case y basta: los nombres prohibidos son uno
+			// prefijo del otro, así que sin cortar acá el mismo literal sale
+			// denunciado dos veces y el fallo se lee como si fueran dos.
 			for _, prohibida := range prohibidas {
-				if lit, ok := buscaLiteral(literales, strings.ToLower(prohibida)); ok {
-					t.Errorf("%s: nombra la capa de salida en %q.\n"+
-						"  La compuerta va SOLO en las capas de recepción. Bloquear la salida\n"+
-						"  impide que un invitado marque al puerto del juego del host, que es\n"+
-						"  el caso central del producto. Ver decisión 27.", ruta, lit)
+				lit, ok := buscaLiteral(literales, strings.ToLower(prohibida))
+				if !ok {
+					continue
 				}
+				t.Errorf("%s: nombra la capa de salida en %q.\n"+
+					"  La compuerta va SOLO en las capas de recepción. Bloquear la salida\n"+
+					"  impide que un invitado marque al puerto del juego del host, que es\n"+
+					"  el caso central del producto. Ver decisión 27.", ruta, lit)
+				break
 			}
 		}
 	}
