@@ -289,20 +289,29 @@ type Gate struct {
 
 // Open abre la sesión contra el motor de filtrado.
 //
-// # Qué necesita elevación y qué no, MEDIDO
-//
-// Acá decía que WFP exige administrador para todo, incluso para mirar. Es falso,
-// y lo desmintió correr esto por primera vez en una consola sin elevar el
-// 2026-08-04:
+// # Qué necesita elevación y qué no, MEDIDO el 2026-08-04
 //
 //	FwpmEngineOpen0        sin elevar, funciona
-//	FwpmFilterGetByKey0    sin elevar, funciona: contesta que el filtro no está
+//	FwpmFilterGetByKey0    sin elevar, depende de si el filtro ESTÁ
 //	FwpmTransactionBegin0  sin elevar, 0x5, o sea ERROR_ACCESS_DENIED
 //
-// O sea que la frontera está entre LEER y ESCRIBIR, y no en abrir la sesión. No
-// es un detalle de implementación: significa que [Gate.Measure] la puede correr
-// un usuario normal, y eso es justo lo que hace falta para que la pantalla de
-// exposición sirva sin pedir un UAC cada vez que se abre.
+// El del medio tiene trampa y costó dos conclusiones equivocadas seguidas. Sin
+// elevar y con el filtro ausente contesta FWP_E_FILTER_NOT_FOUND, así que la
+// primera medición pareció decir que leer no exige administrador. Con el filtro
+// PUESTO contesta 0x5. O sea que leer un filtro que existe también exige
+// elevación, y lo anterior funcionaba solo porque no había nada que leer.
+//
+// # Por qué eso no produce un verde falso
+//
+// Porque los dos casos llegan con códigos DISTINTOS. Si "no está" y "está y no
+// puedes verlo" compartieran código, una medición sin elevar informaría la
+// compuerta como ausente teniéndola puesta. Como no lo comparten, [Gate.present]
+// devuelve error en el segundo y [Gate.Measure] contesta SIN COMPROBAR, que es
+// la verdad. Ver [domain.GateUnknown]: una es un hecho y la otra es ceguera.
+//
+// La consecuencia de producto es que la pantalla de exposición no puede medir la
+// compuerta sin elevar. Quien la mide de verdad es el daemon, que corre como
+// servicio del sistema.
 func Open(log Logger) (*Gate, error) {
 	if log == nil {
 		return nil, fmt.Errorf("la compuerta necesita un log: sin él, un filtro que no se " +
@@ -649,6 +658,11 @@ func (g *Gate) add(s FilterSpec) error {
 }
 
 // present dice si un filtro está puesto AHORA.
+//
+// Cualquier código que no sea cero ni "no encontrado" es un ERROR y jamás un
+// "no está". Sin elevar, un filtro que EXISTE contesta ERROR_ACCESS_DENIED, y
+// leerlo como ausente sería informar la compuerta caída teniéndola puesta. Ver
+// [Open] para lo que se midió.
 func (g *Gate) present(key windows.GUID) (bool, error) {
 	var p uintptr
 	r, _, _ := procFilterGetByKey.Call(uintptr(g.h), uintptr(unsafe.Pointer(&key)),

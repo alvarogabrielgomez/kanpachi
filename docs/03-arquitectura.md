@@ -778,7 +778,7 @@ Las claves de los filtros salen de la **ranura** que ocupan, y no de su etiqueta
 
 `Measure` recibe el conjunto deseado, y no es un atajo: las ranuras son posiciones y no nombres, así que para poder decir "falta el permiso de tal regla" hay que saber qué regla ocupaba esa ranura. El sistema sigue siendo el que contesta si el filtro está.
 
-**Leer no exige elevación y escribir sí.** Medido: abrir la sesión y preguntar por un filtro funcionan como usuario normal, y `FwpmTransactionBegin0` devuelve `ERROR_ACCESS_DENIED`. De ahí sale que la pantalla de exposición pueda medir sin un UAC cada vez, que es la diferencia entre una pantalla que se mira y una que se evita.
+**Casi todo exige elevación, y abrir la sesión no.** Medido: `FwpmEngineOpen0` funciona como usuario normal; leer un filtro que EXISTE y empezar una transacción devuelven `ERROR_ACCESS_DENIED`. Preguntar por un filtro ausente sí contesta, y esa asimetría es una trampa que ya produjo dos conclusiones equivocadas: ver `08-plan-de-adaptadores.md`. Lo que la hace inofensiva es que "no está" y "está y no puedes verlo" llegan con códigos distintos, así que sin elevar la respuesta es SIN COMPROBAR y nunca "ausente".
 
 ### internal/fwprobe, para poder medirlo
 

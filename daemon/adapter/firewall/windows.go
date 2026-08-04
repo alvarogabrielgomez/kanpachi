@@ -38,9 +38,10 @@ var (
 // abierta. Quien limpia es [Firewall.PurgeOwned] en el arranque siguiente, y un
 // reinicio de la máquina se los lleva de todas formas.
 //
-// Abrir NO exige administrador. La frontera está entre leer y escribir: un
-// proceso sin elevar puede montar las dos capas y MEDIRLAS, y falla al intentar
-// cambiar algo. Está medido y anotado en [wfp.Open].
+// Abrir NO exige administrador, y casi todo lo demás sí. Un proceso sin elevar
+// monta las dos capas, enumera las reglas del firewall, y falla al leer un
+// filtro de la compuerta que exista o al cambiar cualquier cosa. Está medido y
+// anotado en [wfp.Open], con la trampa que tiene.
 func NewWindows(dataDir string, log Logger) (*Firewall, func() error, error) {
 	permits, err := windowscom.New(dataDir, "", log)
 	if err != nil {

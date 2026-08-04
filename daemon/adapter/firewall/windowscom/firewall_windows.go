@@ -240,13 +240,10 @@ func addRule(rules *ole.IDispatch, s ruleSpec) error {
 			return err
 		}
 	}
-	// Interfaces last, and only when there is one. Writing an empty array
-	// scopes the rule to no interface at all on some builds, which turns a
-	// permit into a rule that opens nothing.
-	if len(s.Interfaces) > 0 {
-		if err := set("Interfaces", s.Interfaces); err != nil {
-			return err
-		}
+	// Interfaces last, and NOT through oleutil: it is the one property go-ole
+	// cannot express. See dispatch_windows.go for what was measured.
+	if err := setInterfaces(rule, s.Interfaces); err != nil {
+		return err
 	}
 
 	if _, err := oleutil.CallMethod(rules, "Add", rule); err != nil {

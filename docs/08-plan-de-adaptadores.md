@@ -87,20 +87,31 @@ Son dos cosas distintas y conviene no confundirlas.
 Todo lo que dependa de esos cuatro queda escrito y **marcado**, con la prueba
 concreta que lo confirma. Nada se da por bueno sin medirlo.
 
-**Dónde está de verdad la frontera de la elevación.** Esta tabla decía que WFP
-entero exige administrador, citando que `netsh wfp show filters` falla sin
-elevar. Correr el adaptador de verdad sin elevar el 2026-08-04 lo desmintió:
+**Dónde está de verdad la frontera de la elevación**, medido el 2026-08-04
+corriendo el adaptador sin elevar:
 
 | Llamada | Sin elevar |
 |---|---|
 | `FwpmEngineOpen0` | funciona |
-| `FwpmFilterGetByKey0` | funciona: contesta que el filtro no está |
-| `FwpmTransactionBegin0` | `0x5`, o sea `ERROR_ACCESS_DENIED` |
+| `FwpmFilterGetByKey0`, filtro **ausente** | funciona: contesta `FWP_E_FILTER_NOT_FOUND` |
+| `FwpmFilterGetByKey0`, filtro **puesto** | `0x5`, o sea `ERROR_ACCESS_DENIED` |
+| `FwpmTransactionBegin0` | `0x5` |
 
-O sea que la frontera está entre **leer y escribir**, y no en abrir la sesión.
-Que `netsh` falle dice algo de `netsh`. No es un detalle: significa que la
-pantalla de exposición puede MEDIR sin pedir un UAC cada vez que se abre, que es
-la diferencia entre una pantalla que se mira y una que se evita.
+El renglón del medio costó **dos conclusiones equivocadas seguidas**. La primera
+medición se hizo con la máquina limpia, contestó "no encontrado", y de ahí salió
+escrito que leer no exige administrador. Con la compuerta puesta contesta `0x5`.
+O sea que leer un filtro que existe también exige elevación, y lo anterior
+funcionaba solo porque no había nada que leer. Es el caso de manual de por qué
+una ausencia no puede ser una medición.
+
+**Lo que salva esto de ser un verde falso** es que los dos casos llegan con
+códigos distintos. Si compartieran código, una medición sin elevar informaría la
+compuerta como ausente teniéndola puesta. Como no lo comparten, el adaptador
+contesta SIN COMPROBAR, que es la verdad.
+
+Consecuencia de producto: la pantalla de exposición **no** puede medir la
+compuerta sin elevar. Quien la mide es el daemon, que corre como servicio del
+sistema.
 
 ---
 
