@@ -739,6 +739,18 @@ veredicto. Quien juzga es `domain.Enforcement.Diff`, que es dominio y corre sin
 Windows. Una compuerta **sin comprobar** es distinta de una **ausente**: una es un
 hecho y la otra es ceguera, y se muestran distinto.
 
+### adapter/firewall/wfp, la compuerta
+
+Decide QUÉ filtros se ponen, sin tocar Windows. Es Go puro y lo prueba el job de Linux, por la misma razón que la capa pura del adaptador COM: lo que se puede equivocar de forma cara se decide donde hay tests.
+
+Emite tres cosas fijas más un permiso por regla: bloqueo de todo en IPv4 por adaptador, el mismo por rango de la sala, bloqueo de todo en IPv6 por adaptador, y los permisos espejo. El porqué de cada pieza está en la decisión 27.
+
+El tipo `Layer` no tiene valor para `ALE_AUTH_CONNECT` y no lo va a tener. Lo que no existe en el tipo no se puede pedir por error, y hay un guardián en `internal/arch` que además falla si alguien nombra esa capa por su nombre de Windows para saltárselo.
+
+`FilterSpec` se construye en un solo sitio, con el alcance como argumento obligatorio, y `Validate` lo recomprueba antes de que llegue a la API. Un guardián prohíbe literales fuera de ese fichero: un literal puede omitir el alcance y compilar igual.
+
+Las claves de los filtros son deterministas a partir de su etiqueta. Al arrancar hay que poder borrar lo que dejó la ejecución anterior, y guardarlas en disco añadiría un fichero que puede desincronizarse del sistema.
+
 ### adapter/firewall/windowscom, implementa `FirewallPort`
 
 - API COM `INetFwPolicy2`, nunca `netsh`: más rápida y sin dependencia del idioma del sistema.

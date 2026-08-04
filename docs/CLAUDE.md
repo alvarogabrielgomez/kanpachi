@@ -10,7 +10,7 @@ Alcance actual: **privado, solo para el grupo de amigos del autor**. La arquitec
 
 ## Documentación
 
-Está en `docs/`. Son la fuente de verdad del diseño, no notas sueltas.
+Está en `docs/`. Son la fuente de verdad del diseño, no notas sueltas. Los siete primeros describen el producto; el octavo es el plan de trabajo y envejece rápido a propósito.
 
 | Documento | Qué contiene | Léelo antes de |
 |---|---|---|
@@ -21,6 +21,7 @@ Está en `docs/`. Son la fuente de verdad del diseño, no notas sueltas.
 | `05-ui.md` | Pantallas, estados, textos, página de invitación | Tocar la UI o cualquier copy |
 | `06-catalogo.md` | Perfiles de juegos, creador, import y export | Tocar el catálogo o agregar juegos |
 | `07-futuro.md` | Qué se difirió, qué lo activaría, qué se descartó | Proponer una función nueva |
+| `08-plan-de-adaptadores.md` | El plan vivo de los adaptadores, con lo medido y lo que falta | Ponerte a escribir un adaptador |
 
 **Antes de proponer algo que parezca obvio, busca en `02` y `07`.** Muchas ideas razonables ya se evaluaron y se descartaron con motivo: detección de ejecución de juegos, MSIX y Microsoft Store, habilitar Compartir archivos, exit node, compartir archivos, chat. Si vas a reabrir una, hazlo citando la decisión y el argumento nuevo.
 
@@ -54,6 +55,9 @@ Están en los docs con su razón. Se listan aquí porque romperlas es el error m
 - La interfaz virtual nace en cuarentena, en los tres perfiles de firewall. **La entrada la bloquea Windows por defecto, así que la ausencia de reglas de permiso YA ES el deny-all,** y lo que la cuarentena de base agrega es lo que la ausencia no puede: bloqueo explícito de los puertos prohibidos en las dos direcciones, más ICMP echo permitido para el diagnóstico. Un bloqueo total **en las reglas del Firewall de Windows** está PROHIBIDO: los bloqueos ganan sobre los permisos sin desempate por especificidad, así que taparía las reglas del juego activo, y la salida impediría que un invitado marcara al host. Ver decisión 4. **Ojo con la lectura fácil:** el bloqueo de todo SÍ existe, y vive en la otra capa, la compuerta de WFP, donde un bloqueo sí admite excepciones por encima. Confundir las dos capas lleva a "corregir" cualquiera de las dos en la dirección equivocada.
 - **La contención son DOS capas y hay que nombrarlas por separado.** Las reglas del Firewall de Windows, por COM, son las que ABREN y las que el usuario ve sin elevar. La compuerta, una sesión propia de WFP acotada al adaptador virtual, es la que CIERRA todo lo demás y convierte la lista de permitidos de ADITIVA en COMPLETA. Sin ella, una regla permisiva ajena de escritorio remoto alcanza al usuario por la red virtual y expulsar a alguien no lo tapa. Va SOLO en `ALE_AUTH_RECV_ACCEPT`, jamás en `ALE_AUTH_CONNECT`. Ver decisión 27, con las cuatro mediciones que la sostienen.
 - **En WFP un Block es HARD y un Permit es SOFT, y de ahí cuelga todo.** Un bloqueo nuestro anula una regla permisiva ajena sin tocarla; un permiso nuestro NO puede pasar por encima de un bloqueo del usuario. Esa segunda mitad es lo que conserva su veto, y está medida. Prohibido usar hard permits o el sublayer de peso máximo: cerrarían el agujero quitándole al usuario el control de su propia máquina.
+- **Ningún filtro de la compuerta sale sin alcance.** Un filtro sin condición local aplica a TODOS los adaptadores de la máquina, y siendo un bloqueo duro deja al usuario sin la entrada de su red de casa. Es el peor fallo posible del proyecto porque no falla en ningún sitio: compila, los tests pasan, la pantalla pinta verde. Se comprueba por tres vías, y las tres tienen que seguir existiendo: argumento obligatorio del constructor, revalidación antes de llegar a la API, y un guardián de arquitectura que prohíbe construir filtros a mano.
+- **El bloqueo de la compuerta se emite DOS veces, por adaptador y por rango de la sala.** Si la condición de interfaz llegara vacía al reautorizar un flujo, uno solo dejaría de casar en silencio. Quitar cualquiera de los dos deja el otro como asidero único.
+- **IPv6 va bloqueado en el adaptador virtual y SIN permisos espejo.** Kanpachi direcciona en IPv4 dentro de `100.64.0.0/10`, así que lo que llegue por IPv6 a ese adaptador no es suyo. Es un agujero de los que nadie mira, porque la pantalla habla de puertos y no de familias de direcciones.
 - Solo se abre lo que pide el perfil del juego activo, solo en el host, solo hacia IPs de miembros presentes.
 - Puertos prohibidos siempre, sin excepción ni forma de expresarlos en un perfil: 22, 135, 137, 138, 139, 445, 3389, 3702, 5357, 5358, 5985, 5986. Los tres agregados el 2026-08-03 son el descubrimiento de dispositivos de Windows; 1900 y 5353 quedan fuera a propósito porque son el descubrimiento de partida en LAN de varios juegos. Van en las dos capas: ningún perfil puede pedirlos, y la cuarentena de base los bloquea explícitamente para ganarle a una regla permisiva que dejó el instalador de un juego.
 - Jamás habilitar los grupos Detección de redes ni Compartir archivos e impresoras. Se activan por perfil de firewall y abrirían SMB en la LAN de casa del usuario.
@@ -102,6 +106,9 @@ El proyecto usa **Clean Architecture**, aplicada como regla de dependencia con p
 core/       domain/ port/ usecase/         sin I/O, sin syscalls, sin API de Windows
 daemon/     adapter/ transport/ service/   Go, servicio de Windows, elevado
             service/ es Go PURO y corre en el job de Linux junto a core
+            Cada adaptador se parte igual: lo que DECIDE va en Go puro y lo
+            prueba Linux, y el fichero con //go:build windows solo llama a la
+            API. Ver adapter/firewall/wfp y adapter/firewall/windowscom
             cmd/kanpachid/ es el binario: main, host del servicio, --console
             y la construcción de los adaptadores concretos. Solo Windows
 ui/         Flutter desktop, sin privilegios
@@ -111,7 +118,7 @@ registry/   El binario Go del seed, kanpseed. Servidor HTTP + CLI + instalador.
             miembros y sirve la página. Linux, systemd, sin Docker
 invite/     index.html. Un solo archivo: kanpseed lo sirve con el estado
             incrustado, y abierto desde el disco funciona igual pidiéndolo
-docs/       Los siete documentos
+docs/       Los ocho documentos numerados, más este
 ```
 
 Qué respetar al escribir código:

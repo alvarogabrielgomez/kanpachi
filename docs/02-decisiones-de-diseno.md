@@ -1018,6 +1018,18 @@ Todo con dos PCs en la misma red, el invitado conectando contra el host.
 
 **La reautorización de un flujo YA establecido.** Todo lo medido son conexiones nuevas. Si la condición de interfaz llegara vacía al reautorizar, tras reiniciar el servicio o al cambiar de adaptador, la compuerta dejaría de casar en silencio. La mitigación prevista es emitir el bloqueo **dos veces**, por LUID del adaptador y por dirección local sobre el rango de la sala, para que ninguna de las dos sea el único asidero.
 
+### Qué emite la compuerta, y por qué cada pieza
+
+**Dos bloqueos de todo en IPv4, no uno.** Uno acotado por el LUID del adaptador y otro por el rango de la sala. El LUID es lo preciso y el rango es el respaldo, y existe por el único riesgo que las mediciones no cubrieron: si la condición de interfaz llegara vacía al reautorizar un flujo ya establecido, un bloqueo solo dejaría de casar en silencio. Con los dos, ninguno es el único asidero. El rango no puede pisar la red de casa porque la `/24` de la sala se elige en tiempo de ejecución contra las redes que la máquina ya tiene, que es la decisión 10.
+
+**IPv6 queda bloqueado en el adaptador, y SIN permisos espejo.** Kanpachi direcciona en IPv4 dentro de `100.64.0.0/10`, así que cualquier cosa que llegue por IPv6 a ese adaptador no es de Kanpachi. Dejarla pasar sería un agujero con la puerta de al lado cerrada, y es de los que nadie mira porque la pantalla habla de puertos y no de familias de direcciones.
+
+**Un permiso espejo por regla, con MÁS peso que el bloqueo.** Si un permiso no le gana al bloqueo dentro del sublayer propio, el puerto del juego no se abre y la sala no sirve. Los pesos concretos están medidos funcionando.
+
+**Los rangos de puertos viajan como rango, no expandidos.** El catálogo no pone tope a la amplitud, así que un perfil puede pedir `27000-27100` legítimamente: expandir eso a cien filtros sería absurdo y rechazarlo rompería perfiles que el dominio acepta. WFP tiene condición de rango.
+
+**Ningún filtro sale sin alcance, y se comprueba por tres vías.** Es argumento obligatorio del único constructor, se revalida justo antes de llegar a la API de Windows, y un guardián de arquitectura prohíbe construir un filtro a mano fuera del fichero que los define. La redundancia es deliberada: un filtro sin alcance compila, pasa los tests funcionales, pinta verde, y aplica a todos los adaptadores de la máquina. Con un bloqueo duro, eso deja al usuario sin la entrada de su red de casa. Leyendo el diff tampoco se ve, porque la diferencia entre el filtro correcto y el catastrófico es un campo que NO está.
+
 ### Consecuencia para el dominio
 
 `OwnRulesIntact(bool)` no vale para esto: un booleano no puede decir QUÉ falta ni en qué capa. Lo reemplaza `Enforcement()`, que devuelve lo MEDIDO en las dos capas y deja que juzgue `Enforcement.Diff`, que es dominio y se testea sin Windows. El adaptador mide y el dominio juzga, por la misma razón por la que `Apply` calcula la diferencia contra las reglas vivas y jamás contra un recuerdo en memoria.

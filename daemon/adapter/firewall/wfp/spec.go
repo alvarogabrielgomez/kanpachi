@@ -126,10 +126,19 @@ type Conditions struct {
 	LocalNet netip.Prefix
 	// LocalAddr es la IP del adaptador, en los permisos.
 	LocalAddr netip.Addr
-	// LocalPort cero significa cualquier puerto, que es lo que convierte un
-	// bloqueo en un bloqueo de todo.
-	LocalPort uint16
-	Proto     domain.Proto
+	// LocalPortFrom y LocalPortTo son el rango de puertos, ambos incluidos.
+	//
+	// Los dos a cero significan CUALQUIER puerto, que es lo que convierte un
+	// bloqueo en un bloqueo de todo. Iguales entre sí es un puerto suelto.
+	//
+	// Son dos campos y no uno porque el catálogo no pone tope a la amplitud de
+	// un rango, así que un perfil puede pedir `27000-27100` legítimamente.
+	// Expandir eso a cien filtros sería absurdo, y rechazarlo rompería perfiles
+	// que el dominio acepta. WFP tiene condición de rango y es lo que
+	// corresponde usar.
+	LocalPortFrom uint16
+	LocalPortTo   uint16
+	Proto         domain.Proto
 	// Remote son los miembros presentes.
 	Remote []netip.Addr
 	// RemoteNets es el alcance remoto por prefijo. Solo lo usa la puerta del
@@ -275,9 +284,14 @@ func permitFor(r domain.FirewallRule, scope Scope) (FilterSpec, error) {
 		return FilterSpec{}, fmt.Errorf("regla %q: proto both no llega hasta acá, "+
 			"[domain.BuildRuleSet] lo expande en dos reglas", r.Name)
 	}
-	if r.From != r.To {
-		return FilterSpec{}, fmt.Errorf("regla %q: la compuerta emite un filtro por "+
-			"PUERTO y este es un rango %d-%d. Hay que expandirlo antes", r.Name, r.From, r.To)
+	if r.From == 0 || r.To == 0 {
+		// Un permiso sin puerto abriría el adaptador entero para esos miembros,
+		// que es exactamente lo que la compuerta existe para impedir.
+		return FilterSpec{}, fmt.Errorf("regla %q: rango de puertos %d-%d, y el cero "+
+			"en la compuerta se lee como cualquier puerto", r.Name, r.From, r.To)
+	}
+	if r.From > r.To {
+		return FilterSpec{}, fmt.Errorf("regla %q: rango invertido %d-%d", r.Name, r.From, r.To)
 	}
 
 	remote := append([]netip.Addr(nil), r.Remote...)
@@ -286,12 +300,13 @@ func permitFor(r domain.FirewallRule, scope Scope) (FilterSpec, error) {
 	sort.Slice(nets, func(i, j int) bool { return nets[i].String() < nets[j].String() })
 
 	return newSpec("permiso espejo: "+r.Name, RecvAcceptV4, Permit, WeightPermit, Conditions{
-		LUID:       scope.LUID,
-		LocalAddr:  r.Local,
-		LocalPort:  r.From,
-		Proto:      r.Proto,
-		Remote:     remote,
-		RemoteNets: nets,
+		LUID:          scope.LUID,
+		LocalAddr:     r.Local,
+		LocalPortFrom: r.From,
+		LocalPortTo:   r.To,
+		Proto:         r.Proto,
+		Remote:        remote,
+		RemoteNets:    nets,
 	}), nil
 }
 

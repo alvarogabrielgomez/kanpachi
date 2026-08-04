@@ -153,8 +153,8 @@ func TestThePermitMirrorsTheRule(t *testing.T) {
 	if c.LocalAddr != gameRule().Local {
 		t.Errorf("dirección local = %v", c.LocalAddr)
 	}
-	if c.LocalPort != 16261 || c.Proto != domain.ProtoUDP {
-		t.Errorf("puerto/proto = %d/%v", c.LocalPort, c.Proto)
+	if c.LocalPortFrom != 16261 || c.LocalPortTo != 16261 || c.Proto != domain.ProtoUDP {
+		t.Errorf("puertos/proto = %d-%d/%v", c.LocalPortFrom, c.LocalPortTo, c.Proto)
 	}
 	if len(c.Remote) != 1 || c.Remote[0] != addr("100.64.1.5") {
 		t.Errorf("alcance remoto = %v", c.Remote)
@@ -178,18 +178,53 @@ func TestAPermitWithNoRemoteScopeIsRefused(t *testing.T) {
 	}
 }
 
-func TestAPortRangeIsRefusedInsteadOfSilentlyCovered(t *testing.T) {
-	// La compuerta emite un filtro por PUERTO. Un rango aceptado acá cubriría
-	// solo su primer puerto, y el resto quedaría cerrado mientras la regla
-	// visible del Firewall dice que están abiertos.
+func TestAPortRangeSurvivesWhole(t *testing.T) {
+	// El catálogo no pone tope a la amplitud de un rango, así que un perfil
+	// puede pedir 27000-27100 legítimamente. Expandirlo a cien filtros sería
+	// absurdo y rechazarlo rompería perfiles que el dominio acepta: WFP tiene
+	// condición de rango y es lo que corresponde.
+	//
+	// Este test existió al revés durante un rato, exigiendo que un rango se
+	// RECHAZARA. Era una limitación inventada acá que habría roto en silencio la
+	// mitad de los juegos con puertos consecutivos.
 	r := gameRule()
-	r.To = 16265
+	r.From, r.To = 27000, 27100
+
+	var rs domain.RuleSet
+	rs.Rules = append(rs.Rules, r)
+
+	specs, err := SpecsFor(rs, roomScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	permisos := 0
+	for _, s := range specs {
+		if s.Action != Permit {
+			continue
+		}
+		permisos++
+		if s.Conditions.LocalPortFrom != 27000 || s.Conditions.LocalPortTo != 27100 {
+			t.Errorf("el rango llegó como %d-%d", s.Conditions.LocalPortFrom, s.Conditions.LocalPortTo)
+		}
+	}
+	if permisos != 1 {
+		t.Errorf("se emitieron %d permisos para un rango, se esperaba UNO con condición "+
+			"de rango", permisos)
+	}
+}
+
+func TestAPermitWithNoPortIsRefused(t *testing.T) {
+	// Un permiso sin puerto abre el adaptador entero para esos miembros, que es
+	// justo lo que la compuerta existe para impedir.
+	r := gameRule()
+	r.From, r.To = 0, 0
 
 	var rs domain.RuleSet
 	rs.Rules = append(rs.Rules, r)
 
 	if _, err := SpecsFor(rs, roomScope()); err == nil {
-		t.Fatal("se aceptó un rango de puertos")
+		t.Fatal("se aceptó un permiso sin puerto")
 	}
 }
 
