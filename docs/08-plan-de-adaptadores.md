@@ -79,13 +79,28 @@ Son dos cosas distintas y conviene no confundirlas.
 
 | Necesita | Por qué |
 |---|---|
-| Consola **elevada** | WFP entero. Medido: `netsh wfp show filters` da `ERROR_ACCESS_DENIED` sin elevar, y `FwpmFilterCreateEnumHandle0` también |
+| Consola **elevada** | Solo para ESCRIBIR en WFP, y eso corrige lo que decía acá |
 | **Segunda máquina** | Las mediciones A y B, y la prueba del conjunto |
 | ~~**Seed alcanzable**~~ | **RESUELTO el 2026-08-03.** Se apagó el proxy de Cloudflare y `kanpachi.accentio.dev` sirve la página en 443 y el motor en 11010, por el mismo nombre |
 | Adaptador `kanpachi0` **vivo** | El LUID, y el segundo puerto de magic DNS, que solo aparece con TUN levantado |
 
 Todo lo que dependa de esos cuatro queda escrito y **marcado**, con la prueba
 concreta que lo confirma. Nada se da por bueno sin medirlo.
+
+**Dónde está de verdad la frontera de la elevación.** Esta tabla decía que WFP
+entero exige administrador, citando que `netsh wfp show filters` falla sin
+elevar. Correr el adaptador de verdad sin elevar el 2026-08-04 lo desmintió:
+
+| Llamada | Sin elevar |
+|---|---|
+| `FwpmEngineOpen0` | funciona |
+| `FwpmFilterGetByKey0` | funciona: contesta que el filtro no está |
+| `FwpmTransactionBegin0` | `0x5`, o sea `ERROR_ACCESS_DENIED` |
+
+O sea que la frontera está entre **leer y escribir**, y no en abrir la sesión.
+Que `netsh` falle dice algo de `netsh`. No es un detalle: significa que la
+pantalla de exposición puede MEDIR sin pedir un UAC cada vez que se abre, que es
+la diferencia entre una pantalla que se mira y una que se evita.
 
 ---
 

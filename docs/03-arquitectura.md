@@ -778,6 +778,18 @@ Las claves de los filtros salen de la **ranura** que ocupan, y no de su etiqueta
 
 `Measure` recibe el conjunto deseado, y no es un atajo: las ranuras son posiciones y no nombres, así que para poder decir "falta el permiso de tal regla" hay que saber qué regla ocupaba esa ranura. El sistema sigue siendo el que contesta si el filtro está.
 
+**Leer no exige elevación y escribir sí.** Medido: abrir la sesión y preguntar por un filtro funcionan como usuario normal, y `FwpmTransactionBegin0` devuelve `ERROR_ACCESS_DENIED`. De ahí sale que la pantalla de exposición pueda medir sin un UAC cada vez, que es la diferencia entre una pantalla que se mira y una que se evita.
+
+### internal/fwprobe, para poder medirlo
+
+Corre el firewall compuesto **con el mismo código que el daemon**, sin una sola llamada propia al sistema. Vive en `internal/` para que el producto no lo importe y el instalador no lo distribuya.
+
+Es hermano del spike que decidió el diseño, con una diferencia que es todo el punto: aquel tenía llamadas propias a WFP y este no tiene ninguna. Si acá hiciera falta un atajo, sería la señal de que al adaptador le falta algo.
+
+Poner y quitar son subcomandos separados, y entre medias se mide desde la otra máquina. Un estado suelto no prueba nada: si el firewall ya estaba abierto de una corrida anterior, "conecta" no dice quién lo abrió. Lo que se mide es la transición.
+
+La primera corrida encontró dos caídas que ningún test del repo podía encontrar, porque las dos viven dentro de una llamada COM: `INetFwRule::Interfaces` devuelve un array de VARIANT y leerlo como array de BSTR mata el proceso, y `IEnumVARIANT::Next` termina cada enumeración con `S_FALSE`, que go-ole convierte en error. Con la segunda, todos los caminos del adaptador de permisos fallaban siempre.
+
 ### adapter/firewall/windowscom, implementa `FirewallPort`
 
 - API COM `INetFwPolicy2`, nunca `netsh`: más rápida y sin dependencia del idioma del sistema.
