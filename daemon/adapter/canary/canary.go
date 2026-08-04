@@ -292,52 +292,140 @@ func (c *Canary) serveUDP() {
 	}
 }
 
+// bindIntentos son los números que se prueban antes de rendirse.
+//
+// Cuarenta y no veinte, y el número sale de una medición y no del aire. Ver
+// [bindBoth].
+const bindIntentos = 40
+
 // bindBoth busca un puerto libre en TCP y en UDP a la vez, en esa dirección, y
 // que además `avoid` no rechace.
 //
-// Se pide un efímero al sistema en TCP y se intenta el mismo número en UDP. Que
-// el sistema elija evita inventar números, y reintentar cubre los dos motivos
-// por los que un número puede no servir: que esté tomado en UDP, y que sea uno
-// que el juego activo tiene abierto.
+// # Lo que se vio fallar, y lo que sigue sin explicarse
+//
+// El 2026-08-04 una corrida de la suite entera falló acá con:
+//
+//	listen udp 127.0.0.1:58900: bind: WSAEACCES
+//
+// Windows RESERVA bloques del rango efímero, los pone cualquier cosa que use
+// Hyper-V por debajo (WSL, Docker Desktop), y cambian en cada arranque. En esa
+// máquina, en ese momento:
+//
+//	netsh int ipv4 show excludedportrange protocol=udp
+//	  50000-50059  50085-50184  50278-50377  50516-50615
+//	  50616-50715  50716-50815  50816-50915  58804-58903
+//
+// El 58900 cae justo dentro del último bloque, así que ESA falla se explica sola.
+// Lo que no se explica es por qué fallaron también los otros diecinueve intentos:
+// Windows aleatoriza la asignación de efímeros desde Vista, y con unos 800
+// puertos reservados de 16384, veinte tiros seguidos cayendo todos dentro es
+// prácticamente imposible.
+//
+// **La causa sigue sin encontrarse.** Se intentó reproducirla de tres formas y
+// ninguna funcionó: treinta aperturas seguidas, una tira contigua ocupada a mano
+// en UDP, y la suite entera repetida. Está escrito así a propósito, porque un
+// diagnóstico que no se sostuvo es peor que ninguno.
+//
+// # Lo que sí se hizo, que es estrictamente mejor y cuesta nada
+//
+// Se ALTERNA quién elige el número. Las listas de exclusión de TCP y de UDP son
+// distintas, así que cuando le toca elegir a UDP el sistema entrega un número que
+// para UDP ya está libre, y una reserva de UDP deja de poder morder en ese
+// intento. Y los intentos suben a cuarenta, que alternados son veinte por
+// protocolo.
+//
+// El síntoma que esto vuelve menos probable es el peor posible: el canario no
+// abre, la ronda devuelve ciego, y la Protección Kanpachi no corre NUNCA sin que
+// nada explique por qué. Le tocaría justo al público de este producto, que es
+// gente con Windows y con WSL o Docker instalados.
 func bindBoth(at netip.Addr, avoid func(uint16) bool) (net.Listener, net.PacketConn, uint16, error) {
 	host := at.String()
 
-	const intentos = 20
-	// Se guarda el ÚLTIMO error de UDP y cuántos se descartaron por chocar, para
-	// poder contarlo. Un mensaje que diga "20 intentos" y no diga por qué falló
+	// Se guarda el ÚLTIMO error y cuántos se descartaron por chocar, para poder
+	// contarlo. Un mensaje que diga "cuarenta intentos" y no diga por qué falló
 	// cada uno no sirve para nada el día que falle en la máquina de un usuario, y
 	// las dos causas piden arreglos distintos.
 	var último error
 	descartados := 0
 
-	for i := 0; i < intentos; i++ {
-		tcp, err := net.Listen("tcp", net.JoinHostPort(host, "0"))
-		if err != nil {
-			return nil, nil, 0, fmt.Errorf("canary: no se pudo ligar TCP en %s: %w", host, err)
-		}
-
-		port := uint16(tcp.Addr().(*net.TCPAddr).Port)
-		if avoid != nil && avoid(port) {
-			// Ese número lo abrió la propia Kanpachi. Un oyente ahí contestaría
-			// con toda razón, y esa respuesta se leería como una fuga.
+	for i := 0; i < bindIntentos; i++ {
+		tcp, udp, port, chocó, err := unIntento(host, avoid, i%2 == 0)
+		switch {
+		case chocó:
 			descartados++
-			_ = tcp.Close()
-			continue
-		}
-
-		udp, err := net.ListenPacket("udp", net.JoinHostPort(host, fmt.Sprint(port)))
-		if err == nil {
+		case err != nil:
+			último = err
+		default:
 			return tcp, udp, port, nil
 		}
-		último = err
-		_ = tcp.Close()
 	}
 
 	if último == nil {
 		return nil, nil, 0, fmt.Errorf("canary: los %d puertos que ofreció el sistema en %s "+
-			"caían todos en un rango que el juego activo tiene abierto", intentos, host)
+			"caían todos en un rango que el juego activo tiene abierto", bindIntentos, host)
 	}
 	return nil, nil, 0, fmt.Errorf("canary: no salió ningún puerto libre en TCP y UDP a la vez "+
 		"en %s tras %d intentos, con %d descartados por chocar con el juego activo. "+
-		"Lo último que dijo UDP: %w", host, intentos, descartados, último)
+		"Si el error de abajo habla de permisos, son los rangos que Windows reserva: "+
+		"`netsh int ipv4 show excludedportrange protocol=udp` los enseña. Lo último: %w",
+		host, bindIntentos, descartados, último)
+}
+
+// unIntento consigue el mismo número en los dos protocolos, dejando ELEGIR al
+// que se le diga.
+//
+// Devuelve `chocó` aparte del error porque son cosas distintas: chocar con un
+// puerto del juego activo es lo normal y se reintenta sin más, y un error de
+// ligar es información que hay que conservar para el mensaje final.
+func unIntento(host string, avoid func(uint16) bool, desdeTCP bool) (
+	net.Listener, net.PacketConn, uint16, bool, error) {
+
+	var (
+		tcp  net.Listener
+		udp  net.PacketConn
+		port uint16
+		err  error
+	)
+
+	if desdeTCP {
+		tcp, err = net.Listen("tcp", net.JoinHostPort(host, "0"))
+		if err != nil {
+			return nil, nil, 0, false, err
+		}
+		port = uint16(tcp.Addr().(*net.TCPAddr).Port)
+	} else {
+		udp, err = net.ListenPacket("udp", net.JoinHostPort(host, "0"))
+		if err != nil {
+			return nil, nil, 0, false, err
+		}
+		port = uint16(udp.LocalAddr().(*net.UDPAddr).Port)
+	}
+
+	cerrar := func() {
+		if tcp != nil {
+			_ = tcp.Close()
+		}
+		if udp != nil {
+			_ = udp.Close()
+		}
+	}
+
+	// El predicado se consulta con el número ya en la mano y ANTES de ligar el
+	// segundo. Un número que el juego activo tiene abierto contestaría con toda
+	// razón, y esa respuesta se leería como que la compuerta dejó de contener.
+	if avoid != nil && avoid(port) {
+		cerrar()
+		return nil, nil, 0, true, nil
+	}
+
+	if desdeTCP {
+		udp, err = net.ListenPacket("udp", net.JoinHostPort(host, fmt.Sprint(port)))
+	} else {
+		tcp, err = net.Listen("tcp", net.JoinHostPort(host, fmt.Sprint(port)))
+	}
+	if err != nil {
+		cerrar()
+		return nil, nil, 0, false, err
+	}
+	return tcp, udp, port, false, nil
 }

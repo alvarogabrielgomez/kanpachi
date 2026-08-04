@@ -467,6 +467,9 @@ type apiFalsa struct {
 	// sondeo nil devuelve el informe CIEGO, por lo mismo que exposición.
 	sondeo    *domain.ProbeReport
 	errSondeo error
+
+	reposiciones int
+	errReponer   error
 }
 
 func (a *apiFalsa) Now() time.Time { return a.ahora }
@@ -548,6 +551,14 @@ func (a *apiFalsa) ProbeHost(context.Context) (domain.ProbeReport, error) {
 		return *a.sondeo, nil
 	}
 	return domain.ProbeReport{}, nil
+}
+
+func (a *apiFalsa) ReapplyProtection(context.Context) (domain.RoomState, error) {
+	if a.errReponer != nil {
+		return domain.RoomState{}, a.errReponer
+	}
+	a.reposiciones++
+	return a.estado, nil
 }
 
 func (a *apiFalsa) ObserveGame(context.Context, domain.ProcessRef, map[int]bool, bool) ([]domain.PortRange, error) {
@@ -863,5 +874,120 @@ func TestCadaClaseYResultadoDelSondeoTieneNombreEnLaAPI(t *testing.T) {
 	}
 	if got := verdictName(domain.ProbeVerdict(99)); got != "blind" {
 		t.Errorf("un veredicto desconocido viajó como %q, y no puede afirmar nada", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// La Protección Kanpachi por el cable
+// ---------------------------------------------------------------------------
+
+// Cada veredicto tiene nombre, y ninguno se repite. Sin esto, agregar un valor
+// al enum lo dejaría viajando como el de otro y la pantalla diría otra cosa.
+func TestCadaVeredictoDeCanarioTieneNombreEnLaAPI(t *testing.T) {
+	vistos := map[string]domain.CanaryVerdict{}
+	for _, v := range domain.AllCanaryVerdicts() {
+		n := canaryVerdictName(v)
+		if n == "" {
+			t.Errorf("el veredicto %v no tiene nombre", v)
+			continue
+		}
+		if otro, repetido := vistos[n]; repetido {
+			t.Errorf("%v y %v viajan los dos como %q", v, otro, n)
+		}
+		vistos[n] = v
+	}
+}
+
+// Un veredicto que esta versión no conoce viaja como CIEGO y jamás como limpio.
+// Leer un valor desconocido como "no hay evidencia de fuga" sería enseñar
+// tranquilidad sobre algo que no se midió.
+func TestUnVeredictoDeCanarioDesconocidoViajaComoCiego(t *testing.T) {
+	if n := canaryVerdictName(domain.CanaryVerdict(99)); n != "blind" {
+		t.Fatalf("un veredicto desconocido viajó como %q", n)
+	}
+}
+
+// Una comprobación que no se hizo viaja VACÍA. Es el mismo criterio que el
+// informe de exposición: lo que no se pueda expresar mal, mejor.
+func TestUnaComprobacionDeCanarioCiegaViajaVacia(t *testing.T) {
+	v := canaryView(domain.CanaryCheck{})
+
+	switch {
+	case v.Measured:
+		t.Error("una comprobación sin hacer se marcó como medida")
+	case v.Verdict != "blind":
+		t.Errorf("verdict = %q", v.Verdict)
+	case v.Port != 0 || v.MeasuredAtMS != 0:
+		t.Errorf("viajó con puerto u hora: %+v", v)
+	case len(v.Asked) != 0 || len(v.Answers) != 0:
+		t.Errorf("viajó con preguntados o respuestas: %+v", v)
+	}
+}
+
+// Las dos fuentes viajan POR SEPARADO. Juntarlas en un booleano tiraría lo que
+// hace creíble la frase de la pantalla.
+func TestLaComprobacionDelCanarioViajaConSusDosFuentes(t *testing.T) {
+	s, api := servidor(t)
+	saluda(t, s, tokenDePrueba)
+
+	yo := netip.MustParseAddr("10.77.0.2")
+	api.estado = domain.RoomState{
+		Conn: domain.StateConnected,
+		Canary: domain.CanaryCheck{
+			MeasuredAt: api.ahora,
+			Port:       51234,
+			Touched:    true,
+			Asked:      []domain.CanaryAsked{{At: yo, Name: nick(t, "humberto")}},
+			Answers: []domain.CanaryAnswer{
+				{From: yo, Name: nick(t, "humberto"), TCP: domain.ProbeSilent, UDP: domain.ProbeAnswered},
+			},
+		},
+	}
+
+	var v RoomView
+	lee(t, pide(t, s, `{"id":9,"method":"status"}`), &v)
+
+	switch {
+	case !v.Canary.Measured:
+		t.Fatal("no viajó como medida")
+	case v.Canary.Verdict != "leaking":
+		t.Errorf("verdict = %q, y al canario lo tocaron", v.Canary.Verdict)
+	case !v.Canary.Touched:
+		t.Error("se perdió el hecho propio del host, que es lo único que se afirma con certeza")
+	case len(v.Canary.Asked) != 1 || v.Canary.Asked[0] != "humberto":
+		t.Errorf("asked = %+v", v.Canary.Asked)
+	case len(v.Canary.Answers) != 1:
+		t.Fatalf("answers = %+v", v.Canary.Answers)
+	case v.Canary.Answers[0].TCP != "silent" || v.Canary.Answers[0].UDP != "answered":
+		t.Errorf("el informe viajó cambiado: %+v", v.Canary.Answers[0])
+	}
+}
+
+func TestReponerLaProteccionDevuelveElEstado(t *testing.T) {
+	s, api := servidor(t)
+	saluda(t, s, tokenDePrueba)
+	api.estado = domain.RoomState{Conn: domain.StateConnected, Name: "Los panas"}
+
+	var v RoomView
+	lee(t, pide(t, s, `{"id":9,"method":"reapply_protection"}`), &v)
+
+	if api.reposiciones != 1 {
+		t.Fatalf("se repuso %d veces", api.reposiciones)
+	}
+	// El estado ENTERO y no un acuse: el usuario acaba de pulsar el botón que
+	// enseña la alarma, y la pantalla tiene que redibujarse.
+	if v.Name != "Los panas" || v.Conn != "connected" {
+		t.Fatalf("no volvió el estado: %+v", v)
+	}
+}
+
+func TestReponerSinSalaFallaConSuCodigo(t *testing.T) {
+	s, api := servidor(t)
+	saluda(t, s, tokenDePrueba)
+	api.errReponer = usecase.ErrNoRoom
+
+	resp := pide(t, s, `{"id":9,"method":"reapply_protection"}`)
+	if resp.Error == nil || resp.Error.Code != CodeNoRoom {
+		t.Fatalf("no se tradujo el error: %+v", resp)
 	}
 }

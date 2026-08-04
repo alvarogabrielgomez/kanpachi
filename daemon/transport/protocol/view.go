@@ -55,6 +55,14 @@ type RoomView struct {
 	Net    NetView     `json:"net"`
 	Alerts []AlertView `json:"alerts"`
 
+	// Canary es la última ronda de la Protección Kanpachi.
+	//
+	// Va dentro del estado y no detrás de un método propio como el sondeo, y la
+	// asimetría tiene motivo: aquel es una medición que el USUARIO pide, y esto
+	// lo produjo el daemon solo, igual que las alertas. Nadie va a pulsar un
+	// botón para descubrir que su protección se cayó.
+	Canary CanaryView `json:"canary"`
+
 	// LastExit es por qué se volvió a la pantalla de inicio. Vacío es que no
 	// hay nada que explicar.
 	LastExit string `json:"last_exit,omitempty"`
@@ -144,7 +152,99 @@ func roomView(st domain.RoomState, missing string, now time.Time) RoomView {
 	for _, a := range st.Alerts {
 		v.Alerts = append(v.Alerts, AlertView{Kind: alertName(a.Kind), Detail: a.Detail})
 	}
+	v.Canary = canaryView(st.Canary)
 	return v
+}
+
+// CanaryView es la última comprobación de la Protección Kanpachi.
+//
+// # Las dos fuentes viajan por separado, y esa separación es el tipo entero
+//
+//	Touched   lo vio el HOST, con su propio socket. No se puede falsificar
+//	Answers   lo dijeron los miembros. Son mensajes, y un mensaje se puede mentir
+//
+// La pantalla puede enseñar las dos porque son dos cosas distintas. Juntarlas en
+// un booleano tiraría justo lo que hace creíble la frase.
+type CanaryView struct {
+	Measured bool `json:"measured"`
+	// MeasuredAtMS es cuándo, en milisegundos desde la época. Cero si no se
+	// midió, igual que en [ExposureView] y [ProbeView].
+	MeasuredAtMS int64 `json:"measured_at_ms,omitempty"`
+	// Port es el puerto que se abrió, para poder nombrarlo en la pantalla.
+	Port uint16 `json:"port,omitempty"`
+
+	// Verdict es "blind", "leaking", "clean", "unconfirmed" o "mismatch".
+	Verdict string `json:"verdict"`
+	// Touched es el hecho propio del host. Es lo único de acá que se afirma con
+	// certeza.
+	Touched bool `json:"touched"`
+
+	// Asked son los nombres de TODOS a los que se preguntó, y Answers lo que
+	// contestó cada uno. Que se pregunte a todos es lo que impide que un
+	// adversario con varias membresías se haga elegir.
+	Asked   []string           `json:"asked,omitempty"`
+	Answers []CanaryAnswerView `json:"answers"`
+}
+
+type CanaryAnswerView struct {
+	From string `json:"from"`
+	// TCP y UDP son "answered", "refused", "silent" o "failed", igual que en
+	// [ProbeResultView].
+	TCP string `json:"tcp"`
+	UDP string `json:"udp"`
+}
+
+func canaryView(c domain.CanaryCheck) CanaryView {
+	v := CanaryView{
+		Measured: !c.Blind(),
+		Verdict:  canaryVerdictName(c.Verdict()),
+		Answers:  make([]CanaryAnswerView, 0, len(c.Answers)),
+	}
+	if c.Blind() {
+		// Ni puerto, ni hora, ni preguntados. Por lo mismo que en [exposureView]:
+		// este es el formato que cruza a otro proceso, y lo que no se pueda
+		// expresar mal, mejor.
+		return v
+	}
+	v.MeasuredAtMS = c.MeasuredAt.UnixMilli()
+	v.Port = c.Port
+	v.Touched = c.Touched
+
+	for _, a := range c.Asked {
+		v.Asked = append(v.Asked, a.Name.String())
+	}
+	for _, a := range c.Answers {
+		v.Answers = append(v.Answers, CanaryAnswerView{
+			From: a.Name.String(),
+			TCP:  probeOutcomeName(a.TCP),
+			UDP:  probeOutcomeName(a.UDP),
+		})
+	}
+	return v
+}
+
+func canaryVerdictName(v domain.CanaryVerdict) string {
+	switch v {
+	case domain.CanaryLeaking:
+		return "leaking"
+	case domain.CanaryClean:
+		return "clean"
+	case domain.CanaryUnconfirmed:
+		return "unconfirmed"
+	case domain.CanaryMismatch:
+		return "mismatch"
+	case domain.CanaryBlind:
+		// Explícito y no metido en el default, aunque devuelvan lo mismo, por lo
+		// mismo que en [gateName]: el candado que compara esta función con el
+		// enum de Dart corta el fuente en el `default`, así que un valor que solo
+		// viva ahí no entra en el contrato.
+		return "blind"
+	default:
+		// Un veredicto nuevo sin nombre acá viaja como sin comprobar, que es el
+		// lado seguro. Jamás como "clean": un valor desconocido no puede leerse
+		// como que no hay evidencia de fuga.
+		return "blind"
+	}
 }
 
 // ExposureView es lo que Kanpachi tiene abierto, para la pantalla que lo

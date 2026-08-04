@@ -67,6 +67,10 @@ const (
 	MethodObserveGame         Method = "observe_game"
 	MethodExposure            Method = "exposure"
 	MethodProbeHost           Method = "probe_host"
+	// MethodReapplyProtection repone la Protección Kanpachi. Es IDEMPOTENTE:
+	// el firewall calcula la diferencia contra las reglas vivas, así que
+	// pulsarlo con nada roto no lo toca.
+	MethodReapplyProtection Method = "reapply_protection"
 
 	MethodPendingRoom        Method = "pending_room"
 	MethodResumeRoom         Method = "resume_room"
@@ -98,6 +102,7 @@ var métodos = map[Method]bool{
 	MethodObserveGame:         true,
 	MethodExposure:            true,
 	MethodProbeHost:           true,
+	MethodReapplyProtection:   true,
 	MethodPendingRoom:         true,
 	MethodResumeRoom:          true,
 	MethodDiscardPendingRoom:  true,

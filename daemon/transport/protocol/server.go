@@ -57,6 +57,12 @@ type API interface {
 	// mal, son motivos por los que no se puede medir, y cada uno lleva su
 	// código para que la pantalla diga la frase correcta.
 	ProbeHost(ctx context.Context) (domain.ProbeReport, error)
+	// ReapplyProtection es la acción que ofrece la alarma del canario, y es
+	// IDEMPOTENTE: reaplicar con nada roto no toca el firewall.
+	//
+	// Vale para los DOS roles. Un invitado también tiene protección, su propio
+	// deny-all más la compuerta, y reponerla es el mismo acto.
+	ReapplyProtection(ctx context.Context) (domain.RoomState, error)
 	ObserveGame(ctx context.Context, root domain.ProcessRef, tree map[int]bool, keepSteam bool) ([]domain.PortRange, error)
 
 	PendingRoom() (domain.PersistedRoom, bool)
@@ -388,6 +394,13 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 			return nil, errorFor(err)
 		}
 		return result(probeView(r))
+
+	case MethodReapplyProtection:
+		// Devuelve el estado ENTERO y no un acuse, porque la pantalla tiene que
+		// redibujarse: reponer programa la ronda que puede apagar la alarma, y el
+		// usuario acaba de pulsar el botón que la enseña.
+		st, err := s.api.ReapplyProtection(ctx)
+		return s.roomOrErr(st, err)
 
 	case MethodObserveGame:
 		return s.observe(ctx, req.Params)
