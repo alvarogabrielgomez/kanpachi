@@ -954,3 +954,72 @@ Las entradas que expresan una INTENCIÓN del usuario no lo hacen, y esa asimetr�
 ### Descartado: reintentar el aviso hasta que lo confirmen
 
 Se evaluó al diseñar el aviso de expulsión. Reintentar sin tope convierte una operación no cooperativa en una que espera al otro lado, o sea le devuelve al expulsado el poder de decidir cuándo se va. Lo que se hace es esperar el acuse **con tope**: pasado el plazo se revoca igual, y lo único que se pierde es que se entere.
+
+## 27. La contención vive en DOS capas, y la segunda es un filtro propio
+
+**Decidido, y las cuatro apuestas de las que dependía están MEDIDAS** con dos máquinas reales los días 3 y 4 de agosto de 2026.
+
+### El problema que la decisión 4 dejó abierto
+
+La decisión 4 explica por qué la cuarentena de base **no puede ser un deny-all**: los bloqueos explícitos del Firewall de Windows ganan sobre cualquier permiso en conflicto, sin desempate por especificidad y sin orden asignable por el administrador. Un bloqueo total taparía también las reglas del juego activo que crea el propio daemon.
+
+La consecuencia es que **la lista de lo que Kanpachi abre es ADITIVA y no completa**. Sirve para decir "esto se abrió", y no puede decir "y nada más". Mientras eso sea así, una regla permisiva ajena, la que deja el instalador de Parsec o de Sunshine, alcanza al usuario por la red virtual y expulsar a alguien no lo tapa. Es la decisión 19 en su peor forma, y es el único camino conocido por el que un miembro de la sala consigue teclado, pantalla y sistema de archivos del host.
+
+### Lo que se hace
+
+**Intersección, no reemplazo.** Los permisos se quedan donde están y se suma una segunda capa.
+
+| Capa | Quién la pone | Qué hace |
+|---|---|---|
+| Instalador, grupo `Kanpachi-base` | COM | Los puertos prohibidos en las dos direcciones, sin acotar. **No cambia** |
+| Daemon, grupo `Kanpachi` | COM | Los permisos del juego activo. Son los que ABREN. **No cambia** |
+| Daemon, compuerta | Sesión propia de WFP | Un bloqueo de todo lo entrante acotado al adaptador virtual, más permisos espejo del mismo conjunto |
+
+La compuerta va **solo** en `ALE_AUTH_RECV_ACCEPT_V4` y `V6`. Jamás en `ALE_AUTH_CONNECT`: bloquear la salida impediría que un invitado marque al puerto del juego del host, que es el caso central del producto.
+
+### Por qué funciona: la asimetría de WFP
+
+En WFP, un filtro **Block es HARD por defecto**, o sea *"cannot be permitted at another sub-layer"*, y un filtro **Permit es SOFT**, o sea *"can be blocked at another sub-layer"*.
+
+La regla permisiva de Parsec vive en el sublayer de Windows y es un permiso soft. Un bloqueo duro nuestro sobre el adaptador virtual la anula, **sin tocarla y sin pedirle nada al usuario**.
+
+### Lo que se midió, y cómo
+
+Todo con dos PCs en la misma red, el invitado conectando contra el host.
+
+| Qué | Resultado |
+|---|---|
+| Bloqueo duro nuestro contra permiso vivo del Firewall | permiso solo: conecta 6 ms. Permiso más bloqueo: **timeout**. Bloqueo quitado: conecta otra vez 20 ms |
+| La condición de interfaz se aplica | acotado al adaptador por el que llega el invitado: **no conecta**. Acotado a OTRO adaptador: **conecta** |
+| El bloqueo de todo con permiso espejo | el puerto exceptuado **conecta**, cualquier otro **no**, con el permiso de Windows vivo |
+| El veto del usuario | un bloqueo suyo sobre el puerto exceptuado lo tira, con nuestro permiso espejo intacto |
+
+**Cada una va y VUELVE.** Un solo "no conecta" no distingue un filtro de un cable suelto, del wifi o del listener caído. Los pasos de vuelta descartan las tres cosas, y la comparación con y sin alcance cambia una sola variable.
+
+### Lo que NO se rompe, y es el punto
+
+- El grupo `Kanpachi` **sigue existiendo y siendo visible**. `wf.msc`, `Get-NetFirewallRule` y toda la base de conocimiento del usuario siguen sirviendo.
+- **El usuario conserva el veto**, medido: sin hard permits y sin el sublayer de peso máximo, sus bloqueos siguen ganando. La decisión 4 se sostiene tal cual.
+- **No es todo o nada.** El bloqueo de todo entra solo y vale por sí mismo: con eso y nada más, el adaptador virtual queda inalcanzable salvo por lo que los permisos abran.
+- **Reiniciar el servicio no corta la partida.** Los flujos se reautorizan y los permisos del Firewall siguen vivos.
+- Si el filtro deja de casar, **degrada a la contención de antes**, que es la del Firewall de Windows. Nunca por debajo.
+
+### Lo que se descartó
+
+**Mudar los permisos a WFP y vaciar el grupo COM.** Se pierde la visibilidad, que es lo que permite al usuario auditar con sus herramientas y a nosotros diagnosticar por teléfono. Y no compra nada: la compuerta ya cierra el caso.
+
+**Hard permits.** Cerrarían el agujero igual y le quitarían al usuario el veto sobre su propia máquina. Es exactamente lo que la decisión 4 protege.
+
+**El sublayer de peso máximo.** Mismo problema por otra vía.
+
+**Cuarentena WFP persistente puesta por el instalador.** El servicio base de filtrado la deshabilita en silencio si el proveedor no arranca como servicio automático, y una protección que se apaga sin avisar es peor que no tenerla.
+
+### Lo que sigue sin medirse
+
+**La reautorización de un flujo YA establecido.** Todo lo medido son conexiones nuevas. Si la condición de interfaz llegara vacía al reautorizar, tras reiniciar el servicio o al cambiar de adaptador, la compuerta dejaría de casar en silencio. La mitigación prevista es emitir el bloqueo **dos veces**, por LUID del adaptador y por dirección local sobre el rango de la sala, para que ninguna de las dos sea el único asidero.
+
+### Consecuencia para el dominio
+
+`OwnRulesIntact(bool)` no vale para esto: un booleano no puede decir QUÉ falta ni en qué capa. Lo reemplaza `Enforcement()`, que devuelve lo MEDIDO en las dos capas y deja que juzgue `Enforcement.Diff`, que es dominio y se testea sin Windows. El adaptador mide y el dominio juzga, por la misma razón por la que `Apply` calcula la diferencia contra las reglas vivas y jamás contra un recuerdo en memoria.
+
+Un estado de compuerta **sin comprobar** es distinto de **ausente**, y se muestran distinto: uno es un hecho y el otro es ceguera. Misma doctrina que `AlertAuditFailed`.

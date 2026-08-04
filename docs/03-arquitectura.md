@@ -702,6 +702,43 @@ Sobre la primera: La llama el adaptador del canal de control cuando alguien toca
 
 `Status()` es el único canal por el que la UI se entera de las alertas del módulo de exposición. No hay notificación aparte ni evento especial: el módulo publica su último resultado y `Status()` lo arrastra, así que una alerta nunca puede bloquear ni retrasar una respuesta.
 
+### La contención vive en DOS capas
+
+Antes de leer el adaptador conviene tener claro el reparto, porque cada capa
+falla por un motivo distinto y la pantalla tiene que poder decir cuál se rompió.
+La decisión 27 lo argumenta entero.
+
+| Capa | Cómo | Qué hace | Quién la ve |
+|---|---|---|---|
+| Reglas del Firewall de Windows | COM, `INetFwPolicy2` | ABREN los puertos del juego activo | El usuario, sin elevar, con sus herramientas de siempre |
+| Compuerta | Sesión propia de WFP | CIERRA todo lo demás del adaptador virtual | Solo la pantalla de Kanpachi, y `netsh wfp` con consola elevada |
+
+**Lo que la primera capa no puede expresar es "denegar todo salvo esto".** Los
+bloqueos explícitos ganan sobre cualquier permiso en conflicto y Windows no
+admite orden asignado por el administrador, así que un bloqueo total taparía
+también las reglas del propio Kanpachi. Por eso la lista de lo que se abre es
+ADITIVA, y por eso hace falta la segunda capa para volverla COMPLETA.
+
+**En WFP un Block es HARD por defecto y un Permit es SOFT.** Esa asimetría es lo
+que hace que un bloqueo nuestro anule una regla permisiva ajena sin tocarla, y lo
+que conserva el veto del usuario, porque sus bloqueos siguen ganándole a nuestros
+permisos.
+
+Medido con dos máquinas los días 3 y 4 de agosto de 2026, las cuatro apuestas:
+el bloqueo duro le gana al permiso vivo, la condición de interfaz se aplica de
+verdad, el bloqueo de todo convive con un permiso espejo propio, y el veto del
+usuario sigue ganando. Los detalles y lo que sigue sin medirse están en la
+decisión 27 y en `08-plan-de-adaptadores.md`.
+
+La compuerta va **solo** en `ALE_AUTH_RECV_ACCEPT_V4` y `V6`, jamás en
+`ALE_AUTH_CONNECT`: bloquear la salida impediría que un invitado marque al puerto
+del juego del host.
+
+`ExposureAudit.Enforcement()` devuelve lo MEDIDO en las dos capas y no un
+veredicto. Quien juzga es `domain.Enforcement.Diff`, que es dominio y corre sin
+Windows. Una compuerta **sin comprobar** es distinta de una **ausente**: una es un
+hecho y la otra es ceguera, y se muestran distinto.
+
 ### adapter/firewall/windowscom, implementa `FirewallPort`
 
 - API COM `INetFwPolicy2`, nunca `netsh`: más rápida y sin dependencia del idioma del sistema.
