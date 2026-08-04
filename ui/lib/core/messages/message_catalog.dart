@@ -239,6 +239,16 @@ abstract final class AppMessages {
             body: 'Ese perfil pide algo que Kanpachi no abre nunca. Lo peor '
                 'que puede pasar es que ese juego no conecte.',
           ),
+        FailureCode.probeSelf => const AppMessage(
+            severity: MessageSeverity.neutral,
+            body: 'Tu PC no se puede comprobar a sí misma. Pídele a alguien de '
+                'la sala que abra esta pantalla y pulse el botón.',
+          ),
+        FailureCode.probeNoHost => const AppMessage(
+            severity: MessageSeverity.neutral,
+            body: 'Todavía no se sabe dónde está el host, así que no hay a qué '
+                'marcarle. Prueba en un momento.',
+          ),
         FailureCode.kickPartial => const AppMessage(
             severity: MessageSeverity.warn,
             body: 'La expulsión quedó a medias. Renueva el código para '
@@ -330,6 +340,54 @@ abstract final class AppMessages {
         body: 'Quien intente entrar por acá no va a poder. Suele arreglarse '
             'volviendo a elegir el juego.',
       );
+
+  /// El resultado del sondeo desde otra máquina.
+  ///
+  /// # Por qué "no se pudo alcanzar" no dice "está cerrado"
+  ///
+  /// Porque no lo sabe. Está MEDIDO que en Windows un puerto callado no
+  /// distingue "bloqueado" de "no hay nada escuchando", así que sin una
+  /// respuesta que llegue, el silencio de una PC blindada y el de una PC
+  /// apagada son idénticos. Decir "cerrado" ahí sería afirmar lo que no se
+  /// midió, que es la misma doctrina que [GateState.unknown].
+  ///
+  /// `leaks` son los puertos que contestaron sin que nadie los pidiera, y van
+  /// dentro del cuerpo: "hay algo abierto" sin decir qué manda al usuario a
+  /// buscar a ciegas.
+  static AppMessage probe(ProbeVerdict verdict, {List<String> leaks = const <String>[]}) =>
+      switch (verdict) {
+        ProbeVerdict.leaky => AppMessage(
+            severity: MessageSeverity.warn,
+            title: 'Desde otra PC se llega a algo que Kanpachi no abrió',
+            body: 'Contestaron: ${leaks.join(', ')}. Eso significa que quien '
+                'esté en la sala puede alcanzar ese programa de esta PC. '
+                'Kanpachi no lo abrió, así que lo dejó puesto otra cosa.',
+            hint: 'Revisa las reglas ajenas antes de seguir jugando.',
+          ),
+        ProbeVerdict.unreachable => const AppMessage(
+            severity: MessageSeverity.warn,
+            title: 'No se pudo alcanzar esa PC',
+            body: 'Ni siquiera contestó el canal de la sala, que tendría que '
+                'contestar siempre. Esto NO quiere decir que esté cerrada: '
+                'quiere decir que no se pudo comprobar nada.',
+            hint: 'Suele ser que el túnel se cayó. Prueba otra vez.',
+          ),
+        ProbeVerdict.sealed => const AppMessage(
+            severity: MessageSeverity.done,
+            title: 'Desde acá no se alcanza nada más de esa PC',
+            body: 'Contestó el canal de la sala, así que la comprobación llegó '
+                'de verdad, y ninguno de los puertos peligrosos contestó.',
+            hint: 'Se prueban puertos TCP conocidos, no todos: una herramienta '
+                'con la configuración cambiada, o que hable UDP como Parsec, no '
+                'se ve desde acá.',
+          ),
+        ProbeVerdict.blind => const AppMessage(
+            severity: MessageSeverity.neutral,
+            title: 'Todavía no se ha probado',
+            body: 'Esta es la única comprobación que sale a la red de verdad, y '
+                'la tiene que pulsar alguien.',
+          ),
+      };
 
   /// El host se fue y el juego corría en su PC.
   ///

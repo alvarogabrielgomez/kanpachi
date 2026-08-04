@@ -428,15 +428,6 @@ func (g *Gate) Purge(ctx context.Context) error {
 	})
 }
 
-// Measurement es lo que la compuerta tiene puesto AHORA.
-//
-// MIDE y jamás juzga. Si eso es lo que se pidió lo decide
-// [domain.Enforcement.Diff], que es dominio y corre sin Windows.
-type Measurement struct {
-	Gate  domain.GateState
-	Rules []domain.AppliedRule
-}
-
 // Measure pregunta al sistema qué hay puesto de lo que se pidió.
 //
 // # Por qué recibe el conjunto deseado

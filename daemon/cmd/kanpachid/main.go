@@ -20,6 +20,7 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/usecase"
 	catalogstore "github.com/accentiostudios/kanpachi/daemon/adapter/catalog/jsonfile"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/probe"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/sinimplementar"
 	statestore "github.com/accentiostudios/kanpachi/daemon/adapter/state/jsonfile"
 	"github.com/accentiostudios/kanpachi/daemon/service"
@@ -107,6 +108,7 @@ func correr(consola bool, datos, nombre string) error {
 		Control:   canal,
 		Audit:     audit,
 		Inspector: sinimplementar.Inspector{},
+		Prober:    probe.New(),
 		Clock:     relojReal{},
 		Log:       log,
 		Rand:      rand.Reader,

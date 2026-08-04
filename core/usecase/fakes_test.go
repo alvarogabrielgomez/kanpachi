@@ -578,6 +578,52 @@ func (i inspectorFalso) Snapshot(context.Context, domain.ProcessRef) ([]domain.L
 	return i.sockets, i.err
 }
 
+// sondaFalsa contesta lo que le digan por puerto, y silencio a lo que no esté.
+//
+// El silencio por defecto es deliberado: es lo que contesta una máquina
+// blindada, así que un test que quiera una fuga tiene que pedirla explícito.
+type sondaFalsa struct {
+	mu        sync.Mutex
+	respuesta map[uint16]domain.ProbeOutcome
+	marcados  []netip.AddrPort
+	espera    chan struct{}
+}
+
+func (p *sondaFalsa) Probe(ctx context.Context, at netip.AddrPort) (domain.ProbeOutcome, time.Duration) {
+	p.mu.Lock()
+	p.marcados = append(p.marcados, at)
+	out, ok := p.respuesta[at.Port()]
+	espera := p.espera
+	p.mu.Unlock()
+
+	if espera != nil {
+		select {
+		case <-espera:
+		case <-ctx.Done():
+			return domain.ProbeFailed, 0
+		}
+	}
+	if !ok {
+		return domain.ProbeSilent, domain.ProbeDeadline
+	}
+	return out, 12 * time.Millisecond
+}
+
+func (p *sondaFalsa) contesta(port uint16, out domain.ProbeOutcome) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.respuesta == nil {
+		p.respuesta = map[uint16]domain.ProbeOutcome{}
+	}
+	p.respuesta[port] = out
+}
+
+func (p *sondaFalsa) cuántos() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.marcados)
+}
+
 // relojFijo no avanza salvo que un test lo mueva. Sin esto, probar los veinte
 // minutos de la decisión 20 costaría veinte minutos.
 type relojFijo struct {
@@ -614,6 +660,7 @@ type banco struct {
 	registro  *registroFalso
 	control   *controlFalso
 	auditoría *auditoríaFalsa
+	sonda     *sondaFalsa
 	reloj     *relojFijo
 	sesión    *Session
 }
@@ -712,6 +759,7 @@ func nuevoBanco(t interface{ Fatalf(string, ...any) }) *banco {
 		registro:  &registroFalso{},
 		control:   nuevoControl(),
 		auditoría: &auditoríaFalsa{intactas: true},
+		sonda:     &sondaFalsa{},
 		reloj:     &relojFijo{ahora: time.Date(2026, 8, 2, 20, 0, 0, 0, time.UTC)},
 	}
 	// La auditoría refleja lo que el firewall tiene aplicado, que es lo que
@@ -730,6 +778,7 @@ func nuevoBanco(t interface{ Fatalf(string, ...any) }) *banco {
 		Control:   b.control,
 		Audit:     b.auditoría,
 		Inspector: inspectorFalso{},
+		Prober:    b.sonda,
 		Clock:     b.reloj,
 		Log:       logMudo{},
 		// Un lector constante hace que la subred y las claves salgan siempre

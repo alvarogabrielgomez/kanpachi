@@ -1,5 +1,6 @@
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 
 /// Lo que la UI necesita del daemon.
@@ -53,6 +54,19 @@ abstract interface class SessionRepository {
   /// respuesta cómoda sería enseñar la última lista buena, que es exactamente
   /// la mentira que hay que impedir.
   Future<ExposureReport> exposure();
+
+  /// Marca los puertos del host DESDE esta máquina, que es la única
+  /// comprobación del producto que atraviesa la red de verdad.
+  ///
+  /// Solo la puede correr un invitado. El host no se puede sondear a sí mismo,
+  /// y no es una limitación de implementación: el tráfico a la propia dirección
+  /// no atraviesa ningún firewall, así que contestaría que está todo abierto en
+  /// una máquina blindada.
+  ///
+  /// Al revés que [exposure], esto sí puede fallar, y la asimetría tiene razón:
+  /// acá los fallos son PRECONDICIONES que el usuario entiende y puede cambiar,
+  /// no mediciones que salieron mal.
+  Future<ProbeReport> probeHost();
 
   /// Da de alta un juego que no estaba en el catálogo.
   Future<Game> saveManualGame(Game game);

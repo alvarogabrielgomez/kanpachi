@@ -28,13 +28,18 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/probe"
 )
 
 func main() {
@@ -67,7 +72,7 @@ func run(cmd string, args []string) error {
 	case "listen":
 		return listen(args)
 	case "probe":
-		return probe(args)
+		return sondear(args)
 	case "help", "-h", "--help":
 		usage()
 		return nil
@@ -82,7 +87,7 @@ func usage() {
   Sin elevar, y en cualquier máquina:
     adapters                       lista los adaptadores con su LUID y su IPv4
     listen  -ports 45871,45872     queda escuchando. NO se para hasta el final
-    probe   -host IP -ports 1,2    marca desde la otra máquina y dice qué pasó
+    probe   -host IP -ports 1,2    marca con la sonda del producto y dice qué contestó
 
   Elevado, en el host:
     audit                          reglas ajenas de escritorio remoto, clasificadas
@@ -148,16 +153,31 @@ func listen(args []string) error {
 	select {}
 }
 
-// probe marca a cada puerto y dice qué pasó, con el tiempo que tardó.
+// sondear marca cada puerto CON LA SONDA DEL PRODUCTO y dice qué contestó.
 //
-// El tiempo importa: un rechazo inmediato y un timeout son cosas distintas. Lo
-// primero suele ser que no hay nadie escuchando y lo segundo es un bloqueo que
-// se traga el paquete, que es lo que hace la compuerta.
-func probe(args []string) error {
+// # Por qué no tiene dialer propio, y antes sí lo tenía
+//
+// Porque era el error que este binario existe para no cometer. Un `DialTimeout`
+// escrito acá mide otra cosa que la que corre el daemon, así que su verde no
+// vale para nada: lo que hay que comprobar es que la clasificación DEL PRODUCTO
+// separa bien las cuatro respuestas.
+//
+// # Cómo se leen las cuatro
+//
+//	CONTESTA               el firewall lo dejó pasar y hay algo escuchando
+//	REBOTA                 llegó a la pila y no había nadie. En Windows casi no
+//	                       pasa: el modo sigiloso calla en vez de rebotar
+//	SILENCIO               o lo bloquea el firewall, o no hay nada escuchando.
+//	                       NO se distinguen, y por eso el guion de dos máquinas
+//	                       mide la TRANSICIÓN y no un estado suelto
+//	NO SE PUDO PREGUNTAR   esta máquina no llegó a mandar el paquete
+//
+// El plazo por puerto es el del producto, [domain.ProbeDeadline], y no hay
+// bandera para cambiarlo: medir con otro plazo sería medir otra cosa.
+func sondear(args []string) error {
 	fs := flag.NewFlagSet("probe", flag.ExitOnError)
 	host := fs.String("host", "", "IP de la máquina que escucha")
 	ports := fs.String("ports", "", "puertos separados por coma")
-	espera := fs.Duration("timeout", 6*time.Second, "cuánto esperar por puerto")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -170,18 +190,23 @@ func probe(args []string) error {
 		return err
 	}
 
-	for _, p := range list {
-		destino := net.JoinHostPort(*host, strconv.Itoa(int(p)))
-		inicio := time.Now()
-		c, err := net.DialTimeout("tcp", destino, *espera)
-		tardó := time.Since(inicio).Round(time.Millisecond)
+	at, err := netip.ParseAddr(*host)
+	if err != nil {
+		return fmt.Errorf("-host %q no es una IP: %w", *host, err)
+	}
 
-		if err != nil {
-			fmt.Printf("%-24s NO CONECTA (%v)  %v\n", destino, tardó, err)
-			continue
-		}
-		_ = c.Close()
-		fmt.Printf("%-24s CONECTA (%v)\n", destino, tardó)
+	sonda := probe.New()
+	// Los puertos van de a uno, así que el techo total es el plazo por puerto
+	// por cuantos haya, con uno de margen.
+	ctx, cancel := context.WithTimeout(context.Background(),
+		domain.ProbeDeadline*time.Duration(len(list)+1))
+	defer cancel()
+
+	for _, p := range list {
+		destino := netip.AddrPortFrom(at, p)
+		out, tardó := sonda.Probe(ctx, destino)
+		fmt.Printf("%-24s %-22s (%v)\n", destino, strings.ToUpper(out.String()),
+			tardó.Round(time.Millisecond))
 	}
 	return nil
 }

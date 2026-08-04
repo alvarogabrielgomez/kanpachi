@@ -8,7 +8,9 @@ import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
 import 'package:kanpachi_ui/core/messages/message_catalog.dart';
+import 'package:kanpachi_ui/features/room/presentation/widgets/probe_section.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 
 /// La pantalla que contesta "¿qué tiene abierto mi PC?".
 ///
@@ -27,11 +29,27 @@ import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 /// que el aviso de auditoría caída: una lista vieja pintada de verde es peor que
 /// una pantalla que admite no saber.
 class ExposurePage extends StatefulWidget {
-  const ExposurePage({required this.load, super.key});
+  const ExposurePage({
+    required this.load,
+    required this.probe,
+    required this.isHost,
+    this.hostName = '',
+    super.key,
+  });
 
   /// De dónde sale la medición. Entra por parámetro y no de un contenedor para
   /// que un test la pueda pintar con un informe ciego sin levantar nada.
   final Future<ExposureReport> Function() load;
+
+  /// El sondeo desde la red, que es la única comprobación de esta pantalla que
+  /// puede desmentir a la otra. Ver [ProbeSection].
+  final Future<ProbeReport> Function() probe;
+
+  /// En true, esta máquina hospeda y no puede sondearse a sí misma.
+  final bool isHost;
+
+  /// Cómo se llama el host, para el botón y para la fila.
+  final String hostName;
 
   @override
   State<ExposurePage> createState() => _ExposurePageState();
@@ -69,6 +87,16 @@ class _ExposurePageState extends State<ExposurePage> {
           const Center(child: AppSpinner())
         else
           _Body(report: report),
+        const SizedBox(height: AppSpacing.lg),
+        // Va DEBAJO y no arriba a propósito. Lo de arriba es lo que esta PC
+        // tiene configurado, y esto es lo que otra máquina alcanza de verdad:
+        // leerlo en ese orden es leer primero la promesa y después la
+        // comprobación.
+        ProbeSection(
+          run: widget.probe,
+          isHost: widget.isHost,
+          hostName: widget.hostName,
+        ),
       ],
     );
   }

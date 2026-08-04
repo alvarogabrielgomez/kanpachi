@@ -49,6 +49,15 @@ jobs:
       #   adapter/sinimplementar/  que los provisionales fallen en todo es lo
       #                       que hace la cuarentena verificable desde dentro
       #   adapter/{safewrite,state,catalog}/  son rutas y bytes, no API de Windows
+      #   adapter/probe/      marca un puerto TCP. Es `net` puro, y el caso que
+      #                       más importa, el rechazo de Winsock, se prueba acá
+      #                       con su número escrito a mano
+      #   adapter/firewall + wfp/  la capa pura de la compuerta, y el orden de las
+      #                       dos capas, que es una regla probada. Entraron el día
+      #                       que `wfp.Measurement` se mudó a un archivo portable:
+      #                       mientras vivió en `gate_windows.go`, el paquete
+      #                       compuesto NO COMPILABA en Linux y sus tests puros no
+      #                       llegaban a ejecutarse nunca
       #
       # Correrlos en Ubuntu es lo que convierte esas frases en algo comprobable.
       # Con -race porque el supervisor y el canal de la sala son los dos
@@ -68,6 +77,9 @@ jobs:
           ./daemon/adapter/safewrite/...
           ./daemon/adapter/state/...
           ./daemon/adapter/catalog/...
+          ./daemon/adapter/probe/...
+          ./daemon/adapter/firewall
+          ./daemon/adapter/firewall/wfp/...
 
       # El registro es el seed, o sea Linux por definición. Va en este job y no
       # en el de Windows. Con -race porque atiende peticiones concurrentes

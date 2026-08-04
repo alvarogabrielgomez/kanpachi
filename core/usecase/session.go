@@ -76,6 +76,7 @@ type Deps struct {
 	Control   port.ControlChannel
 	Audit     port.ExposureAudit
 	Inspector port.SocketInspector
+	Prober    port.Prober
 	Clock     port.Clock
 	Log       port.Logger
 
@@ -92,7 +93,7 @@ type Deps struct {
 // y abriría una sala sin cuarentena, que es el peor fallo posible de este
 // producto y el más difícil de notar desde fuera.
 func (d Deps) validate() error {
-	faltan := make([]string, 0, 14)
+	faltan := make([]string, 0, 15)
 	nombrar := func(nombre string, presente bool) {
 		if !presente {
 			faltan = append(faltan, nombre)
@@ -109,6 +110,7 @@ func (d Deps) validate() error {
 	nombrar("Control", d.Control != nil)
 	nombrar("Audit", d.Audit != nil)
 	nombrar("Inspector", d.Inspector != nil)
+	nombrar("Prober", d.Prober != nil)
 	nombrar("Clock", d.Clock != nil)
 	nombrar("Log", d.Log != nil)
 	nombrar("Rand", d.Rand != nil)

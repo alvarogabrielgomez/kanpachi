@@ -51,6 +51,12 @@ type API interface {
 	// siempre, y lo que dice cuando la medición falla ya viaja dentro del
 	// informe. Ver [domain.ExposureReport].
 	Exposure(ctx context.Context) domain.ExposureReport
+	// ProbeHost sí devuelve error, al revés que Exposure, y la asimetría tiene
+	// razón: acá los fallos son PRECONDICIONES que el usuario puede entender y
+	// cambiar. Ser el host o no saber dónde está no son mediciones que salieron
+	// mal, son motivos por los que no se puede medir, y cada uno lleva su
+	// código para que la pantalla diga la frase correcta.
+	ProbeHost(ctx context.Context) (domain.ProbeReport, error)
 	ObserveGame(ctx context.Context, root domain.ProcessRef, tree map[int]bool, keepSteam bool) ([]domain.PortRange, error)
 
 	PendingRoom() (domain.PersistedRoom, bool)
@@ -375,6 +381,13 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 
 	case MethodExposure:
 		return result(exposureView(s.api.Exposure(ctx)))
+
+	case MethodProbeHost:
+		r, err := s.api.ProbeHost(ctx)
+		if err != nil {
+			return nil, errorFor(err)
+		}
+		return result(probeView(r))
 
 	case MethodObserveGame:
 		return s.observe(ctx, req.Params)

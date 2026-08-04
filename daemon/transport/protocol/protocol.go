@@ -66,6 +66,7 @@ const (
 	MethodDiagReport          Method = "diag_report"
 	MethodObserveGame         Method = "observe_game"
 	MethodExposure            Method = "exposure"
+	MethodProbeHost           Method = "probe_host"
 
 	MethodPendingRoom        Method = "pending_room"
 	MethodResumeRoom         Method = "resume_room"
@@ -96,6 +97,7 @@ var métodos = map[Method]bool{
 	MethodDiagReport:          true,
 	MethodObserveGame:         true,
 	MethodExposure:            true,
+	MethodProbeHost:           true,
 	MethodPendingRoom:         true,
 	MethodResumeRoom:          true,
 	MethodDiscardPendingRoom:  true,
@@ -122,21 +124,23 @@ const (
 	// CodeTooLarge es un mensaje que pasa del tope. Se corta la conexión.
 	CodeTooLarge Code = "too_large"
 
-	CodeBusy        Code = "busy"         // ya hay sala
-	CodeNoRoom      Code = "no_room"      // la operación necesita una y no hay
-	CodeNotHost     Code = "not_host"     // solo el host puede
-	CodeUnknownGame Code = "unknown_game" // ese juego no está en el catálogo
-	CodeNotAMember  Code = "not_a_member" // esa dirección no es de nadie presente
-	CodeSelfKick    Code = "self_kick"    // expulsarse a uno mismo
-	CodeShadows     Code = "shadows"      // el perfil taparía uno que vino con la app
-	CodeNotPlayed   Code = "not_played"   // marcar verificado algo que no se jugó
-	CodeKickPartial Code = "kick_partial" // la expulsión se aplicó a medias
-	CodeNoPending   Code = "no_pending"   // no hay sala del arranque anterior
-	CodeBadNickname Code = "bad_nickname" // el nombre no cumple la decisión 21
-	CodeBadCode     Code = "bad_code"     // el invite ID no tiene forma de código
-	CodeBadProfile  Code = "bad_profile"  // el perfil no pasa las invariantes
-	CodeUnavailable Code = "unavailable"  // el adaptador de abajo falló
-	CodeInternal    Code = "internal"     // lo que no encaja en ninguno de arriba
+	CodeBusy        Code = "busy"          // ya hay sala
+	CodeNoRoom      Code = "no_room"       // la operación necesita una y no hay
+	CodeNotHost     Code = "not_host"      // solo el host puede
+	CodeUnknownGame Code = "unknown_game"  // ese juego no está en el catálogo
+	CodeNotAMember  Code = "not_a_member"  // esa dirección no es de nadie presente
+	CodeSelfKick    Code = "self_kick"     // expulsarse a uno mismo
+	CodeShadows     Code = "shadows"       // el perfil taparía uno que vino con la app
+	CodeNotPlayed   Code = "not_played"    // marcar verificado algo que no se jugó
+	CodeKickPartial Code = "kick_partial"  // la expulsión se aplicó a medias
+	CodeProbeSelf   Code = "probe_self"    // el host no puede sondearse a sí mismo
+	CodeProbeNoHost Code = "probe_no_host" // no se sabe dónde está el host
+	CodeNoPending   Code = "no_pending"    // no hay sala del arranque anterior
+	CodeBadNickname Code = "bad_nickname"  // el nombre no cumple la decisión 21
+	CodeBadCode     Code = "bad_code"      // el invite ID no tiene forma de código
+	CodeBadProfile  Code = "bad_profile"   // el perfil no pasa las invariantes
+	CodeUnavailable Code = "unavailable"   // el adaptador de abajo falló
+	CodeInternal    Code = "internal"      // lo que no encaja en ninguno de arriba
 )
 
 // Request es lo que entra. Una línea de JSON.
@@ -193,6 +197,10 @@ func errorFor(err error) *Error {
 		code = CodeShadows
 	case errors.Is(err, usecase.ErrNotPlayed):
 		code = CodeNotPlayed
+	case errors.Is(err, usecase.ErrProbeSelf):
+		code = CodeProbeSelf
+	case errors.Is(err, usecase.ErrProbeNoHost):
+		code = CodeProbeNoHost
 	case errors.Is(err, usecase.ErrNoPendingRoom):
 		code = CodeNoPending
 	case errors.Is(err, domain.ErrNicknameEmpty), errors.Is(err, domain.ErrNicknameTooLong),

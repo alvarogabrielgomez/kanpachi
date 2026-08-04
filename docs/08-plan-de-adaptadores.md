@@ -286,9 +286,29 @@ de base no se acota ni por IP ni por adaptador, y la razón ya está escrita en
    API de enumerar. **Medido funcionando el 2026-08-04**: un permiso propio SOFT
    sobrevive junto al bloqueo propio HARD, y el veto del usuario le sigue
    ganando a los dos.
-7. **Paso 6**: `Enforcement()` en la pantalla, con marca de cuándo se midió, y el
-   botón que vale más que toda la pantalla: **"probar desde otra PC"**, que corre
-   en el invitado contra la IP virtual del host.
+7. ~~**Paso 6**~~: **HECHO.** `Enforcement()` en la pantalla con marca de cuándo
+   se midió, y el botón que vale más que toda la pantalla, que corre en el
+   invitado contra la IP virtual del host.
+
+   Lo que cambió al medirlo, y era una pieza del diseño: se creía que un puerto
+   permitido sin oyente devuelve RST, así que un rebote distinguiría "el firewall
+   lo deja pasar" de "el firewall lo bloquea". **Es falso en Windows.** Medido el
+   2026-08-04 con la misma regla y el mismo puerto: con regla y sin oyente,
+   silencio; con regla y con oyente, conecta. Es el modo sigiloso del Firewall de
+   Windows, y de ahí salen dos consecuencias:
+
+   - **El veredicto "faltan puertos" no existe.** Un puerto de juego callado
+     significa que el juego no está abierto, que es el estado normal mientras
+     alguien mira la pantalla. Se habría encendido en falso siempre.
+   - **Hace falta una referencia viva**, y por eso el sondeo va contra el host:
+     el canal de la sala es el único puerto que se sabe abierto. Sin él, "no
+     contesta nadie" se lee igual con la máquina blindada que con la máquina
+     apagada.
+
+   La primera corrida encontró algo real en la máquina de desarrollo: el 445
+   contestó desde otra PC. El compartir archivos de Windows, alcanzable por la
+   red virtual, que es exactamente el escenario que este producto existe para
+   evitar.
 8. ~~**Paso 7, guardián nuevo** en `internal/arch`~~: **HECHO**, y encontró tres
    cosas que este plan no había previsto. Un filtro sin alcance **no falla en
    ningún test** y aplica a todos los adaptadores de la máquina; con hard block
@@ -462,6 +482,12 @@ propia herramienta.
    escrita**: el `blockAll` sale dos veces, por LUID y por dirección local sobre
    el `/24` de la sala, con un test que falla si alguien deja uno solo.
 
+   Y ahora hay un segundo cerrojo, que es el importante: **el sondeo desde otra
+   PC**. Ese fallo es invisible desde dentro por definición, porque la pantalla
+   lee lo que esta máquina tiene configurado y la configuración seguiría
+   impecable. Sondear desde fuera es la única comprobación que puede desmentirla,
+   y la pantalla la ofrece.
+
 ---
 
 # El resto de los adaptadores
@@ -495,11 +521,17 @@ puede apuntar a `192.168.1.1`.
    isolate, o que deje de mantenerse.
 2. **Una línea de `ioc_manager.dart`** para que `SessionRepository` sea el real.
    El comentario del propio archivo ya lo dice.
-3. **La pantalla de exposición**, alimentada por `Enforcement()`. Dos filas, no
-   una: los puertos abiertos, y *"todo lo demás en kanpachi0 está bloqueado"*. Si
-   la enumeración falla, la pantalla dice **"Kanpachi no pudo leer lo que tiene
-   puesto"** en vez de mostrar la última lista buena. Misma doctrina que
-   `AlertAuditFailed`.
+3. ~~**La pantalla de exposición**~~: **HECHA**, con las dos filas y el bloque
+   del sondeo debajo. Un informe ciego no puede llevar lista, y eso está cerrado
+   en cuatro sitios: el cero de `MeasuredAt`, el constructor ciego, la vista de
+   cable al salir y la entidad de Dart al entrar.
+4. **Lo que el sondeo dejó pendiente, y es de daemon y no de UI**: que el HOST
+   pueda pedirlo. Hoy lo corre el invitado y le cuenta al host, que es una
+   limitación escrita como tal y no disfrazada de decisión. Cerrarla significa un
+   mensaje nuevo por el canal de la sala, host a invitado, con la respuesta de
+   vuelta. Va con cuidado: el destino tiene que salir de la dirección de la
+   CONEXIÓN y jamás de un campo del mensaje, o el canal se convierte en un
+   escáner por encargo contra terceros.
 
 ---
 

@@ -4,6 +4,7 @@ import 'package:kanpachi_ui/core/design_system/theme/app_theme.dart';
 import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/features/room/presentation/pages/exposure_page.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 
 /// La pantalla que contesta "¿qué tiene abierto mi PC?".
 ///
@@ -16,7 +17,15 @@ void main() {
       MaterialApp(
         theme: AppTheme.light(),
         home: Scaffold(
-          body: ExposurePage(load: () async => report),
+          body: SingleChildScrollView(
+            child: ExposurePage(
+              load: () async => report,
+              // El sondeo es de otra sección y tiene su propio test. Acá va la
+              // cara del host, que es la que no marca nada.
+              probe: () async => const ProbeReport.blind(),
+              isHost: true,
+            ),
+          ),
         ),
       ),
     );

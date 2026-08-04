@@ -463,6 +463,10 @@ type apiFalsa struct {
 	// falso que no está ejercitando esta capa: el cero no puede leerse como
 	// "no hay nada abierto".
 	exposición *domain.ExposureReport
+
+	// sondeo nil devuelve el informe CIEGO, por lo mismo que exposición.
+	sondeo    *domain.ProbeReport
+	errSondeo error
 }
 
 func (a *apiFalsa) Now() time.Time { return a.ahora }
@@ -534,6 +538,16 @@ func (a *apiFalsa) Exposure(context.Context) domain.ExposureReport {
 		return *a.exposición
 	}
 	return domain.BlindExposure()
+}
+
+func (a *apiFalsa) ProbeHost(context.Context) (domain.ProbeReport, error) {
+	if a.errSondeo != nil {
+		return domain.ProbeReport{}, a.errSondeo
+	}
+	if a.sondeo != nil {
+		return *a.sondeo, nil
+	}
+	return domain.ProbeReport{}, nil
 }
 
 func (a *apiFalsa) ObserveGame(context.Context, domain.ProcessRef, map[int]bool, bool) ([]domain.PortRange, error) {
@@ -653,5 +667,201 @@ func TestCadaEstadoDeLaCompuertaTieneNombreEnLaAPI(t *testing.T) {
 		if got := gateName(estado); got != nombre {
 			t.Errorf("gateName(%v) = %q, se esperaba %q", estado, got, nombre)
 		}
+	}
+}
+
+// TestElSondeoCiegoNoViajaConResultados.
+//
+// Por lo mismo que la exposición ciega: si un sondeo sin medir pudiera llevar
+// filas, la pantalla enseñaría el resultado de una comprobación que no ocurrió.
+func TestElSondeoCiegoNoViajaConResultados(t *testing.T) {
+	s, api := servidor(t)
+	saluda(t, s, tokenDePrueba)
+	api.sondeo = &domain.ProbeReport{}
+
+	var v ProbeView
+	lee(t, pide(t, s, `{"id":40,"method":"probe_host"}`), &v)
+
+	switch {
+	case v.Measured:
+		t.Error("un sondeo ciego viajó como medido")
+	case len(v.Results) != 0:
+		t.Errorf("un sondeo ciego viajó con %d resultados", len(v.Results))
+	case v.Verdict != "blind":
+		t.Errorf("veredicto = %q, se esperaba blind", v.Verdict)
+	case v.Target != "":
+		t.Errorf("un sondeo ciego viajó con destino %q", v.Target)
+	}
+}
+
+// TestElSondeoConFugaViajaConSuVeredicto.
+//
+// Es la fila que da todo el valor de la pantalla: un puerto que nadie pidió
+// contestando desde otra máquina.
+func TestElSondeoConFugaViajaConSuVeredicto(t *testing.T) {
+	s, api := servidor(t)
+	saluda(t, s, tokenDePrueba)
+
+	api.sondeo = &domain.ProbeReport{
+		Target:     netip.MustParseAddr("100.64.1.1"),
+		MeasuredAt: api.ahora,
+		Results: []domain.ProbeResult{
+			{
+				ProbeTarget: domain.ProbeTarget{
+					Port: domain.ControlPort, Kind: domain.ProbeReference, Label: "el canal de la sala",
+				},
+				Outcome: domain.ProbeAnswered,
+				RTT:     12 * time.Millisecond,
+			},
+			{
+				ProbeTarget: domain.ProbeTarget{
+					Port: 445, Kind: domain.ProbeForbidden, Label: "compartir archivos (SMB)",
+				},
+				Outcome: domain.ProbeAnswered,
+				RTT:     9 * time.Millisecond,
+			},
+		},
+	}
+
+	var v ProbeView
+	lee(t, pide(t, s, `{"id":41,"method":"probe_host"}`), &v)
+
+	switch {
+	case !v.Measured:
+		t.Fatal("un sondeo medido viajó como ciego")
+	case v.Verdict != "leaky":
+		t.Fatalf("veredicto = %q, se esperaba leaky", v.Verdict)
+	case v.Target != "100.64.1.1":
+		t.Errorf("destino = %q", v.Target)
+	case v.MeasuredAtMS != api.ahora.UnixMilli():
+		t.Errorf("measured_at_ms = %d", v.MeasuredAtMS)
+	case len(v.Results) != 2:
+		t.Fatalf("resultados = %+v", v.Results)
+	}
+
+	fuga := v.Results[1]
+	switch {
+	case fuga.Port != 445 || fuga.Kind != "forbidden":
+		t.Errorf("la fuga viajó como %d/%s", fuga.Port, fuga.Kind)
+	case fuga.Outcome != "answered":
+		t.Errorf("outcome = %q", fuga.Outcome)
+	case fuga.Label != "compartir archivos (SMB)":
+		t.Errorf("label = %q", fuga.Label)
+	case fuga.RTTMS != 9:
+		t.Errorf("rtt_ms = %d", fuga.RTTMS)
+	}
+}
+
+// TestElSilencioNoLlevaTiempoDeRespuesta.
+//
+// En el silencio lo que se mediría es el plazo, que ya se sabe de antemano.
+// Enseñarlo haría creer que hubo respuesta.
+func TestElSilencioNoLlevaTiempoDeRespuesta(t *testing.T) {
+	s, api := servidor(t)
+	saluda(t, s, tokenDePrueba)
+
+	api.sondeo = &domain.ProbeReport{
+		Target:     netip.MustParseAddr("100.64.1.1"),
+		MeasuredAt: api.ahora,
+		Results: []domain.ProbeResult{{
+			ProbeTarget: domain.ProbeTarget{Port: 445, Kind: domain.ProbeForbidden, Label: "SMB"},
+			Outcome:     domain.ProbeSilent,
+			RTT:         domain.ProbeDeadline,
+		}},
+	}
+
+	var v ProbeView
+	lee(t, pide(t, s, `{"id":42,"method":"probe_host"}`), &v)
+
+	if v.Results[0].RTTMS != 0 {
+		t.Fatalf("un silencio viajó con rtt_ms = %d", v.Results[0].RTTMS)
+	}
+	if v.Verdict != "unreachable" {
+		t.Fatalf("veredicto = %q: sin referencia viva no se puede afirmar nada", v.Verdict)
+	}
+}
+
+// TestElHostQueSeSondeaASiMismoRecibeSuCodigo.
+//
+// Con un código propio y no "internal", porque la pantalla tiene que decir la
+// frase correcta: esto lo pulsa otro.
+func TestElHostQueSeSondeaASiMismoRecibeSuCodigo(t *testing.T) {
+	s, api := servidor(t)
+	saluda(t, s, tokenDePrueba)
+	api.errSondeo = usecase.ErrProbeSelf
+
+	res := pide(t, s, `{"id":43,"method":"probe_host"}`)
+	if res.Error == nil {
+		t.Fatal("no llegó error")
+	}
+	if res.Error.Code != CodeProbeSelf {
+		t.Fatalf("código = %q, se esperaba %q", res.Error.Code, CodeProbeSelf)
+	}
+}
+
+// TestCadaClaseYResultadoDelSondeoTieneNombreEnLaAPI.
+//
+// Por lo mismo que los estados de la compuerta. Y los respaldos importan más
+// acá: una clase sin nombre viaja como PROHIBIDA y un resultado sin nombre como
+// FALLO, que son los dos lados ruidosos. Al revés, una clase nueva se pintaría
+// como puerto de juego y su respuesta pasaría por normal.
+func TestCadaClaseYResultadoDelSondeoTieneNombreEnLaAPI(t *testing.T) {
+	clases := map[domain.ProbeKind]string{
+		domain.ProbeReference: "reference",
+		domain.ProbeForbidden: "forbidden",
+		domain.ProbeGame:      "game",
+	}
+	for k, nombre := range clases {
+		if got := probeKindName(k); got != nombre {
+			t.Errorf("probeKindName(%v) = %q, se esperaba %q", k, got, nombre)
+		}
+	}
+	if len(clases) != len(domain.AllProbeKinds()) {
+		t.Errorf("hay %d clases en el dominio y %d nombradas acá",
+			len(domain.AllProbeKinds()), len(clases))
+	}
+
+	resultados := map[domain.ProbeOutcome]string{
+		domain.ProbeAnswered: "answered",
+		domain.ProbeRefused:  "refused",
+		domain.ProbeSilent:   "silent",
+		domain.ProbeFailed:   "failed",
+	}
+	for o, nombre := range resultados {
+		if got := probeOutcomeName(o); got != nombre {
+			t.Errorf("probeOutcomeName(%v) = %q, se esperaba %q", o, got, nombre)
+		}
+	}
+	if len(resultados) != len(domain.AllProbeOutcomes()) {
+		t.Errorf("hay %d resultados en el dominio y %d nombrados acá",
+			len(domain.AllProbeOutcomes()), len(resultados))
+	}
+
+	veredictos := map[domain.ProbeVerdict]string{
+		domain.VerdictBlind:       "blind",
+		domain.VerdictLeaky:       "leaky",
+		domain.VerdictUnreachable: "unreachable",
+		domain.VerdictSealed:      "sealed",
+	}
+	for v, nombre := range veredictos {
+		if got := verdictName(v); got != nombre {
+			t.Errorf("verdictName(%v) = %q, se esperaba %q", v, got, nombre)
+		}
+	}
+	if len(veredictos) != len(domain.AllProbeVerdicts()) {
+		t.Errorf("hay %d veredictos en el dominio y %d nombrados acá",
+			len(domain.AllProbeVerdicts()), len(veredictos))
+	}
+
+	// Los respaldos, que son la parte que decide si un enum nuevo hace ruido o
+	// pasa desapercibido.
+	if got := probeKindName(domain.ProbeKind(99)); got != "forbidden" {
+		t.Errorf("una clase desconocida viajó como %q, y tiene que hacer ruido", got)
+	}
+	if got := probeOutcomeName(domain.ProbeOutcome(99)); got != "failed" {
+		t.Errorf("un resultado desconocido viajó como %q, y no puede leerse como cerrado", got)
+	}
+	if got := verdictName(domain.ProbeVerdict(99)); got != "blind" {
+		t.Errorf("un veredicto desconocido viajó como %q, y no puede afirmar nada", got)
 	}
 }

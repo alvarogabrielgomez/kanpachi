@@ -134,6 +134,63 @@ void main() {
       );
     });
 
+    test('ProbeVerdict tiene los mismos veredictos que verdictName en Go', () {
+      final Set<String> enGo = _cadenasDeLaFuncion(
+        repo: repo,
+        archivo: 'daemon/transport/protocol/view.go',
+        funcion: 'verdictName',
+      );
+      final Set<String> enDart =
+          ProbeVerdict.values.map((ProbeVerdict v) => v.wire).toSet();
+
+      expect(enGo, isNotEmpty, reason: 'no se leyó ningún veredicto de verdictName');
+      expect(
+        enDart,
+        equals(enGo),
+        reason: 'ProbeVerdict y verdictName dejaron de coincidir. El veredicto '
+            'es lo que decide si la pantalla dice "cerrado", "no se pudo '
+            'alcanzar" o enseña una alarma, y son cosas muy distintas.',
+      );
+    });
+
+    test('ProbeKind tiene las mismas clases que probeKindName en Go', () {
+      final Set<String> enGo = _cadenasDeLaFuncion(
+        repo: repo,
+        archivo: 'daemon/transport/protocol/view.go',
+        funcion: 'probeKindName',
+      );
+      final Set<String> enDart =
+          ProbeKind.values.map((ProbeKind k) => k.wire).toSet();
+
+      expect(enGo, isNotEmpty, reason: 'no se leyó ninguna clase de probeKindName');
+      expect(
+        enDart,
+        equals(enGo),
+        reason: 'ProbeKind y probeKindName dejaron de coincidir. Una clase que '
+            'la UI no conoce cae en "prohibido", que hace ruido de más pero no '
+            'esconde nada; que falte al revés sí esconde.',
+      );
+    });
+
+    test('ProbeOutcome tiene los mismos resultados que probeOutcomeName en Go', () {
+      final Set<String> enGo = _cadenasDeLaFuncion(
+        repo: repo,
+        archivo: 'daemon/transport/protocol/view.go',
+        funcion: 'probeOutcomeName',
+      );
+      final Set<String> enDart =
+          ProbeOutcome.values.map((ProbeOutcome o) => o.wire).toSet();
+
+      expect(enGo, isNotEmpty, reason: 'no se leyó ningún resultado de probeOutcomeName');
+      expect(
+        enDart,
+        equals(enGo),
+        reason: 'ProbeOutcome y probeOutcomeName dejaron de coincidir. Un '
+            'resultado que la UI no conoce cae en "no se pudo preguntar", que '
+            'es lo único que no se puede leer como "está cerrado".',
+      );
+    });
+
     test('FailureCode tiene los mismos códigos que protocol.Code en Go', () {
       final Set<String> enGo = _codigosDelProtocolo(repo);
       final Set<String> enDart =

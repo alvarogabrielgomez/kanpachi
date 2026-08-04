@@ -242,6 +242,133 @@ func gateName(g domain.GateState) string {
 	}
 }
 
+// ProbeView es el sondeo desde otra máquina, la única medición del producto que
+// atraviesa la red de verdad.
+//
+// # El campo que decide cómo se pinta
+//
+// `Verdict`, y sus cuatro valores dicen cosas muy distintas:
+//
+//	leaky        algo que nadie pidió contestó. Prueba POSITIVA de exposición
+//	unreachable  ni el canal de la sala contestó, así que esto no prueba nada
+//	sealed       el canal contesta y nada de lo prohibido lo hace
+//	blind        no se midió
+//
+// "unreachable" y "sealed" no se pueden confundir, y por eso son valores
+// distintos en vez de un booleano: "no contesta nadie" se ve igual con la
+// máquina blindada que con la máquina apagada.
+type ProbeView struct {
+	Measured bool `json:"measured"`
+	// Target es la IP virtual a la que se marcó, y Name quién es.
+	Target string `json:"target,omitempty"`
+	Name   string `json:"name,omitempty"`
+	// MeasuredAtMS es cuándo, en milisegundos desde la época. Cero si no se
+	// midió, igual que en [ExposureView].
+	MeasuredAtMS int64 `json:"measured_at_ms,omitempty"`
+
+	Verdict string            `json:"verdict"`
+	Results []ProbeResultView `json:"results"`
+}
+
+type ProbeResultView struct {
+	Port uint16 `json:"port"`
+	// Kind es "reference", "forbidden" o "game": POR QUÉ está en la lista, que
+	// es lo mismo que decir qué prueba su respuesta.
+	Kind string `json:"kind"`
+	// Label es lo que el usuario lee: el nombre de la herramienta, del juego, o
+	// del canal de la sala.
+	Label string `json:"label"`
+	// Outcome es "answered", "refused", "silent" o "failed".
+	Outcome string `json:"outcome"`
+	// RTTMS solo tiene sentido con "answered". En el silencio lo que mide es el
+	// plazo, que ya se sabe de antemano.
+	RTTMS int64 `json:"rtt_ms,omitempty"`
+}
+
+func probeView(r domain.ProbeReport) ProbeView {
+	v := ProbeView{
+		Measured: !r.Blind(),
+		Verdict:  verdictName(r.Verdict()),
+		Results:  make([]ProbeResultView, 0, len(r.Results)),
+	}
+	if r.Blind() {
+		// Ni resultados ni hora ni destino, por lo mismo que en [exposureView]:
+		// este es el formato que cruza a otro proceso, y lo que no se pueda
+		// expresar mal, mejor.
+		return v
+	}
+	v.Target = r.Target.String()
+	v.Name = r.Name.String()
+	v.MeasuredAtMS = r.MeasuredAt.UnixMilli()
+
+	for _, res := range r.Results {
+		rv := ProbeResultView{
+			Port:    res.Port,
+			Kind:    probeKindName(res.Kind),
+			Label:   res.Label,
+			Outcome: probeOutcomeName(res.Outcome),
+		}
+		if res.Outcome == domain.ProbeAnswered {
+			rv.RTTMS = res.RTT.Milliseconds()
+		}
+		v.Results = append(v.Results, rv)
+	}
+	return v
+}
+
+func verdictName(v domain.ProbeVerdict) string {
+	switch v {
+	case domain.VerdictLeaky:
+		return "leaky"
+	case domain.VerdictUnreachable:
+		return "unreachable"
+	case domain.VerdictSealed:
+		return "sealed"
+	case domain.VerdictBlind:
+		// Explícito y no en el default, por lo mismo que [gateName]: "sin medir"
+		// es un estado de verdad y el candado con el enum de Dart corta en el
+		// default.
+		return "blind"
+	default:
+		// Un veredicto nuevo sin nombre acá viaja como sin medir, que es el lado
+		// seguro: la pantalla no afirma lo que no sabe.
+		return "blind"
+	}
+}
+
+func probeKindName(k domain.ProbeKind) string {
+	switch k {
+	case domain.ProbeReference:
+		return "reference"
+	case domain.ProbeForbidden:
+		return "forbidden"
+	case domain.ProbeGame:
+		return "game"
+	default:
+		// Lo desconocido viaja como prohibido a propósito, que es el lado
+		// ruidoso: una clase nueva que se pintara como "juego" haría que una
+		// respuesta pasara por normal.
+		return "forbidden"
+	}
+}
+
+func probeOutcomeName(o domain.ProbeOutcome) string {
+	switch o {
+	case domain.ProbeAnswered:
+		return "answered"
+	case domain.ProbeRefused:
+		return "refused"
+	case domain.ProbeSilent:
+		return "silent"
+	case domain.ProbeFailed:
+		return "failed"
+	default:
+		// Lo desconocido viaja como fallo, no como silencio: un resultado que no
+		// se sabe leer no puede contarse como "está cerrado".
+		return "failed"
+	}
+}
+
 // GameView es un perfil del catálogo, para la lista de juegos.
 type GameView struct {
 	ID          string      `json:"id"`

@@ -796,6 +796,103 @@ Las claves de los filtros salen de la **ranura** que ocupan, y no de su etiqueta
 
 **Casi todo exige elevación, y abrir la sesión no.** Medido: `FwpmEngineOpen0` funciona como usuario normal; leer un filtro que EXISTE y empezar una transacción devuelven `ERROR_ACCESS_DENIED`. Preguntar por un filtro ausente sí contesta, y esa asimetría es una trampa que ya produjo dos conclusiones equivocadas: ver `08-plan-de-adaptadores.md`. Lo que la hace inofensiva es que "no está" y "está y no puedes verlo" llegan con códigos distintos, así que sin elevar la respuesta es SIN COMPROBAR y nunca "ausente".
 
+### adapter/probe, la única medición que sale a la red
+
+Todo lo demás de este capítulo lee lo que ESTA máquina tiene configurado,
+preguntándole a la misma Windows que aplica las reglas. Es honesto y no puede
+contestar la pregunta del producto, que es si desde otra PC se llega. Un alcance
+de filtro que dejó de casar, una regla del sistema que nadie miró, o una
+herramienta que abrió su propio hueco, se ven todos igual desde dentro: verde.
+
+El adaptador es minúsculo y no tiene fichero de Windows. Abre una conexión TCP y
+la cierra: no manda un byte, no lee ninguno, y no sabe qué significa lo que midió.
+Eso último es `domain.ProbeReport.Verdict`, que se prueba sin red.
+
+**Lo único específico de Windows es un número.** `syscall.ECONNREFUSED` en Windows
+NO es el `WSAECONNREFUSED` de Winsock: es una constante inventada del bloque
+`APPLICATION_ERROR`, así que el `errors.Is` que uno escribe sin pensar no casa con
+un rechazo real. La constante 10061 está escrita a mano en el fichero portable, y
+eso es lo que permite que el camino de Windows tenga test y corra en Linux.
+Envenenar esa rama rompe el test **en Windows**, que es la prueba de que hace
+falta.
+
+#### Cómo se lee lo que contesta Windows, medido el 2026-08-04
+
+Con el droplet marcando por Tailscale a una máquina Windows, sobre el mismo
+puerto y con el firewall encendido:
+
+| Estado del puerto 45999 | Resultado |
+|---|---|
+| sin regla, sin oyente | silencio |
+| **con regla de permiso**, sin oyente | **silencio** |
+| con regla de permiso, con oyente | conecta |
+
+La fila del medio es la que manda: **Windows no devuelve RST hacia dentro aunque
+el firewall permita el puerto**, que es el modo sigiloso del Firewall de Windows.
+De ahí sale toda la lectura:
+
+- **conecta**: el firewall lo dejó pasar Y hay un programa escuchando.
+- **silencio**: o lo bloquea el firewall, o no hay nada escuchando. **No se
+  distinguen.**
+
+La consecuencia de diseño es fuerte. Un puerto de juego callado **no** significa
+que esté cerrado: significa que el juego no está abierto, que es el estado normal
+mientras alguien mira la pantalla. Un veredicto de "faltan puertos" se habría
+encendido en falso siempre, y por eso no existe.
+
+Lo que sí prueba es una respuesta donde no tiene que haberla, y esa no necesita
+distinguir nada. La primera corrida ya lo dio: el 445 de la máquina de desarrollo
+contestó desde otra PC, o sea el compartir archivos de Windows alcanzable por la
+red virtual.
+
+#### Solo TCP, y hay que decirlo
+
+Por UDP no hay pregunta que hacer sin hablar el idioma del programa que escucha:
+un puerto bloqueado y uno abierto que no contesta se ven idénticos. Sondear UDP
+produciría silencio siempre, o sea un verde que no midió nada.
+
+Lo que se mide por TCP se traslada a UDP por una razón verificable en el código:
+los bloqueos de la compuerta se emiten con condición de adaptador y de rango, y
+**ninguna de protocolo**. La compuerta no mira el protocolo, así que lo que le
+hace a un TCP se lo hace igual a un UDP. Eso NO cubre las reglas del Firewall de
+Windows, que sí son por protocolo, y por eso la pantalla lo dice con todas las
+letras.
+
+#### La referencia, y por qué solo el invitado puede
+
+El canal de la sala tiene que contestar, porque el host lo escucha mientras la
+sala esté abierta. Sin una respuesta que llegue, el silencio de todo lo demás no
+distingue una PC blindada de una apagada, y la pantalla estaría afirmando lo que
+no sabe. Por eso `VerdictUnreachable` es un estado propio y no se lee como
+"cerrado".
+
+Y por eso se sondea al **host** y no a cualquiera: sondear a un invitado daría
+silencio en todo, que es a la vez lo que tiene que pasar y lo que pasa con la PC
+apagada. Es una medición que no puede fallar, o sea que no mide.
+
+El host no se puede sondear a sí mismo, y tampoco es una limitación de
+implementación: lo que se manda a la propia dirección no atraviesa ningún
+firewall, así que contestaría que está todo abierto en una máquina blindada. Su
+pantalla dice eso con esas palabras, que lo pulse alguien más. Que el resultado
+viaje de una persona a otra es una limitación de esta versión y está escrita como
+tal.
+
+#### La lista es corta y fija
+
+Esto no es un escáner de puertos. Son el canal de la sala, los puertos que la
+cuarentena tapa, y los de fábrica de las herramientas de escritorio remoto.
+
+Los últimos **no son una lista negra y no sirven para bloquear**: esas
+herramientas escuchan donde el usuario les diga, y por eso lo que se audita de
+ellas es el ejecutable. Esto es un muestreo, encuentra al que dejó la
+configuración por defecto y no al que la cambió, y la pantalla lo dice. Los de la
+cuarentena salen de `forbiddenPorts` con un guardián que falla si alguien amplía
+esa lista sin ponerle nombre acá.
+
+Un puerto que el juego activo pide deja de ser prohibido: lo tiene abierto a
+propósito, y encender la alarma sobre algo que el usuario pidió es la forma más
+rápida de que aprenda a ignorarla.
+
 ### internal/fwprobe, para poder medirlo
 
 Corre el firewall compuesto **con el mismo código que el daemon**, sin una sola llamada propia al sistema. Vive en `internal/` para que el producto no lo importe y el instalador no lo distribuya.
@@ -805,6 +902,8 @@ Es hermano del spike que decidió el diseño, con una diferencia que es todo el 
 Poner y quitar son subcomandos separados, y entre medias se mide desde la otra máquina. Un estado suelto no prueba nada: si el firewall ya estaba abierto de una corrida anterior, "conecta" no dice quién lo abrió. Lo que se mide es la transición.
 
 La primera corrida encontró dos caídas que ningún test del repo podía encontrar, porque las dos viven dentro de una llamada COM: `INetFwRule::Interfaces` devuelve un array de VARIANT y leerlo como array de BSTR mata el proceso, y `IEnumVARIANT::Next` termina cada enumeración con `S_FALSE`, que go-ole convierte en error. Con la segunda, todos los caminos del adaptador de permisos fallaban siempre.
+
+El verbo `probe` tenía un `DialTimeout` propio, y era exactamente el error que este binario existe para no cometer: medía otra cosa que la que corre el daemon, así que su verde no valía. Ahora usa `adapter/probe`, con el plazo del producto y sin bandera para cambiarlo, porque medir con otro plazo es medir otra cosa.
 
 ### adapter/firewall/windowscom, implementa `FirewallPort`
 

@@ -226,6 +226,12 @@ enum FailureCode {
   /// El perfil no pasa las invariantes.
   badProfile('bad_profile'),
 
+  /// El host no puede sondearse a sí mismo: eso lo pulsa alguien más.
+  probeSelf('probe_self'),
+
+  /// No se sabe dónde está el host para poder marcarle.
+  probeNoHost('probe_no_host'),
+
   /// El adaptador de abajo falló.
   unavailable('unavailable'),
 
@@ -282,5 +288,99 @@ enum GateState {
       if (state.wire == wire) return state;
     }
     return GateState.unknown;
+  }
+}
+
+/// El veredicto del sondeo desde otra máquina.
+///
+/// # Por qué "no se pudo alcanzar" y "cerrado" son valores distintos
+///
+/// Porque "no contesta nadie" se ve exactamente igual con la máquina blindada
+/// que con la máquina apagada, y confundirlos sería pintar de verde una PC que
+/// no se midió. La referencia es lo que los separa: el canal de la sala tiene
+/// que contestar, y hasta que lo haga el resto del sondeo no afirma nada.
+enum ProbeVerdict {
+  /// Algo que nadie pidió contestó. Prueba POSITIVA de exposición.
+  leaky('leaky'),
+
+  /// Ni el canal de la sala contestó, así que esto no prueba nada.
+  unreachable('unreachable'),
+
+  /// El canal contesta y nada de lo prohibido lo hace.
+  sealed('sealed'),
+
+  /// No se midió.
+  blind('blind');
+
+  const ProbeVerdict(this.wire);
+
+  /// La cadena exacta que viaja en el JSON, campo `verdict` de `ProbeView`.
+  final String wire;
+
+  /// Lo que no se reconoce cae en [ProbeVerdict.blind], que es el único valor
+  /// que no afirma nada sobre la otra máquina.
+  static ProbeVerdict fromWire(String? wire) {
+    for (final ProbeVerdict v in ProbeVerdict.values) {
+      if (v.wire == wire) return v;
+    }
+    return ProbeVerdict.blind;
+  }
+}
+
+/// Por qué un puerto está en la lista del sondeo, que es lo mismo que decir qué
+/// prueba su respuesta.
+enum ProbeKind {
+  /// El canal de la sala: el único que TIENE que contestar.
+  reference('reference'),
+
+  /// Lo que NO tiene que contestar. Una respuesta acá es la alarma.
+  forbidden('forbidden'),
+
+  /// Un puerto que el juego activo pidió. Informativo: que calle no prueba
+  /// nada, porque el juego puede estar cerrado.
+  game('game');
+
+  const ProbeKind(this.wire);
+
+  final String wire;
+
+  /// Lo desconocido cae en [ProbeKind.forbidden], que es el lado RUIDOSO. Una
+  /// clase nueva que se pintara como puerto de juego haría que su respuesta
+  /// pasara por normal, que es justo lo contrario de lo que hace falta.
+  static ProbeKind fromWire(String? wire) {
+    for (final ProbeKind k in ProbeKind.values) {
+      if (k.wire == wire) return k;
+    }
+    return ProbeKind.forbidden;
+  }
+}
+
+/// Lo que contestó un puerto.
+enum ProbeOutcome {
+  /// Hubo apretón de manos: el firewall lo dejó pasar y hay algo escuchando.
+  answered('answered'),
+
+  /// Rebotó con un RST. El paquete llegó igual.
+  refused('refused'),
+
+  /// No contestó nadie. Medido en Windows: no distingue "bloqueado" de "no hay
+  /// nada escuchando", y por eso el silencio solo, sin referencia, no prueba
+  /// casi nada.
+  silent('silent'),
+
+  /// Esta máquina no pudo ni preguntar. No dice nada de la otra.
+  failed('failed');
+
+  const ProbeOutcome(this.wire);
+
+  final String wire;
+
+  /// Lo desconocido cae en [ProbeOutcome.failed] y jamás en `silent`: un
+  /// resultado que no se sabe leer no puede contarse como "está cerrado".
+  static ProbeOutcome fromWire(String? wire) {
+    for (final ProbeOutcome o in ProbeOutcome.values) {
+      if (o.wire == wire) return o;
+    }
+    return ProbeOutcome.failed;
   }
 }

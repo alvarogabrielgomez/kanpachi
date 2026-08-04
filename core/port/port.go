@@ -300,6 +300,32 @@ type ExposureAudit interface {
 	RouterMappings(ctx context.Context) ([]domain.PortMapping, error)
 }
 
+// Prober marca un puerto TCP de OTRA máquina y dice qué contestó.
+//
+// Es el único puerto del proyecto que sale a la red por su cuenta, y por eso su
+// firma es tan chica: recibe una dirección y un puerto, y devuelve qué pasó.
+// No manda datos, no lee nada, y cierra en cuanto sabe. Un `Send([]byte)` acá
+// convertiría el botón de diagnóstico en un cliente de cualquier cosa.
+//
+// # Por qué devuelve un tipo del dominio y no un error
+//
+// Porque distinguir un apretón de manos de un RST y de un silencio es LEER el
+// sistema operativo, que es exactamente el trabajo de un adaptador. Lo que
+// significa cada uno de los tres es política, y eso se queda en
+// [domain.ProbeReport.Verdict], que se testea sin red.
+//
+// Un `error` obligaría a quien llama a interpretar cadenas de texto del sistema
+// para separar "no contestó" de "no se pudo preguntar", y esas dos cosas dicen
+// lo contrario la una de la otra.
+type Prober interface {
+	// Probe marca y espera como mucho [domain.ProbeDeadline], o hasta que el
+	// contexto se cancele.
+	//
+	// La duración solo tiene sentido con [domain.ProbeAnswered]: en el silencio
+	// lo que mide es el plazo, que ya se sabe de antemano.
+	Probe(ctx context.Context, at netip.AddrPort) (domain.ProbeOutcome, time.Duration)
+}
+
 // RendezvousProvider resuelve un invite ID a la identidad de ENCUENTRO, jamás
 // a la red real. La red real solo llega por el canje de credencial con el host.
 //

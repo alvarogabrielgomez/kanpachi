@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
 
@@ -216,6 +217,57 @@ class FakeSessionRepository implements SessionRepository {
           applied: true,
           isControl: true,
           reachableBy: <String>['100.64.1.5', '100.64.1.6'],
+        ),
+      ],
+    );
+  }
+
+  /// El sondeo de mentira sale LIMPIO, y con la referencia contestando.
+  ///
+  /// Limpio y no con una fuga porque el estado normal es ese, y una pantalla de
+  /// desarrollo que enseña siempre la alarma hace que la alarma deje de leerse.
+  /// La fuga se prueba en el test de la pantalla, que es donde toca.
+  @override
+  Future<ProbeReport> probeHost() async {
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    return ProbeReport(
+      measured: true,
+      verdict: ProbeVerdict.sealed,
+      target: '100.64.1.1',
+      name: 'alvaro',
+      measuredAt: DateTime.now(),
+      results: const <ProbeResult>[
+        ProbeResult(
+          port: 445,
+          kind: ProbeKind.forbidden,
+          label: 'compartir archivos (SMB)',
+          outcome: ProbeOutcome.silent,
+        ),
+        ProbeResult(
+          port: 3389,
+          kind: ProbeKind.forbidden,
+          label: 'Escritorio remoto',
+          outcome: ProbeOutcome.silent,
+        ),
+        ProbeResult(
+          port: 5938,
+          kind: ProbeKind.forbidden,
+          label: 'TeamViewer',
+          outcome: ProbeOutcome.silent,
+        ),
+        ProbeResult(
+          port: 16261,
+          kind: ProbeKind.game,
+          label: 'Project Zomboid',
+          outcome: ProbeOutcome.answered,
+          rttMs: 14,
+        ),
+        ProbeResult(
+          port: 57623,
+          kind: ProbeKind.reference,
+          label: 'el canal de la sala',
+          outcome: ProbeOutcome.answered,
+          rttMs: 11,
         ),
       ],
     );
