@@ -109,7 +109,33 @@ El modo seguro del motor permite que el cliente fije la clave pública del seed,
 
 Nota: **las credenciales temporales ya no viven en este documento.** Se probaron contra los binarios y pasaron a ser el mecanismo central de la decisión 2, con la expulsión de la decisión 22 y el canal de la decisión 23 encima.
 
-## 10. Lo que se decidió NO hacer
+## 10. Comprobar el router desde el seed
+
+El canario de la decisión 28 contesta "¿la Protección Kanpachi está conteniendo la
+sala?". Hay otra pregunta distinta, y es la que la gente tiene más metida en la
+cabeza: **"¿mi router tiene algo abierto hacia internet?"**. Es el miedo con el
+que nació el producto.
+
+Esa la podría contestar el seed, que está en internet y no en la sala, y **no
+necesita a nadie más**: ni un segundo miembro, ni coordinación. El host le pide
+que le marque de vuelta, y si el seed llega, algo está reenviando puertos.
+
+**Qué lo frena.** Con CGNAT la IP pública **no es del usuario**: la comparte con
+vecinos. Marcarle a esa IP puede ser marcarle a la máquina de otra persona, que
+no pidió nada y no está en ninguna sala. Y CGNAT domina en LatAm, que es el caso
+central del producto, así que no es un borde raro: es la mayoría.
+
+**Qué lo activaría.** Una forma de acotar el sondeo a la máquina que lo pide, sin
+escanear una IP compartida. Ideas sin evaluar: que el host abra un oyente
+efímero y el seed solo confirme haber llegado a ESE número con un valor que solo
+el host conoce, lo cual sigue tocando la IP del vecino aunque no revele nada de
+él; o detectar CGNAT primero (el motor ya reporta el tipo de NAT en `NetCheck`) y
+ofrecer la comprobación solo cuando la IP sea de verdad del usuario.
+
+Hasta que eso esté resuelto, no se hace. Escanear la IP de un tercero no es algo
+que este producto pueda hacer aunque el resultado fuera útil.
+
+## 11. Lo que se decidió NO hacer
 
 Escrito para resistir la tentación:
 

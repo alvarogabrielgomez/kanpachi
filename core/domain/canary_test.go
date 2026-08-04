@@ -126,3 +126,43 @@ func TestUnaFugaSoloPorUDPCuentaIgual(t *testing.T) {
 		t.Error("un eco de UDP es el paquete llegando")
 	}
 }
+
+// Una ronda en la que el invitado NO PUDO preguntar no midió nada, así que no
+// puede contarse como buena.
+//
+// Lo encontró una revisión adversaria del diseño, leyendo el código: el fallo
+// local caía en la misma rama que el silencio y salía como CanaryClean. Son lo
+// contrario la una de la otra.
+func TestUnaRondaEnLaQueNadiePudoPreguntarNoCuentaComoBuena(t *testing.T) {
+	c := CanaryCheck{
+		MeasuredAt:  cuando(),
+		Touched:     false,
+		Answered:    true,
+		ReportedTCP: ProbeFailed,
+		ReportedUDP: ProbeFailed,
+	}
+
+	if got := c.Verdict(); got != CanaryUnconfirmed {
+		t.Fatalf("veredicto = %v, se esperaba CanaryUnconfirmed. Sumar tranquilidad "+
+			"de una comprobación que no ocurrió es la mentira que este tipo evita", got)
+	}
+	if c.ReportedMeasured() {
+		t.Error("un fallo en los dos protocolos no midió nada")
+	}
+}
+
+// Pero si UNO de los dos sí midió, la ronda vale por ese.
+func TestSiUnProtocoloMidioLaRondaVale(t *testing.T) {
+	c := CanaryCheck{
+		MeasuredAt:  cuando(),
+		Answered:    true,
+		ReportedTCP: ProbeFailed,
+		ReportedUDP: ProbeSilent,
+	}
+	if !c.ReportedMeasured() {
+		t.Fatal("el silencio de UDP es una medición")
+	}
+	if got := c.Verdict(); got != CanaryClean {
+		t.Fatalf("veredicto = %v, se esperaba CanaryClean", got)
+	}
+}

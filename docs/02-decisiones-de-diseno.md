@@ -1067,3 +1067,138 @@ No persistente, porque así reiniciar la máquina se lo lleva todo. Es la red de
 `OwnRulesIntact(bool)` no vale para esto: un booleano no puede decir QUÉ falta ni en qué capa. Lo reemplaza `Enforcement()`, que devuelve lo MEDIDO en las dos capas y deja que juzgue `Enforcement.Diff`, que es dominio y se testea sin Windows. El adaptador mide y el dominio juzga, por la misma razón por la que `Apply` calcula la diferencia contra las reglas vivas y jamás contra un recuerdo en memoria.
 
 Un estado de compuerta **sin comprobar** es distinto de **ausente**, y se muestran distinto: uno es un hecho y el otro es ceguera. Misma doctrina que `AlertAuditFailed`.
+
+---
+
+## 28. La Protección Kanpachi se comprueba a sí misma, desde otra máquina
+
+La decisión 27 puso la compuerta. Esta contesta la pregunta que aquella dejó
+abierta: **cómo se sabe que la compuerta está conteniendo de verdad.**
+
+### El problema, medido y no supuesto
+
+Todo lo que Kanpachi enseña hoy lee lo que ESTA máquina tiene configurado,
+preguntándole a la misma Windows que aplica las reglas. Es honesto y no puede
+contestar la pregunta del producto, que es si desde otra PC se llega. El riesgo
+que la propia decisión 27 nombra, que la condición de interfaz llegue vacía al
+reautorizar un flujo y el bloqueo deje de casar **en silencio**, se ve verde
+desde dentro por definición.
+
+Y sondear desde fuera tampoco alcanza tal cual. Medido el 2026-08-04, con el
+droplet marcando a la máquina de desarrollo por Tailscale, mismo puerto y
+firewall encendido:
+
+| Estado del puerto | Resultado |
+|---|---|
+| sin regla, sin oyente | silencio |
+| **con regla de permiso, sin oyente** | **silencio** |
+| con regla de permiso, con oyente | conecta |
+
+La fila del medio manda: **Windows no devuelve RST hacia dentro**, ni siquiera con
+el firewall permitiendo el puerto, que es su modo sigiloso. Así que un puerto callado no
+distingue "lo bloqueó el firewall" de "no hay nada escuchando", y una compuerta
+muerta con el juego cerrado se lee igual que una compuerta sana.
+
+### La decisión
+
+El host abre **un oyente que existe para ser bloqueado**, en un puerto al azar
+ligado solo a su dirección de la sala, y le pide a los miembros que lo marquen.
+Como se sabe con certeza que hay alguien detrás de esa puerta, el silencio pasa a
+tener una sola lectura.
+
+**Un puerto prueba todos.** La compuerta no es una regla por puerto: es un
+bloqueo del adaptador entero más los permisos espejo del juego. Un puerto que
+nadie pidió y que queda callado demuestra que ese bloqueo está vivo, y ese
+bloqueo es el mismo para todos los puertos que nadie pidió, incluidos los que no
+conocemos. Por eso no hay lista negra de puertos peligrosos: enumerar amenazas es
+una lotería, y Parsec y compañía escuchan donde el usuario les diga.
+
+### Alternativas descartadas
+
+**Una lista de puertos conocidos de escritorio remoto.** Es lo que se construyó
+primero y se quedó corto: encuentra a quien dejó la configuración de fábrica y no
+a quien la cambió, y por UDP no puede preguntar nada. Comprobar el bloqueo
+general las cubre a todas. La lista sobrevive únicamente como información
+secundaria.
+
+**Usar un puerto que YA tenga algo escuchando** en vez de abrir uno. Sale más
+barato, no abre ningún socket nuevo, y se descartó: si la compuerta está rota, la
+comprobación termina con un miembro **conectado de verdad a un servicio real** del
+host. Un canario que no lleva a ninguna parte es preferible a usar uno que sí
+sirve para algo.
+
+**Preguntarle a UN miembro al azar.** Tumbado por una revisión adversaria del
+diseño: ese miembro sería a la vez el único que marca y el que informa, así que
+callándose deja al host sin nada que arbitrar y el veredicto sale limpio. Se le
+pregunta a **todos**, y entonces para esconder una fuga tendrían que negarse a
+marcar todos a la vez. La suposición baja de "el que me tocó preguntar es
+honesto" a "al menos uno de N lo es", que importa porque el código no es secreto,
+no hay baneo y volver a entrar es gratis.
+
+**Que el seed compruebe desde internet.** Contesta otra pregunta, que es si el
+router tiene algo abierto, y es valiosa. Queda fuera de esta decisión por un
+problema sin resolver: con CGNAT la IP pública **no es del usuario**, la comparte
+con vecinos, y marcarle sería marcarle a la máquina de otro. Ver `07-futuro.md`.
+
+### Zero trust: dos fuentes y solo una es un hecho
+
+`Touched` lo ve el host en su propio socket y no se puede falsificar. El informe
+del miembro es un mensaje y se puede mentir. El hecho propio gana siempre, y eso
+resuelve dos de los cuatro casos sin confiar en nadie:
+
+| El miembro dice | Canario tocado | Conclusión |
+|---|---|---|
+| "conecté" | sí | Fuga real |
+| "conecté" | **no** | Ese miembro miente, y queda probado |
+| "silencio" | sí | Fuga igual: cruzó algo |
+| "silencio" | no | **Sin evidencia.** No se puede afirmar más |
+
+**La fuga se afirma con certeza. Su ausencia no.** Un miembro que no mande el
+paquete y diga "silencio" produce lo mismo que la compuerta funcionando, y no hay
+forma de distinguirlos: un paquete que nunca salió no deja rastro. Por eso el
+estado bueno se llama *sin evidencia de fuga* y no "está cerrado", y hay un test
+que falla si alguien lo renombra a algo que afirme más.
+
+Un fallo LOCAL del que marca tampoco es un silencio. `ProbeFailed` en los dos
+protocolos significa que esa máquina no pudo ni preguntar, y contarlo como
+silencio sumaría tranquilidad de una comprobación que no ocurrió.
+
+### El ciclo, y por qué se apaga cuando salta la alarma
+
+Una ronda se cierra con lo primero de tres cosas: que lo toquen, que contesten
+todos, o un plazo corto de unos diez segundos. El tope de treinta segundos no es
+la espera, es el cierre duro por si muere quien lo abrió.
+
+Con la alarma levantada **se corta la comprobación periódica**, y la razón es de
+seguridad antes que de eficiencia: mientras la protección está caída, ese canario
+es alcanzable de verdad por la sala, y no se siguen abriendo sockets alcanzables
+en una máquina que ya se sabe expuesta. Se conserva el disparo **después de cada
+`Apply`**, que es el único momento en que el estado pudo cambiar a mejor, y evita
+dejar una alarma rancia encendida cuando la protección se repuso sola.
+
+### Lo que esto le cuesta al modelo de amenazas
+
+Un oyente más en un proceso que corre como SYSTEM, unos segundos por minuto. Se
+acepta por tres razones, y las tres tienen que seguir siendo ciertas:
+
+1. **No parsea nada.** Por TCP acepta y cierra sin leer un byte; por UDP lee un
+   largo fijo y devuelve el eco solo si el número coincide.
+2. **Se liga solo a la dirección de la sala**, jamás a `0.0.0.0`, y el adaptador
+   rechaza de plano una dirección sin especificar. No abre nada en la red de casa
+   del usuario en ningún caso.
+3. **Su radio de explosión es exactamente lo que mide.** Con la compuerta viva es
+   inalcanzable para todo el mundo; con la compuerta muerta lo alcanza la sala,
+   que es lo que se quería averiguar.
+
+Es muchísima menos superficie que el canal de la sala de la decisión 23, que sí
+parsea mensajes de miembros corriendo como SYSTEM.
+
+### El mensaje nuevo, y el campo que no existe
+
+El pedido viaja por el canal de la sala con un puerto y un número, y **sin campo
+de dirección**. El miembro marca a la dirección de la conexión que ya tiene
+abierta contra el host. Con un campo de destino, este mensaje convertiría el
+canal en un **escáner de puertos por encargo** contra terceros, con el tráfico
+saliendo de las casas de los miembros. Lo que lo impide no es una comprobación que
+alguien pueda borrar: es que el tipo no lo puede expresar. Igual al revés, el
+informe no lleva remitente, así que nadie puede informar por otro.

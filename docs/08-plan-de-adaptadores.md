@@ -525,13 +525,13 @@ puede apuntar a `192.168.1.1`.
    del sondeo debajo. Un informe ciego no puede llevar lista, y eso está cerrado
    en cuatro sitios: el cero de `MeasuredAt`, el constructor ciego, la vista de
    cable al salir y la entidad de Dart al entrar.
-4. **Lo que el sondeo dejó pendiente, y es de daemon y no de UI**: que el HOST
-   pueda pedirlo. Hoy lo corre el invitado y le cuenta al host, que es una
-   limitación escrita como tal y no disfrazada de decisión. Cerrarla significa un
-   mensaje nuevo por el canal de la sala, host a invitado, con la respuesta de
-   vuelta. Va con cuidado: el destino tiene que salir de la dirección de la
-   CONEXIÓN y jamás de un campo del mensaje, o el canal se convierte en un
-   escáner por encargo contra terceros.
+4. ~~**Que el HOST pueda pedirlo**~~: **el mensaje del canal está HECHO**, con el
+   destino sacado de la conexión y sin campo de dirección en el cable. Lo que
+   queda es el caso de uso y la pantalla.
+5. **La Protección Kanpachi en la UI**: el aviso de que no está puesta y el botón
+   idempotente de reponerla. Ver `05-ui.md`. El aviso NO nombra ningún puerto: lo
+   que falla es la contención entera, y el canario vive en un puerto al azar que
+   ya se cerró.
 
 ---
 

@@ -194,6 +194,21 @@ func (c CanaryCheck) ReportedReach() bool {
 	return c.ReportedTCP.Reached() || c.ReportedUDP.Reached()
 }
 
+// ReportedMeasured dice si el informe MIDIÓ algo.
+//
+// [ProbeFailed] en los dos protocolos significa que esa máquina no pudo ni
+// preguntar: su adaptador estaba caído, no había ruta, o el intento no llegó a
+// hacerse. Eso NO es silencio, es la ausencia de medición, y las dos cosas dicen
+// lo contrario la una de la otra.
+//
+// Existe porque no estaba y era un fallo real: una ronda en la que nadie pudo
+// preguntar caía en la misma rama que una ronda callada y salía como "sin
+// evidencia de fuga". Lo encontró una revisión adversaria del diseño el
+// 2026-08-04, leyendo el código y no ejecutándolo.
+func (c CanaryCheck) ReportedMeasured() bool {
+	return c.ReportedTCP != ProbeFailed || c.ReportedUDP != ProbeFailed
+}
+
 // Verdict concluye, y el ORDEN es todo el diseño.
 //
 // Primero el hecho propio, porque es el único que no se puede mentir. Después el
@@ -208,6 +223,12 @@ func (c CanaryCheck) Verdict() CanaryVerdict {
 		return CanaryLeaking
 	}
 	if !c.Answered {
+		return CanaryUnconfirmed
+	}
+	// Contestó "no pude ni preguntar" por los dos lados. Eso no es silencio: es
+	// una ronda que no midió, y contarla como buena sería sumar tranquilidad de
+	// una comprobación que no ocurrió.
+	if !c.ReportedMeasured() {
 		return CanaryUnconfirmed
 	}
 	// Dijo que llegó y al canario no lo tocó nadie. No puede ser una fuga,

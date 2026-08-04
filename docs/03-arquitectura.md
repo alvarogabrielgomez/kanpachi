@@ -893,6 +893,211 @@ Un puerto que el juego activo pide deja de ser prohibido: lo tiene abierto a
 propósito, y encender la alarma sobre algo que el usuario pidió es la forma más
 rápida de que aprenda a ignorarla.
 
+### adapter/canary, la Protección Kanpachi comprobándose a sí misma
+
+El sondeo de arriba tiene una mitad floja, y está medida: en Windows un puerto
+callado no distingue "lo bloqueó el firewall" de "no hay nada escuchando". Así
+que una compuerta muerta con el juego cerrado se lee igual que una compuerta
+sana.
+
+El canario quita esa ambigüedad por el único camino que queda: **poniendo a
+alguien detrás de la puerta a propósito**.
+
+#### La secuencia
+
+```
+   HOST                                      MIEMBRO
+   ────                                      ───────
+1. abre un socket TCP+UDP en un puerto
+   al azar, ligado SOLO a su IP de la
+   sala. Ese puerto NO está en el
+   conjunto de reglas, así que la
+   compuerta lo tiene que bloquear
+        │
+2.      │  por el canal de la sala:
+        │  "márcame al 51023, número XYZ"
+        └────────────────────────────────────►
+                                             3. marca a la dirección de la
+        ◄────────────────────────────────────    CONEXIÓN que ya tiene abierta
+        │
+4. su propio socket registra si alguien llegó   ← el hecho que decide
+        │
+5.      │  el miembro le cuenta qué vio
+        ◄────────────────────────────────────
+6. compara las dos cosas
+```
+
+El miembro no elige el puerto, no lo descubre y no lo busca: se lo dice el host
+en el paso 2.
+
+#### Un puerto prueba TODOS
+
+La compuerta no es una regla por puerto: es **un solo bloqueo** del adaptador
+entero más los permisos espejo del juego activo. Un puerto que nadie pidió y que
+queda callado demuestra que ese bloqueo está vivo, y ese bloqueo es el mismo para
+todos los puertos que nadie pidió, incluidos los que no conocemos.
+
+Por eso acá **no hay lista de puertos peligrosos que recorrer**. Enumerar
+amenazas es una lotería: Parsec, Sunshine y RustDesk escuchan donde el usuario
+les diga.
+
+#### Qué cubre EN EXCLUSIVA
+
+Conviene acotarlo, porque no cubre todo lo que parece. Que la compuerta **no esté
+puesta** ya lo caza la auditoría local en cada barrido, preguntando por
+`GateKey`, y eso levanta `AlertRulesTampered` sin necesitar a nadie.
+
+Lo que solo el canario puede ver es el otro caso, que es justo el riesgo escrito
+en `wfp/spec.go`: **el filtro existe por su GUID y no contiene**. Si la condición
+de interfaz llegara vacía al reautorizar un flujo, el bloqueo dejaría de casar en
+silencio y la auditoría local seguiría diciendo verde.
+
+#### El radio de explosión es exactamente lo que se mide
+
+El oyente se liga **solo a la dirección de la sala**, jamás a `0.0.0.0`, y el
+adaptador rechaza de plano una dirección sin especificar. Con la compuerta viva
+ese socket es inalcanzable para todo el mundo; con la compuerta muerta lo alcanza
+la sala, que es lo que se quería averiguar. En ningún caso abre nada en la red de
+casa del usuario.
+
+Acepta y cierra sin leer un byte. Por UDP lee un largo fijo y devuelve el eco
+solo si el número coincide, así que un datagrama suelto ni se contesta ni cuenta
+como toque. Es muchísima menos superficie que el canal de la sala, que sí parsea
+mensajes corriendo como SYSTEM.
+
+#### Medido, las dos transiciones y los dos protocolos
+
+Con el droplet marcando a la máquina de desarrollo por Tailscale, el 2026-08-04:
+
+| Momento | TCP | UDP | Lo vio el host |
+|---|---|---|---|
+| línea base | contesta | contesta | sí |
+| **compuerta puesta** | **silencio** | **silencio** | **no** |
+| tras purgar | contesta | contesta | sí |
+
+El silencio de la fila del medio es el que vale, porque esta vez había un oyente
+detrás. Y UDP es lo nuevo: que la compuerta sea ciega al protocolo se sabía por
+leer `SpecsFor`, que emite sus bloqueos sin condición de protocolo. Ahora está
+medido.
+
+#### Zero trust: dos fuentes y solo una es un hecho
+
+| | Quién lo vio | ¿Se puede mentir? |
+|---|---|---|
+| `Touched` | el HOST, en su propio socket | **No.** El paquete cruzó o no cruzó |
+| el informe | el MIEMBRO | Sí. Es un mensaje |
+
+El hecho propio gana siempre, y eso resuelve dos de los cuatro casos sin confiar
+en nadie:
+
+| El miembro dice | Canario tocado | Conclusión |
+|---|---|---|
+| "conecté" | sí | Fuga real |
+| "conecté" | **no** | Ese miembro **miente**, y queda probado |
+| "silencio" | sí | Fuga igual: cruzó algo |
+| "silencio" | no | **Sin evidencia.** No se puede afirmar más |
+
+**La fuga se afirma con certeza. Su ausencia no.** Un miembro que simplemente no
+mande el paquete y diga "silencio" produce exactamente lo mismo que la compuerta
+funcionando, y no hay forma de distinguirlos: un paquete que nunca salió no deja
+rastro en ningún sitio. Por eso el estado bueno se llama `CanaryClean`, *sin
+evidencia de fuga*, y hay un test que falla si alguien lo renombra a algo que
+afirme más.
+
+#### Se le pregunta a TODOS, y esa es la parte que aguanta
+
+Una revisión adversaria del diseño tumbó la alternativa de preguntarle a **uno
+solo**: ese miembro sería a la vez el único que marca y el que informa, así que
+callándose deja al host sin nada que arbitrar, y el veredicto sale limpio.
+
+Preguntándoles a todos, **para esconder una fuga tendrían que negarse a marcar
+todos a la vez**. Basta un miembro honesto: su paquete cruza y el host se entera
+por su propia observación. La suposición baja de *"el que me tocó preguntar es
+honesto"* a *"al menos uno de N lo es"*.
+
+Importa más de lo que parece porque el vecindario no es de confianza plena: el
+código de invitación no es un secreto, no hay baneo y volver a entrar es gratis,
+así que alguien podría sostener varias membresías y sesgar un sorteo. Contra
+preguntarle a todos, eso no sirve de nada.
+
+Con host y un solo invitado las dos opciones son la misma cosa, y ahí el canario
+está en su punto más débil. Es el suelo del mecanismo y hay que saberlo.
+
+#### La vida de una ronda: se abre, se pregunta, se cierra
+
+El canario **no queda encendido**. Se abre para una ronda y se cierra con **lo
+primero** de estas tres:
+
+1. **Lo tocan.** Ya hay evidencia y es certeza. Alarma y cerrar: seguir
+   escuchando no añade nada.
+2. **Contestaron todos los que se preguntó.** No va a llegar nada más.
+3. **Vence el plazo de ronda, unos diez segundos.**
+
+Los treinta segundos de `TTLMax` **no son la espera**: son el tope duro que
+cierra el socket incluso si el que lo abrió se murió. Confundirlos deja el
+canario abierto la mitad del tiempo. Con las tres condiciones de arriba, una
+ronda dura alrededor de un segundo, así que el ciclo de trabajo real ronda el dos
+por ciento de un minuto.
+
+**El coste que importa no es el rendimiento.** Un socket ocioso no consume CPU y
+cuesta unos kilobytes de kernel; una conexión y un datagrama por miembro por
+minuto es ruido de fondo. Lo que se está acortando es **tiempo de superficie**:
+un socket que existe es un socket que se puede alcanzar, en un proceso que corre
+como SYSTEM.
+
+#### Cuándo corre, y cuándo deja de correr
+
+| Estado | Qué dispara una ronda |
+|---|---|
+| **Limpio** | Alguien entra · cambia el juego · cada `Sweep` |
+| **En alarma** | **Solo después de un `Apply`**, venga del botón o de la operación normal |
+
+Siempre **después** de aplicar las reglas y jamás antes: en un cambio de juego lo
+que se añade son permisos nuevos, y los permisos nuevos son justo lo que podría
+estar mal, así que comprobar antes mide precisamente lo que no cambió. Visto así,
+el disparador se generaliza: **se comprueba después de cada `Apply`**, porque ese
+es el único momento en que el estado pudo cambiar a mejor.
+
+Periódico y no solo por evento, que es una corrección de la revisión adversaria:
+con disparadores solo por evento, una sala que juega toda la noche al mismo juego
+tiene una ronda por invitado, y si esa ronda le tocó a quien se calla no hay
+siguiente.
+
+**Con la alarma levantada se corta el periódico**, y la razón es de seguridad
+antes que de eficiencia: mientras la protección está caída, el canario **sí es
+alcanzable de verdad** por la sala. Es el único momento en que ese socket
+significa algo para alguien, así que no se siguen abriendo sockets alcanzables en
+una máquina que ya se sabe expuesta.
+
+Se conserva el disparo por `Apply` para no dejar una alarma rancia encendida: la
+protección se repone sola en la operación normal, así que puede arreglarse sin
+que el usuario toque nada, y una alarma eterna deja de ser información. El botón
+de reponer entra por esa misma vía, porque el botón **es** un `Apply`.
+
+```
+limpio  ──(el canario es tocado)──►  alarma
+   ▲                                    │
+   └────(un Apply y una ronda limpia)───┘
+```
+
+Con cero miembros no se comprueba, y está bien: solo hay de quién protegerse
+cuando hay alguien.
+
+#### Dos trampas que hay que respetar
+
+**El puerto del canario no puede caer dentro de un rango permitido.** Los
+permisos son por rango y por IP de miembro, así que un puerto efímero que
+coincidiera con uno del juego activo sería alcanzable **a propósito** y se leería
+como fuga. Es raro y produce la peor clase de fallo, una alarma que grita con
+todo bien, así que el puerto se comprueba contra el conjunto vigente antes de
+usarlo.
+
+**Un fallo local no es un silencio.** `ProbeFailed` significa que esa máquina no
+pudo ni preguntar, y contarlo como silencio sumaría tranquilidad de una
+comprobación que no ocurrió. Los dos protocolos en fallo dan `CanaryUnconfirmed`
+y jamás `CanaryClean`. Era un defecto real del primer diseño y lo encontró la
+revisión leyendo el código.
+
 ### internal/fwprobe, para poder medirlo
 
 Corre el firewall compuesto **con el mismo código que el daemon**, sin una sola llamada propia al sistema. Vive en `internal/` para que el producto no lo importe y el instalador no lo distribuya.
