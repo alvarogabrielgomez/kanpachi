@@ -81,7 +81,7 @@ Son dos cosas distintas y conviene no confundirlas.
 |---|---|
 | Consola **elevada** | WFP entero. Medido: `netsh wfp show filters` da `ERROR_ACCESS_DENIED` sin elevar, y `FwpmFilterCreateEnumHandle0` también |
 | **Segunda máquina** | Las mediciones A y B, y la prueba del conjunto |
-| **Seed alcanzable** | Hoy bloqueado por el proxy de Cloudflare, ver la lista de abierto |
+| ~~**Seed alcanzable**~~ | **RESUELTO el 2026-08-03.** Se apagó el proxy de Cloudflare y `kanpachi.accentio.dev` sirve la página en 443 y el motor en 11010, por el mismo nombre |
 | Adaptador `kanpachi0` **vivo** | El LUID, y el segundo puerto de magic DNS, que solo aparece con TUN levantado |
 
 Todo lo que dependa de esos cuatro queda escrito y **marcado**, con la prueba
@@ -241,8 +241,9 @@ de base no se acota ni por IP ni por adaptador, y la razón ya está escrita en
    de diff. `OwnRulesIntact(bool)` muere y nace `Enforcement()`, que devuelve lo
    **medido** en las dos capas y deja que juzgue el dominio. Aterriza **antes**
    de una línea de adaptador.
-3. **Paso 2, spike fuera del repo**: ~150 líneas, media tarde, dos máquinas.
-   Decide todo. Si sale mal, no hay nada que revertir.
+3. ~~**Paso 2, spike fuera del repo**~~: **HECHO el 2026-08-03 y salió que sí.**
+   Ver "La prueba que lo decide" más abajo. El bloqueo duro le gana al permiso
+   vivo del Firewall de Windows.
 4. **Paso 3, piso de WFP**: ~500-700 líneas, vendorizando y podando
    `wireguard-windows` bajo MIT con atribución. Solo dos capas y cinco
    condiciones.
@@ -267,17 +268,72 @@ máximo. No se vacía el grupo COM. No se borra `SuspendForeign`, que sigue
 sirviendo para la LAN de casa. No se intenta cuarentena WFP persistente en el
 instalador: BFE la deshabilita en silencio si el servicio no es auto-start.
 
-## La prueba que lo decide
+## La prueba que lo decide: HECHA, y sale que SÍ
 
-Dos máquinas, un juego con UDP continuo, y Parsec instalado en el host con su
-regla permisiva viva.
+**Medido el 2026-08-03 con dos máquinas reales en la misma LAN.** La apuesta del
+diseño híbrido está confirmada.
 
-- **Medición A**: desde el invitado, conectar a Parsec contra la IP virtual.
-  **Tiene que conectar.** Si no, el agujero no es lo que creemos y toda esta
-  ronda se cae.
-- **Medición B**: el spike instala tres filtros y tienen que pasar cuatro cosas a
-  la vez: Parsec deja de conectar, el juego sigue, el invitado sigue jugando sin
-  tener ningún permiso, y la red de casa del host queda intacta.
+El spike se replanteó antes de correrlo, y ese replanteo es la mitad del
+resultado. La pregunta que decide todo es de **arbitraje de WFP**, no de red
+virtual, así que no hace falta ni el motor, ni una sala, ni el seed: se contesta
+igual sobre el adaptador físico. Eso convirtió una prueba bloqueada por tres
+cosas en una prueba de media hora.
+
+| Paso | Estado del host | Desde la otra PC |
+|---|---|---|
+| 1 | permiso del Firewall puesto, sin filtro | **CONECTA**, 6 ms |
+| 2 | permiso puesto **y filtro WFP puesto** | **NO CONECTA**, timeout |
+| 3 | filtro quitado, permiso puesto otra vez | **CONECTA**, 20 ms |
+
+**Va y VUELVE, y eso es lo que la hace evidencia.** Un solo "no conecta" no
+distingue el bloqueo de un cable suelto, del Wi-Fi, o del listener caído. El
+paso 3 los descarta a los tres.
+
+Durante el paso 2 se comprobó en el host, desde fuera del spike: el listener
+seguía vivo, los dos permisos seguían activos, y había **cero** reglas de bloqueo
+en el Firewall de Windows. Lo único que podía tirar ese paquete era el filtro.
+
+**Conclusión: un Block duro en un sublayer propio anula un Permit vivo del
+sublayer de Windows, sin tocarlo y sin pedirle nada al usuario.** Es la
+asimetría documentada por Microsoft, y ahora también medida acá.
+
+### Lo que esto NO prueba todavía
+
+Se dice explícito para que nadie lo lea como un cheque en blanco:
+
+1. **El filtro se instaló SIN condición de interfaz** (`luid = 0`), o sea que
+   aplicaba a todos los adaptadores. El riesgo número 5 de la lista de abierto
+   sigue intacto: si la condición de interfaz llega vacía al reautorizar un
+   flujo, el `blockAll` deja de casar **en silencio**. Eso no se midió.
+2. **Se midió un bloqueo de UN puerto, no un `blockAll`.** El diseño real
+   necesita bloquear todo salvo lo permitido, y ahí entran los permisos espejo,
+   que en nuestro sublayer son SOFT. Que un soft permit propio sobreviva junto a
+   un hard block propio no está comprobado.
+3. **No se probó que el veto del usuario siga ganando.** La decisión 4 dice que
+   sus bloqueos ganan sobre los nuestros. Con el sublayer a peso 0x8000 y sin
+   hard permits debería seguir siendo cierto, y "debería" no es "se midió".
+4. **No se usó Parsec de verdad**, sino un listener propio. Para el arbitraje da
+   igual, porque una regla por programa y una por puerto viven las dos en el
+   sublayer de Windows, y eso no cambia quién gana.
+
+### Lo que se aprendió de la herramienta, y vale para el piso
+
+- **Los códigos de error de WFP no se ponen de memoria.** Dos de tres estaban
+  mal: `FILTER_NOT_FOUND` es `0x80320003` y no `0x...08`, y `SUBLAYER_NOT_FOUND`
+  es `0x80320007` y no `0x...05`.
+- **El HRESULT vuelve con el signo extendido en x64.** `0x80320003` llega como
+  `0xFFFFFFFF80320003`, así que comparar el `uintptr` crudo contra la constante
+  no casa jamás, y un "ya existe" o un "no encontrado" se leen como fallo duro.
+  Hay que recortar a 32 bits.
+- **El diálogo del Firewall de Windows 11 es modal y obliga a elegir**, y las dos
+  respuestas contaminan una medición: "Permitir" crea reglas que la herramienta
+  no controla, y **"Cancelar" crea reglas de BLOQUEO** que le ganan al permiso.
+  La salida es poner una regla del propio binario ANTES de que escuche, y así el
+  diálogo no llega a salir. Comprobado en las dos direcciones: quitando esa
+  regla, el diálogo vuelve.
+- **Una sesión no dinámica y no persistente** es la combinación correcta para
+  esto: sobrevive al proceso, así que abrir y cerrar pueden ser dos corridas
+  distintas, y muere en el reinicio, que es la red de seguridad final.
 
 ---
 
@@ -288,12 +344,17 @@ regla permisiva viva.
    sobre la IP virtual. El síntoma es *"anda por la LAN y no por Kanpachi"*, sin
    regla que mirar. Hay que decidir si existe una vía para permitirlo desde la
    UI, y esa vía es justo lo que el modelo está para impedir.
-2. **El seed no es alcanzable como peer.** `kanpachi.accentio.dev` resuelve a IPs
-   de **Cloudflare**. El 443 sirve la página de invitación; el 11010 del motor no
-   llega, y no depende del estado del droplet. Salidas: un nombre aparte en gris,
-   quitarle el proxy, o probar `wss://` antes de resignar Cloudflare, que
-   Cloudflare sí proxea WebSocket sobre 443. **Bloquea la prueba de dos
-   máquinas.**
+2. **El seed ya es alcanzable, y queda una decisión de infra.** Se apagó el proxy
+   de Cloudflare el 2026-08-03 y `kanpachi.accentio.dev` resuelve a la Reserved
+   IP del droplet, `45.55.123.251`: 443 sirve la página con su Let's Encrypt de
+   NPMplus, y 11010 llega al motor. **Un solo nombre sirve las dos cosas**, que
+   es lo que `DefaultSeedHost` asume hoy.
+
+   Lo que queda abierto es que el DNS en gris **no gusta** y se acepta por ahora.
+   Volver a encender el proxy rompería el 11010, porque Cloudflare solo reenvía
+   una lista fija de puertos HTTP. La alternativa es separar el nombre del
+   registro del nombre del motor, y eso **sí toca el dominio**: hoy los dos salen
+   de la misma constante. Que toque código no es un argumento en contra.
 3. **La categoría de red del adaptador.** `docs/04` paso 6 dice Privada, con una
    razón de UX real. Sigue sin resolverse contra el argumento de que la sala son
    desconocidos con un ticket.
