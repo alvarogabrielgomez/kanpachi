@@ -739,6 +739,23 @@ veredicto. Quien juzga es `domain.Enforcement.Diff`, que es dominio y corre sin
 Windows. Una compuerta **sin comprobar** es distinta de una **ausente**: una es un
 hecho y la otra es ceguera, y se muestran distinto.
 
+### adapter/firewall, las dos capas juntas
+
+Implementa `FirewallPort` componiendo las otras dos, y es **intersección y no reemplazo**: un paquete tiene que pasar las dos. Por eso la compuerta no abre nada que los permisos visibles no abran ya.
+
+Lo que este paquete decide no es cómo se habla con Windows: es el **orden** de las dos capas y qué pasa cuando una falla. Las dos cosas tienen una dirección correcta y una que abre un agujero, así que es Go puro y lo prueba el job de Linux.
+
+| Operación | Orden | Por qué |
+|---|---|---|
+| `Apply` | Compuerta, después permisos | El instante intermedio deja lo que sobra **cerrado**. Al revés deja permisos nuevos sin nada que los acote |
+| `PurgeOwned` | Permisos, después compuerta | El espejo del anterior |
+
+Y las dos veces, si la primera capa falla la segunda **no se toca**. La compuerta se aplica en una transacción, así que un fallo deja la anterior intacta y devolver ahí deja el sistema en el estado consistente de antes. En la purga, unos permisos que no se pudieron quitar bajo una compuerta siguen acotados; los mismos sin ella son el agujero.
+
+`SetScope` recibe el nombre del adaptador y el rango de la sala en **una** llamada. Si las dos capas discreparan sobre qué adaptador es la sala, los permisos irían sobre uno y el bloqueo sobre otro: un adaptador con permisos y sin compuerta, con las dos capas contestando que sí.
+
+`Enforcement` mide las dos y no juzga ninguna. Un fallo en cualquier mitad tira la medición entera, porque devolver la mitad medida y la otra en cero se lee igual que "esa mitad no tiene nada puesto", que es la conclusión opuesta.
+
 ### adapter/firewall/wfp, la compuerta
 
 Tres ficheros, y la línea que los separa es la misma que en el adaptador COM: **lo que decide va en Go puro que prueba el job de Linux, y lo que llama a la API va detrás de `//go:build windows`**.
