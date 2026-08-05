@@ -6,7 +6,9 @@ Cada decisión relevante, las alternativas consideradas y la razón de la elecci
 
 **Alternativas:** Headscale envuelto con una API propia. Construir desde cero sobre wireguard-go o sobre Nebula. EasyTier vinculado al binario Go por cgo. El `easytier-core.exe` oficial como proceso hijo. Un fork de EasyTier con parches propios. Un binario propio que use EasyTier como librería.
 
-**Elección:** **`kanpachi-engine.exe`**, un binario propio en Rust que declara EasyTier como **librería** por `git` contra el tag `v2.6.4`, ejecutado como **proceso hijo** del daemon y accedido siempre a través de `EnginePort`. Vive en un repositorio aparte bajo LGPL-3.0.
+**Elección:** **`kanpachi-engine.exe`**, un binario propio en Rust que declara EasyTier como **librería**, ejecutado como **proceso hijo** del daemon y accedido siempre a través de `EnginePort`. Vive en un repositorio aparte bajo LGPL-3.0.
+
+Y la librería que declara es **un fork nuestro**, `alvarogabrielgomez/EasyTier`, tag `v2.6.4-kanpachi.1`. Esa segunda mitad se decidió después, al medir, y tiene su propia sección más abajo: el binario propio quita lo que el CLI hace ALREDEDOR de la librería, y no quita lo que la librería hace DENTRO de lo que se le pide.
 
 ### Por qué el binario oficial no sirve
 
@@ -67,9 +69,33 @@ Lo que sostiene que descartarlas sea aceptable: **el test de invariante de socke
 
 Lo que se pierde, dicho para que nadie lo descubra tarde: **la detección en la máquina del usuario.** El caso que quedaría mudo es el que pasa en CI y falla en el campo, por una diferencia de Windows o una carrera de arranque. El día que aparezca uno así, esta decisión se reabre con ese caso como argumento.
 
-### Por qué NO un fork
+### El fork, que primero se descartó y después hizo falta igual
 
-Un fork resuelve lo mismo y se paga para siempre. Entre el tag `v2.6.4` y la rama de desarrollo hay **606 ficheros y +129.000 líneas** movidas por un solo cambio, y el árbol entero del RPC se borró y renació en otro sitio. Cualquier parche nuestro habría que **reescribirlo**, no rebasarlo. Consumir la librería no tiene ese coste: se fija un tag y se sube cuando uno quiere.
+Esta sección decía "por qué NO un fork", con un argumento que sigue siendo cierto: entre el tag `v2.6.4` y la rama de desarrollo hay **606 ficheros y +129.000 líneas** movidas por un solo cambio, y el árbol entero del RPC se borró y renació en otro sitio. Un parche nuestro contra eso hay que **reescribirlo**, no rebasarlo.
+
+Lo que cambió no es el coste del fork: es que apareció algo que la librería hace y que no se puede apagar. **Hay dos clases de cosa que hace el binario oficial, y solo una desaparece al escribir el nuestro.**
+
+| Clase | Dónde vive | ¿La quita escribir nuestro binario? |
+|---|---|---|
+| Lo que el CLI hace **alrededor** de la librería | su `main`, su `cli` | **Sí.** Ese es el portal 15888 |
+| Lo que la librería hace **dentro** de lo que se le pide | `virtual_nic.rs` | **No.** Es su código |
+
+Medido en una máquina de verdad: al crear el adaptador virtual, EasyTier escribe **ocho reglas de permiso** en el Firewall de Windows, por COM, desde dentro de `NetworkInstance::start()`, o sea también por el camino de librería. Son permanentes: sobreviven al reinicio y a desinstalar Kanpachi.
+
+| Regla | Alcance |
+|---|---|
+| `EasyTier kanpachi0 - ALL Protocol (Inbound)` | cualquier protocolo sobre el adaptador virtual, sin puerto y sin origen |
+| `EasyTier <ruta del exe> (Inbound)` | cualquier protocolo hacia el motor en **todas** las interfaces de la máquina, la red de casa incluida |
+
+La primera deshace la promesa central en la misma capa que Kanpachi usa para conceder. La segunda es la que decidió el enfoque: **la compuerta de WFP no puede taparla**, porque va acotada al adaptador virtual, y esa acotación es la invariante que impide que un bloqueo duro deje al usuario sin la entrada de su red de casa. Una capa que jamás debe salirse del adaptador no puede cubrir una regla que aplica en todos.
+
+No hay feature de cargo, campo de configuración ni variable de entorno que las apague. Y no es un defecto de upstream: su propósito declarado es el proxy de subredes y el de KCP, que Kanpachi corre apagados. **Es una diferencia de producto.**
+
+Así que el fork es `v2.6.4` con esas dos llamadas borradas y **nada más**: `1 fichero, 8 inserciones, 31 borrados`, y las ocho inserciones son comentarios. El coste de mantenerlo es el que dice el párrafo de arriba, y por eso el diff se mantiene así de chico: subir de versión es rebasar dos borrados, no reescribir un parche.
+
+**Por eso el motor NO vive dentro del fork, y son tres repos.** La afirmación "esto es upstream y nada más" tiene que poder comprobarse en treinta segundos con `git diff v2.6.4 v2.6.4-kanpachi.1`, y un fork con dos mil líneas nuestras dentro la convierte en un acto de fe. Mantener la línea de cambios separada es además lo que deja actualizar algún día.
+
+Lo que el fork NO reemplaza es la compuerta. Su enemigo nunca fue EasyTier: son las reglas permisivas **ajenas**, de escritorio remoto y de instaladores de juegos, que alcanzan al usuario por la red virtual. Eso no lo quita ningún fork. Y la red permanente contra que esto vuelva a pasar tampoco es el fork: es que `AuditForeign` clasifica como ajeno cualquier permiso entrante acotado a una interfaz `kanpachi*` que no sea nuestro, y esa clase BLOQUEA la sala.
 
 ### La versión se fija a propósito
 
@@ -1132,6 +1158,18 @@ No persistente, porque así reiniciar la máquina se lo lleva todo. Es la red de
 
 **Aplicar reescribe el conjunto entero dentro de una transacción.** Un filtro de WFP no se puede editar en sitio, así que cambiar algo es borrar y volver a poner, y entre las dos cosas hay una ventana donde el bloqueo no está. Esa ventana está en el cable. Con transacción no existe: se publica el conjunto entero o no se publica nada. De paso, reaplicar el mismo conjunto REPARA lo que alguien haya borrado por fuera, igual que en las reglas del firewall.
 
+### La compuerta cubre los DOS adaptadores, y sin ella no se abre nada
+
+Las dos mitades de esto se decidieron al CABLEARLA, que fue cuando se descubrió que **no la encendía nadie**: el método de alcance existía, estaba probado, y solo lo llamaba la herramienta de medición. En el daemon real la contención del adaptador virtual eran únicamente las reglas del Firewall de Windows.
+
+**Los dos adaptadores.** El host vive en dos redes a la vez, la sala y el vestíbulo, y el vestíbulo es donde llega gente que **todavía no es miembro**: es el que menos puede quedarse sin compuerta. Su rango es constante y no viaja como campo, porque un campo por el que pasarlo es un campo por el que ensancharlo, y cuál de los dos cubre cada permiso se lee de la dirección local de la regla en vez de una bandera. Las ranuras del vestíbulo quedan reservadas incluso sin vestíbulo: corriendo los permisos hacia arriba, uno ocuparía la ranura de un bloqueo y la limpieza siguiente lo borraría creyendo que barre un bloqueo que ya no aplica, o sea un puerto que se cierra solo sin nada que lo explique.
+
+**Y el invitado acota igual**, que no es un extra: el conjunto de reglas le abre sus puertos de cliente, así que también escribe permisos y también necesita quién los acote frente a los demás miembros de la sala.
+
+**Aplicar falla en la cara si hay reglas y no hay dónde acotarlas.** Antes dejaba un aviso en el log y escribía los permisos igual, o sea que la lista de permitidos volvía a ser ADITIVA justo cuando había puertos que abrir. El conjunto vacío sigue pasando y no es una excepción: sin nada que abrir no hay nada que acotar, y ese es el estado normal del daemon en reposo, además de lo que garantiza que la interfaz virtual nazca sin nada abierto. Los casos de uso lo tratan como fatal, a diferencia de los ajustes del adaptador: un MTU mal puesto degrada la partida, y una sala sin compuerta miente sobre lo único que este producto promete.
+
+**Quién la enciende: el caso de uso**, porque quien sabe cuándo existe el adaptador es quien levantó la red. Lo crea el motor, así que no existe cuando arranca el daemon. El nombre del adaptador no viaja desde el núcleo: elegir a qué adaptador se acota un bloqueo duro es la decisión que separa contener la sala de dejar al usuario sin su red de casa.
+
 ### Consecuencia para el dominio
 
 `OwnRulesIntact(bool)` no vale para esto: un booleano no puede decir QUÉ falta ni en qué capa. Lo reemplaza `Enforcement()`, que devuelve lo MEDIDO en las dos capas y deja que juzgue `Enforcement.Diff`, que es dominio y se testea sin Windows. El adaptador mide y el dominio juzga, por la misma razón por la que `Apply` calcula la diferencia contra las reglas vivas y jamás contra un recuerdo en memoria.
@@ -1272,3 +1310,31 @@ canal en un **escáner de puertos por encargo** contra terceros, con el tráfico
 saliendo de las casas de los miembros. Lo que lo impide no es una comprobación que
 alguien pueda borrar: es que el tipo no lo puede expresar. Igual al revés, el
 informe no lleva remitente, así que nadie puede informar por otro.
+
+---
+
+## 29. Un régimen único para toda mutación, con un hard reset que lo deshace
+
+**Alternativas:** confiar en la limpieza del arranque, que ya es incondicional. Un desinstalador que lo sepa todo. Un comando de reparación que reinstale. Un régimen único con dos banderas.
+
+**Elección:** **el régimen único.** Toda mutación persistente de Kanpachi o lleva etiqueta enumerable desde el sistema, o queda anotada en un libro con su valor previo. Etiqueta es el grupo de firewall y la ranura de WFP; libro es `applied-tweaks.json` y `suspended-rules.json`. Lo que no cumple una de las dos no se escribe.
+
+Lo efímero queda fuera del régimen y no necesita nada: el adaptador virtual, su dirección, su métrica, su MTU, sus rutas y los filtros de la compuerta mueren con la red virtual, que el motor crea por sala. Eso está medido: **sin sala abierta no existe ningún adaptador.**
+
+### Por qué hace falta un reset, si la limpieza del arranque ya es incondicional
+
+Porque la limpieza del arranque necesita un arranque. `NewSession` repone la cuarentena, purga el grupo propio y restaura las reglas ajenas en **cada** arranque, sin depender de ninguna señal, así que la muerte sucia está cubierta. Lo que no cubre es el daemon que **no vuelve a arrancar**: una configuración corrupta, un adaptador que ya no monta, un motor huérfano peleándose por la red virtual. Ahí hace falta limpiar sin pasar por el camino que está roto, y por eso `--reset` no monta la sesión: exigir que funcione justo lo que el usuario dice que no funciona no es una reparación.
+
+### La asimetría entre resetear y desinstalar
+
+**`--reset` REPONE la cuarentena de base y no la quita.** Lo que hace valiosa a la cuarentena es seguir puesta con el daemon detenido, deshabilitado o a medio desinstalar. Un reset se pide justo cuando la configuración está corrupta y nada arranca: quitarla ahí destruiría exactamente lo que protege del caso que motivó el reset.
+
+Y **conserva `last-room.json`**. Resetear la configuración no tiene por qué borrar a qué sala volver: son dos cosas distintas, y juntarlas convierte una limpieza en una pérdida.
+
+Quitar la cuarentena es de `--uninstall-cleanup`, y esa capacidad vive en **una sola función** con el nombre largo a propósito, fuera de todo puerto del núcleo. Está cerrada por tres vías: la interfaz que el daemon usa no declara nada que pueda quitarla; un guardián exige que sea la única función del daemon que a la vez nombre el grupo base y llame a algo que borra; y otro exige que solo la llame el cableado del binario. El primero de esos guardianes se escribió porque el que ya existía **no mordía**, y eso se comprobó escribiendo la función y viéndolo callar.
+
+### Ningún paso corta la secuencia
+
+No hay un segundo intento. Quien pide un reset lo pide porque nada más funciona, así que abortar en el primer paso que falla dejaría el resto puesto justo entonces. Se registran todos los fallos y se devuelven juntos.
+
+El orden sí decide, y cada par tiene una dirección correcta: los motores huérfanos primero, porque mientras uno siga vivo la red virtual sigue arriba y purgar antes dejaría un adaptador con tráfico y sin nada conteniéndolo; la cuarentena antes de la purga, porque la purga es el instante de menos protección; la compuerta se suelta después de los permisos, igual que al salir de la sala.

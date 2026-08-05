@@ -790,7 +790,7 @@ Acotar es **una sola llamada para las dos capas**. Si discreparan sobre qué ada
 
 **La compuerta cubre los DOS adaptadores.** El vestíbulo no es un extra: es el adaptador donde llega gente que todavía no es miembro, o sea el que menos puede quedarse sin ella. `wfp.Scope` lleva el LUID de la sala con su rango, y el del vestíbulo, con el rango del vestíbulo como constante y no como campo, porque `RendezvousSubnet` es igual para todas las salas y un campo por el que pasarlo sería un campo por el que ensancharlo. Cuál de los dos cubre cada permiso lo dice la dirección local de la regla, no una bandera: una dirección dentro del vestíbulo solo puede vivir en el adaptador del vestíbulo.
 
-Las tres ranuras del vestíbulo quedan **reservadas aunque no haya vestíbulo**. Corriendo los permisos hacia arriba cuando falta, un permiso ocuparía la ranura de un bloqueo del vestíbulo, y la limpieza siguiente lo borraría creyendo que barre un bloqueo que ya no aplica: un puerto que se cierra solo, sin nada que lo explique.
+Las tres ranuras del vestíbulo quedan **reservadas incluso sin vestíbulo**. Corriendo los permisos hacia arriba cuando falta, un permiso ocuparía la ranura de un bloqueo del vestíbulo, y la limpieza siguiente lo borraría creyendo que barre un bloqueo que ya no aplica: un puerto que se cierra solo, sin nada que lo explique.
 
 Y la medición pregunta por la ranura del vestíbulo **solo cuando se pidió cubrirlo**. Esa condición separa "no aplica" de "falta": un invitado soltó el vestíbulo a propósito y su compuerta está entera, mientras que un host con el bloqueo del vestíbulo caído tiene media compuerta y no puede salir en verde.
 
