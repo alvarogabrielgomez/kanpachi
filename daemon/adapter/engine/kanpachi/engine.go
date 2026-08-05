@@ -55,6 +55,10 @@ type Deps struct {
 	// Resolve es el resolvedor de nombres. Se inyecta para poder probar el
 	// rechazo de un seed que apunta a la LAN sin depender del DNS de nadie.
 	Resolve func(string) ([]netip.Addr, error)
+	// Addrs lee las direcciones de un adaptador. Se inyecta por lo mismo que
+	// Resolve: la espera a que la red esté usable se prueba en Linux, donde
+	// ninguno de estos adaptadores existe.
+	Addrs func(adapter string) ([]netip.Addr, error)
 
 	spawn spawner
 }
@@ -138,6 +142,9 @@ func New(deps Deps) (*Engine, error) {
 	}
 	if deps.Resolve == nil {
 		deps.Resolve = resolveWithNet
+	}
+	if deps.Addrs == nil {
+		deps.Addrs = addressesOf
 	}
 	if deps.spawn == nil {
 		deps.spawn = spawn
@@ -373,12 +380,19 @@ func (e *Engine) startCall(ctx context.Context, build func(id uint64) request) e
 }
 
 // HostNetwork arranca la red como nodo admin.
+//
+// No vuelve hasta que el adaptador tiene su dirección. Ver [waitForAddress]:
+// contestar antes dejaba a todo lo que va después ligando a una IP que todavía
+// no existía.
 func (e *Engine) HostNetwork(ctx context.Context, spec domain.HostSpec) error {
 	uris, err := seedURIs(spec.Seeds, e.deps.Resolve)
 	if err != nil {
 		return err
 	}
-	return e.startCall(ctx, func(id uint64) request { return hostRequest(id, spec, uris) })
+	if err := e.startCall(ctx, func(id uint64) request { return hostRequest(id, spec, uris) }); err != nil {
+		return err
+	}
+	return e.awaitAddress(ctx, RoomDevice, domain.HostAddress(spec.Subnet))
 }
 
 // JoinRendezvous entra al vestíbulo. NO se guarda para Restart: reiniciar el
@@ -388,8 +402,27 @@ func (e *Engine) JoinRendezvous(ctx context.Context, spec domain.RendezvousSpec)
 	if err != nil {
 		return err
 	}
-	_, err = e.call(ctx, func(id uint64) request { return lobbyRequest(id, spec, uris) })
-	return err
+	if _, err := e.call(ctx, func(id uint64) request { return lobbyRequest(id, spec, uris) }); err != nil {
+		return err
+	}
+	// La del vestíbulo es la que se midió fallando: el canal de control liga
+	// justo acá, en la IP del host dentro del vestíbulo, y Windows contestaba
+	// "The requested address is not valid in its context".
+	return e.awaitAddress(ctx, LobbyDevice, spec.Address)
+}
+
+// awaitAddress espera a que la red esté usable de verdad, y lo anota.
+//
+// El aviso vale porque una sala que tarda quince segundos en abrir y una que
+// falla se ven igual desde fuera mientras pasa.
+func (e *Engine) awaitAddress(ctx context.Context, adapter string, want netip.Addr) error {
+	inicio := time.Now()
+	if err := waitForAddress(ctx, e.deps.Addrs, adapter, want, AddressDeadline); err != nil {
+		return fmt.Errorf("la red arrancó y el adaptador no quedó utilizable: %w", err)
+	}
+	e.deps.Log.Info("adaptador virtual listo",
+		"adaptador", adapter, "dirección", want.String(), "tardó", time.Since(inicio).Round(time.Millisecond).String())
+	return nil
 }
 
 func (e *Engine) LeaveRendezvous(ctx context.Context) error {
@@ -404,7 +437,13 @@ func (e *Engine) JoinWithCredential(ctx context.Context, spec domain.GuestSpec) 
 	if err != nil {
 		return err
 	}
-	return e.startCall(ctx, func(id uint64) request { return guestRequest(id, spec, uris) })
+	if err := e.startCall(ctx, func(id uint64) request { return guestRequest(id, spec, uris) }); err != nil {
+		return err
+	}
+	// La dirección del invitado la asignó el host dentro de la credencial, y el
+	// motor la toma por DHCP de la red. Esperarla es lo que hace que marcar al
+	// host no salga desde una interfaz que aún no tiene IP.
+	return e.awaitAddress(ctx, RoomDevice, spec.Credential.VirtualIP)
 }
 
 // Leave sale de todo, y es IDEMPOTENTE.

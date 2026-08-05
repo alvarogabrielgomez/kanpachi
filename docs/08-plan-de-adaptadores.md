@@ -705,6 +705,49 @@ el adaptador aparezca.
 Juntos eran el agujero. Por separado cada uno es la mitad, y por eso ninguno de
 los dos se veía.
 
+## La sala de verdad: ABIERTA, y los tres fallos que hicieron falta para llegar
+
+Medido el 2026-08-05, elevado, con el daemon de verdad y contra
+`kanpachi.accentio.dev`. `create_room` devolvió `connected`, con adaptador
+`kanpachi0` arriba, IP virtual, y el Job Object llevándose al motor.
+
+Para llegar hicieron falta tres arreglos, y **ninguno lo encuentra un test
+unitario**, porque los tres son de CABLEADO o de TIEMPO y no de lógica:
+
+1. **`RoutingTable` no existía.** Fallaba en `planSubnet`, antes de tocar el
+   motor. Es el adaptador de este commit.
+2. **`control.Attach` no lo llamaba nadie.** El comentario del propio método
+   dice *"El cableado construye uno, después el otro, y los une"*, y `main.go`
+   no hacía la última parte, así que `Serve` devolvía `ErrNotAttached` y crear
+   una sala fallaba entera con el motor ya levantado. Estaba escrito, estaba
+   probado, y solo lo llamaban los tests.
+3. **Las órdenes de arranque volvían antes de que la red existiera.** El motor
+   contesta cuando acepta la orden, no cuando el adaptador tomó su dirección.
+   El canal de control liga en la IP del host dentro del vestíbulo, y Windows
+   contestaba `The requested address is not valid in its context`. Ahora
+   `HostNetwork`, `JoinRendezvous` y `JoinWithCredential` esperan a la dirección,
+   con plazo y error si no llega: una sala que dice estar abierta sobre un
+   adaptador que nunca apareció es peor que una que no abrió.
+
+**El patrón que dejan los dos primeros vale más que los arreglos.** `SetScope` y
+`Attach` estaban escritos, probados y sin llamar desde producción. Un test de
+paquete no lo ve, porque el test SÍ los llama. Lo que lo ve es correr el
+producto, y lo que lo evitaría es un guardián sobre `cmd/kanpachid` que exija que
+cada método de unión declarado en un adaptador aparezca en el cableado.
+
+Lo que la medición reveló de paso, y no estaba previsto: esta máquina tiene una
+dirección de Tailscale en `100.65.79.92/32`, dentro del espacio compartido, así
+que el plan de direcciones mandó la sala al espacio de reserva:
+
+```
+"subnet": "10.99.169.0/24",
+"subnet_reason": "esta máquina ya usa 100.65.79.92/32 dentro del espacio
+                  compartido, la sala va en 10.99.0.0/16"
+```
+
+Es el conflicto CGNAT de la decisión de direccionamiento, funcionando en la
+primera ejecución real y sin que nadie lo montara a propósito.
+
 **RoomDirectory paga la deuda escrita en `docs/CLAUDE.md`**: `domain.CheckSeedAddr`
 está escrita y probada y **ningún adaptador la llama porque ninguno existe**. Se
 llama sobre lo que resolvió el DNS y en **cada** uso, porque un nombre impecable

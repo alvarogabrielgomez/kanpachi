@@ -147,6 +147,16 @@ func correr(consola bool, datos, nombre string) error {
 		return err
 	}
 
+	// El canal y la sesión se unen ACÁ, y hace falta: la dependencia es circular
+	// por naturaleza, porque la sesión recibe el canal en su `Deps` y el canal
+	// necesita a la sesión para contestar la puerta del vestíbulo. Se construye
+	// uno, después el otro, y se unen.
+	//
+	// Sin esto `Serve` devuelve [control.ErrNotAttached] y crear una sala falla
+	// entera al abrir el canal, con el motor ya levantado. Pasó con el daemon de
+	// verdad: `Attach` existía, estaba probado, y solo lo llamaban los tests.
+	canal.Attach(sesion)
+
 	bucle, err := supervisor.New(supervisor.Deps{
 		Room:    sesion,
 		Engine:  motor,
