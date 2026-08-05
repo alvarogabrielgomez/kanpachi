@@ -159,6 +159,21 @@ abstract final class AppMessages {
               'mientras juegas y se devuelve al salir.',
         ),
 
+        // La otra que impide abrir la sala. Lo que la hace peligrosa no es de
+        // quién es, es DÓNDE está, y por eso el texto habla del sitio y no del
+        // programa: puede no haber ninguno.
+        RuleClass.onOurAdapter => const AppMessage(
+          severity: MessageSeverity.warn,
+          title: 'Algo abrió tu red de Kanpachi por fuera de Kanpachi',
+          body:
+              'Hay un permiso en tu firewall puesto sobre la red virtual que '
+              'Kanpachi crea, y no lo puso Kanpachi. Mientras esté, cualquiera '
+              'de la sala llega a esa máquina sin pasar por el control de '
+              'Kanpachi, y expulsarlo no lo tapa. Hay que resolverlo antes de '
+              'abrir la sala. Se puede desactivar mientras juegas y se devuelve '
+              'al salir.',
+        ),
+
         // Se muestra igual en vez de callarse. Kanpachi la encontró buscando lo
         // que abre la máquina, así que decir "hay algo que no sé clasificar" es
         // más honesto que no decir nada.

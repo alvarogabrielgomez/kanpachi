@@ -815,7 +815,8 @@ class _ForeignRuleNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final SessionCubit session = context.read<SessionCubit>();
-    final bool blocks = kind == RuleClass.remoteControl;
+    final bool blocks =
+        kind == RuleClass.remoteControl || kind == RuleClass.onOurAdapter;
 
     return AppMessageNotice(
       message: AppMessages.foreignRule(

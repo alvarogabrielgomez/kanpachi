@@ -85,6 +85,14 @@ enum RuleClass {
   /// Da teclado, pantalla y sistema de archivos.
   remoteControl('remote_control'),
 
+  /// Alguien de fuera puso un permiso SOBRE un adaptador de Kanpachi.
+  ///
+  /// Lo que la hace peligrosa no es de quién es, es dónde está: deshace la
+  /// promesa central en la misma capa que Kanpachi usa para conceder, y la
+  /// compuerta no lo tapa porque los dos son permisos y conviven. El daemon la
+  /// manda como bloqueante.
+  onOurAdapter('on_our_adapter'),
+
   /// Ni una cosa ni la otra.
   other('other');
 

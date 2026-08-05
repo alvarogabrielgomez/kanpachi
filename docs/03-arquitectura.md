@@ -1245,6 +1245,10 @@ func (f *FW) RestoreForeign() error
 
 Reglas de manejo: nunca se borran, solo se desactivan. El estado previo se persiste en `ProgramData\Kanpachi\suspended-rules.json` antes de tocar nada. Se restauran al salir de la sala y también al arrancar el servicio, por si una salida sucia dejó algo suspendido. Siempre con confirmación explícita del usuario en la UI, jamás automático.
 
+**Se clasifica por ejecutable Y por ALCANCE, y el alcance gana.** Las dos primeras clases se deciden mirando a qué programa apunta la regla, y hay un caso que por ahí no se ve nunca: un permiso puede no tener ejecutable. La regla que motivó esto abría cualquier protocolo sobre `kanpachi0`, sin puerto, sin origen y sin aplicación, así que caía en "otra" y no se reportaba jamás. Ahora, un permiso entrante habilitado y ajeno que esté acotado a una interfaz `kanpachi*` es `ClassOnOurAdapter`, y **bloquea igual que el control remoto**: lo que lo hace peligroso no es de quién es, es dónde está. Deshace la promesa central en la misma capa que Kanpachi usa para conceder, y la compuerta no lo tapa, porque los dos son permisos y conviven.
+
+Es la red permanente del fork. El fork quitó de raíz las reglas que EasyTier escribía; esto es lo que las hace visibles si alguien las vuelve a poner, sea quien sea. Y es el único sitio del proyecto donde el nombre se compara **por prefijo** en vez de por igualdad, con el razonamiento invertido a propósito: acá se decide qué REPORTAR y nunca qué borrar, así que un adaptador de más es una fila en una pantalla, y uno de menos es un permiso que nadie ve sobre una red que el producto dice contener.
+
 ### adapter/netcfg/windows, implementa `NetConfigPort`
 
 El componente que no existía en la primera versión de este documento, y sin el cual el producto no funciona de forma confiable.

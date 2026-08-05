@@ -57,6 +57,24 @@ const (
 	// ClassRemoteControl da teclado, pantalla y sistema de archivos. La UI la
 	// trata como BLOQUEANTE y ofrece suspenderla ANTES de abrir la sala.
 	ClassRemoteControl
+	// ClassOnOurAdapter es un permiso que alguien de fuera puso SOBRE UN
+	// ADAPTADOR DE KANPACHI.
+	//
+	// # Por qué es una clase propia y no "otra"
+	//
+	// Porque las otras dos se deciden por el EJECUTABLE, y esta no tiene por
+	// qué tener uno. La regla que motivó la clase abría cualquier protocolo
+	// sobre `kanpachi0`, sin puerto, sin origen y sin aplicación: por el camino
+	// del ejecutable no se clasifica, así que caía en `ClassOther` y no se
+	// reportaba nunca.
+	//
+	// Lo que la hace distinta no es de quién es, es DÓNDE está. Un permiso
+	// ajeno sobre la red virtual deshace la promesa central en la misma capa que
+	// Kanpachi usa para conceder, y la compuerta no lo tapa: es un permiso, y
+	// un permiso ajeno acotado a nuestro adaptador convive con nuestro bloqueo.
+	//
+	// Es BLOQUEANTE, igual que el control remoto. Ver [ForeignRule.Blocking].
+	ClassOnOurAdapter
 	ClassOther
 )
 
@@ -71,7 +89,7 @@ const (
 // La mantiene al día un guardián de internal/arch que cuenta las constantes del
 // enum en el fuente y falla si esta lista tiene menos.
 func AllRuleClasses() []RuleClass {
-	return []RuleClass{ClassGame, ClassRemoteControl, ClassOther}
+	return []RuleClass{ClassGame, ClassRemoteControl, ClassOnOurAdapter, ClassOther}
 }
 
 func (c RuleClass) String() string {
@@ -80,6 +98,8 @@ func (c RuleClass) String() string {
 		return "juego"
 	case ClassRemoteControl:
 		return "control remoto"
+	case ClassOnOurAdapter:
+		return "permiso ajeno sobre un adaptador de Kanpachi"
 	case ClassOther:
 		return "otra"
 	default:
@@ -212,10 +232,16 @@ type ForeignRule struct {
 
 // Blocking dice si esta regla tiene que resolverse ANTES de abrir la sala.
 //
-// Solo el control remoto lo es. Una regla de más para el juego se muestra y se
-// ofrece suspender; una que entrega teclado y ficheros no se despacha con una
-// fila en una lista.
-func (r ForeignRule) Blocking() bool { return r.Class == ClassRemoteControl }
+// Dos clases lo son, por razones distintas y las dos del mismo peso. El control
+// remoto entrega teclado, pantalla y ficheros, y eso no se despacha con una
+// fila en una lista. Un permiso ajeno sobre nuestro adaptador deshace la
+// promesa central en la misma capa que Kanpachi usa para conceder, y la
+// compuerta no lo tapa: los dos son permisos, así que conviven.
+//
+// Una regla de más para el juego, en cambio, se muestra y se ofrece suspender.
+func (r ForeignRule) Blocking() bool {
+	return r.Class == ClassRemoteControl || r.Class == ClassOnOurAdapter
+}
 
 // BlockingForeign filtra las que hay que resolver antes de abrir la sala.
 func BlockingForeign(rules []ForeignRule) []ForeignRule {

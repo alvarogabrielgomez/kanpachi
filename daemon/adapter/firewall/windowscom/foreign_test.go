@@ -476,3 +476,73 @@ func TestSortPutsTheDangerousOnesFirst(t *testing.T) {
 		t.Errorf("the rest is not sorted by name: %v", rules)
 	}
 }
+
+// Un permiso ajeno SOBRE NUESTRO ADAPTADOR se reporta, tenga ejecutable o no.
+//
+// La regla de este test es la que EasyTier escribía de verdad al crear el
+// adaptador, copiada de una máquina: cualquier protocolo sobre `kanpachi0`, sin
+// puerto, sin origen y sin aplicación. Por el camino del ejecutable no se
+// clasifica, así que caía en `ClassOther` y no se reportaba NUNCA.
+//
+// El fork la quitó de raíz. Esto es la red permanente: si alguien la vuelve a
+// poner, sea quien sea, la pantalla de exposición lo dice. Y bloquea, porque un
+// permiso ajeno sobre la red virtual deshace la promesa central en la misma capa
+// que Kanpachi usa para conceder, y la compuerta no lo tapa: los dos son
+// permisos, así que conviven.
+func TestUnPermisoAjenoSobreNuestroAdaptadorSeVe(t *testing.T) {
+	regla := liveRule{
+		Name:      "EasyTier kanpachi0 - ALL Protocol (Inbound)",
+		Group:     "EasyTier",
+		Direction: dirIn,
+		Action:    actionAllow,
+		// Sin aplicación, sin puertos y sin origen: el caso real.
+		Interfaces: []string{"kanpachi0"},
+		Profiles:   profileAll,
+		Enabled:    true,
+	}
+
+	got, ok := regla.foreign(nil)
+	if !ok {
+		t.Fatal("un permiso de cualquier protocolo sobre kanpachi0 no se reportó")
+	}
+	if got.Class != domain.ClassOnOurAdapter {
+		t.Errorf("clase = %v, y lo que la hace peligrosa es DÓNDE está", got.Class)
+	}
+	if !got.Blocking() {
+		t.Error("no bloquea, y la sala se abriría con el permiso ajeno puesto sobre la red virtual")
+	}
+
+	// El vestíbulo cuenta igual, y una mayúscula no lo esconde: Windows devuelve
+	// el nombre de la interfaz con la caja con que se escribió.
+	regla.Interfaces = []string{"KANPACHI1"}
+	if got, ok := regla.foreign(nil); !ok || got.Class != domain.ClassOnOurAdapter {
+		t.Error("un permiso sobre el vestíbulo, escrito en mayúsculas, no se reportó")
+	}
+
+	// Y una regla acotada a OTRO adaptador no es asunto nuestro: reportarla
+	// convertiría la pantalla en una lista del firewall entero del usuario.
+	regla.Interfaces = []string{"Ethernet"}
+	if _, ok := regla.foreign(nil); ok {
+		t.Error("se reportó un permiso sobre un adaptador que no es de Kanpachi")
+	}
+}
+
+// Y las nuestras siguen sin ser ajenas, que es lo primero que rompería este
+// cambio: todas las reglas de Kanpachi van acotadas a `kanpachi*`.
+func TestNuestrasReglasSobreNuestroAdaptadorNoSonAjenas(t *testing.T) {
+	for _, grupo := range []string{domain.FirewallGroup, domain.FirewallGroupBase} {
+		regla := liveRule{
+			Name:       grupo + ": una regla nuestra",
+			Group:      grupo,
+			Direction:  dirIn,
+			Action:     actionAllow,
+			Interfaces: []string{domain.AdapterName},
+			Profiles:   profileAll,
+			Enabled:    true,
+		}
+		if _, ok := regla.foreign(nil); ok {
+			t.Errorf("una regla del grupo %q se reportó como ajena, y la pantalla de "+
+				"exposición diría que Kanpachi se expone a sí mismo", grupo)
+		}
+	}
+}

@@ -67,6 +67,8 @@ func ruleClassName(c domain.RuleClass) string {
 		return "game"
 	case domain.ClassRemoteControl:
 		return "remote_control"
+	case domain.ClassOnOurAdapter:
+		return "on_our_adapter"
 	case domain.ClassOther:
 		return "other"
 	default:

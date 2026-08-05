@@ -134,11 +134,14 @@ class Room {
   /// Si la regla ajena impide abrir la sala.
   ///
   /// Se deriva de la clase acá y no viene aparte porque el que decide es el
-  /// daemon: esta es la copia de su veredicto, y la única clase bloqueante hoy
-  /// es el control remoto.
+  /// daemon: esta es la copia de su veredicto. Bloquean dos clases, por razones
+  /// distintas del mismo peso: el control remoto entrega teclado, pantalla y
+  /// archivos; un permiso ajeno sobre nuestro adaptador abre la red virtual por
+  /// fuera de Kanpachi, y la compuerta no lo tapa porque los dos son permisos.
   bool get foreignRuleBlocks =>
       foreignRule == ForeignRuleState.open &&
-      foreignRuleClass == RuleClass.remoteControl;
+      (foreignRuleClass == RuleClass.remoteControl ||
+          foreignRuleClass == RuleClass.onOurAdapter);
 
   /// La dirección que se pega en el juego: la del host y el puerto del juego.
   String get gameAddress {

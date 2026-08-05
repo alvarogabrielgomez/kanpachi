@@ -146,6 +146,16 @@ func (c liveRule) foreign(gameExes []string) (domain.ForeignRule, bool) {
 		return domain.ForeignRule{}, false
 	}
 	class := domain.ClassifyForeignAgainst(c.Application, gameExes)
+	// El alcance gana sobre el ejecutable, porque puede no haber ejecutable.
+	//
+	// Es la red permanente contra lo que motivó el fork: EasyTier escribía un
+	// permiso de CUALQUIER protocolo sobre `kanpachi0`, sin puerto, sin origen y
+	// sin aplicación. Por el camino del ejecutable no se clasifica, así que caía
+	// en `ClassOther` y no se reportaba nunca. El fork lo quitó; esto es lo que
+	// lo hace visible si alguien lo vuelve a poner, sea quien sea.
+	if c.onOurAdapter() {
+		class = domain.ClassOnOurAdapter
+	}
 	if class == domain.ClassOther {
 		return domain.ForeignRule{}, false
 	}
@@ -157,6 +167,35 @@ func (c liveRule) foreign(gameExes []string) (domain.ForeignRule, bool) {
 		WasEnabled: c.Enabled,
 	}, true
 }
+
+// onOurAdapter says whether this rule is scoped to one of Kanpachi's virtual
+// adapters.
+//
+// # Why prefix and not equality, here of all places
+//
+// Everywhere else in this codebase a group is compared by exact equality,
+// because "Kanpachi" is a prefix of "Kanpachi-base" and a prefix match there
+// deletes the quarantine. This is the opposite situation and the reasoning
+// inverts with it: the adapters are named `kanpachi0` and `kanpachi1` today, a
+// future one would be `kanpachi2`, and this decides what to REPORT, never what
+// to delete. Reporting one adapter too many is a row on a screen; missing one is
+// a permit nobody sees on a network the product claims to contain.
+//
+// Case folded because Windows hands the interface name back with whatever
+// casing it was written with.
+func (c liveRule) onOurAdapter() bool {
+	for _, i := range c.Interfaces {
+		if len(i) >= len(adapterPrefix) && strings.EqualFold(i[:len(adapterPrefix)], adapterPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// adapterPrefix is what every Kanpachi virtual adapter's name starts with. It
+// is derived from the domain constant rather than written out, so renaming the
+// adapter cannot leave this silently looking for a name that no longer exists.
+var adapterPrefix = strings.TrimRight(domain.AdapterName, "0123456789")
 
 // matches says whether this live rule is the one the caller asked to suspend.
 //
