@@ -18,6 +18,11 @@ enum AppScreen {
   catalog,
   manualGame,
   room,
+
+  /// Lo que esta PC tiene abierto, MEDIDO. Se llega desde la sala, y no está
+  /// dentro de ella porque no es información de la sala: es de la máquina, y
+  /// sigue siendo cierta sin sala abierta.
+  exposure,
   invite,
 }
 

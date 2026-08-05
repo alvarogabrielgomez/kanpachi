@@ -673,6 +673,7 @@ class _ExposureCard extends StatelessWidget {
               'La red está en cuarentena. Nadie tiene puertos abiertos.',
               style: context.type.body.copyWith(color: colors.textOnChip),
             ),
+            const _VerLoMedido(),
           ],
         ),
       );
@@ -722,8 +723,41 @@ class _ExposureCard extends StatelessWidget {
                       'alcanzan tu PC.',
             style: context.type.bodySm.copyWith(color: colors.textMuted),
           ),
+          const _VerLoMedido(),
         ],
       ),
+    );
+  }
+}
+
+/// El enlace a la medición de verdad.
+///
+/// Va en las DOS caras de la tarjeta, incluida la de "nada abierto", y eso es
+/// deliberado: esta tarjeta dice lo que Kanpachi PIDIÓ, y la pantalla de al lado
+/// dice lo que el sistema TIENE. La diferencia entre las dos es justo lo que hay
+/// que poder mirar, y "nada abierto" es la afirmación que más falta hace poder
+/// desmentir.
+class _VerLoMedido extends StatelessWidget {
+  const _VerLoMedido();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const SizedBox(height: AppSpacing.xl),
+        Divider(color: context.colors.border, height: 1),
+        const SizedBox(height: AppSpacing.md),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: AppButton(
+            label: 'Ver lo que tu PC tiene abierto',
+            height: 38,
+            variant: AppButtonVariant.ghost,
+            onPressed: () => context.read<ShellCubit>().go(AppScreen.exposure),
+          ),
+        ),
+      ],
     );
   }
 }

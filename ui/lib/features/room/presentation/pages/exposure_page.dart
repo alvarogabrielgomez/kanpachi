@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_icon_button.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_kicker.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_spinner.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_list.dart';
@@ -14,6 +16,63 @@ import 'package:kanpachi_ui/features/room/presentation/widgets/probe_section.dar
 import 'package:kanpachi_ui/features/session/domain/entities/canary.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
+import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
+import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
+import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
+import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
+
+/// La pantalla de exposición, montada en el armazón de la app.
+///
+/// Existe aparte de [ExposurePage] para que aquella no sepa nada de navegación
+/// ni de contenedores. Esa separación es la que hace que un test pueda pintarla
+/// con un informe ciego sin levantar cubits, y es la razón por la que recibe la
+/// medición por parámetro en vez de ir a buscarla.
+///
+/// Acá se resuelve lo que sí es del armazón: de dónde salen la medición y el
+/// sondeo, y por dónde se vuelve.
+class ExposureScreen extends StatelessWidget {
+  const ExposureScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final SessionState session = context.watch<SessionCubit>().state;
+    final SessionCubit cubit = context.read<SessionCubit>();
+    final Room? room = session.room;
+
+    return ScreenBody(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          ScreenHeader(
+            title: 'Qué tiene abierto tu PC',
+            note:
+                'Medido en el sistema, no leído de lo que Kanpachi cree haber '
+                'aplicado. Las dos cosas pueden no coincidir, y esa diferencia '
+                'es lo que esta pantalla existe para enseñar.',
+            leading: AppBackButton(
+              onPressed: () => context.read<ShellCubit>().go(AppScreen.room),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.x4l),
+          ExposurePage(
+            load: cubit.exposure,
+            probe: cubit.probeHost,
+            // Sin sala se pinta igual, porque la exposición de la máquina es
+            // cierta con sala y sin ella. Se cuenta como host para no ofrecer
+            // un sondeo que no tiene a quién marcar.
+            isHost: room?.selfIsHost ?? true,
+            hostName: room?.hostName ?? '',
+            alerts: session.health.kinds,
+            canary: session.health.canary,
+            onReapply: cubit.reapplyProtection,
+            reapplying: session.isReapplying,
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 /// La pantalla que contesta "¿qué tiene abierto mi PC?".
 ///

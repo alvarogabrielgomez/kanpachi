@@ -6,6 +6,7 @@ import 'package:kanpachi_ui/features/games/presentation/pages/manual_game_page.d
 import 'package:kanpachi_ui/features/home/presentation/pages/home_page.dart';
 import 'package:kanpachi_ui/features/invite/presentation/pages/invite_pages.dart';
 import 'package:kanpachi_ui/features/onboarding/presentation/pages/onboarding_pages.dart';
+import 'package:kanpachi_ui/features/room/presentation/pages/exposure_page.dart';
 import 'package:kanpachi_ui/features/room/presentation/pages/room_page.dart';
 import 'package:kanpachi_ui/features/room/presentation/widgets/room_dialogs.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
@@ -126,6 +127,7 @@ class _CurrentScreen extends StatelessWidget {
       AppScreen.catalog => const CatalogScreen(),
       AppScreen.manualGame => const ManualGameScreen(),
       AppScreen.room => const RoomScreen(),
+      AppScreen.exposure => const ExposureScreen(),
       AppScreen.invite => InviteScreen(
         code: session.room?.code ?? 'A7K2-M9QX',
         roomName: session.room?.name ?? 'La Guarida',

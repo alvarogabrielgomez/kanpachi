@@ -1,5 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
@@ -107,6 +109,26 @@ class SessionCubit extends Cubit<SessionState> {
       ),
     );
   }
+
+  /// Lo que la máquina tiene abierto AHORA, medido.
+  ///
+  /// # Por qué pasa por acá si no toca el estado
+  ///
+  /// Porque una pantalla no resuelve dependencias. Todas las de esta app leen
+  /// cubits del contexto, y la que se saltó esa regla para ir al contenedor por
+  /// su cuenta reventó en el test de layout, que las pinta sin montar la app
+  /// entera. Reenviar dos líneas acá es más barato que un contenedor de mentira
+  /// en cada test que pinte una pantalla.
+  ///
+  /// No emite estado, y eso también es a propósito: es una medición puntual que
+  /// la pantalla pide y guarda mientras está viva. Meterla en [SessionState]
+  /// haría que una medición vieja sobreviviera a la pantalla que la pidió, que
+  /// es justo la lista rancia pintada de verde que ese diseño existe para
+  /// impedir.
+  Future<ExposureReport> exposure() => _repository.exposure();
+
+  /// Marca los puertos del host DESDE esta máquina.
+  Future<ProbeReport> probeHost() => _repository.probeHost();
 
   /// Vuelve a preguntar por los avisos y por la Protección Kanpachi.
   ///
