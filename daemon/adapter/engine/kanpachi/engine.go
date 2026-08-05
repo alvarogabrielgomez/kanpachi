@@ -106,6 +106,22 @@ type Engine struct {
 	// del daemon.
 	closed bool
 
+	// procCtx acota la vida del proceso hijo a la vida del ADAPTADOR.
+	//
+	// # El fallo que esto arregla, y por qué no se veía
+	//
+	// La primera versión le pasaba a `spawn` el contexto de la llamada. Ese
+	// contexto lleva un plazo y un `defer cancel()`, y `exec.CommandContext`
+	// mata el proceso cuando su contexto termina. O sea que el motor moría en
+	// cuanto contestaba a la orden que lo había arrancado.
+	//
+	// Nada lo delataba: `HostNetwork` devolvía éxito, porque la respuesta
+	// llegaba antes de que el `cancel` corriera. Lo que quedaba era una red que
+	// se levantaba y se caía sola un instante después, con un `exit status 1`
+	// que no dice nada.
+	procCtx    context.Context
+	procCancel context.CancelFunc
+
 	// last es la ÚLTIMA orden de arranque, guardada para Restart.
 	//
 	// Vive acá y no vuelve a core, y por eso Restart existe en vez de repetir
@@ -126,10 +142,13 @@ func New(deps Deps) (*Engine, error) {
 	if deps.spawn == nil {
 		deps.spawn = spawn
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Engine{
-		deps:    deps,
-		pending: map[uint64]chan response{},
-		events:  make(chan domain.EngineEvent, 32),
+		deps:       deps,
+		pending:    map[uint64]chan response{},
+		events:     make(chan domain.EngineEvent, 32),
+		procCtx:    ctx,
+		procCancel: cancel,
 	}, nil
 }
 
@@ -145,6 +164,9 @@ func (e *Engine) Close() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	err := e.stopLocked()
+	// Después de parar el proceso, no antes: cancelar primero haría que
+	// `CommandContext` lo matara sin darle la salida limpia por stdin.
+	e.procCancel()
 	if !e.closed {
 		e.closed = true
 		close(e.events)
@@ -185,11 +207,15 @@ func (e *Engine) emitLocked(ev domain.EngineEvent) {
 }
 
 // ensureLocked deja el proceso vivo, arrancándolo si hace falta.
-func (e *Engine) ensureLocked(ctx context.Context) error {
+//
+// El contexto que recibe es el de la LLAMADA y solo acota el arranque. El que
+// gobierna la vida del proceso es [Engine.procCtx], por el motivo escrito en
+// ese campo.
+func (e *Engine) ensureLocked(context.Context) error {
 	if e.proc != nil {
 		return nil
 	}
-	p, err := e.deps.spawn(ctx, e.deps.Exe)
+	p, err := e.deps.spawn(e.procCtx, e.deps.Exe)
 	if err != nil {
 		return fmt.Errorf("arrancando el motor: %w", err)
 	}

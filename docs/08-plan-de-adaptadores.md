@@ -297,6 +297,34 @@ gratis en repo público.
    `third_party/` está en `.gitignore`, que no hay instalador, y que la ruta
    `/descargar` sirve la misma página HTML. Hoy no se distribuye nada.
 
+## Los tres fallos que solo aparecieron al correrlo
+
+Ninguno de los tres lo habría encontrado un test unitario, y los tres eran
+graves. Se anotan porque la lección es la misma en los tres y vale más que los
+arreglos.
+
+| Síntoma | Causa | Qué se veía |
+|---|---|---|
+| Un mensaje ilegible no recibía respuesta | Al fallar el parseo no se recuperaba el `id` | El llamador esperaba para siempre una respuesta que no iba a llegar |
+| El motor no terminaba al cerrarse stdin | `Engine` guarda un clon del emisor, así que soltar el que tenía el bucle no cerraba el canal | Dos motores vivos minutos después, con la red virtual arriba |
+| **El motor moría un instante después de arrancar** | `exec.CommandContext` con el contexto de la LLAMADA, que lleva su propio `defer cancel()` | `HostNetwork` devolvía éxito y la red se caía sola, con un `exit status 1` que no dice nada |
+
+El tercero es el peor de los tres y el más instructivo. **La orden se respondía
+con éxito**, porque la respuesta llegaba antes de que corriera el `cancel`. Un
+test del adaptador con un proceso de mentira habría pasado en verde, porque el
+fallo no está en lo que se manda ni en lo que se contesta: está en cuánto vive
+el proceso, y eso solo se ve arrancando uno de verdad y mirándolo un rato
+después.
+
+Y un cuarto, este del adaptador contra el supervisor:
+
+**`Events()` devolvía un canal CERRADO mientras no hubiera proceso**, y el
+supervisor lee un canal cerrado como muerte del motor, cosa que dice en su propio
+código. O sea que "todavía no arrancó" y "se murió" eran el mismo hecho para
+quien escucha. Con el daemon recién arrancado y sin ninguna sala, el watchdog
+gastó sus ocho intentos y **cerró una sala que el usuario nunca creó**. Ahora el
+canal vive lo que vive el adaptador y la muerte viaja como `EngineDied`.
+
 ## Lo que ya está resuelto y hay que sostener
 
 - **Job Object** con `KILL_ON_JOB_CLOSE`: el motor muere con el daemon. Sin eso
