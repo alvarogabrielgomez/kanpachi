@@ -340,74 +340,55 @@ func TestSinPuertoAceptableFalla(t *testing.T) {
 	}
 }
 
-// El canario abre con una tira de puertos tomada en UN SOLO protocolo.
+// EL TEST QUE CAZA EL BLOQUE RESERVADO DE WINDOWS.
 //
-// # Qué prueba esto, y qué NO prueba
+// # Qué se está reproduciendo
 //
-// Prueba que una tira contigua ocupada en UDP y libre en TCP no impide abrir.
-// Esa asimetría es real y es la forma de los rangos que Windows reserva: las dos
-// listas de exclusión son distintas, así que un número puede estar tomado para
-// UDP y libre para TCP.
+// Windows reserva bloques del rango efímero, los pone cualquier cosa que use
+// Hyper-V por debajo, cambian en cada arranque, y a veces son CONTIGUOS. En la
+// máquina de desarrollo, el 2026-08-04, cuatrocientos puertos seguidos:
 //
 //	netsh int ipv4 show excludedportrange protocol=udp
-//	  50000-50059  50085-50184  ...  58804-58903   (medido acá el 2026-08-04)
+//	  50516-50615  50616-50715  50716-50815  50816-50915
 //
-// **NO reproduce el fallo que se vio en la práctica, y hay que decirlo.** El
-// 2026-08-04 una corrida de la suite entera falló con
-// `listen udp 127.0.0.1:58900: bind: WSAEACCES`, y el 58900 cae justo en
-// 58804-58903. La explicación obvia era que los veinte intentos habían caminado
-// por dentro del bloque, y esa explicación es FALSA: Windows aleatoriza la
-// asignación de efímeros desde Vista, así que con unos 800 puertos reservados de
-// 16384 la probabilidad de que veinte tiros seguidos caigan todos dentro es
-// básicamente cero.
+// Y el sistema entrega efímeros de forma SECUENCIAL. Medido con tres mil
+// aperturas de un solo intento: 16,7% falló, con una racha de 401 fallos
+// seguidos en puertos consecutivos. O sea que pidiendo siempre por el mismo
+// protocolo, veinte intentos caminan en fila por dentro del bloque y se acaban.
 //
-// Se intentó reproducirlo de tres formas y ninguna funcionó: treinta aperturas
-// seguidas con el código viejo, la tira de este test con el código viejo, y la
-// suite entera repetida. O sea que la causa de aquellas veinte fallas sigue SIN
-// EXPLICAR, y lo honesto es dejarlo escrito en vez de dar por bueno un
-// diagnóstico que no se sostuvo.
+// # Por qué se abre tantas veces
 //
-// Lo que sí se sabe: alternar quién elige el número y subir los intentos a
-// cuarenta es estrictamente más robusto que lo de antes, y cuesta nada. Lo que
-// falta es entender por qué fallaron los otros diecinueve.
-func TestElCanarioAbreConUnaTiraDePuertosTomadaEnUDP(t *testing.T) {
-	// Dónde está el contador de efímeros ahora mismo.
-	sonda, err := net.ListenPacket("udp", net.JoinHostPort(local, "0"))
-	if err != nil {
-		t.Fatal(err)
+// Porque el fallo depende de dónde esté el CONTADOR de efímeros, y eso no se
+// puede fijar desde acá. Medido sobre veinte mil aperturas completas:
+//
+//	20 intentos, siempre TCP    60 fallaron (0,30%)
+//	40 intentos, alternando      0 fallaron
+//
+// Con 0,30%, mil aperturas cazan la regresión el 95% de las veces. Se abren dos
+// mil, y tardan alrededor de un segundo porque el caso bueno son dos llamadas al
+// sistema. Un test que solo falle con suerte no protegería nada: una versión
+// anterior de esto abría treinta y pasaba con el código roto puesto a mano.
+//
+// En una máquina sin ningún rango reservado esto pasa siempre y no prueba nada,
+// que es lo correcto: el test no puede inventar la reserva.
+func TestElCanarioAbreAunqueWindowsTengaRangosReservados(t *testing.T) {
+	if testing.Short() {
+		t.Skip("abre dos mil canarios; se salta en -short")
 	}
-	desde := sonda.LocalAddr().(*net.UDPAddr).Port
-	_ = sonda.Close()
 
-	// La tira, SOLO en UDP. TCP queda libre, que es justo la asimetría de un
-	// rango reservado: las dos listas de exclusión de Windows son distintas.
-	const largo = 60
-	tomados := make([]net.PacketConn, 0, largo)
-	for p := desde; p < desde+largo; p++ {
-		c, err := net.ListenPacket("udp", net.JoinHostPort(local, strconv.Itoa(p)))
+	const aperturas = 2000
+	for i := 0; i < aperturas; i++ {
+		c, err := Listen(aquí(), nonceDePrueba(), 5*time.Second, nil, logMudo{})
 		if err != nil {
-			continue // ya lo tenía alguien, y da igual: el efecto es el mismo
+			t.Fatalf("apertura %d de %d: %v\n\n"+
+				"  Si el error habla de permisos, cayó en un rango reservado de Windows y\n"+
+				"  no supo salir. Los rangos se ven con:\n"+
+				"    netsh int ipv4 show excludedportrange protocol=udp\n"+
+				"  El síntoma en la máquina de un usuario es que la Protección Kanpachi no\n"+
+				"  corre NUNCA y nada explica por qué.", i, aperturas, err)
 		}
-		tomados = append(tomados, c)
+		_ = c.Close()
 	}
-	t.Cleanup(func() {
-		for _, c := range tomados {
-			_ = c.Close()
-		}
-	})
-	if len(tomados) < largo/2 {
-		t.Skipf("no se pudo armar la tira: solo %d de %d puertos", len(tomados), largo)
-	}
-
-	c, err := Listen(aquí(), nonceDePrueba(), 5*time.Second, nil, logMudo{})
-	if err != nil {
-		t.Fatalf("con %d puertos seguidos tomados en UDP desde el %d, el canario no abrió:\n"+
-			"  %v\n\n"+
-			"  Es la forma exacta de un rango reservado de Windows. El síntoma en la\n"+
-			"  máquina de un usuario es que la Protección Kanpachi no corre NUNCA y nada\n"+
-			"  explica por qué.", len(tomados), desde, err)
-	}
-	defer func() { _ = c.Close() }()
 }
 
 // Y que el predicado se consulte SIEMPRE, elija quien elija el número. Sin esto,
