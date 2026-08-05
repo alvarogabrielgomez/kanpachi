@@ -1203,9 +1203,13 @@ La primera corrida encontró dos caídas que ningún test del repo podía encont
 
 El verbo `probe` tenía un `DialTimeout` propio, y era exactamente el error que este binario existe para no cometer: medía otra cosa que la que corre el daemon, así que su verde no valía. Ahora usa `adapter/probe`, con el plazo del producto y sin bandera para cambiarlo, porque medir con otro plazo es medir otra cosa.
 
-### adapter/firewall/windowscom, implementa `FirewallPort`
+### adapter/firewall/windowscom, la capa que ABRE
+
+Implementa la mitad de permisos que el adaptador compuesto usa. **No implementa `FirewallPort` por sí sola**, y esa distinción se hizo explícita: contener necesita las dos capas, y esta no puede acotar la compuerta.
 
 - API COM `INetFwPolicy2`, nunca `netsh`: más rápida y sin dependencia del idioma del sistema.
+- **La regla de la puerta va en el adaptador del VESTÍBULO**, y se decide por la dirección local de la regla, igual que en la compuerta. Anclando todos los permisos al adaptador de la sala, esa regla quedaba acotada a una interfaz donde su propia dirección local no vive, o sea que no casaba con nada: la puerta cerrada en la capa de Windows, con todo reportando verde. Se vio volcando lo que Windows guarda de verdad, no lo que se le pidió guardar.
+- **Windows no guarda lo que se le escribe, guarda un equivalente**, y devuelve el equivalente al leer. Medido: `100.127.255.1` vuelve como `100.127.255.1/255.255.255.255`, `100.127.255.0/24` vuelve como `100.127.255.0/255.255.255.0`, y una cadena vacía vuelve como `*`. Compararlas crudas hacía que toda regla pareciera alterada para siempre, con dos consecuencias reales: la cuarentena de base avisaba de deriva en sus 48 reglas en cada arranque, que es la forma más segura de garantizar que nadie lea el log; y `Apply` retiraba y reescribía cada regla en cada latido, reabriendo con temporizador la misma ventana que el código evita a propósito. La comparación normaliza las dos partes, y lo que de verdad cambió se sigue viendo.
 - Todas las reglas llevan `Grouping = "Kanpachi"`. Al arrancar el servicio: purgar todo lo etiquetado, luego aplicar el estado deseado. Una muerte sucia del daemon nunca deja puertos huérfanos abiertos.
 - **Alcance por adaptador Y por dirección.** Acá decía que la API de firewall de Windows no filtra por nombre de interfaz. Es falso: `INetFwRule` tiene la propiedad `Interfaces`, y la propia documentación dice *"the interfaces in the list are represented by their friendly name"*. Comprobado sobre el sistema, no leído: hay una regla viva de Microsoft acotada a un adaptador virtual, que es exactamente el caso de Kanpachi.
 
