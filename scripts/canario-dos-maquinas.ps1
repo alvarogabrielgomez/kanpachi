@@ -86,6 +86,17 @@ param(
     [Parameter(Mandatory = $true)][string]$DataDir,
     [string]$RemoteFwprobe = './fwprobe',
 
+    # El rango de la sala. Tiene que ser un /24 dentro del espacio donde viven
+    # las salas, y lo exige `wfp.Scope.Valid`: un prefijo mas ancho convertiria
+    # el bloqueo de todo en el bloqueo de una red que no es nuestra.
+    #
+    # Existe como parametro porque el bloqueo de la compuerta se emite DOS veces,
+    # por adaptador y por rango. Dejando el de por defecto, el segundo no casaria
+    # con el trafico real de esta prueba y quedaria el de adaptador como asidero
+    # unico, que es justo la situacion que el diseno emite dos filtros para
+    # evitar. Se pasa el /24 que contiene a -LocalIP.
+    [string]$RoomCIDR = '100.64.1.0/24',
+
     # El puerto que la compuerta deja abierto en la fase 1. NO es el del
     # canario: el canario coge un efimero que nadie elige, y la gracia es
     # justamente que caiga en "todo lo demas". Este existe porque la compuerta
@@ -99,6 +110,14 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# La raiz del repo se deduce del sitio del script, JAMAS del directorio actual.
+#
+# Medido: lanzado con UAC, el proceso elevado arranca en system32, asi que un
+# `go build ./internal/fwprobe` relativo no encuentra nada. Y esta es la forma
+# en la que este script se va a correr siempre, porque las fases 1 y 2 escriben
+# en el motor de filtrado y eso exige elevar.
+$raiz = Split-Path -Parent $PSScriptRoot
 
 # El binario se compila una vez y se reusa. Correrlo con `go run` metería el
 # tiempo de compilación dentro del presupuesto de cada fase.
@@ -118,12 +137,41 @@ function Write-Paso {
 
 # Todo comando se imprime antes de correrlo. Sin eso, una corrida que sale mal
 # no se puede reproducir a mano, que es lo primero que uno quiere hacer.
+#
+# # El fallo se decide por el CODIGO DE SALIDA, jamas por stderr
+#
+# Con `$ErrorActionPreference = 'Stop'` puesto arriba, un `2>&1` sobre un
+# ejecutable nativo envuelve cada linea de su stderr en un ErrorRecord, y eso
+# ABORTA el script aunque el programa haya terminado con exito. Medido: la
+# primera corrida murio ahi.
+#
+# No es un detalle de esta funcion. `ssh` escribe avisos por stderr de forma
+# rutinaria (host key nuevo, algoritmo obsoleto), asi que la fase 1 se habria
+# caido sin decir por que, y una fase que no llega a medir se lee igual de mal
+# que una que mide y falla.
+#
+# La solucion es la que corresponde: se baja la preferencia mientras corre el
+# proceso hijo, se junta su stderr con su stdout para poder ensenarlo, y se
+# juzga por $LASTEXITCODE, que es la senal que un exe usa de verdad para decir
+# que fallo.
 function Invoke-Mostrando {
-    param([string]$Exe, [string[]]$Argumentos)
+    param([string]$Exe, [string[]]$Argumentos, [switch]$PermitirFallo)
 
     Write-Host "   $Exe $($Argumentos -join ' ')" -ForegroundColor DarkGray
-    $salida = & $Exe @Argumentos 2>&1 | Out-String
+
+    $anterior = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $salida = & $Exe @Argumentos 2>&1 | Out-String
+        $codigo = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $anterior
+    }
+
     if ($salida.Trim()) { Write-Host $salida.TrimEnd() }
+    if ($codigo -ne 0 -and -not $PermitirFallo) {
+        throw "$Exe salio con codigo $codigo"
+    }
     return $salida
 }
 
@@ -231,7 +279,7 @@ function Set-Compuerta {
 
     if ($Puesta) {
         Invoke-Mostrando $fwprobe @(
-            'apply', '-data', $DataDir, '-adapter', $Adapter,
+            'apply', '-data', $DataDir, '-adapter', $Adapter, '-room', $RoomCIDR,
             '-peer', $PeerIP, '-open', "$OpenPort", '-yes') | Out-Null
         $script:compuertaPuesta = $true
         return
@@ -259,10 +307,13 @@ function Invoke-Fase {
     $script:canario = Start-Canario -Addr $LocalIP
 
     # Paso 3: la otra maquina marca, por los DOS protocolos.
+    # PermitirFallo: un ssh caido no puede abortar la corrida entera. La fase se
+    # queda sin medicion, y eso lo cazan las aserciones de abajo con un mensaje
+    # que dice cual fue, en vez de morir a mitad con la compuerta puesta.
     $sonda = Invoke-Mostrando 'ssh' @(
         $Remote, $RemoteFwprobe, 'canary-probe',
         '-host', $LocalIP, '-port', "$($script:canario.Puerto)",
-        '-nonce', $script:canario.Nonce)
+        '-nonce', $script:canario.Nonce) -PermitirFallo
 
     # Se busca el prefijo sin acento a proposito. La sonda imprime "CONTESTO"
     # con tilde y la otra maquina es Linux en UTF-8, asi que la tilde puede
@@ -308,7 +359,12 @@ function Invoke-Fase {
 $total = [System.Diagnostics.Stopwatch]::StartNew()
 try {
     Write-Paso 'Compilando fwprobe'
-    Invoke-Mostrando 'go' @('build', '-o', $fwprobe, './internal/fwprobe') | Out-Null
+    Push-Location $raiz
+    try {
+        Invoke-Mostrando 'go' @('build', '-o', $fwprobe, './internal/fwprobe') | Out-Null
+    } finally {
+        Pop-Location
+    }
 
     Invoke-Fase -Numero 0 -Titulo 'compuerta purgada: el canario tiene que contestar' `
         -ConCompuerta $false -SeEsperaQueLlegue $true
@@ -331,7 +387,11 @@ finally {
     Stop-Canario
     if ($script:compuertaPuesta) {
         Write-Host '   la compuerta quedo puesta: purgando' -ForegroundColor Yellow
-        & $fwprobe purge -data $DataDir 2>&1 | Out-String | Write-Host
+        # Sin `throw` y con la preferencia bajada: esto corre DENTRO del finally,
+        # asi que una excepcion aca taparia el error que trajo hasta aca, y de
+        # paso dejaria la compuerta puesta por reportar mal el intento de
+        # quitarla.
+        Invoke-Mostrando $fwprobe @('purge', '-data', $DataDir) -PermitirFallo | Out-Null
     } else {
         Write-Host '   la compuerta ya estaba purgada' -ForegroundColor DarkGray
     }
