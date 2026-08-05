@@ -26,6 +26,14 @@ func main() {
 	datos := flag.String("data", "", "directorio de datos donde está api.token")
 	nombre := flag.String("pipe", pipe.ConsoleName, "nombre del pipe")
 	sinToken := flag.Bool("no-token", false, "saludar con un token inválido, para comprobar que se rechaza")
+	// Sin esto la herramienta solo puede llamar a los métodos que no llevan
+	// parámetros, o sea que no puede crear una sala, que es justo lo que hace
+	// falta para probar el motor de punta a punta.
+	//
+	// El JSON va crudo y sin validar acá a propósito: quien valida es el daemon,
+	// con esquema estricto y tope de tamaño, y esta herramienta existe para
+	// poder mandarle también lo que va a rechazar.
+	params := flag.String("params", "", "JSON crudo para el campo params del método")
 	flag.Parse()
 
 	metodo := "status"
@@ -33,13 +41,13 @@ func main() {
 		metodo = flag.Arg(0)
 	}
 
-	if err := hablar(*datos, *nombre, metodo, *sinToken); err != nil {
+	if err := hablar(*datos, *nombre, metodo, *params, *sinToken); err != nil {
 		fmt.Fprintln(os.Stderr, "kanpctl:", err)
 		os.Exit(1)
 	}
 }
 
-func hablar(datos, nombre, metodo string, sinToken bool) error {
+func hablar(datos, nombre, metodo, params string, sinToken bool) error {
 	// El token se relee en CADA conexión: el daemon lo rota al arrancar, así que
 	// uno recordado de la sesión anterior es siempre el equivocado.
 	token := "token-invalido-a-proposito"
@@ -79,7 +87,7 @@ func hablar(datos, nombre, metodo string, sinToken bool) error {
 	if err := pedir(1, protocol.MethodHello, fmt.Sprintf(`{"token":%q}`, token)); err != nil {
 		return err
 	}
-	return pedir(2, protocol.Method(metodo), "")
+	return pedir(2, protocol.Method(metodo), params)
 }
 
 func marcar(nombre string) (net.Conn, error) { return dial(nombre) }
