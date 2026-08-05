@@ -23,9 +23,13 @@ var (
 	procSetIpInterfaceEntry  = iphlpapi.NewProc("SetIpInterfaceEntry")
 	procCreateIpForwardEntry = iphlpapi.NewProc("CreateIpForwardEntry2")
 	procDeleteIpForwardEntry = iphlpapi.NewProc("DeleteIpForwardEntry2")
-	procIcmpCreateFile       = iphlpapi.NewProc("IcmpCreateFile")
-	procIcmpCloseHandle      = iphlpapi.NewProc("IcmpCloseHandle")
-	procIcmpSendEcho         = iphlpapi.NewProc("IcmpSendEcho")
+	// InitializeIpForwardEntry es el que rellena los valores por defecto de una
+	// fila de ruta, y saltárselo es el error que este código tenía. Sin él los
+	// tiempos de vida quedan en CERO, o sea que la ruta nace caducada.
+	procInitIpForwardEntry = iphlpapi.NewProc("InitializeIpForwardEntry")
+	procIcmpCreateFile     = iphlpapi.NewProc("IcmpCreateFile")
+	procIcmpCloseHandle    = iphlpapi.NewProc("IcmpCloseHandle")
+	procIcmpSendEcho       = iphlpapi.NewProc("IcmpSendEcho")
 )
 
 // Config implements [port.NetConfigPort].

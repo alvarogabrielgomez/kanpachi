@@ -749,6 +749,53 @@ que el plan de direcciones mandó la sala al espacio de reserva:
 Es el conflicto CGNAT de la decisión de direccionamiento, funcionando en la
 primera ejecución real y sin que nadie lo montara a propósito.
 
+## Contrastar lo escrito contra lo ejecutado, y los tres fallos que salieron
+
+La sala de arriba dio verde, y contrastar el plan de `netcfg` fila por fila
+contra lo que de verdad había CORRIDO dijo otra cosa: aproximadamente la mitad
+de ese adaptador nunca se había ejecutado. Escrito, revisado, con tests de
+paquete en verde, y sin ejecutar una sola vez.
+
+| Lo que pedía el plan | Estado antes de contrastar |
+|---|---|
+| Métrica IPv4=1, automática apagada | hecho y medido |
+| MTU | hecho y medido, 1360 |
+| `ProbeMTU` | hecho y medido, puerta `192.168.15.1` |
+| Ruta broadcast `255.255.255.255/32` | escrito, **nunca ejecutado** |
+| Ruta multicast `224.0.0.0/4` | escrito, **nunca ejecutado** |
+| Política de prefijo IPv6 | escrito, **solo corrió el camino no-op** |
+| Borrar la ruta por defecto | el barrido corrió, **el borrado nunca** |
+| `RevertTweaks` | escrito, **nunca con nada en el libro** |
+| `SetDirectPlay` | escrito, **solo corrió el atajo** |
+| Categoría Privada | **no hecho**, devuelve error a propósito |
+
+De ahí salió `internal/netcfgprobe` (descrito en `03`), y de correrlo salieron
+tres fallos que ningún test de paquete alcanza:
+
+1. **Las rutas nacían caducadas.** `forwardRow` no pasaba por
+   `InitializeIpForwardEntry`, así que `ValidLifetime` y `PreferredLifetime`
+   quedaban en cero. La llamada devolvía éxito y la ruta no quedaba puesta.
+2. **`Peers()` fallaba en cada evento.** El motor mandaba su propia dirección
+   con el prefijo, `10.99.61.1/24`, y el daemon la parsea estricto. Estaba
+   escrito en el log de la sala que se había dado por verde: el script miraba
+   adaptador, métrica y rutas, y nadie miraba el log. **Un aviso que nadie lee
+   es un fallo que nadie ve**, y por eso `medir-netcfg.ps1` ahora lo lee siempre.
+3. **El seed aparecía como miembro de la sala.** Releva sin vivir en el espacio
+   de direcciones de la sala, así que volvía sin IP virtual, y el daemon
+   aceptaba la dirección vacía como una dirección cero: en pantalla salía un
+   miembro llamado `invalid IP`. Arreglado en las dos puntas, el motor no lo
+   manda y el daemon rechaza la vacía igual que la inválida.
+
+Medido en verde el 2026-08-05 tras los tres arreglos: las cuatro transiciones
+de rutas, el MTU, y `peers` con una sola entrada estando solo en la sala. De
+paso desapareció un `conn: degraded` que nadie había explicado.
+
+Un cuarto arreglo salió de la misma corrida y es de plazos, no de lógica:
+`kanpctl` cortaba a los 10 s fijos y `create_room` los pasaba con el daemon
+trabajando bien. Una sala levanta DOS adaptadores, cada uno tarda unos 5 s en
+tomar dirección, y encima va el sondeo del MTU. El síntoma era `i/o timeout`
+con la sala ya creada.
+
 **RoomDirectory paga la deuda escrita en `docs/CLAUDE.md`**: `domain.CheckSeedAddr`
 está escrita y probada y **ningún adaptador la llama porque ninguno existe**. Se
 llama sobre lo que resolvió el DNS y en **cada** uso, porque un nombre impecable

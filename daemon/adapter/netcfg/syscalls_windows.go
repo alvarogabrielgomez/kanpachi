@@ -66,19 +66,30 @@ func deleteRoute(luid uint64, p netip.Prefix) error {
 // forwardRow builds an ON-LINK route: reachable through the adapter itself,
 // with no gateway. The next hop is the unspecified address of the family, which
 // is how Windows spells "on link".
+//
+// # Why it starts from InitializeIpForwardEntry
+//
+// Because a zeroed row is not a valid one, and the way it fails is quiet.
+// `ValidLifetime` and `PreferredLifetime` default to INFINITE, and this code
+// used to leave them at zero: the route was created and immediately expired,
+// which reads as "the call succeeded and the route is not there". Letting
+// Windows fill its own defaults and overwriting only what this package decides
+// is the documented way, and it does not depend on knowing every field.
 func forwardRow(luid uint64, p netip.Prefix) windows.MibIpForwardRow2 {
-	row := windows.MibIpForwardRow2{
-		InterfaceLuid: luid,
-		DestinationPrefix: windows.IpAddressPrefix{
-			Prefix:       sockaddrInet(p.Masked().Addr()),
-			PrefixLength: uint8(p.Bits()),
-		},
-		// A low metric so the route is preferred over anything the system may
-		// have for the same destination on another adapter, which is the whole
-		// point of asking for it.
-		Metric:   1,
-		Protocol: 3, // MIB_IPPROTO_NETMGMT: written by an administrator
+	var row windows.MibIpForwardRow2
+	procInitIpForwardEntry.Call(uintptr(unsafe.Pointer(&row)))
+
+	row.InterfaceLuid = luid
+	row.DestinationPrefix = windows.IpAddressPrefix{
+		Prefix:       sockaddrInet(p.Masked().Addr()),
+		PrefixLength: uint8(p.Bits()),
 	}
+	// A low metric so the route is preferred over anything the system may have
+	// for the same destination on another adapter, which is the whole point of
+	// asking for it.
+	row.Metric = 1
+	row.Protocol = 3 // MIB_IPPROTO_NETMGMT: written by an administrator
+
 	if p.Addr().Is4() {
 		row.NextHop = sockaddrInet(netip.IPv4Unspecified())
 	} else {

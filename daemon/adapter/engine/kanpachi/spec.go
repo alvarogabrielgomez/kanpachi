@@ -337,13 +337,21 @@ func toPeers(raw []peerOut) ([]domain.Peer, error) {
 			return nil, fmt.Errorf("el motor reportó un camino que este daemon no conoce: %q", p.Path)
 		}
 
-		var ip netip.Addr
-		if p.VirtualIP != "" {
-			parsed, err := netip.ParseAddr(p.VirtualIP)
-			if err != nil {
-				return nil, fmt.Errorf("el motor reportó la dirección %q, que no es una dirección: %w", p.VirtualIP, err)
-			}
-			ip = parsed
+		// La dirección vacía se rechaza igual que la inválida, y a propósito.
+		//
+		// Antes se dejaba pasar y quedaba una dirección cero, que se pinta como
+		// "invalid IP" en la pantalla y no sirve para nada de lo que se hace con
+		// un miembro: las reglas del firewall se abren HACIA su IP y el expulsar
+		// se pide POR su IP. Un miembro sin dirección no es un miembro, es un
+		// hueco con nombre.
+		//
+		// Así apareció el seed en la lista: el motor lo reportaba como miembro
+		// porque relevaba para la sala, sin vivir en su espacio de direcciones.
+		// El motor ya no lo manda, y esto es la red que lo hace visible si
+		// vuelve a pasar, en vez de un hueco silencioso.
+		ip, err := netip.ParseAddr(p.VirtualIP)
+		if err != nil {
+			return nil, fmt.Errorf("el motor reportó la dirección %q, que no es una dirección: %w", p.VirtualIP, err)
 		}
 
 		// Un nombre que no pasa la validación se queda VACÍO, y no rompe la

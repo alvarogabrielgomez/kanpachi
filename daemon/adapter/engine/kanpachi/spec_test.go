@@ -217,6 +217,27 @@ func TestAHostileNameIsDroppedWithoutBreakingTheList(t *testing.T) {
 	}
 }
 
+// Un miembro sin dirección no es un miembro, y este test dice primero POR QUÉ.
+//
+// El motor reportaba como miembro al seed, que releva para la sala sin vivir en
+// su espacio de direcciones, así que venía sin IP. El daemon lo aceptaba y
+// guardaba una dirección cero: en la pantalla salía un miembro llamado
+// "invalid IP", y todo lo que se hace con un miembro se hace POR su IP (abrirle
+// las reglas del firewall, expulsarlo). El hueco silencioso era el fallo.
+func TestAMemberWithNoAddressIsRefused(t *testing.T) {
+	// La consecuencia primero: con la dirección vacía aceptada, esto era un
+	// miembro con dirección cero en vez de un error.
+	peers, err := toPeers([]peerOut{{Path: "direct", VirtualIP: ""}})
+	if err == nil {
+		t.Fatalf("un miembro sin dirección entró a la lista: %+v", peers)
+	}
+
+	// Y el caso bueno sigue pasando, para que el rechazo no sea rechazarlo todo.
+	if _, err := toPeers([]peerOut{{Path: "direct", VirtualIP: "10.99.7.2"}}); err != nil {
+		t.Fatalf("un miembro con dirección buena fue rechazado: %v", err)
+	}
+}
+
 func TestAnUnknownEventIsAnError(t *testing.T) {
 	if _, err := toEventKind("teleported"); err == nil {
 		t.Fatal("un evento desconocido pasó como bueno")

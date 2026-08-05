@@ -1267,6 +1267,12 @@ El número del túnel lo decide `domain.TunnelMTU`, y **no sale de nuestra cosec
 
 **Preguntar por DirectPlay cuesta segundos**, porque es DISM. Por eso hay un atajo que además es lo correcto: si se pide apagarlo y el libro dice que nadie lo encendió, no hay nada que hacer y no se pregunta. Sin ese atajo, crear una sala sin juego pagaba una consulta a la instalación de características de Windows, y la API local se pasaba de plazo con la red ya levantada. Medido.
 
+**Lo que una sala ejercita, y lo que no.** Abrir una sala prueba la métrica, el MTU y el barrido de rutas, y nada más: las dos rutas por juego solo las pide un perfil, la política de prefijo también, y el borrado de una ruta por defecto solo corre cuando hay una que borrar, cosa que en una máquina sana no pasa nunca. O sea que la mitad de este adaptador podía estar escrita, revisada y en verde sin haberse ejecutado jamás.
+
+Eso lo cubre `internal/netcfgprobe`, un arnés que corre con una sala abierta: pone y quita las dos rutas en pasos separados, fabrica una ruta por defecto con `route.exe` y comprueba que `netcfg` la borra, y sondea el MTU. Verifica preguntándole **al sistema** y nunca a la memoria de `netcfg`, porque un `Apply` que no escribió nada y se lo apuntó igual pasaría en verde. La ruta de mentira lleva métrica altísima a propósito: mientras existe no le puede ganar a ninguna ruta real del usuario.
+
+Ya encontró un fallo que ningún test de paquete podía ver: la fila de una ruta se construía sin pasar por `InitializeIpForwardEntry`, así que `ValidLifetime` y `PreferredLifetime` quedaban en cero y **la ruta nacía caducada**. La llamada devolvía éxito. Medido en verde tras el arreglo, con las cuatro transiciones.
+
 **Conflicto de rango CGNAT.** Ver la sección de direccionamiento más abajo.
 
 ### adapter/routes, implementa `RoutingTable`
@@ -1348,6 +1354,10 @@ Responsabilidades:
 
 - **Dos adaptadores virtuales, no uno.** El host está en dos redes a la vez, la sala y el vestíbulo, y cada red del motor trae el suyo: `kanpachi0` y `kanpachi1`. Los nombra el DAEMON y no el motor, y esa dirección importa: la compuerta de WFP se acota a un adaptador por nombre, así que un motor que eligiera el suyo podría devolver un adaptador que la compuerta no cubre.
 - Consultar estado y traducirlo a `[]domain.Peer` y `domain.NetCheck`. La salida del motor ya distingue conexión directa de relay y reporta el tipo de NAT, que es exactamente lo que la UI pinta en verde o ámbar.
+
+  **Miembro es quien tiene dirección DENTRO de la sala, y el seed no lo es.** El motor ve la tabla de rutas de la red virtual, y ahí aparece también el nodo público que releva: releva para la sala sin vivir en su espacio de direcciones, así que vuelve sin IP virtual. Reportarlo ponía en la pantalla de todo el mundo un miembro sin nombre llamado `invalid IP`, y le entregaba al daemon un miembro sobre el que abrir reglas de firewall sin dirección con la que abrirlas. El motor ya no lo manda, y el daemon rechaza una dirección vacía igual que una inválida, porque todo lo que se hace con un miembro se hace por su IP.
+
+  Ese es el mismo camino por el que apareció el otro fallo de esta lista: el motor mandaba su propia dirección **con el prefijo** (`10.99.61.1/24`), el daemon la parseaba estricto, y la consulta de miembros fallaba en cada evento. La sala se sostenía igual, así que ninguna medición anterior lo vio: lo que se caía era saber quién estaba dentro. Las dos veces, el parseo estricto del daemon es lo que lo hizo visible, y por eso no se relajó.
 
 El binario del motor se distribuye dentro de `Program Files\Kanpachi\`, y el día que haya firma de código son dos binarios que firmar, no uno.
 
