@@ -165,18 +165,88 @@ dentro de la Combined Work de la LGPL.
 
 ## El build, con las trampas ya resueltas
 
-Cuatro, todas encontradas a los golpes:
+Seis, todas encontradas a los golpes:
 
 | Síntoma | Causa | Arreglo |
 |---|---|---|
 | `zstd-sys` no compila, `VCINSTALLDIR = None` | `cc` halla `cl.exe` sin entorno MSVC | correr bajo `vcvars64` |
 | `prost-wkt-types` panic | el `PROTOC` que baja `build.rs` vale solo para él | `PROTOC` global |
-| `kcp-sys` panic | usa bindgen, necesita `libclang` | extraer `libclang.dll` del instalador LLVM con 7z |
+| `kcp-sys` panic | usa bindgen, necesita `libclang` | instalar LLVM y fijar `LIBCLANG_PATH` |
 | `zstd-sys` falla con entorno correcto | ruta de ~250 chars; **`cl.exe` no es long-path aware** | build en ruta corta |
+| `7z is needed to unpack libraries!`, panic del `build.rs` de easytier | `thunk-rs`, que easytier invoca en Windows x86 y x86_64 | instalar 7-Zip y meter `C:\Program Files\7-Zip` en el PATH |
+| `LNK1181: cannot open input file 'Packet.lib'` | **la ruta de búsqueda que emite easytier es RELATIVA** | `build.rs` propio que emite la ruta absoluta |
 
-Toolchain: rustup con `1.95` (lo pinea el repo), MSVC 14.44, protoc 29.3,
-libclang 19.1.7. Build de ~18 min. En CI: `windows-latest` más
-`ilammy/msvc-dev-cmd`, gratis en repo público.
+**La sexta es la que decidía si el enfoque entero servía, y ya está medida.** El
+`build.rs` de EasyTier emite, literal:
+
+```
+println!("cargo:rustc-link-search=native=easytier/third_party/x86_64/");
+```
+
+Cargo corre el linker desde la raíz del paquete que se está construyendo, o sea
+el repo del motor, así que esa ruta apunta a un sitio que no existe. Todo el
+árbol compila y **falla solo el enlace final**, con la línea del linker mostrando
+las dos mitades del problema juntas:
+
+```
+"/LIBPATH:easytier/third_party/x86_64/"   <-- relativa
+"Packet.lib"                              <-- pedida igual
+LINK : fatal error LNK1181: cannot open input file 'Packet.lib'
+```
+
+**El arreglo NO es copiar el fichero al repo.** Eso resolvería la ruta relativa y
+metería un binario de linaje WinPcap/Npcap, con términos de redistribución que
+nadie revisó, dentro de un repositorio público. En su lugar hay un `build.rs`
+propio que localiza el checkout que cargo ya desempaquetó y emite la ruta
+**absoluta**. No redistribuye nada. El sitio se busca en vez de escribirse porque
+la ruta del checkout lleva un hash que cargo considera detalle interno; hay
+además una variable de escape, `KANPACHI_ENGINE_LINK_SEARCH`, para árboles
+vendorizados.
+
+## Lo que la fase 0 midió, y lo que NO
+
+Con una sonda de tres líneas que solo nombra un tipo de la librería:
+
+| Pregunta | Resultado |
+|---|---|
+| ¿El crate enlaza como dependencia git desde otro workspace? | **Sí**, con el `build.rs` propio. 590 paquetes, exit 0 |
+| ¿El binario arranca? | **Sí**. `inst_name=default`, exit 0 |
+| ¿Resuelven `Packet.dll`, `wintun.dll` y WinDivert en ejecución? | **NO MEDIDO** |
+
+La tercera fila hay que leerla, porque es fácil creer lo contrario. `dumpbin
+/imports` sobre la sonda da `kernel32`, `bcryptprimitives`, `ntdll`,
+`api-ms-win-core-synch` y `msvcrt`, y **nada más**: el linker descartó el código
+nativo que nadie llama, así que la sonda corrió sin ninguna de las tres DLL al
+lado. Eso prueba el enlace y no prueba el empaquetado. La medición de verdad
+llega con el motor arrancando una `NetworkInstance`, en la fase 3.
+
+Ese `msvcrt.dll` en la tabla, en lugar de la UCRT moderna, es VC-LTL haciendo su
+trabajo: confirma medida la base de Windows 7 del punto anterior.
+
+**La quinta hay que leerla despacio, porque no es una molestia de instalación.**
+El `build.rs` de EasyTier llama a `thunk::thunk()` sin condición ninguna en
+Windows x86_64, y eso **descarga 17,8 MB de la red durante la compilación** y los
+descomprime con `7z`. O sea que compilar el motor trae un binario de terceros que
+no está en ningún manifiesto, sobre un canal que nadie fijó, en la máquina de
+quien compila. Consecuencias, en orden de importancia:
+
+- **El CI necesita red dentro del build**, no solo para bajar crates. Un fallo de
+  ese servidor rompe la compilación sin que nada del repo haya cambiado.
+- **El motor queda construido contra una base de Windows 7.** Verificado en el
+  `Cargo.toml` del checkout, línea 328: `thunk-rs` entra con
+  `features = ["win7"]`. Eso enlaza VC-LTL5 5.2.2 con la plataforma
+  `6.0.6000.0` y el objeto `YY_Thunks_for_Win7.obj` de YY-Thunks 1.1.7, o sea
+  una CRT de la era Vista más una capa de compatibilidad. Kanpachi es Windows 10
+  y 11: **no aporta nada y viaja igual.** Quitarlo exige parchear a EasyTier, que
+  es justo lo que la decisión 1 descarta, así que se documenta y se acepta.
+- **Es material para `NOTICE.md`.** Son terceros con licencia propia dentro del
+  artefacto que se distribuye.
+
+Toolchain medido el 2026-08-05 en el equipo de desarrollo: rustup 1.29.0 con
+`1.95.0` fijado por el repo del motor (conviviendo con el `stable` 1.97.1 de la
+máquina, que no se usa), MSVC 14.44.35207, protoc 35.1, libclang 22.1.8, 7-Zip
+26.02. Son **590 paquetes**. En CI: `windows-latest` más `ilammy/msvc-dev-cmd`,
+gratis en repo público.
 
 ## Alcance del repo del motor
 

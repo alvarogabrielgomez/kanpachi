@@ -35,7 +35,37 @@ El portal se construye en **un solo sitio de todo el árbol de EasyTier**, y ese
 
 Lo que el producto necesita del motor sale entero de la librería, y se verificó uno por uno antes de comprometerse: arrancar y parar la red, emitir y revocar credenciales, la lista de pares, el diagnóstico de NAT, y un canal de eventos que empuja en vez de que haya que preguntar. Ese canal ni siquiera está disponible por el camino oficial, que lo descarta.
 
-La configuración entra por **stdin como TOML**, así que el secreto de la red no pisa la línea de comandos. Medido: el `CommandLine` del hijo solo muestra la ruta del ejecutable. Con el binario oficial el secreto es legible con el Administrador de tareas por cualquier usuario de la máquina.
+La configuración entra por **stdin**, así que el secreto de la red no pisa la línea de comandos. Medido: el `CommandLine` del hijo solo muestra la ruta del ejecutable. Con el binario oficial el secreto es legible con el Administrador de tareas por cualquier usuario de la máquina.
+
+### El canal de órdenes: una tubería anónima, y ninguna otra entrada
+
+Este párrafo decía "TOML por stdin", y eso describía solo el arranque. `EnginePort` tiene trece métodos y once ocurren **después**, con la sala ya abierta: emitir una credencial cuando alguien toca la puerta no cabe en un fichero de configuración. La forma real es **el tubo de entrada abierto, con mensajes JSON, uno por línea, en las dos direcciones**. El TOML se queda como detalle interno del motor, que es quien construye el `TomlConfigLoader`.
+
+**Por qué esa forma y no un puerto o una named pipe.** La tubería que Windows fabrica al crear el proceso hijo es **anónima**: no tiene nombre, no tiene ruta, no tiene dirección. No es que esté protegida, es que **no existe la operación de conectarse a ella**. Los únicos dos extremos viven como handles dentro del daemon y del motor.
+
+| Opción | Cómo llega un tercero | Qué la protege |
+|---|---|---|
+| Puerto en localhost | `connect()` a la dirección | nada, o un token que hay que escribir bien |
+| Named pipe | abrirla por su nombre | una ACL que hay que escribir bien |
+| **Tubería anónima** | **no existe la operación** | **el kernel** |
+
+Las dos primeras son puertas, y una puerta necesita cerradura, y una cerradura se puede escribir mal: el portal 15888 del binario oficial es exactamente ese fallo. Acá **no hay autenticación que escribir porque el canal ES la identidad**: el único que puede tener el otro extremo es quien creó el proceso.
+
+**El límite, dicho sin adornos.** Un proceso ya corriendo como SYSTEM con privilegio de depuración puede duplicarle un handle al daemon. Ese atacante ya es administrador total de la máquina y puede apagar el firewall o reemplazar el binario, así que no es el enemigo de este diseño. El enemigo real es el programa **sin privilegios**, el mod de un juego o el `.exe` que pasó un amigo, y contra el binario oficial ese programa pide el secreto de la red con un `connect` y sin UAC.
+
+**Regla dura: stdin es la ÚNICA entrada de órdenes del motor.** Jamás un segundo canal, ni puerto, ni named pipe, ni fichero vigilado, ni señal. El binario **no acepta argumentos**: un `argv` con algo más que la ruta sale con error. Ejecutarlo a mano arranca otra instancia vacía, que no conoce el secreto de ninguna sala y no toca los túneles del daemon.
+
+### Los eventos de capacidades prohibidas se descartan en silencio
+
+El bus de eventos de EasyTier es un `tokio::sync::broadcast` **dentro de nuestro proceso**. No es una superficie: no hay socket, no hay fichero, y nadie fuera del motor puede escucharlo. Lo que se decide acá no es si se expone, se decide qué se hace con lo que llega.
+
+EasyTier emite 24 clases de evento y el dominio de Kanpachi tiene 5, cerradas a propósito. Cuatro de las 24 anuncian capacidades que el producto prohíbe: `ListenerAdded`, `PortForwardAdded`, `VpnPortalStarted` y `UdpBroadcastRelayStartResult`. Si alguna llegara significaría que el motor hizo algo que la configuración le prohíbe.
+
+**Se descartan, sin traducir y sin registrar.** La alternativa evaluada era escucharlas y usarlas de alarma en tiempo de ejecución.
+
+Lo que sostiene que descartarlas sea aceptable: **el test de invariante de sockets mide exactamente lo mismo**, arranca el motor con la configuración real, con el TUN levantado, y falla si aparece cualquier puerto en escucha. La pregunta "¿la configuración de verdad apagó eso?" ya tiene quien la conteste, y la contesta en CI, antes de que el binario salga.
+
+Lo que se pierde, dicho para que nadie lo descubra tarde: **la detección en la máquina del usuario.** El caso que quedaría mudo es el que pasa en CI y falla en el campo, por una diferencia de Windows o una carrera de arranque. El día que aparezca uno así, esta decisión se reabre con ese caso como argumento.
 
 ### Por qué NO un fork
 
@@ -48,6 +78,14 @@ Un fork resuelve lo mismo y se paga para siempre. Entre el tag `v2.6.4` y la ram
 ### El seed es el caso contrario
 
 En el droplet sigue corriendo `easytier-core` oficial sin modificar, y está bien que así sea: es una máquina nuestra, sin usuarios, donde el portal local no es una superficie que le importe a nadie más. La razón de todo lo anterior es la máquina **del usuario**.
+
+**PENDIENTE de revisar, y conviene mirarlo con calma.** Que el seed levante el portal quedó como herencia del arranque oficial, no como una decisión que alguien tomara mirando el droplet. Las tres preguntas a contestar cuando toque:
+
+1. **¿Lo usa alguien?** `registry/counter.go` habla con `easytier-cli` contra el portal para contar miembros. Si esa es la única razón, hay que ver si el conteo puede salir de otro lado.
+2. **¿Está de verdad acotado?** El arranque pasa `--rpc-portal 127.0.0.1:15888` más `--rpc-portal-whitelist 127.0.0.1`, y eso se comprueba en `registry/setup/setup_test.go`. Falta medirlo **en el droplet corriendo**, con `ss -lntp`, que es lo único que descarta que el par completo se esté perdiendo por el camino.
+3. **¿Cambia el modelo de amenazas ahora?** "Máquina nuestra sin usuarios" es cierto hoy. La lista de puertos del droplet abiertos a internet ya tiene sus propios pendientes, y un portal sin autenticación en loopback deja de ser inocuo el día que alguien consiga ejecutar cualquier cosa en esa máquina.
+
+Lo natural es que el seed también termine sobre el motor propio, con lo cual el portal desaparece de los dos lados. Eso es trabajo aparte y va después del motor del cliente.
 
 **Por qué EasyTier.** Ya resuelve lo difícil: NAT traversal por UDP, cifrado WireGuard, relay de respaldo, y un relay de broadcast UDP que hace funcionar el descubrimiento LAN de los juegos clásicos. Su modelo de identidad nativo es `--network-name` más `--network-secret`, exactamente lo que produce el código de sala. Headscale exigía envolver su modelo de usuarios y pre-auth keys para simular salas anónimas, trabajo que no aporta al producto. Desde cero eran meses para llegar a un ~70% de conexiones directas, contra el 90%+ que da un coordinador maduro.
 
