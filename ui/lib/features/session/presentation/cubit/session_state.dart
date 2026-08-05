@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 
 /// En qué anda la sesión ahora mismo.
@@ -24,6 +25,14 @@ enum SessionPhase {
 /// que seguir mostrando los miembros y el código mientras tanto.
 enum RoomWork { none, openingGame, closingGame }
 
+/// Qué se está haciendo con la protección.
+///
+/// Está aparte de [RoomWork] porque reponer la protección **no es trabajo de la
+/// sala**: se puede pedir sin sala, no cambia el juego ni los miembros, y no
+/// tiene que apagar los botones de la sala mientras corre. Metido en el mismo
+/// enum, pulsar el botón de la alarma dejaría la pantalla entera en gris.
+enum ProtectionWork { none, reapplying }
+
 @immutable
 class SessionState {
   const SessionState({
@@ -34,6 +43,8 @@ class SessionState {
     this.installed = const <Game>[],
     this.pendingGame,
     this.nickname = '',
+    this.health = const HealthReport.unknown(),
+    this.protection = ProtectionWork.none,
   });
 
   final SessionPhase phase;
@@ -50,8 +61,19 @@ class SessionState {
 
   final String nickname;
 
+  /// Lo que el daemon vigila solo: los avisos y la Protección Kanpachi.
+  ///
+  /// Vive acá y no dentro de [room] porque **la mitad de esto existe sin sala**.
+  /// Que el Firewall de Windows esté apagado se sabe en la portada, y ahí es
+  /// donde más sirve enterarse. Ver [HealthReport].
+  final HealthReport health;
+
+  /// Si se está reponiendo la protección ahora mismo.
+  final ProtectionWork protection;
+
   bool get hasRoom => room != null;
   bool get isBusy => work != RoomWork.none;
+  bool get isReapplying => protection == ProtectionWork.reapplying;
 
   SessionState copyWith({
     SessionPhase? phase,
@@ -63,6 +85,8 @@ class SessionState {
     Game? pendingGame,
     bool clearPending = false,
     String? nickname,
+    HealthReport? health,
+    ProtectionWork? protection,
   }) =>
       SessionState(
         phase: phase ?? this.phase,
@@ -72,5 +96,7 @@ class SessionState {
         installed: installed ?? this.installed,
         pendingGame: clearPending ? null : (pendingGame ?? this.pendingGame),
         nickname: nickname ?? this.nickname,
+        health: health ?? this.health,
+        protection: protection ?? this.protection,
       );
 }

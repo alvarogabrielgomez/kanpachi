@@ -1,6 +1,7 @@
 import 'package:kanpachi_ui/core/messages/app_message.dart';
 import 'package:kanpachi_ui/core/messages/message_catalog.dart';
 import 'package:kanpachi_ui/core/messages/message_keys.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 
 /// Lo que el daemon dice del estado, ya traducido a lo que la UI pinta.
 ///
@@ -61,28 +62,19 @@ abstract final class StatusMapper {
     );
   }
 
-  /// Saca los avisos de la lista `alerts` de `RoomView`.
+  /// Saca los avisos de la lista `alerts` de `RoomView` y les pone el texto.
   ///
   /// Cada elemento es `{kind, detail}`. El `kind` elige el texto y el `detail`
   /// lo acompaña debajo: el copy es del producto y el dato es del daemon.
-  static List<AppMessage> alertsFrom(Object? crudo) {
-    if (crudo is! List<Object?>) return const <AppMessage>[];
-
-    final List<AppMessage> out = <AppMessage>[];
-    for (final Object? item in crudo) {
-      if (item is! Map<String, Object?>) continue;
-
-      final Object? kind = item['kind'];
-      // Un elemento sin kind no es una alerta a medias: no es una alerta. Sin
-      // clave no hay texto que elegir, ni siquiera el de reserva.
-      if (kind is! String || kind.isEmpty) continue;
-
-      out.add(
-        AppMessages.alertFromWire(kind, detail: item['detail'] as String?),
-      );
-    }
-    return out;
-  }
+  ///
+  /// El recorrido de la lista NO se hace acá: lo hace [HealthAlert.listFrom],
+  /// que es el único sitio del programa que decide qué es una alerta y qué es
+  /// basura. Acá solo se le pone el copy encima. Dos recorridos con las mismas
+  /// reglas escritas dos veces es cómo una se queda atrás sin que nadie lo note.
+  static List<AppMessage> alertsFrom(Object? crudo) => <AppMessage>[
+        for (final HealthAlert a in HealthAlert.listFrom(crudo))
+          AppMessages.alertFromWire(a.wire, detail: a.detail),
+      ];
 
   static AppMessage? _exitFrom(Object? crudo) {
     if (crudo is! String || crudo.isEmpty) return null;

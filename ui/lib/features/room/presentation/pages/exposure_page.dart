@@ -8,7 +8,10 @@ import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
 import 'package:kanpachi_ui/core/messages/message_catalog.dart';
+import 'package:kanpachi_ui/core/messages/message_keys.dart';
+import 'package:kanpachi_ui/features/room/presentation/widgets/canary_alarm.dart';
 import 'package:kanpachi_ui/features/room/presentation/widgets/probe_section.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/canary.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 
@@ -34,6 +37,10 @@ class ExposurePage extends StatefulWidget {
     required this.probe,
     required this.isHost,
     this.hostName = '',
+    this.alerts = const <AlertKind>[],
+    this.canary = const CanaryCheck.blind(),
+    this.onReapply,
+    this.reapplying = false,
     super.key,
   });
 
@@ -50,6 +57,21 @@ class ExposurePage extends StatefulWidget {
 
   /// Cómo se llama el host, para el botón y para la fila.
   final String hostName;
+
+  /// Las alertas vivas del daemon. La banda de la Protección Kanpachi se
+  /// enciende por la del canario, jamás por el veredicto de [canary]. Ver
+  /// [CanaryAlarm].
+  final List<AlertKind> alerts;
+
+  /// La última ronda, para el detalle de la banda.
+  final CanaryCheck canary;
+
+  /// Qué hace el botón de reponer. En null no se pinta la banda, y ese es el
+  /// valor por defecto: una pantalla que ofrece reponer sin nadie que lo haga
+  /// es un botón que miente.
+  final Future<void> Function()? onReapply;
+
+  final bool reapplying;
 
   @override
   State<ExposurePage> createState() => _ExposurePageState();
@@ -78,9 +100,24 @@ class _ExposurePageState extends State<ExposurePage> {
   @override
   Widget build(BuildContext context) {
     final ExposureReport? report = _report;
+    final Future<void> Function()? reapply = widget.onReapply;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        // ENCIMA del encabezado, y es lo único de esta pantalla que puede
+        // desmentir todo lo de abajo. La lista mide lo que esta PC tiene
+        // configurado; la alarma dice que un paquete cruzó igual. Debajo se
+        // leería después de haber creído la lista.
+        if (reapply != null) ...<Widget>[
+          CanaryAlarm(
+            alerts: widget.alerts,
+            check: widget.canary,
+            busy: widget.reapplying,
+            onReapply: reapply,
+          ),
+          if (widget.alerts.contains(AlertKind.canaryLeaking))
+            const SizedBox(height: AppSpacing.lg),
+        ],
         _Header(report: report, busy: _loading, onRefresh: _refresh),
         const SizedBox(height: AppSpacing.md),
         if (report == null)

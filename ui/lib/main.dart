@@ -54,7 +54,13 @@ class KanpachiApp extends StatelessWidget {
           create: (_) => Injector.instance.get<ShellCubit>(),
         ),
         BlocProvider<SessionCubit>(
-          create: (_) => Injector.instance.get<SessionCubit>()..loadCatalog(),
+          // La salud se pide en el arranque y no cuando el usuario abre una
+          // sala: los avisos que importan en la portada, con el Firewall de
+          // Windows apagado a la cabeza, son ciertos antes de que haya nada que
+          // hospedar, y esperar a la sala sería avisar tarde.
+          create: (_) => Injector.instance.get<SessionCubit>()
+            ..loadCatalog()
+            ..refreshHealth(),
         ),
       ],
       // Por encima de la app y por debajo de los cubits: tiene que durar lo

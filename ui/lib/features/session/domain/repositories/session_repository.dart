@@ -1,5 +1,6 @@
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 
@@ -67,6 +68,30 @@ abstract interface class SessionRepository {
   /// acá los fallos son PRECONDICIONES que el usuario entiende y puede cambiar,
   /// no mediciones que salieron mal.
   Future<ProbeReport> probeHost();
+
+  /// Los avisos que el daemon produjo SOLO, más la última ronda de la
+  /// Protección Kanpachi.
+  ///
+  /// Se puede pedir sin sala, y ahí está media gracia: que el Firewall de
+  /// Windows esté apagado es cierto en la portada, antes de que haya nada que
+  /// hospedar.
+  ///
+  /// No devuelve error, por lo mismo que [exposure]: la pantalla que lo enseña
+  /// tiene que decir algo siempre, y "todavía no se sabe" ya se puede expresar
+  /// con [HealthReport.unknown].
+  Future<HealthReport> health();
+
+  /// Vuelve a aplicar la protección: el deny-all propio y la compuerta.
+  ///
+  /// **Es IDEMPOTENTE.** El daemon calcula la diferencia contra las reglas vivas
+  /// del firewall, así que llamarlo con nada roto no toca nada. Por eso la UI lo
+  /// puede ofrecer sin diálogo de confirmación.
+  ///
+  /// Devuelve el informe ya recalculado y no un acuse, porque lo que la pantalla
+  /// necesita a continuación es redibujar SIN la alerta que acaba de resolverse.
+  /// Con un acuse habría que volver a preguntar, y entre las dos llamadas la
+  /// pantalla enseñaría una alarma que ya no es cierta.
+  Future<HealthReport> reapplyProtection();
 
   /// Da de alta un juego que no estaba en el catálogo.
   Future<Game> saveManualGame(Game game);

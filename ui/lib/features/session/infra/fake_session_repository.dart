@@ -1,8 +1,10 @@
 import 'dart:math';
 
 import 'package:kanpachi_ui/core/messages/message_keys.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/canary.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
@@ -272,6 +274,69 @@ class FakeSessionRepository implements SessionRepository {
       ],
     );
   }
+
+  /// La salud de mentira llega CON la alarma del canario puesta.
+  ///
+  /// Al revés que [probeHost], que sale limpio a propósito, y la asimetría tiene
+  /// motivo: aquel se dispara con un botón y se puede ver en los dos estados
+  /// cuando uno quiera, y esto llega solo. Sin la alarma puesta acá, la banda de
+  /// la Protección Kanpachi y su botón no se pueden ver nunca sin un daemon y
+  /// una compuerta rota de verdad, o sea que se romperían sin que nadie lo
+  /// notara.
+  ///
+  /// Las otras dos son las que la portada enseñaba antes con una lista fija
+  /// escrita a mano. Ahora salen de acá, que es de donde van a salir siempre.
+  @override
+  Future<HealthReport> health() async {
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    return _health;
+  }
+
+  /// Reponer arregla LO SUYO y nada más.
+  ///
+  /// Se va la alarma del canario y se quedan las otras dos, y eso no es una
+  /// simplificación del falso: es la verdad. Volver a escribir la compuerta no
+  /// enciende el Firewall de Windows ni cierra un puerto del router.
+  @override
+  Future<HealthReport> reapplyProtection() async {
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    _health = HealthReport(
+      alerts: _health.alerts
+          .where((HealthAlert a) => a.kind != AlertKind.canaryLeaking)
+          .toList(growable: false),
+      canary: CanaryCheck(
+        measured: true,
+        verdict: CanaryVerdict.clean,
+        port: _health.canary.port,
+        measuredAt: DateTime.now(),
+        asked: _health.canary.asked,
+      ),
+    );
+    return _health;
+  }
+
+  HealthReport _health = HealthReport(
+    alerts: const <HealthAlert>[
+      HealthAlert(wire: 'firewall_off', kind: AlertKind.firewallOff),
+      HealthAlert(wire: 'router_mapping', kind: AlertKind.routerMapping),
+      HealthAlert(wire: 'canary_leaking', kind: AlertKind.canaryLeaking),
+    ],
+    canary: CanaryCheck(
+      measured: true,
+      verdict: CanaryVerdict.leaking,
+      port: 51234,
+      touched: true,
+      measuredAt: DateTime.now(),
+      asked: const <String>['Gabriel', 'Santiago', 'Humberto'],
+      answers: const <CanaryAnswer>[
+        CanaryAnswer(
+          from: 'Gabriel',
+          tcp: ProbeOutcome.answered,
+          udp: ProbeOutcome.silent,
+        ),
+      ],
+    ),
+  );
 
   @override
   Future<Game> saveManualGame(Game game) async {

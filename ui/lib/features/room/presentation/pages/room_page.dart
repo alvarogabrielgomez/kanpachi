@@ -18,6 +18,7 @@ import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
 import 'package:kanpachi_ui/core/messages/message_catalog.dart';
 import 'package:kanpachi_ui/core/messages/message_keys.dart';
+import 'package:kanpachi_ui/features/room/presentation/widgets/canary_alarm.dart';
 import 'package:kanpachi_ui/features/room/presentation/widgets/copy_button.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
@@ -49,6 +50,19 @@ class RoomScreen extends StatelessWidget {
         children: <Widget>[
           _RoomHeader(room: room),
           SizedBox(height: d.gap),
+          // Encima de todo lo demás, y por delante incluso del host que se fue.
+          // El usuario puede no abrir jamás la pantalla de exposición, y una
+          // protección que dejó de contener no puede esperar a que vaya a
+          // buscarla. La banda se pinta sola cuando no hay alarma.
+          if (session.health.kinds.contains(AlertKind.canaryLeaking)) ...<Widget>[
+            CanaryAlarm(
+              alerts: session.health.kinds,
+              check: session.health.canary,
+              busy: session.isReapplying,
+              onReapply: context.read<SessionCubit>().reapplyProtection,
+            ),
+            SizedBox(height: d.gap),
+          ],
           if (room.hostLeft && !room.selfIsHost) ...<Widget>[
             AppMessageNotice(message: AppMessages.hostLeft(room.hostName)),
             SizedBox(height: d.gap),

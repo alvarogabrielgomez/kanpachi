@@ -11,9 +11,9 @@ import 'package:kanpachi_ui/core/design_system/molecules/app_list.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
 import 'package:kanpachi_ui/core/messages/message_catalog.dart';
-import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/invite_code.dart';
 import 'package:kanpachi_ui/features/session/domain/room_names.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
@@ -88,6 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
             nameHint: _nameHint,
             canJoin: canJoin,
             showAlerts: shell.showHealthAlerts,
+            alerts: session.health.alerts,
             onCodeChanged: _onCodeChanged,
             onJoin: _join,
             onCreate: _createEmpty,
@@ -129,6 +130,7 @@ class _JoinAndCreate extends StatelessWidget {
     required this.nameHint,
     required this.canJoin,
     required this.showAlerts,
+    required this.alerts,
     required this.onCodeChanged,
     required this.onJoin,
     required this.onCreate,
@@ -138,7 +140,14 @@ class _JoinAndCreate extends StatelessWidget {
   final TextEditingController roomName;
   final String nameHint;
   final bool canJoin;
+
+  /// El interruptor de la barra de prototipo. Decide si la sección se enseña,
+  /// jamás qué dice.
   final bool showAlerts;
+
+  /// Los avisos que mandó el daemon. Si no mandó ninguno no se pinta nada, que
+  /// es el caso normal en una máquina sana.
+  final List<HealthAlert> alerts;
   final ValueChanged<String> onCodeChanged;
   final VoidCallback onJoin;
   final VoidCallback onCreate;
@@ -195,17 +204,9 @@ class _JoinAndCreate extends StatelessWidget {
           textAlign: TextAlign.center,
           style: context.type.bodySm.copyWith(color: colors.textMuted),
         ),
-        if (showAlerts) ...<Widget>[
+        if (showAlerts && alerts.isNotEmpty) ...<Widget>[
           const SizedBox(height: AppSpacing.x5l),
-          // Las dos de la maqueta, hasta que el daemon las reporte de verdad.
-          // Cuando exista, esta lista sale de RoomState.alerts y lo único que
-          // cambia es de dónde viene: el texto ya no vive acá.
-          const _HealthAlerts(
-            alerts: <AlertKind>[
-              AlertKind.firewallOff,
-              AlertKind.routerMapping,
-            ],
-          ),
+          _HealthAlerts(alerts: alerts),
         ],
       ],
     );
@@ -220,14 +221,22 @@ class _JoinAndCreate extends StatelessWidget {
 /// router aunque no sea cosa suya, porque es justo lo que Kanpachi existe para
 /// no tener que hacer.
 ///
-/// **El texto no está acá.** Lo trae `AppMessages`, que es el único sitio del
-/// programa donde se escribe copy de aviso. Esta clase decide QUÉ alertas se
-/// muestran y en qué orden; qué dicen lo decide el catálogo, y de dónde salen
-/// las alertas lo dirá el daemon cuando exista.
+/// **El texto no está acá y la lista tampoco.** El texto lo trae `AppMessages`,
+/// que es el único sitio del programa donde se escribe copy de aviso, y la lista
+/// la manda el daemon, que es el único que puede medir lo que hay. Esta clase
+/// solo las apila.
+///
+/// El orden es el del daemon, que las produce por gravedad. Reordenarlas acá
+/// sería que la pantalla opine sobre algo ya decidido donde se puede medir.
+///
+/// Se pintan **por la cadena del cable** y no por la clase, y esa elección es la
+/// que impide perder un aviso: una clave que esta versión de la UI no conozca
+/// sale igual con el mensaje de reserva y con el detalle del daemon pegado. Se
+/// pierde el copy bueno, no se pierde el aviso.
 class _HealthAlerts extends StatelessWidget {
   const _HealthAlerts({required this.alerts});
 
-  final List<AlertKind> alerts;
+  final List<HealthAlert> alerts;
 
   @override
   Widget build(BuildContext context) {
@@ -236,7 +245,10 @@ class _HealthAlerts extends StatelessWidget {
         for (int i = 0; i < alerts.length; i++) ...<Widget>[
           if (i > 0) const SizedBox(height: AppSpacing.lg),
           AppMessageNotice(
-            message: AppMessages.alert(alerts[i]),
+            message: AppMessages.alertFromWire(
+              alerts[i].wire,
+              detail: alerts[i].detail,
+            ),
             titleStyle: context.type.strongSm,
           ),
         ],

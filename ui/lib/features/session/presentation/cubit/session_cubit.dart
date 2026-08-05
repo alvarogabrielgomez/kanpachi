@@ -103,6 +103,33 @@ class SessionCubit extends Cubit<SessionState> {
     ));
   }
 
+  /// Vuelve a preguntar por los avisos y por la Protección Kanpachi.
+  ///
+  /// Se puede llamar sin sala, y así lo hace la portada: los avisos de salud de
+  /// la máquina no esperan a que el usuario abra una.
+  Future<void> refreshHealth() async {
+    emit(state.copyWith(health: await _repository.health()));
+  }
+
+  /// Repone la protección y guarda lo que el daemon contestó.
+  ///
+  /// La bandera de trabajo se pone ANTES de llamar y se quita en un `finally`.
+  /// El botón se apaga con ella, y eso no es cosmético: sin apagarlo, un doble
+  /// clic manda dos escrituras del firewall a la vez.
+  ///
+  /// El fallo se deja subir a propósito. Reponer es la acción que arregla la
+  /// alarma, así que tragarse el error dejaría al usuario mirando una alarma que
+  /// sigue puesta sin saber que su intento ni siquiera llegó.
+  Future<void> reapplyProtection() async {
+    if (state.isReapplying) return;
+    emit(state.copyWith(protection: ProtectionWork.reapplying));
+    try {
+      emit(state.copyWith(health: await _repository.reapplyProtection()));
+    } finally {
+      emit(state.copyWith(protection: ProtectionWork.none));
+    }
+  }
+
   Future<Game> saveManualGame(Game game) async {
     final Game saved = await _repository.saveManualGame(game);
     await loadCatalog();
