@@ -362,7 +362,7 @@ func TestSinPuertoAceptableFalla(t *testing.T) {
 // puede fijar desde acá. Medido sobre veinte mil aperturas completas:
 //
 //	20 intentos, siempre TCP    60 fallaron (0,30%)
-//	40 intentos, alternando      0 fallaron
+//	40 intentos, alternando      0 fallaron  <- envejeció mal, ver bindIntentos
 //
 // Con 0,30%, mil aperturas cazan la regresión el 95% de las veces. Se abren dos
 // mil, y tardan alrededor de un segundo porque el caso bueno son dos llamadas al

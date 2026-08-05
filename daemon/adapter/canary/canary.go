@@ -294,9 +294,33 @@ func (c *Canary) serveUDP() {
 
 // bindIntentos son los números que se prueban antes de rendirse.
 //
-// Cuarenta y no veinte, y el número sale de una medición y no del aire. Ver
-// [bindBoth].
-const bindIntentos = 40
+// El número sale de una medición y no del aire. Ver [bindBoth].
+//
+// # Por qué 500, después de que 40 fallara
+//
+// La primera versión dimensionó esto midiendo SOLO los rangos reservados de
+// UDP, que en la máquina de desarrollo daban un bloque contiguo de 400 puertos.
+// Con 40 intentos el test de 2000 aperturas pasó, y al día siguiente falló en la
+// apertura 1880, en `127.0.0.1:58586`.
+//
+// Ese puerto no está en ningún rango de UDP. Está en uno de TCP, que **no se
+// habían mirado**:
+//
+//	TCP  5357  50000-50059  58540-58639  62952-63051  63052-63151
+//	     63897-63996  64211-64310  64311-64410  64411-64510
+//
+// Los tres últimos son contiguos: **300 puertos seguidos**. Y hace falta un
+// número libre en los DOS protocolos a la vez, así que los rangos de TCP cuentan
+// igual que los de UDP aunque el número lo elija UDP.
+//
+// Windows entrega los efímeros de forma SECUENCIAL en este equipo, medido, así
+// que N intentos cubren N puertos seguidos y nada más: 40 caben enteros dentro
+// de un bloque de 300. 500 pasa el peor bloque medido con margen, y no cuesta
+// nada porque el caso normal acierta al primer intento.
+//
+// La lección, escrita para que no se repita: **los rangos reservados hay que
+// mirarlos en los dos protocolos.** Son listas distintas y cambian solas.
+const bindIntentos = 500
 
 // bindBoth busca un puerto libre en TCP y en UDP a la vez, en esa dirección, y
 // que además `avoid` no rechace.
@@ -328,6 +352,10 @@ const bindIntentos = 40
 //	20 intentos, siempre TCP    60 fallaron (0,30%), peor caso los 20 agotados
 //	40 intentos, alternando      0 fallaron,         peor caso 10 intentos
 //
+// Esa tabla se midió mirando solo los rangos de UDP, y por eso el 0 de la
+// segunda fila envejeció mal: al día siguiente 40 no alcanzaba. Ver
+// [bindIntentos].
+//
 // Un 0,30% con una ronda cada sesenta segundos son unas cuatro fallas por día y
 // por máquina. No era teórico.
 //
@@ -344,7 +372,7 @@ func bindBoth(at netip.Addr, avoid func(uint16) bool) (net.Listener, net.PacketC
 	host := at.String()
 
 	// Se guarda el ÚLTIMO error y cuántos se descartaron por chocar, para poder
-	// contarlo. Un mensaje que diga "cuarenta intentos" y no diga por qué falló
+	// contarlo. Un mensaje que diga cuántos intentos y no diga por qué falló
 	// cada uno no sirve para nada el día que falle en la máquina de un usuario, y
 	// las dos causas piden arreglos distintos.
 	var último error
