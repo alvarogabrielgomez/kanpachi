@@ -20,6 +20,38 @@ const (
 	LobbyAdapterName = "kanpachi1"
 )
 
+// RoomBinding dice CUÁNTOS de los dos adaptadores existen ahora mismo.
+//
+// # Por qué es un tipo y no un booleano
+//
+// Porque el sitio donde se usa es `fw.BindRoom(ctx, subred, X)`, y ahí un `true`
+// no dice nada. Lo que decide si el vestíbulo tiene compuerta no puede leerse
+// como una casilla marcada al azar: el vestíbulo es el adaptador donde llega
+// gente que TODAVÍA NO ES MIEMBRO, o sea el que menos puede quedarse sin ella.
+//
+// Las dos opciones existen porque el vestíbulo es temporal de verdad. El host lo
+// tiene mientras acepta gente; el invitado lo suelta al entrar y sigue con la
+// sala sola. Que falte no es un fallo, y por eso hay una palabra para el caso.
+type RoomBinding uint8
+
+const (
+	// BindRoomOnly es la sala sola: el vestíbulo ya se soltó o nunca se levantó.
+	BindRoomOnly RoomBinding = iota + 1
+	// BindRoomAndLobby es la sala y el vestíbulo, cada uno con su adaptador.
+	BindRoomAndLobby
+)
+
+func (b RoomBinding) String() string {
+	switch b {
+	case BindRoomOnly:
+		return "solo la sala"
+	case BindRoomAndLobby:
+		return "la sala y el vestíbulo"
+	default:
+		return "vínculo-inválido"
+	}
+}
+
 // Métricas del adaptador.
 //
 // La IPv4 en 1 para que los juegos prefieran la red virtual sobre la LAN o el

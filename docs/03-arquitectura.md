@@ -774,7 +774,19 @@ Lo que este paquete decide no es cómo se habla con Windows: es el **orden** de 
 
 Y las dos veces, si la primera capa falla la segunda **no se toca**. La compuerta se aplica en una transacción, así que un fallo deja la anterior intacta y devolver ahí deja el sistema en el estado consistente de antes. En la purga, unos permisos que no se pudieron quitar bajo una compuerta siguen acotados; los mismos sin ella son el agujero.
 
-`SetScope` recibe el nombre del adaptador y el rango de la sala en **una** llamada. Si las dos capas discreparan sobre qué adaptador es la sala, los permisos irían sobre uno y el bloqueo sobre otro: un adaptador con permisos y sin compuerta, con las dos capas contestando que sí.
+**Quién enciende la compuerta, y cuándo.** `BindRoom` del puerto, que llama el caso de uso. El motivo es que el adaptador nace DESPUÉS del daemon: lo crea el motor al levantar cada red, así que el único momento en que se puede acotar es justo después de que la red esté arriba, y eso solo lo sabe quien la levantó. El nombre del adaptador NO viaja desde core: son `domain.AdapterName` y `domain.LobbyAdapterName`, y `BindRoom` las resuelve a LUID con una función que le inyecta el cableado de Windows, para que este paquete siga siendo puro. Elegir a qué adaptador se acota un bloqueo duro es la decisión que separa contener la sala de dejar al usuario sin su red de casa, así que no se pasa por parámetro.
+
+Acotar es **una sola llamada para las dos capas**. Si discreparan sobre qué adaptador es la sala, los permisos irían sobre uno y el bloqueo sobre otro: un adaptador con permisos y sin compuerta, con las dos capas contestando que sí.
+
+**La compuerta cubre los DOS adaptadores.** El vestíbulo no es un extra: es el adaptador donde llega gente que todavía no es miembro, o sea el que menos puede quedarse sin ella. `wfp.Scope` lleva el LUID de la sala con su rango, y el del vestíbulo, con el rango del vestíbulo como constante y no como campo, porque `RendezvousSubnet` es igual para todas las salas y un campo por el que pasarlo sería un campo por el que ensancharlo. Cuál de los dos cubre cada permiso lo dice la dirección local de la regla, no una bandera: una dirección dentro del vestíbulo solo puede vivir en el adaptador del vestíbulo.
+
+Las tres ranuras del vestíbulo quedan **reservadas aunque no haya vestíbulo**. Corriendo los permisos hacia arriba cuando falta, un permiso ocuparía la ranura de un bloqueo del vestíbulo, y la limpieza siguiente lo borraría creyendo que barre un bloqueo que ya no aplica: un puerto que se cierra solo, sin nada que lo explique.
+
+Y la medición pregunta por la ranura del vestíbulo **solo cuando se pidió cubrirlo**. Esa condición separa "no aplica" de "falta": un invitado soltó el vestíbulo a propósito y su compuerta está entera, mientras que un host con el bloqueo del vestíbulo caído tiene media compuerta y no puede salir en verde.
+
+**`Apply` falla en la cara si hay reglas y no hay dónde acotarlas.** Antes dejaba un aviso en el log y escribía los permisos igual, o sea que la lista de permitidos volvía a ser aditiva justo cuando había puertos que abrir. El conjunto vacío sigue pasando y no es una excepción: sin nada que abrir no hay nada que acotar, y ese es el estado normal del daemon en reposo, además de lo que garantiza que la interfaz virtual nazca sin nada abierto. Los casos de uso tratan el fallo como fatal, a diferencia de los ajustes del adaptador: un MTU mal puesto degrada la partida, y una sala sin compuerta miente sobre lo único que este producto promete.
+
+`SetScope` sigue existiendo con el adaptador ya resuelto, y lo usan las herramientas de medición, que trabajan sobre un adaptador elegido a mano. Las dos entran por la misma puerta privada, que valida siempre.
 
 `Enforcement` mide las dos y no juzga ninguna. Un fallo en cualquier mitad tira la medición entera, porque devolver la mitad medida y la otra en cero se lee igual que "esa mitad no tiene nada puesto", que es la conclusión opuesta.
 
@@ -788,7 +800,7 @@ Tres ficheros, y la línea que los separa es la misma que en el adaptador COM: *
 | `conditions.go` | Decide CÓMO se compara cada condición: campo, tipo de comparación y valor |
 | `gate_windows.go` | Copia eso a las estructuras de WFP y llama. No decide nada |
 
-Emite tres cosas fijas más un permiso por regla: bloqueo de todo en IPv4 por adaptador, el mismo por rango de la sala, bloqueo de todo en IPv6 por adaptador, y los permisos espejo. El porqué de cada pieza está en la decisión 27.
+Emite tres cosas fijas **por adaptador** más un permiso por regla: bloqueo de todo en IPv4 por adaptador, el mismo por rango, bloqueo de todo en IPv6 por adaptador, y los permisos espejo. Las tres de la sala siempre; las tres del vestíbulo cuando lo hay. El porqué de cada pieza está en la decisión 27.
 
 El tipo `Layer` no tiene valor para `ALE_AUTH_CONNECT` y no lo va a tener. Lo que no existe en el tipo no se puede pedir por error, y hay un guardián en `internal/arch` que además falla si alguien nombra esa capa por su nombre de Windows para saltárselo.
 

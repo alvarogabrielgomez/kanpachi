@@ -11,7 +11,6 @@ import (
 	"github.com/go-ole/go-ole/oleutil"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
-	"github.com/accentiostudios/kanpachi/core/port"
 )
 
 // Firewall implements port.FirewallPort against INetFwPolicy2.
@@ -59,9 +58,13 @@ func New(dataDir, adapter string, log Logger) (*Firewall, error) {
 	}, nil
 }
 
-// The check that this still fits the port. If a signature in core changes, the
-// error comes out here and not where it gets wired.
-var _ port.FirewallPort = (*Firewall)(nil)
+// This used to assert `port.FirewallPort`, and that assertion was wrong.
+//
+// This type is only the PERMIT layer, the half that opens. What implements the
+// port is the composite in the parent package, because containment needs both
+// layers and this one alone cannot bind the gate. The check that this fits its
+// real interface lives next to the composition, in `firewall/windows.go`, which
+// is the one place where picking the wrong half would be possible.
 
 func (f *Firewall) Close() error { return f.ap.Close() }
 

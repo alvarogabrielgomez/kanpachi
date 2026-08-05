@@ -3,6 +3,7 @@ package firewall
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/netip"
 	"strings"
 	"testing"
@@ -136,6 +137,21 @@ func (logMudo) Error(string, ...any) {}
 
 const luidDePrueba = 0x47008000000000
 
+// luidFalso resuelve los dos adaptadores del dominio y NADA más.
+//
+// Fallar con cualquier otro nombre es la mitad útil: así un test que se acote
+// a un adaptador inventado falla acá, en vez de pasar en verde midiendo una
+// compuerta que en la máquina de verdad no cubriría nada.
+func luidFalso(name string) (uint64, error) {
+	switch name {
+	case domain.AdapterName:
+		return luidDePrueba, nil
+	case domain.LobbyAdapterName:
+		return luidDePrueba + 1, nil
+	}
+	return 0, fmt.Errorf("no existe el adaptador %q", name)
+}
+
 func salaDePrueba() netip.Prefix { return netip.MustParsePrefix("100.64.1.0/24") }
 
 func reglaDePrueba() domain.FirewallRule {
@@ -155,7 +171,7 @@ func armado(t *testing.T) (*Firewall, *diario, *permisosFalsos, *compuertaFalsa)
 	d := &diario{}
 	p := &permisosFalsos{d: d}
 	g := &compuertaFalsa{d: d}
-	fw, err := New(p, p, g, logMudo{})
+	fw, err := New(p, p, g, logMudo{}, luidFalso)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,24 +260,92 @@ func TestIfThePermitsCannotBePurgedTheGateStays(t *testing.T) {
 	}
 }
 
-func TestWithNoAdapterThePermitsStillApplyAndTheGateIsPurged(t *testing.T) {
-	// El adaptador nace DESPUÉS del daemon, así que el primer Apply de una sesión
-	// puede correr legítimamente sin él. Dejar la compuerta anterior puesta sería
-	// peor que quitarla: filtros de una sala que ya no existe no protegen nada y
-	// no se ven en ninguna herramienta del sistema.
+// Sin compuerta no se abre NADA, y esto es un cambio deliberado de conducta.
+//
+// Antes se dejaba un aviso en el log y se escribían los permisos igual. O sea
+// que la lista de permitidos volvía a ser ADITIVA justo cuando había puertos que
+// abrir, que es exactamente el caso que la compuerta existe para cerrar: una
+// regla ajena de escritorio remoto alcanzando al usuario por la red virtual,
+// mientras la pantalla dice que la sala está configurada.
+func TestWithNoAdapterNothingOpens(t *testing.T) {
 	fw, d, _, g := armado(t)
 
-	if err := fw.Apply(context.Background(), conjunto()); err != nil {
+	if err := fw.Apply(context.Background(), conjunto()); err == nil {
+		t.Fatal("se abrieron puertos sin compuerta que los acote")
+	}
+	if d.contiene("permisos.apply") {
+		t.Errorf("se escribieron los permisos igual. Diario: %v", d.pasos)
+	}
+	if g.pedido != nil {
+		t.Error("se le pidió a la compuerta un conjunto sin tener dónde ponerlo")
+	}
+}
+
+// El conjunto VACÍO sí pasa sin adaptador, y no es una excepción al de arriba:
+// sin nada que abrir no hay nada que acotar.
+//
+// Ese es el estado normal del daemon en reposo, y de él depende la cuarentena
+// por defecto: aplicar el vacío es lo que garantiza que no quede nada abierto,
+// en vez de omitir la llamada y heredar lo que hubiera. La compuerta vieja se
+// purga porque filtros de una sala que ya no existe no protegen nada y no se ven
+// en ninguna herramienta del sistema.
+func TestWithNoAdapterTheEmptySetStillApplies(t *testing.T) {
+	fw, d, _, g := armado(t)
+
+	if err := fw.Apply(context.Background(), domain.RuleSet{}); err != nil {
 		t.Fatal(err)
 	}
 	if !d.contiene("permisos.apply") {
-		t.Error("sin adaptador tampoco se aplicaron los permisos")
+		t.Error("el conjunto vacío no se aplicó, así que nada garantiza que no quede nada abierto")
 	}
 	if !d.contiene("compuerta.purga") {
 		t.Errorf("no se purgó la compuerta vieja. Diario: %v", d.pasos)
 	}
 	if g.pedido != nil {
 		t.Error("se le pidió a la compuerta un conjunto sin tener dónde ponerlo")
+	}
+}
+
+// BindRoom resuelve los nombres del DOMINIO, y el caso de uso no elige ninguno.
+//
+// Elegir a qué adaptador se acota un bloqueo duro es la decisión que separa
+// contener la sala de dejar al usuario sin su red de casa, así que no viaja por
+// parámetro desde core.
+func TestBindRoomResolvesTheDomainAdaptersAndCoversTheLobby(t *testing.T) {
+	fw, _, p, _ := armado(t)
+
+	if err := fw.BindRoom(context.Background(), salaDePrueba(), domain.BindRoomAndLobby); err != nil {
+		t.Fatal(err)
+	}
+	if fw.scope.LUID != luidDePrueba {
+		t.Errorf("la sala se acotó al adaptador %#x", fw.scope.LUID)
+	}
+	if !fw.scope.HasLobby() {
+		t.Error("se pidió cubrir el vestíbulo y quedó sin adaptador")
+	}
+	if p.adaptador != domain.AdapterName {
+		t.Errorf("los permisos se acotaron a %q", p.adaptador)
+	}
+
+	// Y con la sala sola el vestíbulo queda fuera, que es el caso del invitado
+	// después de soltarlo.
+	if err := fw.BindRoom(context.Background(), salaDePrueba(), domain.BindRoomOnly); err != nil {
+		t.Fatal(err)
+	}
+	if fw.scope.HasLobby() {
+		t.Error("se pidió solo la sala y el vestíbulo quedó acotado igual")
+	}
+}
+
+// Un firewall sin resolver de adaptadores no se construye.
+//
+// Sin él `BindRoom` no puede acotar nada, o sea que la compuerta no se pone
+// nunca, y el fallo aparecería recién al abrir una sala con la red ya arriba.
+func TestAFirewallWithNoResolverDoesNotBuild(t *testing.T) {
+	d := &diario{}
+	p := &permisosFalsos{d: d}
+	if _, err := New(p, p, &compuertaFalsa{d: d}, logMudo{}, nil); err == nil {
+		t.Fatal("se construyó un firewall que no puede acotar la compuerta")
 	}
 }
 

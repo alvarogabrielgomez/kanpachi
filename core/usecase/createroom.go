@@ -114,6 +114,18 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 		return domain.RoomState{}, fmt.Errorf("abriendo la puerta de la sala: %w", err)
 	}
 
+	// La compuerta se acota ACÁ, con los DOS adaptadores ya arriba y antes de
+	// abrir un solo puerto.
+	//
+	// Es fatal, a diferencia de los ajustes del adaptador: un MTU mal puesto
+	// degrada la partida, y una sala sin compuerta deja la lista de permitidos
+	// en aditiva, o sea una regla ajena de escritorio remoto alcanzando al
+	// usuario por la red virtual. Una sala que no abre es mejor que una que dice
+	// estar contenida y no lo está.
+	if err := s.deps.Firewall.BindRoom(ctx, plan.Subnet, domain.BindRoomAndLobby); err != nil {
+		return domain.RoomState{}, fmt.Errorf("acotando la contención a la sala: %w", err)
+	}
+
 	// El canal de control SOLO escucha en la máquina del host. Los invitados
 	// marcan hacia afuera y no abren nada, así que su deny-all queda intacto.
 	if err := s.deps.Control.Serve(ctx, s.controlScope()); err != nil {

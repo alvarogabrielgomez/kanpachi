@@ -565,6 +565,13 @@ func (s *Session) teardown(ctx context.Context) {
 	if err := s.deps.Firewall.RestoreForeign(ctx); err != nil {
 		s.deps.Log.Error("no se pudieron restaurar las reglas ajenas", "error", err)
 	}
+	// La compuerta se suelta DESPUÉS de cerrar los puertos, y ese orden es el
+	// mismo argumento de arriba llevado a la otra capa: al revés quedaría un
+	// instante con puertos abiertos y sin nada que los acote.
+	//
+	// Soltarla no es dejar los filtros puestos: el `Apply` con el conjunto vacío
+	// de dos líneas más arriba ya barrió las ranuras.
+	s.deps.Firewall.UnbindRoom()
 	if err := s.deps.NetCfg.RevertTweaks(ctx); err != nil {
 		s.deps.Log.Error("no se pudieron revertir los ajustes del adaptador", "error", err)
 	}

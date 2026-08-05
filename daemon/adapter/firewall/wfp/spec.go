@@ -104,12 +104,30 @@ const (
 // en tiempo de ejecución contra las redes que la máquina ya tiene. Ver decisión
 // 10.
 type Scope struct {
-	// LUID del adaptador virtual, tal como lo entiende WFP. Cero significa sin
-	// acotar, y eso está prohibido.
+	// LUID del adaptador virtual de la SALA, tal como lo entiende WFP. Cero
+	// significa sin acotar, y eso está prohibido.
 	LUID uint64
 	// Net es el rango de la sala sobre ese adaptador.
 	Net netip.Prefix
+	// Lobby es el LUID del adaptador del VESTÍBULO, y cero cuando no lo hay.
+	//
+	// # Por qué el vestíbulo no trae su rango
+	//
+	// Porque no es suyo: el vestíbulo vive siempre en [domain.RendezvousSubnet],
+	// igual para todas las salas de todo el mundo. Un campo por el que pasarlo
+	// sería un campo por el que ensancharlo, y este es el adaptador donde llega
+	// gente que TODAVÍA NO ES MIEMBRO, o sea el que menos puede permitírselo.
+	//
+	// Cero es un estado normal y frecuente: el invitado suelta el vestíbulo al
+	// entrar, y el host lo tiene solo mientras acepta gente.
+	Lobby uint64
 }
+
+// LobbyNet es el rango del vestíbulo, y no se pide: es constante.
+func (s Scope) LobbyNet() netip.Prefix { return domain.RendezvousSubnet }
+
+// HasLobby dice si el alcance cubre también el adaptador del vestíbulo.
+func (s Scope) HasLobby() bool { return s.Lobby != 0 }
 
 // Valid dice si el alcance acota de verdad, y no solo si está relleno.
 //
@@ -140,6 +158,15 @@ func (s Scope) Valid() error {
 	if !domain.SharedSpace.Contains(s.Net.Addr()) && !domain.FallbackSpace.Contains(s.Net.Addr()) {
 		return fmt.Errorf("el rango de la sala es %v, fuera de %v y de %v, que es donde "+
 			"viven las salas", s.Net, domain.SharedSpace, domain.FallbackSpace)
+	}
+	if s.Lobby != 0 && s.Lobby == s.LUID {
+		// Los dos adaptadores son dos redes distintas del motor. El mismo LUID
+		// para las dos significa que alguien resolvió mal un nombre, y el
+		// resultado sería un bloqueo del vestíbulo puesto sobre la sala y el
+		// vestíbulo sin compuerta: descubierto justo el adaptador donde llega
+		// gente que todavía no es miembro.
+		return fmt.Errorf("la sala y el vestíbulo llegaron con el mismo adaptador (LUID %d), "+
+			"y son dos redes distintas", s.LUID)
 	}
 	return nil
 }
@@ -189,6 +216,31 @@ func (c Conditions) scoped() bool {
 	// protección justo el caso que hay que impedir.
 	return c.LocalNet.IsValid() && c.LocalNet.Bits() > 0
 }
+
+// Las ranuras FIJAS, tres por adaptador.
+//
+// # Por qué son posiciones fijas y no un contador
+//
+// Porque la clave de un filtro se deriva de su ranura, así que la ranura ES la
+// identidad. Fijándolas, medir si la compuerta está puesta es preguntar por una
+// clave conocida sin enumerar nada, y barrer de 0 a [MaxFilters] borra todo lo
+// que la compuerta pueda haber puesto, sin recordar nada entre arranques.
+//
+// Las del vestíbulo quedan reservadas aunque no haya vestíbulo. Corriendo los
+// permisos hacia arriba cuando falta, un permiso ocuparía la ranura de un
+// bloqueo del vestíbulo, y la limpieza siguiente lo borraría creyendo que barre
+// un bloqueo que ya no aplica: un puerto que se cierra solo, sin nada que lo
+// explique.
+const (
+	SlotRoomLUID = iota
+	SlotRoomNet
+	SlotRoomV6
+	SlotLobbyLUID
+	SlotLobbyNet
+	SlotLobbyV6
+	// FirstPermitSlot es donde empiezan los permisos espejo, siempre.
+	FirstPermitSlot
+)
 
 // MaxFilters es cuántos filtros puede tener puestos la compuerta a la vez, y de
 // paso cuántas ranuras barre la limpieza.
@@ -349,24 +401,46 @@ func SpecsFor(desired domain.RuleSet, scope Scope) ([]FilterSpec, error) {
 			"red de casa: %w", err)
 	}
 
-	// Las tres primeras ranuras son fijas. Que el bloqueo por adaptador sea
-	// siempre la cero es lo que permite medir si la compuerta está puesta
-	// preguntando por UNA clave conocida, sin enumerar.
+	// Las SEIS primeras ranuras son fijas, tres por adaptador. Que el bloqueo
+	// por adaptador de la sala sea siempre la cero es lo que permite medir si la
+	// compuerta está puesta preguntando por UNA clave conocida, sin enumerar, y
+	// las del vestíbulo se miden igual por sus propias ranuras.
 	out := []FilterSpec{
-		newSpec(0, "bloqueo de todo, por adaptador", RecvAcceptV4, Block, WeightBlockAll,
+		newSpec(SlotRoomLUID, "bloqueo de todo, por adaptador de la sala", RecvAcceptV4, Block, WeightBlockAll,
 			Conditions{LUID: scope.LUID}),
-		newSpec(1, "bloqueo de todo, por rango de la sala", RecvAcceptV4, Block, WeightBlockAll,
+		newSpec(SlotRoomNet, "bloqueo de todo, por rango de la sala", RecvAcceptV4, Block, WeightBlockAll,
 			Conditions{LocalNet: scope.Net}),
-		newSpec(2, "bloqueo de todo IPv6, por adaptador", RecvAcceptV6, Block, WeightBlockAll,
+		newSpec(SlotRoomV6, "bloqueo de todo IPv6, por adaptador de la sala", RecvAcceptV6, Block, WeightBlockAll,
 			Conditions{LUID: scope.LUID}),
 	}
 
+	// El vestíbulo se cubre igual que la sala, y NO es un extra. Es el adaptador
+	// al que llega gente que todavía no es miembro: dejarlo sin compuerta es
+	// dejar la lista de permitidos en ADITIVA justo donde puede tocar cualquiera
+	// que tenga el código, que es el caso que la compuerta existe para cerrar.
+	if scope.HasLobby() {
+		out = append(out,
+			newSpec(SlotLobbyLUID, "bloqueo de todo, por adaptador del vestíbulo", RecvAcceptV4, Block, WeightBlockAll,
+				Conditions{LUID: scope.Lobby}),
+			newSpec(SlotLobbyNet, "bloqueo de todo, por rango del vestíbulo", RecvAcceptV4, Block, WeightBlockAll,
+				Conditions{LocalNet: scope.LobbyNet()}),
+			newSpec(SlotLobbyV6, "bloqueo de todo IPv6, por adaptador del vestíbulo", RecvAcceptV6, Block, WeightBlockAll,
+				Conditions{LUID: scope.Lobby}),
+		)
+	}
+
+	// Los permisos arrancan SIEMPRE en la misma ranura, haya vestíbulo o no. Con
+	// las ranuras corridas, una sala sin vestíbulo pondría un permiso en la
+	// ranura del bloqueo del vestíbulo, y la limpieza siguiente lo borraría
+	// creyendo que barre un bloqueo que ya no aplica.
+	slot := FirstPermitSlot
 	for _, r := range desired.Rules {
-		s, err := permitFor(len(out), r, scope)
+		s, err := permitFor(slot, r, scope)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, s)
+		slot++
 	}
 
 	if len(out) > MaxFilters {
@@ -391,9 +465,31 @@ func SpecsFor(desired domain.RuleSet, scope Scope) ([]FilterSpec, error) {
 // adaptador. Que sean espejo es lo que hace que la compuerta no abra nada que
 // los permisos visibles no abran ya: quien audite con sus herramientas de
 // siempre ve la lista completa de lo que está abierto.
+//
+// # Cuál de los dos adaptadores
+//
+// Lo dice la dirección LOCAL de la regla, y no un campo que alguien rellena:
+// una dirección dentro de [domain.RendezvousSubnet] solo puede estar en el
+// adaptador del vestíbulo, y cualquier otra en el de la sala. Deducirlo de la
+// dirección es lo que impide que el permiso de la puerta acabe acotado al
+// adaptador equivocado, donde no casaría con nada y dejaría la puerta cerrada
+// con la compuerta diciendo que está puesta.
 func permitFor(slot int, r domain.FirewallRule, scope Scope) (FilterSpec, error) {
 	if !r.Local.IsValid() {
 		return FilterSpec{}, fmt.Errorf("regla %q: sin dirección local", r.Name)
+	}
+
+	luid := scope.LUID
+	if domain.RendezvousSubnet.Contains(r.Local) {
+		if !scope.HasLobby() {
+			// Fallar es lo correcto: acotarla a la sala pondría el permiso donde
+			// no casa, y emitirla sin adaptador la pondría en TODOS. El primero
+			// deja la puerta cerrada en silencio, el segundo abre el puerto del
+			// canal en la red de casa del usuario.
+			return FilterSpec{}, fmt.Errorf("regla %q: está en %v, o sea en el vestíbulo, "+
+				"y el alcance llegó sin adaptador de vestíbulo", r.Name, domain.RendezvousSubnet)
+		}
+		luid = scope.Lobby
 	}
 	if len(r.Remote) == 0 && len(r.Nets) == 0 {
 		// El dominio ya lo prohíbe. Se recomprueba porque un permiso sin alcance
@@ -422,7 +518,7 @@ func permitFor(slot int, r domain.FirewallRule, scope Scope) (FilterSpec, error)
 	sort.Slice(nets, func(i, j int) bool { return nets[i].String() < nets[j].String() })
 
 	s := newSpec(slot, "permiso espejo: "+r.Name, RecvAcceptV4, Permit, WeightPermit, Conditions{
-		LUID:          scope.LUID,
+		LUID:          luid,
 		LocalAddr:     r.Local,
 		LocalPortFrom: r.From,
 		LocalPortTo:   r.To,
@@ -463,8 +559,16 @@ func newSpec(slot int, label string, layer Layer, action Action, weight uint64, 
 
 // GateKey es la clave por la que se pregunta si la compuerta está puesta.
 //
-// Es la ranura cero, o sea el bloqueo de todo por adaptador. Preguntar por una
-// clave conocida evita enumerar, y la ranura cero es la correcta porque es el
-// filtro sin el cual la compuerta no contiene nada: con los permisos espejo
-// puestos y el bloqueo ausente, la lista vuelve a ser aditiva.
-func GateKey() [16]byte { return keyForSlot(0) }
+// Es la ranura cero, o sea el bloqueo de todo por adaptador de la sala.
+// Preguntar por una clave conocida evita enumerar, y la ranura cero es la
+// correcta porque es el filtro sin el cual la compuerta no contiene nada: con
+// los permisos espejo puestos y el bloqueo ausente, la lista vuelve a ser
+// aditiva.
+func GateKey() [16]byte { return keyForSlot(SlotRoomLUID) }
+
+// LobbyGateKey es la misma pregunta para el vestíbulo.
+//
+// Va aparte porque el vestíbulo puede no estar, y eso NO es un fallo: el
+// invitado lo suelta al entrar. Quien mida tiene que poder distinguir "no
+// aplica" de "falta", y con una sola clave las dos respuestas serían la misma.
+func LobbyGateKey() [16]byte { return keyForSlot(SlotLobbyLUID) }

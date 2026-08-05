@@ -175,6 +175,34 @@ type FirewallPort interface {
 	// RestoreForeign las devuelve como estaban. Se llama al salir de la sala y
 	// también al arrancar el servicio, por si una salida sucia dejó algo.
 	RestoreForeign(ctx context.Context) error
+
+	// BindRoom acota las DOS capas a los adaptadores virtuales, y sin él la
+	// compuerta no se pone nunca.
+	//
+	// # Por qué lo llama el caso de uso y no el adaptador
+	//
+	// Porque quien sabe CUÁNDO existe el adaptador es este lado. Los crea el
+	// motor al levantar cada red, así que no existen cuando arranca el daemon
+	// ni cuando se construye el firewall: el único momento en que se puede
+	// acotar es justo después de que la red esté arriba, y eso solo lo sabe
+	// quien la levantó.
+	//
+	// El nombre del adaptador NO viaja: son [domain.AdapterName] y
+	// [domain.LobbyAdapterName], constantes del dominio. Lo que viaja es la
+	// subred de la sala, que se elige en tiempo de ejecución, y cuántos
+	// adaptadores hay ahora.
+	//
+	// **Falla en la cara y hay que tratarlo como fatal.** No es como los
+	// ajustes del adaptador, donde un fallo degrada la partida: sin compuerta
+	// la lista de permitidos vuelve a ser ADITIVA, o sea que una regla ajena de
+	// escritorio remoto alcanza al usuario por la red virtual. Una sala que no
+	// se abre es mejor que una que dice estar contenida y no lo está.
+	BindRoom(ctx context.Context, room netip.Prefix, with domain.RoomBinding) error
+
+	// UnbindRoom olvida los adaptadores. Se llama al salir de la sala, DESPUÉS
+	// de cerrar lo que estuviera abierto: al revés quedaría un instante con
+	// puertos abiertos y sin compuerta que los acote.
+	UnbindRoom()
 }
 
 // NetConfigPort mantiene los ajustes del adaptador que Windows revierte solo.

@@ -695,16 +695,29 @@ Quedan 17 reglas menos en la máquina, y ninguna es de Kanpachi: eran del motor
 viejo y de los avisos de Windows durante el desarrollo. Las quita
 `scripts/limpiar-reglas-del-motor.ps1`, que va en seco salvo con `-Aplicar`.
 
-**2. La compuerta de WFP no la enciende nadie.** `firewall.SetScope` solo lo
-llama `internal/fwprobe`. En el daemon real `specsFor` devuelve nil y `Apply`
-deja un aviso en el log, así que hoy la contención del adaptador virtual son
-únicamente las reglas del Firewall de Windows. **No es un olvido:** `SetScope`
+**2. La compuerta de WFP no la encendía nadie.** `firewall.SetScope` solo lo
+llamaba `internal/fwprobe`. En el daemon real `specsFor` devolvía nil y `Apply`
+dejaba un aviso en el log, así que la contención del adaptador virtual eran
+únicamente las reglas del Firewall de Windows. **No era un olvido:** acotar
 necesita el LUID del adaptador, y el adaptador no existe hasta que el motor lo
-crea. Cablearlo es trabajo del túnel y va con `netcfg`, que es quien espera a que
-el adaptador aparezca.
+crea.
 
 Juntos eran el agujero. Por separado cada uno es la mitad, y por eso ninguno de
 los dos se veía.
+
+**HECHO.** El puerto ganó `BindRoom`/`UnbindRoom`, y los llaman los casos de uso,
+que son los únicos que saben cuándo existe el adaptador. Tres cosas se decidieron
+al cablearlo, y las tres cambian conducta:
+
+- **La compuerta cubre los DOS adaptadores.** El vestíbulo es donde llega gente
+  que todavía no es miembro, o sea el que menos puede quedarse sin ella.
+- **`Apply` falla en la cara** si hay reglas que abrir y no hay dónde acotarlas.
+  El aviso en el log se acabó: escribía los permisos igual, y eso es la lista
+  aditiva otra vez, justo cuando hay puertos abriéndose.
+- **El invitado también acota**, y no es un extra: `BuildRuleSet` le abre sus
+  `ClientPorts`, así que también escribe permisos y también necesita quién los
+  acote frente a los demás miembros. Va con la sala sola, porque soltó el
+  vestíbulo al entrar a propósito.
 
 ## La sala de verdad: ABIERTA, y los tres fallos que hicieron falta para llegar
 

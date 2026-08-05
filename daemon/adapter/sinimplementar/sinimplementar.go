@@ -114,6 +114,16 @@ func (Firewall) SuspendForeign(context.Context, []domain.ForeignRule) error {
 	return falla("desactivar reglas ajenas")
 }
 func (Firewall) RestoreForeign(context.Context) error { return falla("restaurar reglas ajenas") }
+func (Firewall) BindRoom(context.Context, netip.Prefix, domain.RoomBinding) error {
+	return falla("acotar la compuerta a los adaptadores")
+}
+
+// UnbindRoom no falla, y es el único de este tipo que no lo hace.
+//
+// Olvidar un alcance que nunca se puso no puede fracasar, y devolver error acá
+// obligaría a quien sale de la sala a tratar un fallo imposible en el camino de
+// limpieza, que es justo donde no se quiere ruido.
+func (Firewall) UnbindRoom() {}
 
 // NetConfig no toca el adaptador.
 type NetConfig struct{}

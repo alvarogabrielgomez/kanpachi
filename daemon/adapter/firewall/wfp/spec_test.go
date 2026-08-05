@@ -12,6 +12,15 @@ import (
 func addr(s string) netip.Addr  { return netip.MustParseAddr(s) }
 func pfx(s string) netip.Prefix { return netip.MustParsePrefix(s) }
 func roomScope() Scope          { return Scope{LUID: 0x47008000000000, Net: pfx("100.64.1.0/24")} }
+
+// bothScope es el alcance del HOST mientras acepta gente: la sala y el
+// vestíbulo a la vez, cada uno con su adaptador.
+func bothScope() Scope {
+	s := roomScope()
+	s.Lobby = 0x47008000000001
+	return s
+}
+
 func gameRule() domain.FirewallRule {
 	return domain.FirewallRule{
 		Name:   "kanpachi-udp-16261",
@@ -194,7 +203,15 @@ func TestTheLobbyDoorLivesOutsideTheRoomRange(t *testing.T) {
 	var rs domain.RuleSet
 	rs.Rules = append(rs.Rules, r)
 
-	specs, err := SpecsFor(rs, roomScope())
+	// Sin adaptador de vestíbulo esta regla NO se puede emitir, y fallar es lo
+	// correcto: acotarla a la sala la pondría donde no casa, o sea la puerta
+	// cerrada en silencio, y emitirla sin adaptador la pondría en TODOS, o sea
+	// el puerto del canal abierto en la red de casa del usuario.
+	if _, err := SpecsFor(rs, roomScope()); err == nil {
+		t.Fatal("la puerta del vestíbulo se emitió sin adaptador de vestíbulo")
+	}
+
+	specs, err := SpecsFor(rs, bothScope())
 	if err != nil {
 		t.Fatalf("se rechazó la puerta del vestíbulo: %v", err)
 	}
@@ -208,8 +225,12 @@ func TestTheLobbyDoorLivesOutsideTheRoomRange(t *testing.T) {
 	if permiso == nil {
 		t.Fatal("la puerta del vestíbulo no produjo permiso")
 	}
-	if permiso.Conditions.LUID != roomScope().LUID {
-		t.Error("el permiso de la puerta no lleva el adaptador, que es lo único que lo cubre")
+	// Y va acotado al adaptador del VESTÍBULO, que es donde vive esa dirección.
+	// Con el de la sala el filtro se lee perfectamente razonable y no casa con
+	// nada.
+	if permiso.Conditions.LUID != bothScope().Lobby {
+		t.Errorf("el permiso de la puerta lleva el adaptador %#x, y la puerta vive en el "+
+			"del vestíbulo, %#x", permiso.Conditions.LUID, bothScope().Lobby)
 	}
 	if len(permiso.Conditions.RemoteNets) != 1 {
 		t.Errorf("el alcance remoto de la puerta es %v, y es el /24 del vestíbulo entero",
@@ -329,7 +350,7 @@ func TestTheKeyDoesNotDependOnTheGame(t *testing.T) {
 
 func TestTheFixedSlotsAreWhereEnforcementLooks(t *testing.T) {
 	// Medir si la compuerta está puesta preguntando por UNA clave conocida solo
-	// funciona si la ranura cero es siempre el bloqueo por adaptador.
+	// funciona si la ranura cero es siempre el bloqueo por adaptador de la sala.
 	var rs domain.RuleSet
 	rs.Rules = append(rs.Rules, gameRule())
 
@@ -337,13 +358,104 @@ func TestTheFixedSlotsAreWhereEnforcementLooks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if specs[0].Slot != 0 || specs[0].Action != Block || specs[0].Conditions.LUID == 0 {
+	if specs[0].Slot != SlotRoomLUID || specs[0].Action != Block || specs[0].Conditions.LUID == 0 {
 		t.Fatalf("la ranura 0 es %+v, y tiene que ser el bloqueo por adaptador", specs[0])
 	}
-	for i, s := range specs {
-		if s.Slot != i {
-			t.Errorf("el filtro %d dice ocupar la ranura %d", i, s.Slot)
+}
+
+// Los permisos empiezan en la MISMA ranura haya vestíbulo o no, y ese es el
+// punto entero de reservar las ranuras del vestíbulo.
+//
+// Corriéndolas hacia arriba cuando falta, un permiso ocuparía la ranura de un
+// bloqueo del vestíbulo. La limpieza siguiente lo borraría creyendo que barre un
+// bloqueo que ya no aplica, y el síntoma sería un puerto que se cierra solo, sin
+// nada en pantalla que lo explique.
+func TestThePermitsStartAtTheSameSlotWithAndWithoutALobby(t *testing.T) {
+	var rs domain.RuleSet
+	rs.Rules = append(rs.Rules, gameRule())
+
+	for _, c := range []struct {
+		nombre string
+		scope  Scope
+	}{
+		{"sin vestíbulo", roomScope()},
+		{"con vestíbulo", bothScope()},
+	} {
+		specs, err := SpecsFor(rs, c.scope)
+		if err != nil {
+			t.Fatalf("%s: %v", c.nombre, err)
 		}
+		var permiso *FilterSpec
+		for i := range specs {
+			if specs[i].Action == Permit {
+				permiso = &specs[i]
+				break
+			}
+		}
+		if permiso == nil {
+			t.Fatalf("%s: no salió ningún permiso", c.nombre)
+		}
+		if permiso.Slot != FirstPermitSlot {
+			t.Errorf("%s: el primer permiso ocupa la ranura %d, y tiene que ser la %d",
+				c.nombre, permiso.Slot, FirstPermitSlot)
+		}
+	}
+}
+
+// El vestíbulo se cubre con las MISMAS tres capas que la sala, y en sus propias
+// ranuras. Es el adaptador donde llega gente que todavía no es miembro: sin
+// bloqueo ahí, la lista de permitidos vuelve a ser aditiva justo donde puede
+// tocar cualquiera que tenga el código.
+func TestTheLobbyGetsItsOwnBlocks(t *testing.T) {
+	var rs domain.RuleSet
+	rs.Rules = append(rs.Rules, gameRule())
+
+	sinVestíbulo, err := SpecsFor(rs, roomScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range sinVestíbulo {
+		if s.Slot >= SlotLobbyLUID && s.Slot < FirstPermitSlot {
+			t.Errorf("sin vestíbulo salió un filtro en la ranura %d: %q", s.Slot, s.Label)
+		}
+	}
+
+	conVestíbulo, err := SpecsFor(rs, bothScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	porRanura := map[int]FilterSpec{}
+	for _, s := range conVestíbulo {
+		porRanura[s.Slot] = s
+	}
+	for _, r := range []int{SlotLobbyLUID, SlotLobbyNet, SlotLobbyV6} {
+		s, ok := porRanura[r]
+		if !ok {
+			t.Fatalf("falta el bloqueo del vestíbulo en la ranura %d", r)
+		}
+		if s.Action != Block {
+			t.Errorf("la ranura %d del vestíbulo es %v, y tiene que ser un bloqueo", r, s.Action)
+		}
+	}
+	if porRanura[SlotLobbyLUID].Conditions.LUID != bothScope().Lobby {
+		t.Error("el bloqueo por adaptador del vestíbulo no lleva el adaptador del vestíbulo")
+	}
+	// El rango del vestíbulo NO viaja en el alcance: es constante para todas las
+	// salas, y un campo por el que pasarlo sería un campo por el que ensancharlo.
+	if porRanura[SlotLobbyNet].Conditions.LocalNet != domain.RendezvousSubnet {
+		t.Errorf("el bloqueo por rango del vestíbulo acota %v, y el vestíbulo es %v",
+			porRanura[SlotLobbyNet].Conditions.LocalNet, domain.RendezvousSubnet)
+	}
+}
+
+// Los dos adaptadores con el mismo LUID es un nombre mal resuelto, y el
+// resultado sería el bloqueo del vestíbulo puesto sobre la sala: el vestíbulo
+// descubierto, con la compuerta contestando que está puesta.
+func TestTheTwoAdaptersCannotBeTheSameOne(t *testing.T) {
+	s := roomScope()
+	s.Lobby = s.LUID
+	if err := s.Valid(); err == nil {
+		t.Fatal("la sala y el vestíbulo pasaron con el mismo adaptador")
 	}
 }
 

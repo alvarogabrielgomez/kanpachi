@@ -152,8 +152,18 @@ type firewallFalso struct {
 	// a la cuarentena. Un cero ahí es la afirmación de que fue primero.
 	cuarentenaTrasPurgas []int
 
+	// acotado es a qué está acotada la compuerta ahora, y vacío es sin acotar.
+	acotado  netip.Prefix
+	vínculo  domain.RoomBinding
+	vínculos []domain.RoomBinding
+	// abrióSinCompuerta es la afirmación que este falso existe para poder hacer:
+	// si alguna vez se pidió abrir puertos con la compuerta suelta, la lista de
+	// permitidos volvió a ser aditiva y la sala no estaba contenida.
+	abrióSinCompuerta bool
+
 	errApply      error
 	errCuarentena error
+	errBind       error
 }
 
 func (f *firewallFalso) Apply(_ context.Context, rs domain.RuleSet) error {
@@ -162,9 +172,35 @@ func (f *firewallFalso) Apply(_ context.Context, rs domain.RuleSet) error {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if len(rs.Rules) > 0 && !f.acotado.IsValid() {
+		f.abrióSinCompuerta = true
+	}
 	f.aplicado = rs
 	f.aplicaciones++
 	return nil
+}
+
+func (f *firewallFalso) BindRoom(_ context.Context, room netip.Prefix, with domain.RoomBinding) error {
+	if f.errBind != nil {
+		return f.errBind
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.acotado, f.vínculo = room, with
+	f.vínculos = append(f.vínculos, with)
+	return nil
+}
+
+func (f *firewallFalso) UnbindRoom() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.acotado, f.vínculo = netip.Prefix{}, 0
+}
+
+func (f *firewallFalso) alcance() (netip.Prefix, domain.RoomBinding) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.acotado, f.vínculo
 }
 
 func (f *firewallFalso) veces() int {

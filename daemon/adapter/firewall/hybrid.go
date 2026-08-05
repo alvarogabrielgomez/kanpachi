@@ -101,13 +101,34 @@ type Firewall struct {
 	// objeto. Existe para que el primer Apply sin sala barra igual: un daemon
 	// que murió sucio dejó filtros puestos, porque la sesión no es dinámica.
 	swept bool
+
+	// luidOf traduce el nombre de un adaptador al LUID que entiende WFP.
+	//
+	// Se INYECTA para que este fichero siga siendo puro: resolverlo es una
+	// llamada a Windows, y lo que se decide acá es el orden de las dos capas y
+	// qué pasa cuando una falla, que se prueba sin Windows. El cableado le pasa
+	// [wfp.LUIDOf].
+	luidOf LUIDResolver
 }
 
-func New(permits Permits, audit PermitAudit, gate Gate, log Logger) (*Firewall, error) {
+// LUIDResolver traduce el nombre de un adaptador al LUID que entiende WFP.
+//
+// Devuelve error y jamás cero: un LUID cero no es "sin adaptador", es TODAS las
+// interfaces, y con un bloqueo duro eso deja al usuario sin su red de casa.
+type LUIDResolver func(name string) (uint64, error)
+
+func New(permits Permits, audit PermitAudit, gate Gate, log Logger, luidOf LUIDResolver) (*Firewall, error) {
 	if permits == nil || audit == nil || gate == nil || log == nil {
 		return nil, fmt.Errorf("el firewall necesita las dos capas, su auditoría y un log")
 	}
-	return &Firewall{permits: permits, audit: audit, gate: gate, log: log}, nil
+	if luidOf == nil {
+		// Sin resolver, `BindRoom` no puede acotar nada, o sea que la compuerta
+		// no se pone nunca y el fallo aparecería recién al abrir una sala, con
+		// la red virtual ya arriba.
+		return nil, fmt.Errorf("el firewall necesita resolver el nombre del adaptador a LUID, " +
+			"o la compuerta no se puede acotar")
+	}
+	return &Firewall{permits: permits, audit: audit, gate: gate, log: log, luidOf: luidOf}, nil
 }
 
 // La comprobación de que esto sigue encajando en el puerto. Si cambia una firma
@@ -123,16 +144,25 @@ var _ port.FirewallPort = (*Firewall)(nil)
 // adaptador con los permisos y sin compuerta, o sea el agujero abierto, y una
 // pantalla que dice que todo está puesto porque las dos capas contestan que sí.
 //
-// Se llama cuando el motor crea el adaptador. Antes de eso la compuerta no
-// existe, y eso no es un fallo: es el estado normal de un daemon recién
-// arrancado.
+// Recibe el adaptador YA RESUELTO, así que es lo que usan las herramientas de
+// medición, que trabajan sobre un adaptador que eligieron a mano. El producto
+// entra por [Firewall.BindRoom], que resuelve las constantes del dominio y
+// además cubre el vestíbulo.
 func (f *Firewall) SetScope(adapter string, luid uint64, room netip.Prefix) error {
-	scope := wfp.Scope{LUID: luid, Net: room}
-	if err := scope.Valid(); err != nil {
-		return fmt.Errorf("el alcance de la sala no sirve para acotar: %w", err)
-	}
 	if adapter == "" {
 		return fmt.Errorf("los permisos necesitan el NOMBRE del adaptador, y llegó vacío")
+	}
+	return f.setScope(wfp.Scope{LUID: luid, Net: room}, adapter)
+}
+
+// setScope es la única puerta por la que se acota, y valida SIEMPRE.
+//
+// Estar sola importa: un alcance que entrara sin pasar por `Valid` podría
+// llevar `0.0.0.0/0`, y un bloqueo duro con ese alcance deja al usuario sin la
+// entrada de su red de casa sin que nada se vea raro leyendo el código.
+func (f *Firewall) setScope(scope wfp.Scope, adapter string) error {
+	if err := scope.Valid(); err != nil {
+		return fmt.Errorf("el alcance de la sala no sirve para acotar: %w", err)
 	}
 
 	f.mu.Lock()
@@ -151,6 +181,52 @@ func (f *Firewall) ClearScope() {
 	f.permits.SetAdapter("")
 	f.scope = wfp.Scope{}
 }
+
+// BindRoom es [port.FirewallPort.BindRoom]: acota las dos capas a los
+// adaptadores que el motor acaba de crear.
+//
+// # Por qué acá no viaja ningún nombre
+//
+// Los adaptadores son [domain.AdapterName] y [domain.LobbyAdapterName],
+// constantes del dominio, y este método las resuelve a LUID con la función que
+// le inyectó el cableado de Windows. Aceptar el nombre por parámetro dejaría al
+// caso de uso eligiendo a qué adaptador se acota un BLOQUEO DURO, que es la
+// decisión que separa contener la sala de dejar al usuario sin su red de casa.
+//
+// Que el vestíbulo falte no es un fallo: el invitado lo suelta al entrar. Que
+// falte cuando se pidió, sí.
+func (f *Firewall) BindRoom(ctx context.Context, room netip.Prefix, with domain.RoomBinding) error {
+	_ = ctx // resolver un nombre a LUID no espera por nada
+
+	if f.luidOf == nil {
+		return fmt.Errorf("el firewall se construyó sin resolver de adaptadores, así que la " +
+			"compuerta no se puede acotar y no hay forma de contener la sala")
+	}
+
+	luid, err := f.luidOf(domain.AdapterName)
+	if err != nil {
+		return fmt.Errorf("no se encontró el adaptador %s de la sala: %w", domain.AdapterName, err)
+	}
+	scope := wfp.Scope{LUID: luid, Net: room}
+
+	if with == domain.BindRoomAndLobby {
+		lobby, err := f.luidOf(domain.LobbyAdapterName)
+		if err != nil {
+			return fmt.Errorf("no se encontró el adaptador %s del vestíbulo, que es donde "+
+				"llega gente que todavía no es miembro: %w", domain.LobbyAdapterName, err)
+		}
+		scope.Lobby = lobby
+	}
+
+	if err := f.setScope(scope, domain.AdapterName); err != nil {
+		return err
+	}
+	f.log.Info("la compuerta quedó acotada", "sala", room.String(), "alcance", with.String())
+	return nil
+}
+
+// UnbindRoom es [port.FirewallPort.UnbindRoom].
+func (f *Firewall) UnbindRoom() { f.ClearScope() }
 
 // Apply lleva las dos capas al conjunto deseado.
 //
@@ -184,6 +260,24 @@ func (f *Firewall) Apply(ctx context.Context, desired domain.RuleSet) error {
 	}
 
 	if specs == nil {
+		// # Sin compuerta no se abre NADA. Falla en la cara
+		//
+		// Esto antes dejaba un aviso en el log y escribía los permisos igual, o
+		// sea que la lista de permitidos volvía a ser ADITIVA justo cuando había
+		// puertos que abrir: una regla ajena de escritorio remoto alcanzando al
+		// usuario por la red virtual, con la pantalla diciendo que la sala está
+		// configurada.
+		//
+		// El conjunto VACÍO sigue pasando, y no es una excepción: sin nada que
+		// abrir no hay nada que acotar. Ese es el caso normal del daemon en
+		// reposo, y es también lo que garantiza que la interfaz virtual nazca
+		// sin nada abierto.
+		if len(desired.Rules) > 0 {
+			return fmt.Errorf("hay %d regla(s) que abrir y la compuerta no está acotada a "+
+				"ningún adaptador, así que no habría nada que las contenga. No se abre nada",
+				len(desired.Rules))
+		}
+
 		// Sin adaptador no hay red virtual, así que no hay nada que contener. Se
 		// PURGA en vez de dejar lo anterior: filtros de una sala que ya no existe
 		// no protegen nada y no se ven en ninguna herramienta del sistema.
@@ -198,8 +292,6 @@ func (f *Firewall) Apply(ctx context.Context, desired domain.RuleSet) error {
 			}
 			f.last, f.swept = nil, true
 		}
-		f.log.Warn("la compuerta no se puso porque todavía no hay adaptador de la sala, " +
-			"así que la contención es solo la de las reglas del firewall")
 	} else {
 		if err := f.gate.Apply(ctx, specs); err != nil {
 			return fmt.Errorf("la compuerta no se pudo poner, así que no se abrió nada: %w", err)

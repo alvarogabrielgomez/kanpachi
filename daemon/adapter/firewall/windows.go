@@ -54,7 +54,10 @@ func NewWindows(dataDir string, log Logger) (*Firewall, func() error, error) {
 		return nil, nil, fmt.Errorf("abriendo la compuerta: %w", err)
 	}
 
-	fw, err := New(permits, windowscom.NewAudit(permits), gate, log)
+	// El resolver de LUID entra ACÁ y no dentro de `hybrid.go`: resolver un
+	// nombre a LUID es una llamada a Windows, y lo que decide `hybrid.go` es el
+	// orden de las dos capas y qué pasa cuando una falla, que se prueba en Linux.
+	fw, err := New(permits, windowscom.NewAudit(permits), gate, log, wfp.LUIDOf)
 	if err != nil {
 		_ = gate.Close()
 		_ = permits.Close()

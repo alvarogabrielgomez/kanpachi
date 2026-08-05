@@ -450,14 +450,33 @@ func (g *Gate) Measure(ctx context.Context, want []FilterSpec) (Measurement, err
 
 	out := Measurement{Gate: domain.GateUnknown}
 
-	present, err := g.present(guidOf(GateKey()))
-	if err != nil {
-		return out, err
+	// Se pregunta por la ranura de la sala SIEMPRE, y por la del vestíbulo solo
+	// cuando se pidió.
+	//
+	// Esa condición es lo que separa "no aplica" de "falta". El vestíbulo no
+	// está en una sala de invitado, que lo soltó al entrar a propósito: buscarlo
+	// ahí y no encontrarlo diría que la compuerta está ausente cuando está
+	// entera. Y al revés, con el vestíbulo pedido y su bloqueo caído, contestar
+	// que está puesta sería pintar de verde media compuerta, justo en el
+	// adaptador donde llega gente que todavía no es miembro.
+	claves := [][16]byte{GateKey()}
+	for _, s := range want {
+		if s.Slot == SlotLobbyLUID {
+			claves = append(claves, LobbyGateKey())
+			break
+		}
 	}
-	if present {
-		out.Gate = domain.GatePresent
-	} else {
-		out.Gate = domain.GateAbsent
+
+	out.Gate = domain.GatePresent
+	for _, k := range claves {
+		present, err := g.present(guidOf(k))
+		if err != nil {
+			return Measurement{Gate: domain.GateUnknown}, err
+		}
+		if !present {
+			out.Gate = domain.GateAbsent
+			break
+		}
 	}
 
 	for _, s := range want {

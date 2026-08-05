@@ -92,6 +92,35 @@ try {
     & (Join-Path $Stage 'kanpctl.exe') -data $Data status 2>&1 | ForEach-Object { Write-Host "  $_" }
     $ErrorActionPreference = $antes
 
+    # La compuerta se le pregunta al SISTEMA, no al daemon.
+    #
+    # Un filtro de WFP no sale en wf.msc ni en Get-NetFirewallRule, asi que la
+    # unica forma de verlo desde fuera del producto es netsh. Preguntarle al
+    # daemon si puso la compuerta seria preguntarle a quien la puso, y esa
+    # respuesta ya la da su propio log.
+    Paso "la compuerta, preguntandole a WFP"
+    $antes = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $wfp = & netsh.exe wfp show filters file=- 2>&1 | Out-String
+    $ErrorActionPreference = $antes
+
+    $bloqueos = @(
+        @{ que = 'sala, por adaptador'; patron = 'bloqueo de todo, por adaptador de la sala' },
+        @{ que = 'sala, por rango';     patron = 'bloqueo de todo, por rango de la sala' },
+        @{ que = 'sala, IPv6';          patron = 'bloqueo de todo IPv6, por adaptador de la sala' },
+        @{ que = 'vestibulo, por adaptador'; patron = 'bloqueo de todo, por adaptador del vest' },
+        @{ que = 'vestibulo, por rango';     patron = 'bloqueo de todo, por rango del vest' },
+        @{ que = 'vestibulo, IPv6';          patron = 'bloqueo de todo IPv6, por adaptador del vest' }
+    )
+    foreach ($b in $bloqueos) {
+        if ($wfp -match [regex]::Escape($b.patron)) { Bien "puesto: $($b.que)" }
+        else { Mal "FALTA el bloqueo de $($b.que)"; $fallos++ }
+    }
+    # Y al menos un permiso espejo, o la compuerta estaria cerrando el canal de
+    # control del propio host.
+    if ($wfp -match 'permiso espejo') { Bien "hay permisos espejo" }
+    else { Mal "no hay ni un permiso espejo: la compuerta cierra hasta lo nuestro"; $fallos++ }
+
     # Aqui esta el punto del script. Con la sala viva, netcfgprobe corre los
     # caminos que la sala sola jamas ejercita.
     Paso "netcfgprobe: los caminos que una sala no ejercita"

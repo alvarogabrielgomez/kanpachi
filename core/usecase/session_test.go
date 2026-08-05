@@ -229,6 +229,94 @@ func TestElJuegoAbreLosPuertosCuandoEntraAlguien(t *testing.T) {
 	}
 }
 
+// La compuerta se acota ANTES de que se abra un solo puerto, y este test
+// afirma la consecuencia y no la llamada.
+//
+// El fallo que congela no es "no se llamó a BindRoom": es que con la compuerta
+// suelta, la lista de permitidos vuelve a ser ADITIVA, y ahí una regla ajena de
+// escritorio remoto alcanza al usuario por la red virtual. Por eso el falso
+// levanta la bandera dentro de `Apply`, mirando si había alcance en el momento
+// de abrir, en vez de contar invocaciones.
+//
+// El host se acota a los DOS adaptadores. El vestíbulo es donde llega gente que
+// todavía no es miembro, o sea el que menos puede quedarse sin compuerta.
+func TestLaCompuertaSeAcotaAntesDeAbrirNada(t *testing.T) {
+	b := salaCreada(t)
+	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+		t.Fatal(err)
+	}
+
+	if b.firewall.abrióSinCompuerta {
+		t.Error("se abrieron puertos con la compuerta suelta, o sea sin nada que los acote")
+	}
+	red, vínculo := b.firewall.alcance()
+	if red != b.sesión.Status().Subnet {
+		t.Errorf("la compuerta quedó acotada a %v y la sala es %v", red, b.sesión.Status().Subnet)
+	}
+	if vínculo != domain.BindRoomAndLobby {
+		t.Errorf("el host se acotó a %v, y tiene sala y vestíbulo", vínculo)
+	}
+}
+
+// El invitado TAMBIÉN acota la compuerta, y con la sala sola.
+//
+// No es un extra: `BuildRuleSet` le abre sus `ClientPorts`, o sea que un
+// invitado también escribe permisos y también necesita quién los acote frente a
+// los demás miembros. Y va sin vestíbulo porque lo soltó al entrar, a propósito:
+// quedarse ahí mantendría abierta una vía por la que un desconocido con el
+// código ve que esta máquina está en esa sala.
+func TestElInvitadoAcotaLaCompuertaALaSalaSola(t *testing.T) {
+	b := nuevoBanco(t)
+	b.control.credencial = domain.Credential{
+		ID: "c1", Token: "t", NetworkName: "kanpachi-real",
+		VirtualIP: netip.MustParseAddr("100.87.3.5"),
+		Subnet:    netip.MustParsePrefix("100.87.3.0/24"),
+	}
+	if _, err := b.sesión.JoinRoom(ctx(), "kanpachi://A7K2-M9QX", nick(t, "humberto")); err != nil {
+		t.Fatal(err)
+	}
+
+	if b.firewall.abrióSinCompuerta {
+		t.Error("el invitado abrió puertos con la compuerta suelta")
+	}
+	red, vínculo := b.firewall.alcance()
+	if red != b.sesión.Status().Subnet {
+		t.Errorf("la compuerta quedó acotada a %v y la sala es %v", red, b.sesión.Status().Subnet)
+	}
+	if vínculo != domain.BindRoomOnly {
+		t.Errorf("el invitado se acotó a %v, y ya soltó el vestíbulo", vínculo)
+	}
+}
+
+// Y salir la suelta, DESPUÉS de cerrar los puertos.
+func TestSalirSueltaLaCompuerta(t *testing.T) {
+	b := salaCreada(t)
+	if red, _ := b.firewall.alcance(); !red.IsValid() {
+		t.Fatal("este test no prueba nada: la compuerta ya estaba suelta")
+	}
+	b.sesión.LeaveRoom(ctx())
+	if red, _ := b.firewall.alcance(); red.IsValid() {
+		t.Errorf("la compuerta quedó acotada a %v con la sala cerrada", red)
+	}
+}
+
+// Un fallo al acotar la compuerta NO abre la sala.
+//
+// Es la diferencia con los ajustes del adaptador, que sí son best effort: un
+// MTU mal puesto degrada la partida, y una sala sin compuerta miente sobre lo
+// único que este producto promete.
+func TestSinCompuertaNoHaySala(t *testing.T) {
+	b := nuevoBanco(t)
+	b.firewall.errBind = errors.New("no se encontró el adaptador")
+
+	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Prueba"); err == nil {
+		t.Fatal("la sala se abrió sin compuerta")
+	}
+	if st := b.sesión.Status(); st.Conn != domain.StateIdle {
+		t.Errorf("el estado quedó en %s en vez de volver a idle", st.Conn)
+	}
+}
+
 // TestElPerfilLlevaSusAjustesAlAdaptador, y quitarlo los revierte sin que
 // nadie tenga que deshacerlos uno por uno.
 func TestElPerfilLlevaSusAjustesAlAdaptador(t *testing.T) {
