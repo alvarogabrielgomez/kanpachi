@@ -12,10 +12,12 @@
 //   - No existe crear ni borrar mapeos en el router. ExposureAudit solo lee.
 //   - No existe observar procesos. SocketInspector saca una foto puntual y
 //     únicamente lo llama el creador de perfiles.
-//   - No existe aplicar la cuarentena de base. La pone el instalador y el daemon
-//     jamás la toca, así que sigue puesta con el servicio detenido. Tampoco
-//     podría: necesita bloqueo y salida, y [domain.FirewallRule] no tiene cómo
-//     expresar ninguno de los dos. Ver [domain.FirewallGroupBase].
+//   - No existe BORRAR la cuarentena de base. El daemon la escribe y la repone
+//     en cada arranque, porque no hay instalador que la ponga, y no tiene cómo
+//     quitarla: [FirewallPort.ApplyBaseQuarantine] solo agrega. Por eso sigue
+//     puesta con el servicio detenido. Y no cabe en un RuleSet aunque se
+//     quisiera: necesita bloqueo y salida, y [domain.FirewallRule] no puede
+//     expresar ninguno de los dos. Ver [domain.QuarantineRule].
 //
 // Lo que no existe en la interfaz no se puede llamar por error.
 package port
@@ -109,15 +111,31 @@ type FirewallPort interface {
 	// Con un recuerdo en memoria, reaplicar un conjunto igual sería un no-op y
 	// la autorreparación del módulo de exposición no existiría.
 	Apply(ctx context.Context, desired domain.RuleSet) error
+
+	// ApplyBaseQuarantine escribe la cuarentena de base y REPONE lo que falte.
+	//
+	// **No existe el método para borrarla, y esa ausencia es la protección.** Lo
+	// que la cuarentena vale es seguir puesta con el daemon detenido, así que la
+	// capacidad de quitarla no puede vivir en la interfaz que el daemon usa. Un
+	// guardián en internal/arch falla si aparece un método que junte un verbo
+	// destructivo con "Base" o "Quarantine".
+	//
+	// Es aditivo y IDEMPOTENTE: agrega lo que falta y no toca lo que ya está.
+	// Llamarlo con la cuarentena entera puesta no escribe nada.
+	//
+	// Lo llama [NewSession] al arrancar, ANTES de PurgeOwned. Antes y no después
+	// porque la purga es el instante de menos protección de todo el arranque,
+	// con las reglas de la sala anterior cayendo.
+	ApplyBaseQuarantine(ctx context.Context, rules []domain.QuarantineRule) error
+
 	// PurgeOwned borra todo lo etiquetado con [domain.FirewallGroup]. Se llama al
 	// arrancar el servicio, antes de aplicar nada: una muerte sucia del daemon
 	// nunca deja puertos huérfanos abiertos.
 	//
-	// **Jamás toca [domain.FirewallGroupBase].** Esa es la cuarentena que puso el
-	// instalador, y es lo único que protege la máquina mientras el daemon no
-	// corre: si la purga se la llevara, cada reinicio del servicio desarmaría la
-	// protección, y el fallo sería invisible porque todo seguiría funcionando
-	// igual.
+	// **Jamás toca [domain.FirewallGroupBase].** Esa es la cuarentena de base, y
+	// es lo único que protege la máquina mientras el daemon no corre: si la purga
+	// se la llevara, cada reinicio del servicio desarmaría la protección, y el
+	// fallo sería invisible porque todo seguiría funcionando igual.
 	//
 	// La comparación es por IGUALDAD EXACTA del grupo, jamás por prefijo.
 	// "Kanpachi" es prefijo de "Kanpachi-base", así que un HasPrefix acá borra la

@@ -47,19 +47,27 @@ func (d *diario) antes(t *testing.T, a, b string) bool {
 }
 
 type permisosFalsos struct {
-	d           *diario
-	adaptador   string
-	fallaApply  error
-	fallaPurga  error
-	fallaMedida error
-	reglas      []domain.AppliedRule
-	aplicado    domain.RuleSet
+	d               *diario
+	adaptador       string
+	fallaApply      error
+	fallaPurga      error
+	fallaMedida     error
+	fallaCuarentena error
+	reglas          []domain.AppliedRule
+	aplicado        domain.RuleSet
+	cuarentena      []domain.QuarantineRule
 }
 
 func (p *permisosFalsos) Apply(_ context.Context, desired domain.RuleSet) error {
 	p.d.anota("permisos.apply")
 	p.aplicado = desired
 	return p.fallaApply
+}
+
+func (p *permisosFalsos) ApplyBaseQuarantine(_ context.Context, r []domain.QuarantineRule) error {
+	p.d.anota("permisos.cuarentena")
+	p.cuarentena = r
+	return p.fallaCuarentena
 }
 
 func (p *permisosFalsos) PurgeOwned(context.Context) error {
@@ -428,5 +436,59 @@ func TestClearScopeForgetsBothLayers(t *testing.T) {
 	}
 	if err := fw.scope.Valid(); err == nil {
 		t.Error("la compuerta sigue creyendo que hay sala")
+	}
+}
+
+// TestLaCuarentenaVaSoloALaCapaDeLosPermisos.
+//
+// Es la única operación de este adaptador que NO toca las dos capas, y esa
+// asimetría es lo que hace que la cuarentena valga.
+//
+// La compuerta es un filtro de WFP en una sesión DINÁMICA del motor de filtrado:
+// se cae con el proceso, y eso es a propósito, porque es lo que impide que un
+// daemon muerto deje la máquina bloqueada. Justo por eso no puede sostener la
+// cuarentena, que tiene que seguir puesta con Kanpachi apagado. Las reglas del
+// Firewall de Windows sí sobreviven al reinicio, y esa persistencia es la única
+// propiedad que acá se necesita.
+//
+// Escribirla también en la compuerta sería peor que inútil: se leería como
+// protección en el código y desaparecería en el primer cierre del servicio, que
+// es exactamente cuando la cuarentena tiene que estar haciendo su trabajo.
+func TestLaCuarentenaVaSoloALaCapaDeLosPermisos(t *testing.T) {
+	fw, d, p, _ := armado(t)
+
+	if err := fw.ApplyBaseQuarantine(context.Background(), domain.BaseQuarantine()); err != nil {
+		t.Fatalf("aplicando la cuarentena: %v", err)
+	}
+
+	if !d.contiene("permisos.cuarentena") {
+		t.Fatal("la cuarentena no llegó a la capa de permisos, que es la única que sobrevive al proceso")
+	}
+	for _, paso := range d.pasos {
+		if strings.HasPrefix(paso, "compuerta.") {
+			t.Errorf("la cuarentena tocó la compuerta con %q. Los filtros de WFP viven en "+
+				"una sesión dinámica y se caen con el proceso, así que ahí la cuarentena "+
+				"se leería como protección y no estaría puesta con el daemon parado", paso)
+		}
+	}
+	if len(p.cuarentena) != len(domain.BaseQuarantine()) {
+		t.Errorf("llegaron %d reglas y el dominio produce %d: la capa de permisos "+
+			"recibe la cuarentena entera y no un recorte",
+			len(p.cuarentena), len(domain.BaseQuarantine()))
+	}
+}
+
+// TestUnFalloDeLaCuarentenaSube.
+//
+// Se lo traga nadie: el arranque del daemon lo trata como fatal, y para eso
+// tiene que llegar. Un nil acá haría que el daemon arrancara creyendo la máquina
+// protegida.
+func TestUnFalloDeLaCuarentenaSube(t *testing.T) {
+	fw, _, p, _ := armado(t)
+	p.fallaCuarentena = errors.New("acceso denegado")
+
+	if err := fw.ApplyBaseQuarantine(context.Background(), domain.BaseQuarantine()); err == nil {
+		t.Fatal("el fallo de la cuarentena no subió, así que el daemon arrancaría " +
+			"creyendo la máquina protegida")
 	}
 }

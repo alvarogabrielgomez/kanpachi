@@ -35,6 +35,9 @@ import (
 // Permits es la capa que ABRE.
 type Permits interface {
 	Apply(ctx context.Context, desired domain.RuleSet) error
+	// ApplyBaseQuarantine es la ÚNICA de esta interfaz que no es de la sala.
+	// Escribe lo que falte de la cuarentena de base y no borra nada.
+	ApplyBaseQuarantine(ctx context.Context, rules []domain.QuarantineRule) error
 	PurgeOwned(ctx context.Context) error
 	AuditForeign(ctx context.Context, p domain.GameProfile) ([]domain.ForeignRule, error)
 	SuspendForeign(ctx context.Context, rules []domain.ForeignRule) error
@@ -205,6 +208,22 @@ func (f *Firewall) Apply(ctx context.Context, desired domain.RuleSet) error {
 	}
 
 	return f.permits.Apply(ctx, desired)
+}
+
+// ApplyBaseQuarantine va SOLO a la capa de permisos, y esa asimetría con Apply
+// es lo que hace que la cuarentena valga.
+//
+// La compuerta es un filtro de WFP acotado al adaptador virtual, y se cae con el
+// proceso: sus filtros viven en una sesión dinámica del motor de filtrado, que
+// es lo que impide que un daemon muerto deje la máquina bloqueada. Justo por eso
+// no puede sostener la cuarentena, que tiene que seguir puesta con Kanpachi
+// apagado. Las reglas del Firewall de Windows sí sobreviven al reinicio, y esa
+// persistencia es la única propiedad que aquí se necesita.
+//
+// No toma el candado de las dos capas: no lee ni escribe `last` ni `swept`, que
+// es lo único que ese candado protege.
+func (f *Firewall) ApplyBaseQuarantine(ctx context.Context, rules []domain.QuarantineRule) error {
+	return f.permits.ApplyBaseQuarantine(ctx, rules)
 }
 
 // PurgeOwned borra lo de las dos capas, y en el orden inverso al de Apply.

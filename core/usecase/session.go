@@ -261,6 +261,20 @@ func NewSession(ctx context.Context, d Deps) (*Session, error) {
 	}
 	s := &Session{deps: d, canaryDue: make(chan struct{}, 1)}
 
+	// La cuarentena de base va ANTES de la purga, y el orden es de seguridad.
+	//
+	// La purga es el instante de menos protección de todo el arranque: se lleva
+	// las reglas de la sala anterior y todavía no hay ninguna nueva. Poner la
+	// cuarentena primero es lo que hace que ese hueco esté cubierto.
+	//
+	// Y es fatal, igual que el fallo de la purga tres líneas más abajo. Un
+	// daemon que no pudo escribir la cuarentena es un daemon con la promesa
+	// apagada, y seguir arrancando dejaría al usuario con la app abierta,
+	// diciendo que todo está bien, sobre una máquina sin lo único que la protege
+	// con el servicio detenido.
+	if err := d.Firewall.ApplyBaseQuarantine(ctx, domain.BaseQuarantine()); err != nil {
+		return nil, fmt.Errorf("escribiendo la cuarentena de base: %w", err)
+	}
 	if err := d.Firewall.PurgeOwned(ctx); err != nil {
 		return nil, fmt.Errorf("purgando las reglas de la ejecución anterior: %w", err)
 	}

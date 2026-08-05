@@ -156,12 +156,7 @@ func protocolOf(p domain.Proto) (int32, error) {
 
 // portsOf renders the range the way Windows wants it: a single port on its own,
 // a range with a dash.
-func portsOf(r domain.FirewallRule) string {
-	if r.From == r.To {
-		return fmt.Sprintf("%d", r.From)
-	}
-	return fmt.Sprintf("%d-%d", r.From, r.To)
-}
+func portsOf(r domain.FirewallRule) string { return portRange(r.From, r.To) }
 
 // remoteOf renders who may reach the rule.
 //

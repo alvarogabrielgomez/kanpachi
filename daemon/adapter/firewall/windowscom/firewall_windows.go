@@ -143,6 +143,111 @@ func (f *Firewall) Apply(ctx context.Context, desired domain.RuleSet) error {
 	})
 }
 
+// ApplyBaseQuarantine writes what is missing from the base quarantine.
+//
+// # It only ever ADDS, and that is the whole design
+//
+// There is no path in here that removes a rule, and none that could be made to.
+// What makes the quarantine worth having is that it stays up with the daemon
+// stopped, disabled, or half uninstalled, so the capability to take it down must
+// not exist in the process that runs as SYSTEM every minute of the day. Taking
+// it down is the uninstaller's job, and the uninstaller is not this.
+//
+// # The one thing it repairs, and why that is not a deletion
+//
+// A rule of ours that is present but DISABLED is worse than a missing one: it
+// looks applied to anything counting by name and it opens the port. So a
+// disabled rule of our own group gets switched back on, in place, through the
+// exact object the enumeration handed us. That is the same precise handle
+// `retire` uses to disable, run backwards. Nothing is removed and nothing that
+// is not ours is touched: the group is checked on the object itself.
+//
+// A rule whose SCOPE drifted is logged and left alone. Rewriting it would mean
+// deleting it first, and the invariant above is worth more than closing an edit
+// that an administrator made deliberately on their own machine.
+func (f *Firewall) ApplyBaseQuarantine(ctx context.Context, quarantine []domain.QuarantineRule) error {
+	want, err := QuarantineSpecs(quarantine)
+	if err != nil {
+		return err
+	}
+	if len(want) == 0 {
+		// Never silently. An empty quarantine is a machine with the promise
+		// switched off, and it can only come from a bug upstream.
+		return fmt.Errorf("the base quarantine came out empty, so nothing would be blocked")
+	}
+
+	all, err := f.liveRules(ctx)
+	if err != nil {
+		return err
+	}
+	live := make(map[string]liveRule, len(all))
+	for _, c := range all {
+		if c.Group == domain.FirewallGroupBase {
+			live[c.Name] = c
+		}
+	}
+
+	return f.ap.do(ctx, func(policy *ole.IDispatch) error {
+		rules, err := rulesOf(policy)
+		if err != nil {
+			return err
+		}
+		defer rules.Release()
+
+		var written, reenabled int
+		for _, s := range want {
+			l, ok := live[s.Name]
+			if !ok {
+				if err := addRule(rules, s); err != nil {
+					return fmt.Errorf("writing quarantine rule %q: %w", s.Name, err)
+				}
+				written++
+				continue
+			}
+			if !l.Enabled {
+				if err := f.reenable(rules, s.Name); err != nil {
+					return err
+				}
+				reenabled++
+				continue
+			}
+			if !l.spec().sameScope(s) {
+				f.log.Warn("una regla de la cuarentena de base está puesta y no dice lo que debería. "+
+					"No se reescribe: quitarla para volver a ponerla es la única capacidad que "+
+					"este método no puede tener",
+					"regla", s.Name)
+			}
+		}
+		if written > 0 || reenabled > 0 {
+			f.log.Info("cuarentena de base repuesta",
+				"escritas", written, "reactivadas", reenabled, "total", len(want))
+		}
+		return nil
+	})
+}
+
+// reenable switches one of OUR quarantine rules back on, in place.
+//
+// The group is checked on the rule object itself and not on the name, because
+// the name is the one thing Windows lets unrelated rules share. That check is
+// what makes this incapable of touching somebody else's configuration.
+func (f *Firewall) reenable(rules *ole.IDispatch, name string) error {
+	return eachRule(rules, func(rule *ole.IDispatch) (bool, error) {
+		r := propReader{rule: rule}
+		ruleName, group := r.str("Name"), r.str("Grouping")
+		if err := r.Err(); err != nil {
+			return false, err
+		}
+		if ruleName != name || group != domain.FirewallGroupBase {
+			return true, nil
+		}
+		if _, err := oleutil.PutProperty(rule, "Enabled", true); err != nil {
+			return false, fmt.Errorf("re-enabling quarantine rule %q: %w", name, err)
+		}
+		return true, nil
+	})
+}
+
 // retire takes one of our rules out of service, and says whether it is GONE.
 //
 // # Why this is not just Remove

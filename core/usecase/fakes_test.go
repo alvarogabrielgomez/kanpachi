@@ -147,7 +147,13 @@ type firewallFalso struct {
 	suspendió    []domain.ForeignRule
 	ajenas       []domain.ForeignRule
 
-	errApply error
+	cuarentena []domain.QuarantineRule
+	// cuarentenaTrasPurgas lleva cuántas purgas se habían hecho en cada llamada
+	// a la cuarentena. Un cero ahí es la afirmación de que fue primero.
+	cuarentenaTrasPurgas []int
+
+	errApply      error
+	errCuarentena error
 }
 
 func (f *firewallFalso) Apply(_ context.Context, rs domain.RuleSet) error {
@@ -171,6 +177,26 @@ func (f *firewallFalso) estado() domain.RuleSet {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.aplicado
+}
+
+func (f *firewallFalso) ApplyBaseQuarantine(_ context.Context, rules []domain.QuarantineRule) error {
+	if f.errCuarentena != nil {
+		return f.errCuarentena
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	// Se anota CUÁNTAS purgas había cuando se llamó, y no solo que se llamó.
+	// El orden es lo que se quiere afirmar: la cuarentena tiene que entrar antes
+	// de que la purga deje la máquina sin las reglas de la sala anterior.
+	f.cuarentenaTrasPurgas = append(f.cuarentenaTrasPurgas, f.purgas)
+	f.cuarentena = rules
+	return nil
+}
+
+func (f *firewallFalso) cuarentenaPuesta() []domain.QuarantineRule {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.cuarentena
 }
 
 func (f *firewallFalso) PurgeOwned(context.Context) error {
@@ -966,6 +992,21 @@ const catálogoDePrueba = `{"kanpachi_catalog":1,"profiles":[
 ]}`
 
 func nuevoBanco(t interface{ Fatalf(string, ...any) }) *banco {
+	b := bancoSinSesión()
+	s, err := NewSession(context.Background(), b.deps)
+	if err != nil {
+		t.Fatalf("no se pudo montar la sesión: %v", err)
+	}
+	b.sesión = s
+	return b
+}
+
+// bancoSinSesión arma los dobles y las Deps SIN llamar a NewSession.
+//
+// Existe aparte porque hay cosas que solo se pueden afirmar sobre el arranque
+// mismo, y para eso hace falta poder cambiar un doble antes de que corra y poder
+// ver fallar la construcción sin que el banco aborte el test.
+func bancoSinSesión() *banco {
 	b := &banco{
 		motor:     nuevoMotor(),
 		firewall:  &firewallFalso{},
@@ -1003,11 +1044,6 @@ func nuevoBanco(t interface{ Fatalf(string, ...any) }) *banco {
 		// iguales, y que el test sea el mismo en cada ejecución.
 		Rand: bytes.NewReader(bytes.Repeat([]byte{0x11}, 1<<16)),
 	}
-	s, err := NewSession(context.Background(), b.deps)
-	if err != nil {
-		t.Fatalf("no se pudo montar la sesión: %v", err)
-	}
-	b.sesión = s
 	return b
 }
 
