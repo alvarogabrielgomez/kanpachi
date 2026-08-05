@@ -809,6 +809,47 @@ trabajando bien. Una sala levanta DOS adaptadores, cada uno tarda unos 5 s en
 tomar dirección, y encima va el sondeo del MTU. El síntoma era `i/o timeout`
 con la sala ya creada.
 
+## Los cuatro fallos del motor, de punta a punta, y los dos que salieron de ahí
+
+Medido el 2026-08-05 con `scripts/medir-motor-punta-a-punta.ps1`, contra
+`kanpachi.accentio.dev`, con el producto entero corriendo:
+
+| Fallo | Cómo se ejercita | Resultado |
+|---|---|---|
+| El canal de eventos leído como muerte | daemon en reposo, sin sala, doce segundos | ni un reinicio, ni un motor levantado |
+| El contexto de vida del proceso | matar el motor a lo bruto | vuelve, y la sala vuelve a `connected` |
+| La salida por stdin | cerrar el daemon limpio | sin motores huérfanos ni adaptadores sueltos |
+| Basura por el canal de órdenes | método inexistente | error con id, y el daemon en pie |
+
+La primera corrida dio verde en los cuatro **y el log tenía un fallo real que el
+script no miraba**:
+
+```
+error aplicando las reglas de firewall: writing rule "Kanpachi: canal de control
+puerta": no adapter on this machine is called [kanpachi1]
+```
+
+Tras reiniciar volvía la sala y **no volvía el vestíbulo**, porque el motor
+guardaba una sola orden de arranque. El script solo comprobaba `kanpachi0`. La
+sala seguía en pie con la puerta cerrada para siempre, sin nada en pantalla.
+
+Y contrastando eso apareció el segundo, que nadie estaba mirando: **la compuerta
+se quedaba acotada a los adaptadores VIEJOS.** Un adaptador nuevo tiene LUID
+nuevo, así que los filtros se emitían contra uno que ya no existe; nada falla, la
+llamada devuelve éxito, y la pantalla dice que la sala está contenida. Se arregla
+con `OnEngineRestarted`, que corre cuando `Restart` ya esperó a que las dos redes
+tengan dirección.
+
+De paso apareció una carrera al arreglarlo: el evento de conexión llega cuando
+conecta la PRIMERA de las dos redes, así que reacotar ahí fallaba con el
+vestíbulo todavía sin levantar. Tratarlo como fatal dejó la sala clavada en
+reconectando con las dos redes ya arriba, medido. Por eso son dos sitios: el
+evento reacota de forma oportunista y `OnEngineRestarted` lo exige.
+
+Los tres cambios están congelados con tests, y el de `Restart` se vio fallar con
+un veneno. La corrida final quedó en verde con seis avisos en el log, todos
+esperados.
+
 **RoomDirectory paga la deuda escrita en `docs/CLAUDE.md`**: `domain.CheckSeedAddr`
 está escrita y probada y **ningún adaptador la llama porque ninguno existe**. Se
 llama sobre lo que resolvió el DNS y en **cada** uso, porque un nombre impecable

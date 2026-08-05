@@ -127,12 +127,32 @@ type Engine struct {
 	procCtx    context.Context
 	procCancel context.CancelFunc
 
-	// last es la ÚLTIMA orden de arranque, guardada para Restart.
+	// last es la orden que levantó la SALA, guardada para Restart.
 	//
 	// Vive acá y no vuelve a core, y por eso Restart existe en vez de repetir
 	// HostNetwork: el secreto de la red real se queda en el único sitio del
 	// programa que lo necesita.
 	last *request
+
+	// lastLobby es la orden que levantó el VESTÍBULO, o nil.
+	//
+	// # Por qué son dos campos y no uno
+	//
+	// Porque el motor conduce DOS redes y `Restart` tiene que devolver las dos.
+	// Con un solo campo, la última orden pisaba a la anterior, así que tras un
+	// reinicio del watchdog volvía una red y la otra no.
+	//
+	// Medido con el producto entero: al matar el motor a lo bruto con una sala
+	// de host abierta, volvía `kanpachi0` y NO volvía `kanpachi1`, y a partir de
+	// ahí la regla de la puerta no se podía escribir porque su adaptador ya no
+	// existía. La sala seguía en pie con la puerta cerrada para siempre.
+	//
+	// El comentario que había decía que el vestíbulo es "un paso de paso", y eso
+	// es cierto para el INVITADO, que lo suelta al entrar. Para el host es su
+	// puerta, y dura lo que dura la sala. Por eso lo que decide no es una regla
+	// escrita acá: es si el vestíbulo sigue levantado, que es justo lo que este
+	// campo dice.
+	lastLobby *request
 }
 
 // New arma el adaptador. No lanza nada todavía: el proceso arranca con la
@@ -420,8 +440,13 @@ func (e *Engine) HostNetwork(ctx context.Context, spec domain.HostSpec) error {
 	return e.awaitAddress(ctx, RoomDevice, domain.HostAddress(spec.Subnet))
 }
 
-// JoinRendezvous entra al vestíbulo. NO se guarda para Restart: reiniciar el
-// motor tiene que devolver la SALA, y el vestíbulo es un paso de paso.
+// JoinRendezvous entra al vestíbulo, y SÍ se guarda para Restart.
+//
+// Antes no se guardaba, con el argumento de que el vestíbulo es un paso de
+// paso. Eso es cierto para el invitado, que lo suelta al entrar, y falso para el
+// host: es su puerta, y dura lo que dura la sala. Lo que lo resuelve sin una
+// regla por rol es que `LeaveRendezvous` lo olvide, así que se replica
+// exactamente mientras siga levantado.
 func (e *Engine) JoinRendezvous(ctx context.Context, spec domain.RendezvousSpec) error {
 	uris, err := seedURIs(spec.Seeds, e.deps.Resolve)
 	if err != nil {
@@ -430,6 +455,10 @@ func (e *Engine) JoinRendezvous(ctx context.Context, spec domain.RendezvousSpec)
 	if _, err := e.call(ctx, func(id uint64) request { return lobbyRequest(id, spec, uris) }); err != nil {
 		return err
 	}
+	e.mu.Lock()
+	req := lobbyRequest(0, spec, uris)
+	e.lastLobby = &req
+	e.mu.Unlock()
 	// La del vestíbulo es la que se midió fallando: el canal de control liga
 	// justo acá, en la IP del host dentro del vestíbulo, y Windows contestaba
 	// "The requested address is not valid in its context".
@@ -450,7 +479,16 @@ func (e *Engine) awaitAddress(ctx context.Context, adapter string, want netip.Ad
 	return nil
 }
 
+// LeaveRendezvous suelta el vestíbulo, y lo OLVIDA para Restart.
+//
+// Olvidarlo es la mitad que hace que guardarlo sea seguro: el invitado sale del
+// vestíbulo antes de entrar a la sala, a propósito, y un reinicio que lo
+// levantara otra vez lo devolvería a una red observable por cualquiera que
+// tenga el código.
 func (e *Engine) LeaveRendezvous(ctx context.Context) error {
+	e.mu.Lock()
+	e.lastLobby = nil
+	e.mu.Unlock()
 	_, err := e.call(ctx, func(id uint64) request {
 		return request{ID: id, Cmd: command{LeaveRendezvous: &emptyArgs{}}}
 	})
@@ -479,7 +517,7 @@ func (e *Engine) JoinWithCredential(ctx context.Context, spec domain.GuestSpec) 
 func (e *Engine) Leave(ctx context.Context) error {
 	e.mu.Lock()
 	arrancado := e.proc != nil
-	e.last = nil
+	e.last, e.lastLobby = nil, nil
 	e.mu.Unlock()
 	if !arrancado {
 		return nil
@@ -543,9 +581,14 @@ func (e *Engine) ListCredentials(ctx context.Context) ([]domain.Credential, erro
 // rendirse.
 //
 // Sin arranque previo devuelve error y no inventa ninguna sala.
+// Restart vuelve a levantar LAS DOS redes que estaban arriba.
+//
+// Las dos, y en ese orden: la sala primero, que es lo que la gente está jugando,
+// y después el vestíbulo, que es la puerta. Reponer solo una dejaba la sala en
+// pie con la puerta cerrada para siempre, sin nada en pantalla que lo dijera.
 func (e *Engine) Restart(ctx context.Context) error {
 	e.mu.Lock()
-	last := e.last
+	last, lobby := e.last, e.lastLobby
 	if last == nil {
 		e.mu.Unlock()
 		return errors.New("no hay ninguna sala que reiniciar: el motor nunca arrancó")
@@ -553,12 +596,37 @@ func (e *Engine) Restart(ctx context.Context) error {
 	_ = e.stopLocked()
 	e.mu.Unlock()
 
-	_, err := e.call(ctx, func(id uint64) request {
-		copia := *last
-		copia.ID = id
-		return copia
-	})
-	return err
+	// Cada orden se ESPERA hasta que su adaptador tenga dirección, igual que en
+	// `HostNetwork` y `JoinRendezvous`. Sin eso, `Restart` devolvía éxito con
+	// las redes todavía a medio levantar, y quien reacciona a la vuelta del
+	// túnel se encontraba adaptadores que aún no existían.
+	repetir := func(r *request) error {
+		if _, err := e.call(ctx, func(id uint64) request {
+			copia := *r
+			copia.ID = id
+			return copia
+		}); err != nil {
+			return err
+		}
+		adaptador, dir, ok := adapterOf(*r)
+		if !ok {
+			return nil
+		}
+		return e.awaitAddress(ctx, adaptador, dir)
+	}
+	if err := repetir(last); err != nil {
+		return err
+	}
+	if lobby == nil {
+		return nil
+	}
+	// Que falle el vestíbulo NO tumba el reinicio. La sala ya está arriba y la
+	// gente que está dentro sigue jugando; lo que se pierde es que entre alguien
+	// nuevo, y eso es mucho menos que cerrarlo todo. Queda dicho en el log.
+	if err := repetir(lobby); err != nil {
+		e.warn("la sala volvió y la puerta no, así que no puede entrar nadie nuevo", "error", err)
+	}
+	return nil
 }
 
 func (e *Engine) Peers(ctx context.Context) ([]domain.Peer, error) {

@@ -33,6 +33,9 @@ type Room interface {
 	RefreshAlerts(ctx context.Context) domain.RoomState
 	OnEngineEvent(ctx context.Context, ev domain.EngineEvent) (domain.RoomState, error)
 	OnEngineGaveUp(ctx context.Context, reason string) domain.RoomState
+	// OnEngineRestarted corre cuando el motor volvió ENTERO, con las dos redes
+	// arriba. Es donde se reacota la contención: los adaptadores son nuevos.
+	OnEngineRestarted(ctx context.Context) error
 	OnPeersChanged(ctx context.Context) (domain.RoomState, error)
 	OnRoomAnnounce(ctx context.Context, a domain.RoomAnnounce) (domain.RoomState, error)
 	OnRoomNotice(ctx context.Context, n domain.RoomNotice) domain.RoomState
@@ -584,6 +587,14 @@ func (s *Supervisor) reiniciarMotor(ctx context.Context) {
 	// El canal de eventos es del proceso, así que tras reiniciar hay uno nuevo
 	// y el anterior está cerrado.
 	s.resuscribir(ctx)
+
+	// Y la contención se reacota ACÁ, que es el único punto donde se sabe que
+	// las dos redes están arriba: `Restart` espera a que las dos tengan
+	// dirección antes de volver. El evento de conexión llega antes, con una
+	// sola levantada, así que ahí reacotar es oportunista y esto es lo firme.
+	if err := s.deps.Room.OnEngineRestarted(ctx); err != nil {
+		s.deps.Log.Error("el motor volvió y la contención no se pudo reacotar", "error", err)
+	}
 }
 
 // rendirse cierra la sala y sigue vivo.

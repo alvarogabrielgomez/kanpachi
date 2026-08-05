@@ -485,3 +485,50 @@ func TestUnPedidoLentoNoParaElLatido(t *testing.T) {
 		return b.sala.veces("tick") >= 1
 	})
 }
+
+// Tras reiniciar el motor se REACOTA la contención, y no antes.
+//
+// # Por qué es un paso propio y no basta con el evento de conexión
+//
+// Porque los adaptadores virtuales son NUEVOS después de un reinicio, o sea LUID
+// nuevo, y una compuerta que se quede apuntando al viejo no falla en ningún
+// sitio: emite sus filtros, la llamada devuelve éxito, y la pantalla dice que la
+// sala está contenida.
+//
+// El evento de conexión llega en cuanto conecta la PRIMERA de las dos redes, así
+// que durante un reinicio llega con el vestíbulo todavía sin levantar. `Restart`
+// espera a que las dos tengan dirección antes de volver, y esto corre justo
+// después: es el único punto donde reacotar se puede exigir.
+func TestTrasReiniciarElMotorSeReacotaLaContención(t *testing.T) {
+	b, _ := corriendo(t)
+
+	// La muerte del motor PROGRAMA el reintento; el reintento corre cuando la
+	// espera vence, y este banco las dispara a mano para no dormir.
+	b.motor.eventos <- domain.EngineEvent{Kind: domain.EngineDied}
+	esperaA(t, "se programó el reintento", func() bool { return b.pendientes() == 1 })
+	b.disparaEsperas()
+	esperaA(t, "el motor se reinició", func() bool { return b.motor.veces() >= 1 })
+	esperaA(t, "se reacotó la contención tras el reinicio", func() bool {
+		return b.sala.veces("reacotar") >= 1
+	})
+}
+
+// Y si el reinicio FALLA, no se reacota nada.
+//
+// Reacotar con el motor caído acotaría a adaptadores que no existen, y el
+// error taparía en el log al que de verdad importa, que es que el motor no
+// volvió.
+func TestSiElReinicioFallaNoSeReacota(t *testing.T) {
+	b, _ := corriendo(t)
+	b.motor.err = errors.New("el motor no arranca")
+
+	b.motor.eventos <- domain.EngineEvent{Kind: domain.EngineDied}
+	esperaA(t, "se programó el reintento", func() bool { return b.pendientes() == 1 })
+	b.disparaEsperas()
+	esperaA(t, "se intentó reiniciar", func() bool { return b.motor.veces() >= 1 })
+	esperaA(t, "el fallo programó otro reintento", func() bool { return b.pendientes() >= 1 })
+
+	if n := b.sala.veces("reacotar"); n != 0 {
+		t.Errorf("se reacotó %d vez/veces con el motor sin volver", n)
+	}
+}

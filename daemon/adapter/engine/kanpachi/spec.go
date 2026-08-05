@@ -397,3 +397,42 @@ func toEventKind(name string) (domain.EngineEventKind, error) {
 		return 0, fmt.Errorf("el motor empujó un evento que este daemon no maneja: %q", name)
 	}
 }
+
+// adapterOf dice qué adaptador levanta una orden de arranque y con qué
+// dirección, leyéndolo de la ORDEN misma.
+//
+// # Por qué se lee de la orden y no se recuerda aparte
+//
+// Porque `Restart` repite exactamente lo que se guardó, y lo que hay que
+// esperar es exactamente lo que esa orden levanta. Un segundo campo con "y esta
+// era su dirección" es un campo que se puede quedar viejo, y el síntoma sería
+// esperar una dirección que ya no es la de nadie: treinta segundos de plazo
+// agotándose con la red perfectamente arriba.
+//
+// El invitado devuelve false: su dirección la asigna el host dentro de la
+// credencial y el motor la toma de la red, así que no está escrita en la orden.
+// Su espera la hace `JoinWithCredential`, que sí la conoce.
+func adapterOf(r request) (string, netip.Addr, bool) {
+	switch {
+	case r.Cmd.Host != nil:
+		a, ok := bareAddrOf(r.Cmd.Host.IPv4)
+		return RoomDevice, a, ok
+	case r.Cmd.JoinRendezvous != nil:
+		a, ok := bareAddrOf(r.Cmd.JoinRendezvous.IPv4)
+		return LobbyDevice, a, ok
+	}
+	return "", netip.Addr{}, false
+}
+
+// bareAddrOf saca la dirección de un `a.b.c.d/n`. Un valor que no se pueda leer
+// devuelve false en vez de una dirección inventada: esperar la dirección
+// equivocada es peor que no esperar.
+func bareAddrOf(s string) (netip.Addr, bool) {
+	if p, err := netip.ParsePrefix(s); err == nil {
+		return p.Addr(), true
+	}
+	if a, err := netip.ParseAddr(s); err == nil {
+		return a, true
+	}
+	return netip.Addr{}, false
+}

@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 )
@@ -85,6 +86,40 @@ func (s *Session) OnEngineGaveUp(ctx context.Context, reason string) domain.Room
 	return s.snapshot()
 }
 
+// OnEngineRestarted es lo que hace el supervisor cuando el motor volvió ENTERO.
+//
+// # Por qué existe además del evento de conexión
+//
+// Porque el evento llega en cuanto conecta la primera de las dos redes, y un
+// host tiene dos. Durante un reinicio del watchdog eso significa que el evento
+// puede llegar con el vestíbulo todavía sin levantar, y ahí no hay adaptador que
+// acotar. Esto corre después, cuando `Restart` ya esperó a que las dos redes
+// tengan dirección, así que es el único momento en que reacotar puede exigirse.
+//
+// **Acá sí es fatal.** Los adaptadores son nuevos, o sea LUID nuevo, y una
+// compuerta que se quede apuntando al viejo no falla en ningún sitio: emite sus
+// filtros, la llamada devuelve éxito, y la pantalla dice que la sala está
+// contenida. Con gente ya dentro, eso es afirmar lo único que este producto
+// promete sobre una red que no lo cumple.
+func (s *Session) OnEngineRestarted(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.state.Conn.InRoom() {
+		return nil
+	}
+	if err := s.deps.Firewall.BindRoom(ctx, s.state.Subnet, s.bindingLocked()); err != nil {
+		return fmt.Errorf("reacotando la contención tras el reinicio del motor: %w", err)
+	}
+	// Y se reaplica, porque los filtros que se hayan escrito durante la carrera
+	// fueron contra el adaptador viejo.
+	if err := s.applyPolicy(ctx); err != nil {
+		return fmt.Errorf("reaplicando las reglas tras el reinicio del motor: %w", err)
+	}
+	s.deps.Log.Info("contención reacotada tras el reinicio del motor", "alcance", s.bindingLocked().String())
+	return nil
+}
+
 // tunnelUpLocked es volver a tener red. Asume el candado tomado.
 //
 // Recalcula TODO en vez de suponer que nada cambió mientras no había túnel. Los
@@ -95,6 +130,26 @@ func (s *Session) tunnelUpLocked(ctx context.Context, reason string) (domain.Roo
 	s.state.SetTunnelUp()
 	if err := s.state.Transition(domain.StateConnected, razónTexto(reason, "el motor conectó")); err != nil {
 		s.deps.Log.Warn("transición rechazada", "error", err)
+	}
+	// La compuerta se vuelve a acotar ANTES de aplicar nada, y hace falta de
+	// verdad: si el motor murió y volvió, los adaptadores virtuales son NUEVOS.
+	//
+	// Un adaptador nuevo tiene un LUID nuevo, así que la compuerta se quedaría
+	// acotada a uno que ya no existe. Nada falla: `Apply` emite sus filtros
+	// contra el LUID viejo, la llamada devuelve éxito, y la pantalla dice que la
+	// sala está contenida mientras debajo hay una red virtual con los permisos
+	// puestos y sin bloqueo.
+	//
+	// **Acá NO es fatal, y sí lo es en [Session.OnEngineRestarted].** Este evento
+	// llega en cuanto conecta la PRIMERA de las dos redes, así que durante un
+	// reinicio del watchdog llega legítimamente con el vestíbulo todavía sin
+	// levantar. Tratarlo como fatal ahí convertía una carrera de un segundo en
+	// una sala que no volvía nunca: medido, la sala se quedaba en reconectando
+	// con las dos redes ya arriba. Quien cierra el caso de verdad es
+	// `OnEngineRestarted`, que corre cuando el motor terminó de levantar las dos.
+	if err := s.deps.Firewall.BindRoom(ctx, s.state.Subnet, s.bindingLocked()); err != nil {
+		s.deps.Log.Warn("todavía no se pudo reacotar la contención, se reintenta al terminar el reinicio",
+			"error", err)
 	}
 	if err := s.refreshPeersLocked(ctx); err != nil {
 		return domain.RoomState{}, err

@@ -24,6 +24,8 @@ type salaFalsa struct {
 	pánicoEn string
 	pánicos  int
 	máximos  int
+	// errReacotar hace fallar el reacotado tras un reinicio.
+	errReacotar error
 
 	// Lo del canario.
 	canarioDue     chan struct{}
@@ -90,6 +92,13 @@ func (r *salaFalsa) OnEngineEvent(_ context.Context, ev domain.EngineEvent) (dom
 func (r *salaFalsa) OnEngineGaveUp(context.Context, string) domain.RoomState {
 	r.anota("rendirse")
 	return r.Status()
+}
+
+// OnEngineRestarted anota, y de eso depende poder afirmar que el reacotado
+// ocurre DESPUÉS de reiniciar y no antes: antes no hay adaptadores que acotar.
+func (r *salaFalsa) OnEngineRestarted(context.Context) error {
+	r.anota("reacotar")
+	return r.errReacotar
 }
 
 func (r *salaFalsa) OnPeersChanged(context.Context) (domain.RoomState, error) {

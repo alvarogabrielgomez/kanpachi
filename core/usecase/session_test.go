@@ -2027,3 +2027,64 @@ func TestSalirDeLaSalaNoDejaElCanalAbierto(t *testing.T) {
 		}
 	}
 }
+
+// Volver el túnel VUELVE A ACOTAR la compuerta, y esto no es una llamada de más.
+//
+// Si el motor murió y volvió, los adaptadores virtuales son NUEVOS, o sea LUID
+// nuevo, o sea que la compuerta se habría quedado acotada a uno que ya no
+// existe. Nada falla: los filtros se emiten contra el LUID viejo, la llamada
+// devuelve éxito, y la pantalla dice que la sala está contenida mientras debajo
+// hay una red virtual con los permisos puestos y sin bloqueo.
+//
+// Se afirma sobre el ORDEN, que es donde está el fallo: acotar después de abrir
+// deja un instante con permisos y sin compuerta, con gente ya dentro.
+func TestVolverElTúnelVuelveAAcotarLaCompuerta(t *testing.T) {
+	b := salaCreada(t)
+	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+		t.Fatal(err)
+	}
+
+	// El motor se cae y vuelve. Soltar la compuerta es lo que deja el estado
+	// como lo dejaría un adaptador nuevo: acotada a algo que ya no sirve.
+	b.firewall.UnbindRoom()
+	b.firewall.abrióSinCompuerta = false
+
+	if _, err := b.sesión.OnEngineEvent(ctx(), domain.EngineEvent{Kind: domain.EngineConnected}); err != nil {
+		t.Fatal(err)
+	}
+
+	if b.firewall.abrióSinCompuerta {
+		t.Error("al volver el túnel se aplicaron reglas con la compuerta suelta")
+	}
+	red, vínculo := b.firewall.alcance()
+	if red != b.sesión.Status().Subnet {
+		t.Errorf("la compuerta quedó acotada a %v y la sala es %v", red, b.sesión.Status().Subnet)
+	}
+	if vínculo != domain.BindRoomAndLobby {
+		t.Errorf("el host se reacotó a %v, y sigue teniendo sala y vestíbulo", vínculo)
+	}
+}
+
+// Si no se puede acotar al VOLVER EL TÚNEL, se avisa y se sigue; si no se puede
+// al TERMINAR EL REINICIO, es un error. Los dos comportamientos son a propósito.
+//
+// El evento de conexión llega en cuanto conecta la primera de las dos redes, así
+// que durante un reinicio del watchdog llega legítimamente con el vestíbulo
+// todavía sin levantar. Tratarlo como fatal ahí convertía una carrera de un
+// segundo en una sala que no volvía nunca: medido, se quedaba en reconectando
+// con las dos redes ya arriba.
+//
+// `OnEngineRestarted` corre cuando el motor terminó de levantar las dos, así que
+// ahí no acotar ya no es una carrera: es una sala con gente dentro y sin
+// compuerta, afirmando en pantalla lo único que el producto promete.
+func TestElReacotadoEsOportunistaAlConectarYExigenteAlTerminarElReinicio(t *testing.T) {
+	b := salaCreada(t)
+	b.firewall.errBind = errors.New("no se encontró el adaptador")
+
+	if _, err := b.sesión.OnEngineEvent(ctx(), domain.EngineEvent{Kind: domain.EngineConnected}); err != nil {
+		t.Fatalf("una carrera de un segundo tumbó la vuelta del túnel: %v", err)
+	}
+	if err := b.sesión.OnEngineRestarted(ctx()); err == nil {
+		t.Fatal("el motor volvió entero, no se pudo acotar, y se dio por bueno")
+	}
+}

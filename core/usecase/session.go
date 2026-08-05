@@ -583,6 +583,23 @@ func (s *Session) teardown(ctx context.Context) {
 	}
 }
 
+// bindingLocked dice a cuántos adaptadores hay que acotar la compuerta AHORA.
+//
+// Lo decide el ROL y no un campo que alguien pueda dejar viejo. El host se queda
+// en el vestíbulo mientras la sala esté abierta, porque es su puerta: quien
+// entra todavía no es miembro y lo que viene a pedir es justamente el permiso
+// para serlo. El invitado lo suelta al entrar, a propósito, porque quedarse ahí
+// mantendría abierta una vía por la que un desconocido con el código ve que esta
+// máquina está en esa sala.
+//
+// Asume el candado tomado.
+func (s *Session) bindingLocked() domain.RoomBinding {
+	if s.state.IsHost() {
+		return domain.BindRoomAndLobby
+	}
+	return domain.BindRoomOnly
+}
+
 // requireHost es la comprobación de las tres operaciones del host. Asume el
 // candado tomado.
 func (s *Session) requireHost() error {
