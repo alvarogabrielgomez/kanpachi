@@ -183,10 +183,15 @@ func jailProcess(pid int) (windows.Handle, error) {
 //
 // Los fallos se ignoran a propósito: es limpieza oportunista, y no poder mirar
 // un proceso ajeno es lo normal, no un problema.
-func killOrphans(abs string) {
+//
+// Devuelve CUÁNTOS mató, y no un error, por lo mismo. Un error acá no diría
+// nada útil; el número sí, porque un motor huérfano es la explicación de una
+// sala que conecta a ratos, y `--reset` existe justo para el caso en que nadie
+// puede diagnosticar nada.
+func killOrphans(abs string) int {
 	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
-		return
+		return 0
 	}
 	defer func() { _ = windows.CloseHandle(snap) }()
 
@@ -194,6 +199,7 @@ func killOrphans(abs string) {
 	var e windows.ProcessEntry32
 	e.Size = uint32(unsafe.Sizeof(e))
 
+	muertos := 0
 	for err = windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
 		if strings.ToLower(windows.UTF16ToString(e.ExeFile[:])) != base {
 			continue
@@ -208,10 +214,13 @@ func killOrphans(abs string) {
 			continue
 		}
 		if ruta, err := imagePath(h); err == nil && strings.EqualFold(ruta, abs) {
-			_ = windows.TerminateProcess(h, 1)
+			if windows.TerminateProcess(h, 1) == nil {
+				muertos++
+			}
 		}
 		_ = windows.CloseHandle(h)
 	}
+	return muertos
 }
 
 // imagePath devuelve la ruta completa del ejecutable de un proceso.

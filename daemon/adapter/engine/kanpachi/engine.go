@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -179,6 +180,30 @@ func (e *Engine) Close() error {
 		close(e.events)
 	}
 	return err
+}
+
+// KillOrphans mata motores que dejó otra ejecución, y devuelve cuántos.
+//
+// # Por qué está expuesto, si arrancar ya lo hace
+//
+// Porque arrancar necesita arrancar. El hard reset existe justo para la máquina
+// donde el daemon YA NO LEVANTA, y ahí un motor huérfano es lo primero que hay
+// que quitar: mientras siga vivo la red virtual sigue arriba, así que purgar el
+// firewall antes dejaría un adaptador con tráfico y sin nada conteniéndolo.
+//
+// Se compara por RUTA COMPLETA y jamás por nombre. Esto corre como SYSTEM, o sea
+// que matar cualquier proceso llamado `kanpachi-engine.exe` sería matar el de
+// otra instalación, y podría.
+func (e *Engine) KillOrphans() int {
+	abs, err := filepath.Abs(e.deps.Exe)
+	if err != nil {
+		// Sin ruta absoluta no se puede comparar por ruta completa, y comparar
+		// por nombre está prohibido. No matar nada es la respuesta correcta.
+		e.warn("no se pudo resolver la ruta del motor, así que no se buscaron huérfanos",
+			"exe", e.deps.Exe, "error", err)
+		return 0
+	}
+	return killOrphans(abs)
 }
 
 // stopLocked mata el proceso SIN tocar el canal de eventos.

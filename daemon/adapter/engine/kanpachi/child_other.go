@@ -17,3 +17,7 @@ import (
 func spawn(context.Context, string) (child, error) {
 	return nil, errors.New("el motor de Kanpachi solo corre en Windows")
 }
+
+// Sin Windows no hay motores que matar, y cero es la respuesta honesta: no es
+// un fallo, es que no hay ninguno.
+func killOrphans(string) int { return 0 }

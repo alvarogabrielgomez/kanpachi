@@ -15,6 +15,7 @@ import (
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windowscom"
 )
 
 // realFirewall abre las dos capas de contención y devuelve las tres caras que
@@ -65,4 +66,30 @@ func (e exposure) Enforcement(ctx context.Context) (domain.Enforcement, error) {
 
 func (e exposure) RouterMappings(ctx context.Context) ([]domain.PortMapping, error) {
 	return e.router.RouterMappings(ctx)
+}
+
+// quitarCuarentenaDeBase es el único camino del repositorio que la borra.
+//
+// # Por qué abre su PROPIO adaptador y no usa el del producto
+//
+// Porque el puerto del producto no puede quitarla, a propósito:
+// `port.FirewallPort` no declara nada capaz de hacerlo, así que ningún caso de
+// uso puede pedirlo aunque quiera. Colar la capacidad por el objeto compuesto
+// sería devolverle por la ventana lo que la interfaz le niega por la puerta.
+//
+// Así que esto abre la capa de permisos a secas, hace la única cosa que tiene
+// permitida, y cierra. Se llama SOLO desde `--uninstall-cleanup`.
+func quitarCuarentenaDeBase(ctx context.Context, dataDir string, log port.Logger) error {
+	permisos, err := windowscom.New(dataDir, "", log)
+	if err != nil {
+		return fmt.Errorf("abriendo el firewall para quitar la cuarentena: %w", err)
+	}
+	defer func() { _ = permisos.Close() }()
+
+	n, err := windowscom.RemoveBaseQuarantineForUninstall(ctx, permisos)
+	if err != nil {
+		return fmt.Errorf("quitando la cuarentena de base: %w", err)
+	}
+	log.Info("cuarentena de base retirada", "cantidad", n)
+	return nil
 }

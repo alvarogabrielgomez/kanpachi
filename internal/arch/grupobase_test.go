@@ -357,3 +357,128 @@ func nombraElGrupo(e ast.Expr) bool {
 	}
 	return false
 }
+
+// funciónDelDesinstalador es la ÚNICA que puede borrar la cuarentena de base.
+//
+// El nombre es largo a propósito: aparece entero en cualquier búsqueda y en
+// cualquier diff, así que ampliar este permiso no se puede hacer sin que se vea.
+const funciónDelDesinstalador = "RemoveBaseQuarantineForUninstall"
+
+// TestSoloElDesinstaladorBorraLaCuarentena, y este guardián existe porque el
+// otro NO alcanzaba.
+//
+// # El agujero que tenía el guardián de al lado
+//
+// `TestElDaemonNoBorraLaCuarentenaDeBase` busca llamadas cuyo NOMBRE sea un
+// verbo destructivo y que lleven el grupo base entre sus ARGUMENTOS. Ninguna de
+// las dos cosas pasa en el código real: dentro de `windowscom` se borra llamando
+// a `retire`, que es un helper propio, y el grupo no viaja como argumento, se
+// compara contra el campo de una regla enumerada. O sea que una función nueva
+// que se llevara la cuarentena pasaba en verde.
+//
+// Se comprobó escribiendo la función del desinstalador: el guardián no dijo
+// nada. Un guardián que no muerde es peor que ninguno, porque se lee como una
+// garantía.
+//
+// # Lo que vigila este
+//
+// La forma REAL: dentro del paquete permitido, una función que a la vez NOMBRE
+// el grupo base y llame a algo que borra tiene que ser la del desinstalador. Es
+// una condición sobre la función entera y no sobre una llamada suelta, que es
+// como se escribe de verdad un borrado por aquí.
+func TestSoloElDesinstaladorBorraLaCuarentena(t *testing.T) {
+	borra := map[string]bool{"retire": true}
+	for _, v := range verbosDestructivos {
+		borra[v] = true
+	}
+
+	visto := false
+	porArchivo(t, "../../daemon", func(ruta string, archivo *ast.File) {
+		if !permitido(ruta) {
+			// Fuera del paquete permitido no se puede ni nombrar el grupo, y de
+			// eso se encarga el otro guardián.
+			return
+		}
+		for _, decl := range archivo.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok {
+				continue
+			}
+			nombra, borrando := false, ""
+			ast.Inspect(fn, func(n ast.Node) bool {
+				if nombraElGrupoBase(exprDe(n)) {
+					nombra = true
+				}
+				if llamada, ok := n.(*ast.CallExpr); ok {
+					if v := nombreLlamado(llamada.Fun); borra[v] {
+						borrando = v
+					}
+				}
+				return true
+			})
+			if !nombra || borrando == "" {
+				continue
+			}
+			if fn.Name.Name == funciónDelDesinstalador {
+				visto = true
+				continue
+			}
+			t.Errorf("%s: la función %s nombra la cuarentena de base y llama a %s.\n"+
+				"  Lo que hace valiosa a la cuarentena es seguir puesta con el daemon parado,\n"+
+				"  detenido o a medio desinstalar. La única que puede quitarla es %s,\n"+
+				"  y solo la llama la bandera --uninstall-cleanup.",
+				ruta, fn.Name.Name, borrando, funciónDelDesinstalador)
+		}
+	})
+
+	if !visto {
+		t.Errorf("no se encontró %s nombrando el grupo y borrando.\n"+
+			"  O se renombró, o este guardián dejó de mirar donde vive, y en los dos casos\n"+
+			"  está pasando en verde sobre algo que ya no comprueba.", funciónDelDesinstalador)
+	}
+}
+
+// TestElDesinstaladorNoLoLlamaNadieMás: la función existe, y el radio de quien
+// puede invocarla se lee en una línea.
+//
+// La capacidad ya está fuera de `port.FirewallPort`, así que ningún caso de uso
+// puede pedirla. Esto cierra la otra mitad: que nadie del daemon la llame por la
+// puerta de atrás, saltándose el puerto.
+func TestElDesinstaladorNoLoLlamaNadieMás(t *testing.T) {
+	const permitidoLlamar = "daemon/cmd/kanpachid/"
+
+	llamantes := map[string]bool{}
+	porArchivo(t, "../../daemon", func(ruta string, archivo *ast.File) {
+		ast.Inspect(archivo, func(n ast.Node) bool {
+			llamada, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if nombreLlamado(llamada.Fun) == funciónDelDesinstalador {
+				llamantes[filepath.ToSlash(ruta)] = true
+			}
+			return true
+		})
+	})
+
+	if len(llamantes) == 0 {
+		t.Fatalf("nadie llama a %s, así que este test no probaría nada.\n"+
+			"  O se dejó de cablear el desinstalador, o se renombró.", funciónDelDesinstalador)
+	}
+	for ruta := range llamantes {
+		if strings.Contains(ruta, permitidoLlamar) {
+			continue
+		}
+		t.Errorf("%s: llama a %s.\n"+
+			"  Solo el cableado de %s puede, y solo detrás de --uninstall-cleanup.\n"+
+			"  Quitar la cuarentena no es una operación del producto, es del desinstalador.",
+			ruta, funciónDelDesinstalador, permitidoLlamar)
+	}
+}
+
+// exprDe saca la expresión de un nodo, para poder reusar [nombraElGrupoBase]
+// tanto sobre argumentos como sobre comparaciones.
+func exprDe(n ast.Node) ast.Expr {
+	e, _ := n.(ast.Expr)
+	return e
+}

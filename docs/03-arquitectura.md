@@ -1552,6 +1552,31 @@ Son constantes de compilación, igual que los plazos de `core`. Si se pudieran c
 
 **Sala vacía: cerrar puertos, revertir ajustes por juego y volver a Idle.** La mitad relevante para la seguridad ya se cumple sin código nuevo, porque sin miembros presentes el conjunto de reglas deseado es el vacío y se aplica en cada cambio. Lo que falta es revertir los ajustes por juego y volver a Idle tras un rato solo, y eso necesita un número acordado y su propia entrada en `02-decisiones-de-diseno.md`.
 
+### El régimen único, `--reset` y el desinstalador
+
+La regla que centraliza: **toda mutación persistente de Kanpachi o lleva etiqueta enumerable desde el sistema, o queda anotada en un libro con su valor previo.** Etiqueta es el grupo de firewall y la ranura de WFP; libro es `applied-tweaks.json` y `suspended-rules.json`. Lo que no cumple una de las dos no se escribe. Lo efímero, o sea el adaptador, su dirección, su métrica, su MTU, sus rutas y los filtros de la compuerta, muere con la red virtual y no necesita régimen.
+
+**Qué limpia solo, y qué no.** La limpieza del arranque es incondicional: `NewSession` repone la cuarentena, purga el grupo propio y restaura las reglas ajenas en CADA arranque, sin depender de ninguna señal, así que la muerte sucia queda cubierta. Lo que ninguna limpieza automática alcanza es el daemon que **no vuelve a arrancar**, y ese es el motivo del reset.
+
+`kanpachid --reset`, en consola elevada, corre `service.Reset`, que es Go puro y lo prueba el job de Linux. El orden es lo que decide, y cada par tiene una dirección correcta:
+
+| Paso | Por qué en ese sitio |
+|---|---|
+| Motores huérfanos | Primero de todo. Mientras uno siga vivo la red virtual sigue arriba, así que purgar antes deja un adaptador con tráfico y sin nada conteniéndolo |
+| Cuarentena de base | Antes de purgar, igual que en el arranque: la purga es el instante de menos protección |
+| Purgar el grupo `Kanpachi` y soltar la compuerta | Se lleva las dos capas, en el orden que decide el adaptador compuesto |
+| Restaurar reglas ajenas | Son de otra persona, y dejarlas apagadas por un daemon que ya no corre es lo peor que este producto puede hacerle a una máquina |
+| Revertir el libro de ajustes | La política de prefijo IPv6 y DirectPlay, al valor que había ANTES |
+| Borrar `room.json` | Su mera presencia es lo que hace que el arranque siguiente pregunte si reabrir, y ya no hay nada que reabrir |
+
+**Ningún fallo corta la secuencia.** No hay un segundo intento: quien pide un reset lo pide porque nada más funciona, y abortar en el primer paso dejaría el resto puesto justo entonces. Se registran todos y se devuelven juntos.
+
+**El reset REPONE la cuarentena y no la quita**, y esa asimetría es el diseño entero. Lo que hace valiosa a la cuarentena es seguir puesta con el daemon detenido, deshabilitado o a medio desinstalar. Un reset por corrupción que se la llevara destruiría exactamente lo que protege del caso corrupción. Y conserva `last-room.json`: resetear la configuración no es olvidar a qué sala volver.
+
+**El desinstalador es otra bandera**, `--uninstall-cleanup`, que hace lo mismo y además quita la cuarentena. Esa capacidad vive en **una sola función**, `windowscom.RemoveBaseQuarantineForUninstall`, con el nombre largo a propósito para que aparezca entero en cualquier búsqueda. Está cerrada por tres vías: `port.FirewallPort` no declara nada que pueda quitarla, así que ningún caso de uso puede pedirlo; un guardián exige que sea la única función del daemon que a la vez nombre el grupo base y llame a algo que borra; y otro exige que solo la llame el cableado de `cmd/kanpachid`. El primero de esos guardianes se escribió porque el que ya existía **no mordía**: buscaba llamadas con nombre de verbo destructivo y el grupo entre los argumentos, y el borrado real pasa por un helper propio con el grupo comparado contra el campo de una regla enumerada. Se comprobó escribiendo la función y viendo al guardián viejo callar.
+
+Medido el 2026-08-05 con una sala real y el daemon muerto a lo bruto: quedaban una regla del grupo `Kanpachi`, seis filtros de compuerta y un `room.json`; tras el reset, cero y cero, la cuarentena entera en sus 48 reglas, sin motor huérfano, sin `room.json`, y una sala nueva se creó a continuación. Lo corre `scripts/medir-reset.ps1`.
+
 ## kanpachi-seed
 
 Dos procesos en el droplet, en la misma imagen y el mismo compose.

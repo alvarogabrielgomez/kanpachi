@@ -12,6 +12,7 @@ package main
 // `sinimplementar` falle en todo.
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/accentiostudios/kanpachi/core/port"
@@ -22,4 +23,11 @@ func realFirewall(string, port.Logger, port.ExposureAudit) (
 
 	return nil, nil, nil, fmt.Errorf("el firewall de Kanpachi son las reglas del Firewall " +
 		"de Windows y una sesión de WFP, así que este binario solo sirve en Windows")
+}
+
+// Fuera de Windows no hay cuarentena que quitar, porque no hay firewall donde
+// ponerla. Ver la cabecera.
+func quitarCuarentenaDeBase(context.Context, string, port.Logger) error {
+	return fmt.Errorf("la cuarentena de Kanpachi vive en el Firewall de Windows, " +
+		"así que este binario solo la puede quitar en Windows")
 }

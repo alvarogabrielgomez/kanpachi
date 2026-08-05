@@ -44,12 +44,93 @@ func main() {
 	// No es un agujero: en modo servicio no se lee, y un binario con
 	// provisionales no arranca como servicio.
 	nombre := flag.String("pipe", "", "nombre del pipe. Solo con --console. Vacío usa el protegido")
+	// El hard reset y el camino del desinstalador. Son dos banderas y no una, y
+	// la diferencia es deliberada: ver [service.Reset].
+	reset := flag.Bool("reset", false,
+		"deshacer todo lo de la sala y salir. REPONE la cuarentena de base y conserva la última sala")
+	desinstalar := flag.Bool("uninstall-cleanup", false,
+		"lo mismo que --reset y ADEMÁS quitar la cuarentena de base. Solo para el desinstalador")
 	flag.Parse()
+
+	if *reset || *desinstalar {
+		if err := limpiar(*datos, *desinstalar); err != nil {
+			fmt.Fprintln(os.Stderr, "kanpachid:", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	if err := correr(*consola, *datos, *nombre); err != nil {
 		fmt.Fprintln(os.Stderr, "kanpachid:", err)
 		os.Exit(1)
 	}
+}
+
+// limpiar corre el hard reset, y con `desinstalar` además quita la cuarentena.
+//
+// # Por qué no pasa por `correr`
+//
+// Porque el reset existe para la máquina donde el arranque ESTÁ ROTO. Montar la
+// sesión entera antes de limpiar sería exigir que funcione justo lo que el
+// usuario dice que no funciona. Acá se abren las piezas mínimas, se limpia, y se
+// sale.
+func limpiar(datos string, desinstalar bool) error {
+	datos = dirDeDatos(datos)
+	if _, err := os.Stat(datos); err != nil {
+		return fmt.Errorf("el directorio de datos %s no está, así que no hay nada que limpiar", datos)
+	}
+
+	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer parar()
+
+	log := logConsola{}
+
+	fw, _, cerrarFirewall, err := realFirewall(datos, log, sinimplementar.Audit{})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = cerrarFirewall() }()
+
+	motor, err := kanpachiengine.New(kanpachiengine.Deps{
+		Exe: filepath.Join(dirDelBinario(), "kanpachi-engine.exe"),
+		Log: log,
+	})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = motor.Close() }()
+
+	errReset := service.Reset(ctx, service.ResetDeps{
+		Firewall: fw,
+		NetCfg:   netcfg.New(datos, log),
+		Engine:   motor,
+		State:    statestore.New(datos),
+		Log:      log,
+	})
+
+	if !desinstalar {
+		return errReset
+	}
+
+	// La parte que el reset JAMÁS hace. Va después y no antes: si algo del
+	// reset falla, la cuarentena se quita igual, porque desinstalar a medias
+	// dejaría puertos bloqueados en una máquina donde ya no hay nada que los
+	// explique.
+	if errReset != nil {
+		log.Warn("el reset falló y la desinstalación sigue igual", "error", errReset)
+	}
+	if err := quitarCuarentenaDeBase(ctx, datos, log); err != nil {
+		return err
+	}
+	return nil
+}
+
+// dirDeDatos resuelve el directorio de datos, vacío incluido.
+func dirDeDatos(datos string) string {
+	if datos != "" {
+		return datos
+	}
+	return filepath.Join(os.Getenv("ProgramData"), "Kanpachi")
 }
 
 func correr(consola bool, datos, nombre string) error {
