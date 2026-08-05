@@ -158,9 +158,10 @@ un solo cambio, y el árbol del RPC se borró y renació en otro sitio: esos par
 habría que **reescribirlos**, no rebasarlos.
 
 Lo que se hizo es otra cosa, y el argumento de arriba no la toca: un fork
-**fijado al mismo tag** que ya se consumía, con **nueve líneas borradas**. No hay
-rama que seguir y no hay nada que reescribir; subir de versión sigue siendo un
-acto deliberado, y ahora incluye reponer dos borrados.
+**fijado al mismo tag** que ya se consumía, tocando **un solo fichero de
+fuente**, con 31 líneas borradas y 8 de comentario en su lugar. No hay rama que
+seguir y no hay nada que reescribir; subir de versión sigue siendo un acto
+deliberado, y ahora incluye reponer dos borrados.
 
 Hizo falta porque apareció algo que consumir la librería no quita. El portal
 `15888` desaparecía por omisión porque lo construye el **binario** oficial
@@ -171,7 +172,7 @@ Ver `03-arquitectura.md`, sección del motor, y la decisión 1 en `02`.
 **El motor no vive dentro del fork, y es deliberado.** El valor entero del fork
 es que su diff se lea de un vistazo: "es upstream y nada más" o se comprueba en
 treinta segundos con `git diff v2.6.4 v2.6.4-kanpachi.1`, o es un acto de fe. Con
-el motor dentro, esas nueve líneas quedarían mezcladas con dos mil nuestras, y
+el motor dentro, ese fichero quedaría mezclado con dos mil líneas nuestras, y
 cada subida de versión traería además conflictos en su workspace, su
 `rust-toolchain.toml` y su CI, que no tienen nada que ver con lo que se cambia.
 
