@@ -1259,6 +1259,24 @@ Lo que `netcfg` mantiene:
 
 **Conflicto de rango CGNAT.** Ver la sección de direccionamiento más abajo.
 
+### adapter/routes, implementa `RoutingTable`
+
+Contesta una sola pregunta, y de ella depende que se pueda abrir una sala: en qué rangos vive ya esta máquina. `PlanAddresses` la usa para elegir un `/24` que no pise la red de casa del usuario.
+
+Lee **las dos cosas**, las direcciones de todos los adaptadores con `GetAdaptersAddresses` y los destinos de la tabla de rutas con `GetIpForwardTable2`. Solo las direcciones se perderían una ruta estática hacia una red alcanzable por la puerta de enlace, que es un rango que la sala igual tiene que esquivar.
+
+El error caro de esta capa no es un prefijo de menos, es uno de más:
+
+| Se descarta | Por qué |
+|---|---|
+| `0.0.0.0/0` y `::/0` | **La que decide.** La ruta por defecto está en toda tabla de rutas y se solapa con TODO, así que colarla hace que el planificador concluya que los dos espacios están enteros ocupados y que no se pueda abrir ninguna sala en ninguna parte |
+| `kanpachi0` y `kanpachi1` | Una sala abierta vetaría a la siguiente, y reabrir una sala tras un mal cierre rechazaría justo la subred que intenta restaurar |
+| loopback, link-local, multicast | `169.254.0.0/16` aparece en cualquier adaptador que no consiguió dirección, y no significa que nada esté ocupado |
+
+El resultado va enmascarado, sin repetidos y ordenado, para que dos llamadas con la misma máquina den lo mismo y la subred de una sala no baile entre ellas.
+
+La mitad que decide es Go puro y la prueba el job de Linux. El fichero con `//go:build windows` solo lee el sistema. El de `!windows` devuelve **error** y jamás la lista vacía: sin prefijos locales el planificador concluiría que nada choca con la red de casa y elegiría un rango que sí choca.
+
 ### adapter/engine/kanpachi, implementa `EnginePort`
 
 **El único sitio del proyecto que menciona el motor.** Lo ejecuta como **proceso hijo**, no vinculado al binario Go. Razones en `02`, decisión 1: el motor es Rust y LGPL-3.0, así que un proceso separado mantiene la licencia de Kanpachi libre, evita cgo y aísla los fallos. Lo último dejó de ser un argumento y pasó a ser un hecho medido: el workspace del motor compila su perfil de release con `panic = "abort"`, o sea que un `panic` dentro del mismo proceso se llevaría el servicio sin que nada pueda atajarlo.
@@ -1271,6 +1289,27 @@ Lo que `netcfg` mantiene:
 | El motor propio, sobre la librería | ninguno |
 
 Ese `15888` es el portal de administración del motor, **no tiene autenticación de ninguna clase**, y su valor por defecto escucha en todas las interfaces pese a que la ayuda oficial dice `localhost`. Por ahí cualquier proceso local emite credenciales de la red real, agrega nodos y pide el `network_secret` en claro. El portal se construye en un solo sitio del árbol de EasyTier, dentro de su binario de línea de comandos, y el arranque de red por librería no lo menciona: **desaparece por omisión, no por configuración.**
+
+#### La librería es un FORK, y por qué hizo falta
+
+Hay dos clases de cosa que hace el binario oficial, y solo una desaparece al escribir el nuestro. Lo que el CLI hace **alrededor** de la librería se va por omisión, y ese es el caso del portal. Lo que la librería hace **dentro** de lo que se le pide sigue pasando, porque es su código.
+
+Medido en una máquina de verdad: al crear el adaptador virtual, EasyTier escribe ocho reglas de PERMISO en el Firewall de Windows, por COM, desde dentro de `NetworkInstance::start()`, o sea también por el camino de librería.
+
+| Regla | Alcance |
+|---|---|
+| `EasyTier kanpachi0 - ALL Protocol (Inbound)` | permitir CUALQUIER protocolo sobre el adaptador virtual, sin puerto y sin origen |
+| `EasyTier <ruta del exe> (Inbound)` | permitir CUALQUIER protocolo hacia el motor en **todas** las interfaces de la máquina, la red de casa incluida |
+
+Son permanentes: sobreviven al reinicio y a desinstalar Kanpachi.
+
+La primera fila deshace la promesa central en la misma capa que Kanpachi usa para conceder. La segunda es peor y es la que decide el enfoque: **la compuerta de WFP no puede taparla**, porque va acotada al adaptador virtual, y esa acotación es la invariante que impide que un bloqueo duro deje al usuario sin la entrada de su red de casa. Una capa que jamás debe salirse del adaptador no puede cubrir una regla que aplica en todos.
+
+No hay feature de cargo, campo de configuración ni variable de entorno que las apague, así que la salida es una sola: el motor enlaza `alvarogabrielgomez/EasyTier`, tag `v2.6.4-kanpachi.1`, que es `v2.6.4` de upstream con esas dos llamadas borradas y nada más. Quitarlas es seguro porque upstream ya trataba su fallo como no fatal, con un aviso y seguir.
+
+El diff se lee de un vistazo a propósito, y por eso el motor vive en su repo y no dentro del fork: la afirmación "es upstream y nada más" tiene que poder comprobarse en treinta segundos con `git diff v2.6.4 v2.6.4-kanpachi.1`, y un fork con dos mil líneas nuestras dentro la convierte en un acto de fe.
+
+Lo que el fork NO reemplaza es la compuerta. Su enemigo nunca fue EasyTier: son las reglas permisivas **ajenas**, de escritorio remoto y de instaladores de juegos, que alcanzan al usuario por la red virtual. Eso no lo quita ningún fork.
 
 Responsabilidades:
 

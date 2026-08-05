@@ -2,9 +2,23 @@ package domain
 
 import "net/netip"
 
-// AdapterName es el nombre del adaptador Wintun que crea el instalador. Es
-// literal en todo el proyecto: docs, instalador, código y logs dicen lo mismo.
-const AdapterName = "kanpachi0"
+// Los nombres de los dos adaptadores virtuales.
+//
+// Los crea el MOTOR, uno por red, al levantar cada una, y mueren con ella: sin
+// sala abierta no existe ninguno de los dos. Está medido, y este comentario
+// decía antes que los creaba el instalador, que es falso.
+//
+// Son dos porque el host vive en dos redes a la vez, la sala y el vestíbulo.
+// Los nombra el DOMINIO y no el motor, y esa dirección es de seguridad: la
+// compuerta de WFP se acota a un adaptador POR NOMBRE, así que un motor que
+// eligiera el suyo podría devolver uno que la compuerta no cubre, o sea una red
+// virtual abierta sin nada conteniéndola.
+//
+// Son literales en todo el proyecto: docs, código y logs dicen lo mismo.
+const (
+	AdapterName      = "kanpachi0"
+	LobbyAdapterName = "kanpachi1"
+)
 
 // Métricas del adaptador.
 //

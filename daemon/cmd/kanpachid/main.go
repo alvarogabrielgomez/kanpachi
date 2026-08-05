@@ -23,6 +23,7 @@ import (
 	catalogstore "github.com/accentiostudios/kanpachi/daemon/adapter/catalog/jsonfile"
 	kanpachiengine "github.com/accentiostudios/kanpachi/daemon/adapter/engine/kanpachi"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/probe"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/routes"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/sinimplementar"
 	statestore "github.com/accentiostudios/kanpachi/daemon/adapter/state/jsonfile"
 	"github.com/accentiostudios/kanpachi/daemon/service"
@@ -118,10 +119,14 @@ func correr(consola bool, datos, nombre string) error {
 	// anterior. Que la purga esté dentro del constructor y no en una llamada
 	// aparte es lo que hace que no se pueda saltar.
 	sesion, err := usecase.NewSession(ctx, usecase.Deps{
-		Engine:    motor,
-		Firewall:  fw,
-		NetCfg:    sinimplementar.NetConfig{},
-		Routes:    sinimplementar.Routing{},
+		Engine:   motor,
+		Firewall: fw,
+		NetCfg:   sinimplementar.NetConfig{},
+		// La tabla de rutas REAL. Se consulta al crear o al entrar a una sala,
+		// nunca al instalar: la LAN de una laptop cambia entre la casa y la
+		// oficina, y un rango elegido en la instalación sería correcto solo el
+		// primer día.
+		Routes:    routes.New(),
 		Store:     catalogstore.New(dirDelBinario(), datos, log),
 		State:     statestore.New(datos),
 		Library:   sinimplementar.Library{},

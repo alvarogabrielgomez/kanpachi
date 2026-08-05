@@ -150,11 +150,30 @@ portal desaparece por omisión, no por configuración.**
 - **Secreto fuera de `argv`**: la config entra por **stdin como TOML**. Medido:
   el `CommandLine` del hijo solo muestra la ruta del ejecutable.
 
-## Por qué NO un fork
+## El fork: por qué se descartó, y por qué después hizo falta igual
 
+Lo que se descartó, y sigue descartado, es **seguir una rama viva parcheándola**.
 Entre `v2.6.4` y la rama de desarrollo hay **606 ficheros y +129.000 líneas** en
-un solo cambio, y el árbol del RPC se borró y renació en otro sitio. Los parches
+un solo cambio, y el árbol del RPC se borró y renació en otro sitio: esos parches
 habría que **reescribirlos**, no rebasarlos.
+
+Lo que se hizo es otra cosa, y el argumento de arriba no la toca: un fork
+**fijado al mismo tag** que ya se consumía, con **nueve líneas borradas**. No hay
+rama que seguir y no hay nada que reescribir; subir de versión sigue siendo un
+acto deliberado, y ahora incluye reponer dos borrados.
+
+Hizo falta porque apareció algo que consumir la librería no quita. El portal
+`15888` desaparecía por omisión porque lo construye el **binario** oficial
+alrededor de la librería. Escribir en el firewall lo hace la **librería misma**,
+dentro de `NetworkInstance::start()`, sin bandera ni configuración que lo apague.
+Ver `03-arquitectura.md`, sección del motor, y la decisión 1 en `02`.
+
+**El motor no vive dentro del fork, y es deliberado.** El valor entero del fork
+es que su diff se lea de un vistazo: "es upstream y nada más" o se comprueba en
+treinta segundos con `git diff v2.6.4 v2.6.4-kanpachi.1`, o es un acto de fe. Con
+el motor dentro, esas nueve líneas quedarían mezcladas con dos mil nuestras, y
+cada subida de versión traería además conflictos en su workspace, su
+`rust-toolchain.toml` y su CI, que no tienen nada que ver con lo que se cambia.
 
 ## Por qué NO cgo
 
@@ -617,20 +636,49 @@ propia herramienta.
 
 # El resto de los adaptadores
 
-| # | Adaptador | Desbloquea | Riesgo |
-|---|---|---|---|
-| 1 | **Motor** | Todo lo demás | Alto |
-| 2 | **Firewall** | La promesa central | Alto |
-| 3 | **netcfg** | Que el túnel sea usable | Medio |
-| 4 | **RoomDirectory** | Crear y entrar con código | Medio |
-| 5 | **Auditoría** | Que las alertas digan la verdad | Bajo |
-| 6 | **SystemEvents** | Que los ajustes sobrevivan a Windows | Medio |
-| 7 | **Steam** | Comodidad. Ordena, jamás filtra | Bajo |
-| 8 | **iphlpapi** | Solo el creador de perfiles | Bajo |
-| 9 | **Rendezvous** | Argon2id local puro | Bajo |
+| # | Adaptador | Desbloquea | Riesgo | Estado |
+|---|---|---|---|---|
+| 1 | **Motor** | Todo lo demás | Alto | **HECHO** |
+| 2 | **Firewall** | La promesa central | Alto | **HECHO**, y su compuerta sin cablear, ver abajo |
+| 3 | **RoutingTable** | Que se pueda elegir subred, o sea crear una sala | Bajo | **HECHO** |
+| 4 | **netcfg** | Que el túnel sea usable | Medio | pendiente |
+| 5 | **RoomDirectory** | Crear y entrar con código | Medio | pendiente |
+| 6 | **Auditoría** | Que las alertas digan la verdad | Bajo | pendiente |
+| 7 | **SystemEvents** | Que los ajustes sobrevivan a Windows | Medio | pendiente |
+| 8 | **Steam** | Comodidad. Ordena, jamás filtra | Bajo | pendiente |
+| 9 | **iphlpapi** | Solo el creador de perfiles | Bajo | pendiente |
+| 10 | **Rendezvous** | Argon2id local puro | Bajo | pendiente |
 
-El 9 es Go **puro**, sin red y sin Windows, así que es el más barato y entra en
+El 10 es Go **puro**, sin red y sin Windows, así que es el más barato y entra en
 la lista de `puros` del guardián de arquitectura.
+
+`RoutingTable` salió antes de lo previsto porque era lo que faltaba para que
+`create_room` llegara a alguna parte: fallaba en `planSubnet`, antes de tocar el
+motor. Su riesgo bajó de medio a bajo al escribirlo, porque todo lo que decide
+resultó ser filtrado puro y se prueba en Linux.
+
+## Los dos hallazgos que aparecieron al preparar el túnel
+
+Los dos medidos en la máquina de desarrollo, y ninguno visible desde dentro del
+programa antes de mirar.
+
+**1. El motor escribía en el firewall.** Ocho reglas de permiso al crear el
+adaptador, desde dentro de la librería. Una abría el adaptador virtual a todo, y
+otra permitía cualquier protocolo entrante hacia el ejecutable **en todas las
+interfaces**. Esa segunda es la que decidió el enfoque, porque la compuerta no
+puede taparla sin dejar de estar acotada al adaptador, que es lo único que impide
+dejar al usuario sin su red de casa. Resuelto con el fork. Ver arriba.
+
+**2. La compuerta de WFP no la enciende nadie.** `firewall.SetScope` solo lo
+llama `internal/fwprobe`. En el daemon real `specsFor` devuelve nil y `Apply`
+deja un aviso en el log, así que hoy la contención del adaptador virtual son
+únicamente las reglas del Firewall de Windows. **No es un olvido:** `SetScope`
+necesita el LUID del adaptador, y el adaptador no existe hasta que el motor lo
+crea. Cablearlo es trabajo del túnel y va con `netcfg`, que es quien espera a que
+el adaptador aparezca.
+
+Juntos eran el agujero. Por separado cada uno es la mitad, y por eso ninguno de
+los dos se veía.
 
 **RoomDirectory paga la deuda escrita en `docs/CLAUDE.md`**: `domain.CheckSeedAddr`
 está escrita y probada y **ningún adaptador la llama porque ninguno existe**. Se
