@@ -60,10 +60,14 @@ $ErrorActionPreference = 'Stop'
 function Paso($t) { Write-Host "`n=== $t ===" -ForegroundColor Cyan }
 function Bien($t) { Write-Host "  OK  $t" -ForegroundColor Green }
 
-$esAdmin = ([Security.Principal.WindowsPrincipal] `
-    [Security.Principal.WindowsIdentity]::GetCurrent()
-).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $esAdmin) { throw "Hace falta una consola elevada: escribir en el firewall es privilegiado." }
+# Elevacion solo para borrar. Listar es de lectura, y exigir UAC para ver que
+# va a pasar empuja a saltarse justo el paso que existe para no borrar de mas.
+if ($Aplicar) {
+    $esAdmin = ([Security.Principal.WindowsPrincipal] `
+        [Security.Principal.WindowsIdentity]::GetCurrent()
+    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $esAdmin) { throw "Borrar reglas necesita una consola elevada. Sin -Aplicar solo lista, y eso corre sin elevar." }
+}
 
 # Los binarios que Kanpachi ejecuta o ha ejecutado. Se compara la RUTA y no solo
 # el nombre, por lo mismo que el adaptador mata huerfanos por ruta completa:
@@ -73,9 +77,21 @@ $nuestros = @('kanpachi-engine.exe', 'kanpachi-engine-spike.exe')
 
 Paso "buscando reglas que dejo el motor"
 
+# Dos consultas en BLOQUE y una tabla, jamas una consulta por regla.
+#
+# Esta maquina tiene 977 reglas de firewall. `Get-NetFirewallApplicationFilter`
+# por cada una es una consulta CIM por regla, o sea minutos: la primera version
+# de este script se quedo colgada ahi y hubo que matarla. En bloque son ~3
+# segundos las dos juntas. El InstanceID de un filtro es el Name de su regla,
+# que es lo que permite unirlas sin volver a preguntar.
+$programaDe = @{}
+foreach ($f in (Get-NetFirewallApplicationFilter -All -ErrorAction SilentlyContinue)) {
+    if ($f.Program) { $programaDe[$f.InstanceID] = $f.Program }
+}
+
 $candidatas = Get-NetFirewallRule -ErrorAction SilentlyContinue | ForEach-Object {
     $regla = $_
-    $programa = ($regla | Get-NetFirewallApplicationFilter).Program
+    $programa = $programaDe[$regla.Name]
 
     $porPrograma = $false
     if ($programa -and $programa -ne 'Any') {

@@ -669,6 +669,31 @@ interfaces**. Esa segunda es la que decidió el enfoque, porque la compuerta no
 puede taparla sin dejar de estar acotada al adaptador, que es lo único que impide
 dejar al usuario sin su red de casa. Resuelto con el fork. Ver arriba.
 
+Medido con el motor del fork, elevado, contra `kanpachi.accentio.dev`. Se mide la
+TRANSICIÓN y no un estado suelto, que es la disciplina de siempre: un grupo vacío
+después no prueba nada si nunca se iba a llenar.
+
+| Comprobación | Resultado |
+|---|---|
+| Reglas del grupo `EasyTier` antes | 0, tras limpiar las 17 que dejó el motor viejo |
+| Adaptador `kanpachi0` | Up, TUN real |
+| Reglas del grupo `EasyTier` **con el adaptador arriba** | **0** |
+| Sockets TCP en escucha | ninguno |
+| Endpoints UDP ligados | **0** |
+| Secreto en la línea de comandos | no, solo la ruta del exe |
+| Conexión al seed | `45.55.123.251`, con `peers_changed` de un miembro real |
+| Salida al cerrar stdin | limpia, exit 0 |
+
+Los cero endpoints UDP corrigen algo que se dio por supuesto acá: se creyó que el
+motor tenía sockets UDP ligados para el P2P y que quitar el permiso entrante del
+ejecutable podía costar conectividad directa. Con un seed alcanzado por `tcp://`
+no abre ninguno. **Lo que esto NO prueba** es el caso de dos máquinas
+agujereando NAT por UDP, que necesita la otra punta y llega con el directorio.
+
+Quedan 17 reglas menos en la máquina, y ninguna es de Kanpachi: eran del motor
+viejo y de los avisos de Windows durante el desarrollo. Las quita
+`scripts/limpiar-reglas-del-motor.ps1`, que va en seco salvo con `-Aplicar`.
+
 **2. La compuerta de WFP no la enciende nadie.** `firewall.SetScope` solo lo
 llama `internal/fwprobe`. En el daemon real `specsFor` devuelve nil y `Apply`
 deja un aviso en el log, así que hoy la contención del adaptador virtual son
