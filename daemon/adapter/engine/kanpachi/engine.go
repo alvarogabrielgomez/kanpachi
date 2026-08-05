@@ -82,9 +82,29 @@ type Engine struct {
 	writeMu sync.Mutex
 	nextID  uint64
 	pending map[uint64]chan response
-	// events es el canal del proceso ACTUAL. Tras un Restart hay uno nuevo y el
-	// anterior se cierra, así que quien escuche tiene que volver a pedirlo.
+
+	// events vive lo que vive el adaptador, y se cierra SOLO en Close.
+	//
+	// # El fallo que esto arregla, medido con el daemon de verdad
+	//
+	// La primera versión creaba un canal por proceso y devolvía uno CERRADO
+	// mientras no hubiera ninguno. El supervisor lee un canal cerrado como
+	// muerte, y lo dice en su propio código: *"Sin canal de eventos el motor
+	// está muerto, se haya dicho o no"*. O sea que "todavía no arrancó" y "se
+	// murió" eran el mismo hecho para quien escucha.
+	//
+	// El resultado no fue sutil. Con el daemon recién arrancado y sin ninguna
+	// sala, el watchdog gastó sus ocho intentos, cada uno fallando con "no hay
+	// ninguna sala que reiniciar", y terminó cerrando una sala que el usuario
+	// nunca llegó a crear.
+	//
+	// Con un solo canal, "no arrancó" es silencio y "murió" es un
+	// [domain.EngineDied] explícito. Son dos hechos distintos y ahora se ven
+	// distintos.
 	events chan domain.EngineEvent
+	// closed evita mandar por un canal ya cerrado, que sería un pánico dentro
+	// del daemon.
+	closed bool
 
 	// last es la ÚLTIMA orden de arranque, guardada para Restart.
 	//
@@ -106,20 +126,33 @@ func New(deps Deps) (*Engine, error) {
 	if deps.spawn == nil {
 		deps.spawn = spawn
 	}
-	return &Engine{deps: deps, pending: map[uint64]chan response{}}, nil
+	return &Engine{
+		deps:    deps,
+		pending: map[uint64]chan response{},
+		events:  make(chan domain.EngineEvent, 32),
+	}, nil
 }
 
 func resolveWithNet(host string) ([]netip.Addr, error) {
 	return net.DefaultResolver.LookupNetIP(context.Background(), "ip", host)
 }
 
-// Close apaga el motor. Es idempotente.
+// Close apaga el motor y cierra el canal de eventos. Es idempotente.
+//
+// Es el ÚNICO sitio que cierra ese canal, y por eso el supervisor puede leer un
+// cierre como el fin del adaptador y no como una muerte más del proceso.
 func (e *Engine) Close() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.stopLocked()
+	err := e.stopLocked()
+	if !e.closed {
+		e.closed = true
+		close(e.events)
+	}
+	return err
 }
 
+// stopLocked mata el proceso SIN tocar el canal de eventos.
 func (e *Engine) stopLocked() error {
 	if e.proc == nil {
 		return nil
@@ -130,15 +163,25 @@ func (e *Engine) stopLocked() error {
 	err := e.proc.Kill()
 	e.proc = nil
 	e.w = nil
-	if e.events != nil {
-		close(e.events)
-		e.events = nil
-	}
 	for id, ch := range e.pending {
 		close(ch)
 		delete(e.pending, id)
 	}
 	return err
+}
+
+// emitLocked manda un evento si queda alguien a quien mandárselo.
+//
+// Se descarta cuando el búfer está lleno en vez de bloquear: quien llama tiene
+// el mutex, y bloquearse acá dejaría al adaptador entero parado por un aviso.
+func (e *Engine) emitLocked(ev domain.EngineEvent) {
+	if e.closed {
+		return
+	}
+	select {
+	case e.events <- ev:
+	default:
+	}
 }
 
 // ensureLocked deja el proceso vivo, arrancándolo si hace falta.
@@ -152,15 +195,14 @@ func (e *Engine) ensureLocked(ctx context.Context) error {
 	}
 	e.proc = p
 	e.w = wire.NewWriter(p.Stdin(), maxLine)
-	e.events = make(chan domain.EngineEvent, 32)
 
-	go e.read(p, e.events)
-	go e.reap(p, e.events)
+	go e.read(p)
+	go e.reap(p)
 	return nil
 }
 
 // read reparte lo que llega del motor: respuestas por id, eventos al canal.
-func (e *Engine) read(p child, events chan domain.EngineEvent) {
+func (e *Engine) read(p child) {
 	r := wire.NewReader(p.Stdout(), maxLine)
 	for {
 		line, err := r.ReadLine()
@@ -180,15 +222,12 @@ func (e *Engine) read(p child, events chan domain.EngineEvent) {
 				e.warn("evento del motor descartado", "error", err)
 				continue
 			}
-			select {
-			case events <- domain.EngineEvent{Kind: kind, Reason: in.Reason}:
-			default:
-				// El canal está lleno: el supervisor no está leyendo. Se
-				// descarta este y no se bloquea el lector, porque bloquearlo
-				// dejaría de repartir también las RESPUESTAS, y con eso la sala
-				// entera se cuelga por un aviso.
-				e.warn("se descartó un evento del motor porque nadie lo estaba leyendo", "evento", kind)
-			}
+			// Si el búfer está lleno se descarta, y no se bloquea el lector:
+			// bloquearlo dejaría de repartir también las RESPUESTAS, y con eso
+			// la sala entera se cuelga por un aviso.
+			e.mu.Lock()
+			e.emitLocked(domain.EngineEvent{Kind: kind, Reason: in.Reason})
+			e.mu.Unlock()
 			continue
 		}
 
@@ -211,35 +250,35 @@ func (e *Engine) read(p child, events chan domain.EngineEvent) {
 // no puede reportar su propia muerte. El supervisor lo distingue de
 // "desconectado" a propósito: acá no hay con quién hablar y hay que arrancar
 // otro.
-func (e *Engine) reap(p child, events chan domain.EngineEvent) {
+func (e *Engine) reap(p child) {
 	err := p.Wait()
 
 	e.mu.Lock()
-	vivo := e.proc == p
-	if vivo {
-		e.proc = nil
-		e.w = nil
-		e.events = nil
-		for id, ch := range e.pending {
-			close(ch)
-			delete(e.pending, id)
-		}
-	}
-	e.mu.Unlock()
+	defer e.mu.Unlock()
 
-	if !vivo {
-		// Lo reemplazó un Restart: su canal ya se cerró donde tocaba.
+	// Si ya no es el proceso actual, lo reemplazó un Restart y su muerte no es
+	// noticia: la sala está viva en el proceso nuevo.
+	if e.proc != p {
+		return
+	}
+	e.proc = nil
+	e.w = nil
+	for id, ch := range e.pending {
+		close(ch)
+		delete(e.pending, id)
+	}
+
+	// Solo se avisa de una muerte si había algo que morir. Sin arranque previo,
+	// el proceso terminó porque nadie llegó a usarlo, y anunciarlo como muerte
+	// haría que el watchdog gastara sus intentos contra una sala inexistente.
+	if e.last == nil {
 		return
 	}
 	razon := "el proceso del motor terminó"
 	if err != nil {
 		razon = fmt.Sprintf("el proceso del motor terminó: %v", err)
 	}
-	select {
-	case events <- domain.EngineEvent{Kind: domain.EngineDied, Reason: razon}:
-	default:
-	}
-	close(events)
+	e.emitLocked(domain.EngineEvent{Kind: domain.EngineDied, Reason: razon})
 }
 
 func (e *Engine) warn(msg string, kv ...any) {
@@ -445,20 +484,15 @@ func (e *Engine) Peers(ctx context.Context) ([]domain.Peer, error) {
 	return toPeers(data.Peers)
 }
 
-// Events devuelve el canal del proceso ACTUAL.
+// Events devuelve el canal del adaptador, que es SIEMPRE el mismo.
 //
-// Tras un Restart hay canal nuevo y el anterior se cierra, así que el
-// supervisor se resuscribe en cada latido comparando por identidad.
+// Se cierra únicamente en [Engine.Close]. Un cierre significa que el adaptador
+// terminó, jamás que murió un proceso: la muerte de un proceso viaja como
+// [domain.EngineDied], que es un hecho distinto y ahora se ve distinto. Ver el
+// comentario del campo `events`.
 func (e *Engine) Events() <-chan domain.EngineEvent {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.events == nil {
-		// Un canal cerrado y no nil: quien haga `range` sobre él termina en vez
-		// de bloquearse para siempre.
-		c := make(chan domain.EngineEvent)
-		close(c)
-		return c
-	}
 	return e.events
 }
 

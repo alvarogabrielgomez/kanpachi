@@ -88,9 +88,17 @@ type EnginePort interface {
 	// Events es el canal por el que el motor empuja. El supervisor lo escucha
 	// y traduce cada evento a una transición de la máquina de estados.
 	//
-	// Devuelve el canal del proceso ACTUAL. Tras un Restart hay un canal nuevo
-	// y el anterior se cierra, así que quien escuche tiene que volver a
-	// pedirlo. El supervisor lo hace en cada latido, comparando por identidad.
+	// **El canal vive lo que vive el adaptador y se cierra solo al cerrarlo.**
+	// Un cierre significa que el adaptador terminó, jamás que murió un proceso:
+	// eso viaja como [domain.EngineDied], que es un hecho distinto.
+	//
+	// Esa distinción es funcional y está medida. El supervisor lee un canal
+	// cerrado como muerte del motor, y lo dice en su propio código. Un
+	// adaptador que devolviera un canal cerrado mientras todavía no arrancó
+	// nada haría que "no existe" y "se murió" fueran el mismo hecho para quien
+	// escucha, y el watchdog gastaría sus intentos reiniciando una sala que
+	// nadie llegó a crear. Pasó, con el daemon de verdad, y terminó cerrando
+	// una sala inexistente tras ocho intentos.
 	Events() <-chan domain.EngineEvent
 	Diagnostics(ctx context.Context) (domain.NetCheck, error)
 }
