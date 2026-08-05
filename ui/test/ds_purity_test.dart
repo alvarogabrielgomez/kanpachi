@@ -52,7 +52,8 @@ void main() {
     expect(
       culpables,
       isEmpty,
-      reason: 'Estos archivos traen un color a mano en vez de pedirlo por '
+      reason:
+          'Estos archivos traen un color a mano en vez de pedirlo por '
           'context.colors. Un color hardcodeado deja de responder al tema:\n'
           '${culpables.join('\n')}',
     );
@@ -71,7 +72,8 @@ void main() {
     expect(
       culpables,
       isEmpty,
-      reason: 'Estos archivos fijan una familia a mano en vez de usar un rol '
+      reason:
+          'Estos archivos fijan una familia a mano en vez de usar un rol '
           'de context.type:\n${culpables.join('\n')}',
     );
   });
@@ -95,7 +97,8 @@ void main() {
     expect(
       culpables,
       isEmpty,
-      reason: 'Un widget es una CLASE, no un método. Extrae una clase y ponle '
+      reason:
+          'Un widget es una CLASE, no un método. Extrae una clase y ponle '
           'const:\n${culpables.join('\n')}',
     );
   });

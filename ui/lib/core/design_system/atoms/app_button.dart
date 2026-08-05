@@ -115,8 +115,7 @@ class _AppButtonState extends State<AppButton> {
     return 6;
   }
 
-  bool get _hasRelief =>
-      widget.variant == AppButtonVariant.primary && _enabled;
+  bool get _hasRelief => widget.variant == AppButtonVariant.primary && _enabled;
 
   bool get _enabled => widget.onPressed != null;
 
@@ -125,49 +124,54 @@ class _AppButtonState extends State<AppButton> {
     final colors = context.colors;
     final type = context.type;
 
-    final (Color background, Color foreground, Color? border) = switch (widget.variant) {
-      AppButtonVariant.primary || AppButtonVariant.primaryFlat => _enabled
-          ? (colors.accent, colors.accentInk, null)
-          : (colors.chip, colors.textMuted, null),
+    final (
+      Color background,
+      Color foreground,
+      Color? border,
+    ) = switch (widget.variant) {
+      AppButtonVariant.primary || AppButtonVariant.primaryFlat =>
+        _enabled
+            ? (colors.accent, colors.accentInk, null)
+            : (colors.chip, colors.textMuted, null),
       // Apagado en reposo. El diseño pinta TODOS los ghost en `--kp-muted`
       // menos uno, así que el default correcto es ese y la excepción se pide
       // por `emphasis`. Al revés, con siete sitios pidiendo lo apagado, la
       // excepción sería la regla.
       AppButtonVariant.ghost => (
-          _hovered ? colors.chip : Colors.transparent,
-          _hovered && _enabled
-              ? colors.accent
-              : (widget.emphasis ? colors.text : colors.textMuted),
-          _hovered && _enabled ? colors.accent : colors.border,
-        ),
+        _hovered ? colors.chip : Colors.transparent,
+        _hovered && _enabled
+            ? colors.accent
+            : (widget.emphasis ? colors.text : colors.textMuted),
+        _hovered && _enabled ? colors.accent : colors.border,
+      ),
       AppButtonVariant.quiet => (
-          colors.chip,
-          _hovered && _enabled ? colors.accent : colors.text,
-          _hovered && _enabled ? colors.accent : colors.border,
-        ),
+        colors.chip,
+        _hovered && _enabled ? colors.accent : colors.text,
+        _hovered && _enabled ? colors.accent : colors.border,
+      ),
       // Borde nulo: el discontinuo lo pinta el `CustomPaint` de fuera, y con
       // los dos se verían dos contornos.
       AppButtonVariant.ghostDashed => (
-          _hovered ? colors.chip : Colors.transparent,
-          _hovered && _enabled ? colors.accent : colors.textMuted,
-          null,
-        ),
+        _hovered ? colors.chip : Colors.transparent,
+        _hovered && _enabled ? colors.accent : colors.textMuted,
+        null,
+      ),
       AppButtonVariant.quietSunken => (
-          colors.surfaceSunken,
-          _hovered && _enabled ? colors.accent : colors.text,
-          _hovered && _enabled ? colors.accent : colors.border,
-        ),
+        colors.surfaceSunken,
+        _hovered && _enabled ? colors.accent : colors.text,
+        _hovered && _enabled ? colors.accent : colors.border,
+      ),
     };
 
-    final TextStyle textStyle = widget.textStyle ??
+    final TextStyle textStyle =
+        widget.textStyle ??
         switch (widget.variant) {
           AppButtonVariant.primary => type.buttonLg,
           AppButtonVariant.primaryFlat => type.button,
           AppButtonVariant.ghost ||
           AppButtonVariant.ghostDashed ||
           AppButtonVariant.quiet ||
-          AppButtonVariant.quietSunken =>
-            type.label,
+          AppButtonVariant.quietSunken => type.label,
         };
 
     return MouseRegion(

@@ -66,8 +66,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _createEmpty() {
-    final String name =
-        _roomName.text.trim().isEmpty ? _nameHint : _roomName.text.trim();
+    final String name = _roomName.text.trim().isEmpty
+        ? _nameHint
+        : _roomName.text.trim();
     context.read<SessionCubit>().createRoom(name: name);
     context.read<ShellCubit>().go(AppScreen.room);
   }
@@ -292,15 +293,20 @@ class _MyGames extends StatelessWidget {
             onTap: () => shell.openGamePicker(fromRoom: false),
             child: Text(
               'Ver toda la biblioteca ($total)',
-              style: context.type.label
-                  .copyWith(fontSize: 13, color: context.colors.accent),
+              style: context.type.label.copyWith(
+                fontSize: 13,
+                color: context.colors.accent,
+              ),
             ),
           ),
           children: <Widget>[
             for (final Game game in games)
               AppRow(
                 onTap: () => shell.openGamePicker(fromRoom: false),
-                child: _GameRow(game: game, showCover: artMode == GameArtMode.cover),
+                child: _GameRow(
+                  game: game,
+                  showCover: artMode == GameArtMode.cover,
+                ),
               ),
           ],
         ),
@@ -333,8 +339,10 @@ class _GameRow extends StatelessWidget {
                 // 14 y no 13,5: la lista de la portada va un punto por encima
                 // de las del selector y el catálogo, que sí son 13,5. Local a
                 // esta fila, que es privada de la pantalla.
-                style: context.type.label
-                    .copyWith(fontSize: 14, color: colors.text),
+                style: context.type.label.copyWith(
+                  fontSize: 14,
+                  color: colors.text,
+                ),
               ),
               Text(
                 game.portsLabel,

@@ -14,7 +14,8 @@ part 'color_tokens.tailor.dart';
 /// `lerp`. Spacing y motion no hacen ninguna de las dos cosas, así que viven en
 /// `static const` para no costarle el `const` a quien los use.
 @TailorMixin()
-class ColorTokens extends ThemeExtension<ColorTokens> with _$ColorTokensTailorMixin {
+class ColorTokens extends ThemeExtension<ColorTokens>
+    with _$ColorTokensTailorMixin {
   const ColorTokens({
     required this.background,
     required this.surface,

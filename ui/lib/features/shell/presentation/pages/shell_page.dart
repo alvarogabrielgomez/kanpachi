@@ -108,7 +108,8 @@ class _CurrentScreen extends StatelessWidget {
     if (session.phase == SessionPhase.joining) {
       return ProgressScreen(
         title: 'Buscando la sala…',
-        note: 'Presentando tu equipo con los demás miembros. El tráfico del '
+        note:
+            'Presentando tu equipo con los demás miembros. El tráfico del '
             'juego nunca pasa por el servidor.',
         onCancel: () {
           context.read<SessionCubit>().leave();
@@ -126,9 +127,9 @@ class _CurrentScreen extends StatelessWidget {
       AppScreen.manualGame => const ManualGameScreen(),
       AppScreen.room => const RoomScreen(),
       AppScreen.invite => InviteScreen(
-          code: session.room?.code ?? 'A7K2-M9QX',
-          roomName: session.room?.name ?? 'La Guarida',
-        ),
+        code: session.room?.code ?? 'A7K2-M9QX',
+        roomName: session.room?.name ?? 'La Guarida',
+      ),
     };
   }
 }
@@ -143,18 +144,20 @@ class _DialogLayer extends StatelessWidget {
   Widget build(BuildContext context) {
     return switch (shell.dialog) {
       AppDialog.none => const SizedBox.shrink(),
-      AppDialog.confirmGame => session.pendingGame == null
-          ? const SizedBox.shrink()
-          : ConfirmGameDialog(
-              game: session.pendingGame!,
-              insideRoom: session.hasRoom,
-            ),
-      AppDialog.confirmKick => shell.kickTarget == null
-          ? const SizedBox.shrink()
-          : ConfirmKickDialog(member: shell.kickTarget!),
+      AppDialog.confirmGame =>
+        session.pendingGame == null
+            ? const SizedBox.shrink()
+            : ConfirmGameDialog(
+                game: session.pendingGame!,
+                insideRoom: session.hasRoom,
+              ),
+      AppDialog.confirmKick =>
+        shell.kickTarget == null
+            ? const SizedBox.shrink()
+            : ConfirmKickDialog(member: shell.kickTarget!),
       AppDialog.confirmRenew => ConfirmRenewDialog(
-          membersInside: session.room?.members.length ?? 0,
-        ),
+        membersInside: session.room?.members.length ?? 0,
+      ),
     };
   }
 }

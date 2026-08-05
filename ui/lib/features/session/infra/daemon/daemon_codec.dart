@@ -19,10 +19,10 @@ class DaemonRequest {
   final Map<String, Object?>? params;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'id': id,
-        'method': method,
-        if (params != null) 'params': params,
-      };
+    'id': id,
+    'method': method,
+    if (params != null) 'params': params,
+  };
 }
 
 /// Una respuesta. Lleva resultado o error, jamás los dos.

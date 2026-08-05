@@ -116,33 +116,44 @@ class _AppFieldState extends State<AppField> {
       // para dejarle sitio a ese botón; cuando no lo hay, el texto queda a 6
       // del borde y a 18 del otro lado, descentrado a la vista.
       AppFieldShape.pill => EdgeInsets.fromLTRB(
-          AppSpacing.x4l,
-          AppSpacing.sm,
-          widget.trailing == null ? AppSpacing.x4l : AppSpacing.sm,
-          AppSpacing.sm,
-        ),
+        AppSpacing.x4l,
+        AppSpacing.sm,
+        widget.trailing == null ? AppSpacing.x4l : AppSpacing.sm,
+        AppSpacing.sm,
+      ),
       AppFieldShape.rounded => const EdgeInsets.symmetric(
-          horizontal: AppSpacing.x3l, vertical: AppSpacing.xl),
+        horizontal: AppSpacing.x3l,
+        vertical: AppSpacing.xl,
+      ),
       AppFieldShape.inline => const EdgeInsets.fromLTRB(
-          AppSpacing.x3l, 5, 5, 5),
+        AppSpacing.x3l,
+        5,
+        5,
+        5,
+      ),
       AppFieldShape.hero => const EdgeInsets.symmetric(
-          horizontal: AppSpacing.x4l, vertical: AppSpacing.x3l),
+        horizontal: AppSpacing.x4l,
+        vertical: AppSpacing.x3l,
+      ),
     };
 
-    final BorderRadius radius = widget.radius ??
+    final BorderRadius radius =
+        widget.radius ??
         switch (widget.shape) {
-      AppFieldShape.pill => AppRadius.pill,
-      AppFieldShape.rounded || AppFieldShape.inline => AppRadius.allMd,
-      AppFieldShape.hero => AppRadius.allLg,
-    };
+          AppFieldShape.pill => AppRadius.pill,
+          AppFieldShape.rounded || AppFieldShape.inline => AppRadius.allMd,
+          AppFieldShape.hero => AppRadius.allLg,
+        };
 
-    final TextStyle style = widget.textStyle ??
+    final TextStyle style =
+        widget.textStyle ??
         switch (widget.shape) {
           AppFieldShape.pill || AppFieldShape.inline =>
-            widget.mono ? type.mono.copyWith(letterSpacing: 0.75) : type.labelLg,
+            widget.mono
+                ? type.mono.copyWith(letterSpacing: 0.75)
+                : type.labelLg,
           AppFieldShape.rounded => type.bodyLg.copyWith(height: 1),
-          AppFieldShape.hero =>
-            type.labelLg.copyWith(fontSize: 18, height: 1),
+          AppFieldShape.hero => type.labelLg.copyWith(fontSize: 18, height: 1),
         };
 
     return AnimatedContainer(

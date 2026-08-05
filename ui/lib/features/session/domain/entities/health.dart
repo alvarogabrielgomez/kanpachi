@@ -27,8 +27,8 @@ class HealthReport {
   /// Antes de haber preguntado. Ni avisos ni comprobación, que no es lo mismo
   /// que "está todo bien": es que todavía no se sabe.
   const HealthReport.unknown()
-      : alerts = const <HealthAlert>[],
-        canary = const CanaryCheck.blind();
+    : alerts = const <HealthAlert>[],
+      canary = const CanaryCheck.blind();
 
   /// Los avisos vivos, **en el orden que los mandó el daemon**.
   ///
@@ -49,16 +49,16 @@ class HealthReport {
   /// existe para preguntar "¿está tal alerta?", y de una que no se conoce no se
   /// puede preguntar nada.
   List<AlertKind> get kinds => <AlertKind>[
-        for (final HealthAlert a in alerts)
-          if (a.kind != null) a.kind!,
-      ];
+    for (final HealthAlert a in alerts)
+      if (a.kind != null) a.kind!,
+  ];
 
   static HealthReport fromJson(Map<String, Object?> json) => HealthReport(
-        alerts: HealthAlert.listFrom(json['alerts']),
-        canary: CanaryCheck.fromJson(
-          (json['canary'] as Map<String, Object?>?) ?? const <String, Object?>{},
-        ),
-      );
+    alerts: HealthAlert.listFrom(json['alerts']),
+    canary: CanaryCheck.fromJson(
+      (json['canary'] as Map<String, Object?>?) ?? const <String, Object?>{},
+    ),
+  );
 }
 
 /// Un aviso del módulo de exposición, tal como llegó.

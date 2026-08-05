@@ -46,9 +46,7 @@ abstract final class InviteCode {
   /// guion solo, para que el campo tenga siempre la forma del ejemplo.
   static String mask(String raw) {
     final String valid = keepValid(raw);
-    return format(
-      valid.length <= length ? valid : valid.substring(0, length),
-    );
+    return format(valid.length <= length ? valid : valid.substring(0, length));
   }
 
   static bool isComplete(String raw) {

@@ -71,8 +71,9 @@ class ConfirmGameDialog extends StatelessWidget {
                     const SizedBox(height: 5),
                     Text(
                       game.portsLabel,
-                      style:
-                          context.type.monoSm.copyWith(color: colors.textMuted),
+                      style: context.type.monoSm.copyWith(
+                        color: colors.textMuted,
+                      ),
                     ),
                   ],
                 ),
@@ -84,9 +85,9 @@ class ConfirmGameDialog extends StatelessWidget {
             compact: true,
             insideRoom
                 ? 'Se abren esos puertos hacia los miembros de la sala y se '
-                    'cierran al cambiar de juego o al salir.'
+                      'cierran al cambiar de juego o al salir.'
                 : 'Eres el host: el juego corre en tu PC y esos puertos se '
-                    'abren solo hacia los miembros de la sala.',
+                      'abren solo hacia los miembros de la sala.',
           ),
           const SizedBox(height: AppSpacing.x6l),
           AppModalActions(

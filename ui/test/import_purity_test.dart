@@ -48,7 +48,8 @@ void main() {
       final String p = ruta(f);
       if (!p.contains('/domain/')) continue;
       for (final String i in importsDe(f)) {
-        final bool prohibido = i.contains('package:flutter/material.dart') ||
+        final bool prohibido =
+            i.contains('package:flutter/material.dart') ||
             i.contains('package:flutter_bloc') ||
             i.contains('/infra/') ||
             i.contains('/data/') ||

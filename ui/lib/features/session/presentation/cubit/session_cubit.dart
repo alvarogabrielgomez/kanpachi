@@ -22,7 +22,8 @@ class SessionCubit extends Cubit<SessionState> {
     emit(state.copyWith(catalog: catalog, installed: installed));
   }
 
-  void setNickname(String value) => emit(state.copyWith(nickname: value.trim()));
+  void setNickname(String value) =>
+      emit(state.copyWith(nickname: value.trim()));
 
   /// Guarda qué juego se está confirmando. El diálogo lo lee de acá.
   void proposeGame(Game game) => emit(state.copyWith(pendingGame: game));
@@ -30,11 +31,13 @@ class SessionCubit extends Cubit<SessionState> {
   void cancelProposal() => emit(state.copyWith(clearPending: true));
 
   Future<void> createRoom({required String name, Game? game}) async {
-    emit(state.copyWith(
-      phase: SessionPhase.creating,
-      clearPending: true,
-      clearRoom: true,
-    ));
+    emit(
+      state.copyWith(
+        phase: SessionPhase.creating,
+        clearPending: true,
+        clearRoom: true,
+      ),
+    );
     final Room room = await _repository.createRoom(name: name, game: game);
     emit(state.copyWith(phase: SessionPhase.inRoom, room: room));
   }
@@ -51,11 +54,9 @@ class SessionCubit extends Cubit<SessionState> {
     if (current == null) return;
     emit(state.copyWith(work: RoomWork.openingGame, clearPending: false));
     final Room updated = await _repository.setGame(current, game);
-    emit(state.copyWith(
-      room: updated,
-      work: RoomWork.none,
-      clearPending: true,
-    ));
+    emit(
+      state.copyWith(room: updated, work: RoomWork.none, clearPending: true),
+    );
   }
 
   Future<void> closeGame() async {
@@ -87,20 +88,24 @@ class SessionCubit extends Cubit<SessionState> {
   Future<void> resolveForeignRule({required bool disable}) async {
     final Room? current = state.room;
     if (current == null) return;
-    emit(state.copyWith(
-      room: await _repository.resolveForeignRule(current, disable: disable),
-    ));
+    emit(
+      state.copyWith(
+        room: await _repository.resolveForeignRule(current, disable: disable),
+      ),
+    );
   }
 
   Future<void> leave() async {
     final Room? current = state.room;
     if (current != null) await _repository.leaveRoom(current);
-    emit(state.copyWith(
-      phase: SessionPhase.idle,
-      clearRoom: true,
-      clearPending: true,
-      work: RoomWork.none,
-    ));
+    emit(
+      state.copyWith(
+        phase: SessionPhase.idle,
+        clearRoom: true,
+        clearPending: true,
+        work: RoomWork.none,
+      ),
+    );
   }
 
   /// Vuelve a preguntar por los avisos y por la Protección Kanpachi.
@@ -138,9 +143,7 @@ class SessionCubit extends Cubit<SessionState> {
 
   /// Sustituye la sala entera. Lo usa la barra de prototipo para plantar un
   /// escenario sin pasar por los tiempos de espera.
-  void debugReplaceRoom(Room room) => emit(state.copyWith(
-        phase: SessionPhase.inRoom,
-        room: room,
-        work: RoomWork.none,
-      ));
+  void debugReplaceRoom(Room room) => emit(
+    state.copyWith(phase: SessionPhase.inRoom, room: room, work: RoomWork.none),
+  );
 }

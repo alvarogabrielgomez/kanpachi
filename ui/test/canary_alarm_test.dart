@@ -42,23 +42,33 @@ void main() {
   }
 
   CanaryCheck fuga({int port = 51234}) => CanaryCheck(
-        measured: true,
-        verdict: CanaryVerdict.leaking,
-        port: port,
-        touched: true,
-        measuredAt: DateTime(2026, 8, 4, 22, 15, 3),
-        asked: const <String>['humberto', 'marisol'],
-      );
+    measured: true,
+    verdict: CanaryVerdict.leaking,
+    port: port,
+    touched: true,
+    measuredAt: DateTime(2026, 8, 4, 22, 15, 3),
+    asked: const <String>['humberto', 'marisol'],
+  );
 
-  testWidgets('con la alerta del canario se enseña la alarma', (WidgetTester tester) async {
-    await pinta(tester, alerts: <AlertKind>[AlertKind.canaryLeaking], check: fuga());
+  testWidgets('con la alerta del canario se enseña la alarma', (
+    WidgetTester tester,
+  ) async {
+    await pinta(
+      tester,
+      alerts: <AlertKind>[AlertKind.canaryLeaking],
+      check: fuga(),
+    );
 
     expect(find.text(tituloAlarma), findsOneWidget);
     expect(find.text('Volver a aplicar la protección'), findsOneWidget);
   });
 
   testWidgets('sin la alerta no se enseña nada', (WidgetTester tester) async {
-    await pinta(tester, alerts: <AlertKind>[AlertKind.firewallOff], check: fuga());
+    await pinta(
+      tester,
+      alerts: <AlertKind>[AlertKind.firewallOff],
+      check: fuga(),
+    );
 
     expect(find.text(tituloAlarma), findsNothing);
   });
@@ -68,7 +78,9 @@ void main() {
   // Una fuga que el daemon ya reparó sola tiene veredicto `leaking` y NO tiene
   // alerta. Pintarla sería enterar al usuario de un problema arreglado, que es
   // como se le enseña a ignorar los avisos.
-  testWidgets('una fuga ya reparada sola no pinta nada', (WidgetTester tester) async {
+  testWidgets('una fuga ya reparada sola no pinta nada', (
+    WidgetTester tester,
+  ) async {
     await pinta(tester, alerts: const <AlertKind>[], check: fuga());
 
     expect(find.text(tituloAlarma), findsNothing);
@@ -79,30 +91,42 @@ void main() {
   // Una ronda que nadie contestó llega con veredicto `unconfirmed` y con la
   // alarma todavía puesta. Yendo por el veredicto, el banner desaparecería y la
   // pantalla diría que se arregló algo que sigue roto.
-  testWidgets('una ronda sin confirmar no borra el banner', (WidgetTester tester) async {
+  testWidgets('una ronda sin confirmar no borra el banner', (
+    WidgetTester tester,
+  ) async {
     await pinta(
       tester,
       alerts: <AlertKind>[AlertKind.canaryLeaking],
-      check: const CanaryCheck(measured: true, verdict: CanaryVerdict.unconfirmed),
+      check: const CanaryCheck(
+        measured: true,
+        verdict: CanaryVerdict.unconfirmed,
+      ),
     );
 
     expect(find.text(tituloAlarma), findsOneWidget);
   });
 
-  testWidgets('el detalle nombra el puerto y a cuántos se preguntó',
-      (WidgetTester tester) async {
-    await pinta(tester, alerts: <AlertKind>[AlertKind.canaryLeaking], check: fuga(port: 49876));
+  testWidgets('el detalle nombra el puerto y a cuántos se preguntó', (
+    WidgetTester tester,
+  ) async {
+    await pinta(
+      tester,
+      alerts: <AlertKind>[AlertKind.canaryLeaking],
+      check: fuga(port: 49876),
+    );
 
     expect(
       find.textContaining('49876'),
       findsOneWidget,
-      reason: 'sin el puerto, el aviso es una frase sin dato y no se puede comprobar',
+      reason:
+          'sin el puerto, el aviso es una frase sin dato y no se puede comprobar',
     );
     expect(find.textContaining('2 en la sala'), findsOneWidget);
   });
 
-  testWidgets('una comprobación ciega enseña la alarma sin inventar detalle',
-      (WidgetTester tester) async {
+  testWidgets('una comprobación ciega enseña la alarma sin inventar detalle', (
+    WidgetTester tester,
+  ) async {
     await pinta(tester, alerts: <AlertKind>[AlertKind.canaryLeaking]);
 
     expect(find.text(tituloAlarma), findsOneWidget);
@@ -133,8 +157,9 @@ void main() {
 
   // El doble clic sobre un botón que ESCRIBE EN EL FIREWALL manda dos
   // escrituras a la vez. Deshabilitarlo mientras trabaja no es cosmético.
-  testWidgets('mientras repone el botón no se puede volver a pulsar',
-      (WidgetTester tester) async {
+  testWidgets('mientras repone el botón no se puede volver a pulsar', (
+    WidgetTester tester,
+  ) async {
     int pulsaciones = 0;
     await tester.pumpWidget(
       MaterialApp(

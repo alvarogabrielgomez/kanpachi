@@ -100,7 +100,8 @@ void main() {
         expect(
           tester.getSize(cuerpo.first).width,
           greaterThan(400),
-          reason: '$pantalla se dibujó en un cuerpo colapsado: el test no '
+          reason:
+              '$pantalla se dibujó en un cuerpo colapsado: el test no '
               'estaría probando nada.',
         );
       }
@@ -137,7 +138,8 @@ void main() {
           expect(
             desbordes,
             isEmpty,
-            reason: '$pantalla se desborda en ${ventana.key}. Algo tiene ancho '
+            reason:
+                '$pantalla se desborda en ${ventana.key}. Algo tiene ancho '
                 'fijo donde tendría que ceder:\n${desbordes.join('\n')}',
           );
         });

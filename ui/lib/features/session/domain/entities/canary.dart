@@ -40,13 +40,13 @@ class CanaryCheck {
   /// La comprobación de antes de que ocurriera ninguna. Es el estado inicial, y
   /// es deliberado que no diga nada bueno: no se ha comprobado.
   const CanaryCheck.blind()
-      : measured = false,
-        verdict = CanaryVerdict.blind,
-        port = 0,
-        touched = false,
-        measuredAt = null,
-        asked = const <String>[],
-        answers = const <CanaryAnswer>[];
+    : measured = false,
+      verdict = CanaryVerdict.blind,
+      port = 0,
+      touched = false,
+      measuredAt = null,
+      asked = const <String>[],
+      answers = const <CanaryAnswer>[];
 
   final bool measured;
   final CanaryVerdict verdict;
@@ -106,11 +106,13 @@ class CanaryCheck {
           ? DateTime.fromMillisecondsSinceEpoch(at, isUtc: true).toLocal()
           : null,
       asked: <String>[
-        for (final Object? a in (json['asked'] as List<Object?>?) ?? const <Object?>[])
+        for (final Object? a
+            in (json['asked'] as List<Object?>?) ?? const <Object?>[])
           if (a is String) a,
       ],
       answers: <CanaryAnswer>[
-        for (final Object? a in (json['answers'] as List<Object?>?) ?? const <Object?>[])
+        for (final Object? a
+            in (json['answers'] as List<Object?>?) ?? const <Object?>[])
           if (a is Map<String, Object?>) CanaryAnswer.fromJson(a),
       ],
     );
@@ -140,8 +142,8 @@ class CanaryAnswer {
       udp == ProbeOutcome.refused;
 
   static CanaryAnswer fromJson(Map<String, Object?> json) => CanaryAnswer(
-        from: (json['from'] as String?) ?? '',
-        tcp: ProbeOutcome.fromWire(json['tcp'] as String?),
-        udp: ProbeOutcome.fromWire(json['udp'] as String?),
-      );
+    from: (json['from'] as String?) ?? '',
+    tcp: ProbeOutcome.fromWire(json['tcp'] as String?),
+    udp: ProbeOutcome.fromWire(json['udp'] as String?),
+  );
 }

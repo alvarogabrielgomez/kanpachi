@@ -36,19 +36,22 @@ void main() {
         archivo: 'daemon/transport/protocol/view.go',
         funcion: 'alertName',
       );
-      final Set<String> enDart =
-          AlertKind.values.map((AlertKind k) => k.wire).toSet();
+      final Set<String> enDart = AlertKind.values
+          .map((AlertKind k) => k.wire)
+          .toSet();
 
       expect(
         enGo,
         isNotEmpty,
-        reason: 'no se leyó ninguna clave de alertName: la ruta cambió y este '
+        reason:
+            'no se leyó ninguna clave de alertName: la ruta cambió y este '
             'test no está vigilando nada',
       );
       expect(
         enDart,
         equals(enGo),
-        reason: 'AlertKind y alertName dejaron de coincidir. Lo que sobra en '
+        reason:
+            'AlertKind y alertName dejaron de coincidir. Lo que sobra en '
             'Dart es una clave que el daemon ya no manda; lo que falta llega '
             'como mensaje de reserva y el aviso se pierde.',
       );
@@ -60,19 +63,22 @@ void main() {
         archivo: 'daemon/transport/protocol/params.go',
         funcion: 'ruleClassName',
       );
-      final Set<String> enDart =
-          RuleClass.values.map((RuleClass c) => c.wire).toSet();
+      final Set<String> enDart = RuleClass.values
+          .map((RuleClass c) => c.wire)
+          .toSet();
 
       expect(
         enGo,
         isNotEmpty,
-        reason: 'no se leyó ninguna clave de ruleClassName: la ruta cambió y '
+        reason:
+            'no se leyó ninguna clave de ruleClassName: la ruta cambió y '
             'este test no está vigilando nada',
       );
       expect(
         enDart,
         equals(enGo),
-        reason: 'RuleClass y ruleClassName dejaron de coincidir. Una clase que '
+        reason:
+            'RuleClass y ruleClassName dejaron de coincidir. Una clase que '
             'la UI no conoce cae en el valor de reserva, y aunque ese es el '
             'lado seguro, el usuario lee un texto que no describe lo que tiene.',
       );
@@ -84,14 +90,16 @@ void main() {
         archivo: 'daemon/transport/protocol/view.go',
         funcion: 'exitName',
       );
-      final Set<String> enDart =
-          ExitReason.values.map((ExitReason r) => r.wire).toSet();
+      final Set<String> enDart = ExitReason.values
+          .map((ExitReason r) => r.wire)
+          .toSet();
 
       expect(enGo, isNotEmpty, reason: 'no se leyó ningún motivo de exitName');
       expect(
         enDart,
         equals(enGo),
-        reason: 'ExitReason y exitName dejaron de coincidir. Sin el motivo, '
+        reason:
+            'ExitReason y exitName dejaron de coincidir. Sin el motivo, '
             'que te expulsen y salir por tu cuenta se ven igual.',
       );
     });
@@ -102,14 +110,16 @@ void main() {
         archivo: 'daemon/transport/protocol/view.go',
         funcion: 'connName',
       );
-      final Set<String> enDart =
-          ConnState.values.map((ConnState s) => s.wire).toSet();
+      final Set<String> enDart = ConnState.values
+          .map((ConnState s) => s.wire)
+          .toSet();
 
       expect(enGo, isNotEmpty, reason: 'no se leyó ningún estado de connName');
       expect(
         enDart,
         equals(enGo),
-        reason: 'ConnState y connName dejaron de coincidir. Un estado que la '
+        reason:
+            'ConnState y connName dejaron de coincidir. Un estado que la '
             'UI no conoce deja la pantalla sin saber si está dentro, '
             'reconectando o fuera.',
       );
@@ -121,14 +131,16 @@ void main() {
         archivo: 'daemon/transport/protocol/view.go',
         funcion: 'gateName',
       );
-      final Set<String> enDart =
-          GateState.values.map((GateState s) => s.wire).toSet();
+      final Set<String> enDart = GateState.values
+          .map((GateState s) => s.wire)
+          .toSet();
 
       expect(enGo, isNotEmpty, reason: 'no se leyó ningún estado de gateName');
       expect(
         enDart,
         equals(enGo),
-        reason: 'GateState y gateName dejaron de coincidir. La segunda fila de '
+        reason:
+            'GateState y gateName dejaron de coincidir. La segunda fila de '
             'la pantalla de exposición es la que dice que todo lo demás está '
             'cerrado, y un estado que la UI no conoce la deja en blanco.',
       );
@@ -140,14 +152,20 @@ void main() {
         archivo: 'daemon/transport/protocol/view.go',
         funcion: 'verdictName',
       );
-      final Set<String> enDart =
-          ProbeVerdict.values.map((ProbeVerdict v) => v.wire).toSet();
+      final Set<String> enDart = ProbeVerdict.values
+          .map((ProbeVerdict v) => v.wire)
+          .toSet();
 
-      expect(enGo, isNotEmpty, reason: 'no se leyó ningún veredicto de verdictName');
+      expect(
+        enGo,
+        isNotEmpty,
+        reason: 'no se leyó ningún veredicto de verdictName',
+      );
       expect(
         enDart,
         equals(enGo),
-        reason: 'ProbeVerdict y verdictName dejaron de coincidir. El veredicto '
+        reason:
+            'ProbeVerdict y verdictName dejaron de coincidir. El veredicto '
             'es lo que decide si la pantalla dice "cerrado", "no se pudo '
             'alcanzar" o enseña una alarma, y son cosas muy distintas.',
       );
@@ -159,67 +177,93 @@ void main() {
         archivo: 'daemon/transport/protocol/view.go',
         funcion: 'probeKindName',
       );
-      final Set<String> enDart =
-          ProbeKind.values.map((ProbeKind k) => k.wire).toSet();
+      final Set<String> enDart = ProbeKind.values
+          .map((ProbeKind k) => k.wire)
+          .toSet();
 
-      expect(enGo, isNotEmpty, reason: 'no se leyó ninguna clase de probeKindName');
+      expect(
+        enGo,
+        isNotEmpty,
+        reason: 'no se leyó ninguna clase de probeKindName',
+      );
       expect(
         enDart,
         equals(enGo),
-        reason: 'ProbeKind y probeKindName dejaron de coincidir. Una clase que '
+        reason:
+            'ProbeKind y probeKindName dejaron de coincidir. Una clase que '
             'la UI no conoce cae en "prohibido", que hace ruido de más pero no '
             'esconde nada; que falte al revés sí esconde.',
       );
     });
 
-    test('ProbeOutcome tiene los mismos resultados que probeOutcomeName en Go', () {
-      final Set<String> enGo = _cadenasDeLaFuncion(
-        repo: repo,
-        archivo: 'daemon/transport/protocol/view.go',
-        funcion: 'probeOutcomeName',
-      );
-      final Set<String> enDart =
-          ProbeOutcome.values.map((ProbeOutcome o) => o.wire).toSet();
+    test(
+      'ProbeOutcome tiene los mismos resultados que probeOutcomeName en Go',
+      () {
+        final Set<String> enGo = _cadenasDeLaFuncion(
+          repo: repo,
+          archivo: 'daemon/transport/protocol/view.go',
+          funcion: 'probeOutcomeName',
+        );
+        final Set<String> enDart = ProbeOutcome.values
+            .map((ProbeOutcome o) => o.wire)
+            .toSet();
 
-      expect(enGo, isNotEmpty, reason: 'no se leyó ningún resultado de probeOutcomeName');
-      expect(
-        enDart,
-        equals(enGo),
-        reason: 'ProbeOutcome y probeOutcomeName dejaron de coincidir. Un '
-            'resultado que la UI no conoce cae en "no se pudo preguntar", que '
-            'es lo único que no se puede leer como "está cerrado".',
-      );
-    });
+        expect(
+          enGo,
+          isNotEmpty,
+          reason: 'no se leyó ningún resultado de probeOutcomeName',
+        );
+        expect(
+          enDart,
+          equals(enGo),
+          reason:
+              'ProbeOutcome y probeOutcomeName dejaron de coincidir. Un '
+              'resultado que la UI no conoce cae en "no se pudo preguntar", que '
+              'es lo único que no se puede leer como "está cerrado".',
+        );
+      },
+    );
 
-    test('CanaryVerdict tiene los mismos veredictos que canaryVerdictName en Go', () {
-      final Set<String> enGo = _cadenasDeLaFuncion(
-        repo: repo,
-        archivo: 'daemon/transport/protocol/view.go',
-        funcion: 'canaryVerdictName',
-      );
-      final Set<String> enDart =
-          CanaryVerdict.values.map((CanaryVerdict v) => v.wire).toSet();
+    test(
+      'CanaryVerdict tiene los mismos veredictos que canaryVerdictName en Go',
+      () {
+        final Set<String> enGo = _cadenasDeLaFuncion(
+          repo: repo,
+          archivo: 'daemon/transport/protocol/view.go',
+          funcion: 'canaryVerdictName',
+        );
+        final Set<String> enDart = CanaryVerdict.values
+            .map((CanaryVerdict v) => v.wire)
+            .toSet();
 
-      expect(enGo, isNotEmpty, reason: 'no se leyó ningún veredicto de canaryVerdictName');
-      expect(
-        enDart,
-        equals(enGo),
-        reason: 'CanaryVerdict y canaryVerdictName dejaron de coincidir. Un '
-            'veredicto que la UI no conoce cae en "sin comprobar", y eso deja '
-            'una fuga demostrada sin pintar en la pantalla.',
-      );
-    });
+        expect(
+          enGo,
+          isNotEmpty,
+          reason: 'no se leyó ningún veredicto de canaryVerdictName',
+        );
+        expect(
+          enDart,
+          equals(enGo),
+          reason:
+              'CanaryVerdict y canaryVerdictName dejaron de coincidir. Un '
+              'veredicto que la UI no conoce cae en "sin comprobar", y eso deja '
+              'una fuga demostrada sin pintar en la pantalla.',
+        );
+      },
+    );
 
     test('FailureCode tiene los mismos códigos que protocol.Code en Go', () {
       final Set<String> enGo = _codigosDelProtocolo(repo);
-      final Set<String> enDart =
-          FailureCode.values.map((FailureCode c) => c.wire).toSet();
+      final Set<String> enDart = FailureCode.values
+          .map((FailureCode c) => c.wire)
+          .toSet();
 
       expect(enGo, isNotEmpty, reason: 'no se leyó ningún Code de protocol.go');
       expect(
         enDart,
         equals(enGo),
-        reason: 'FailureCode y protocol.Code dejaron de coincidir. La casa '
+        reason:
+            'FailureCode y protocol.Code dejaron de coincidir. La casa '
             'decide por código y no por texto, así que un código que la UI no '
             'conoce es una pantalla que no sabe qué decir.',
       );
@@ -235,10 +279,22 @@ void main() {
       );
     }
 
-    sinRepetidos('AlertKind', AlertKind.values.map((AlertKind k) => k.wire).toList());
-    sinRepetidos('RuleClass', RuleClass.values.map((RuleClass c) => c.wire).toList());
-    sinRepetidos('ExitReason', ExitReason.values.map((ExitReason r) => r.wire).toList());
-    sinRepetidos('FailureCode', FailureCode.values.map((FailureCode c) => c.wire).toList());
+    sinRepetidos(
+      'AlertKind',
+      AlertKind.values.map((AlertKind k) => k.wire).toList(),
+    );
+    sinRepetidos(
+      'RuleClass',
+      RuleClass.values.map((RuleClass c) => c.wire).toList(),
+    );
+    sinRepetidos(
+      'ExitReason',
+      ExitReason.values.map((ExitReason r) => r.wire).toList(),
+    );
+    sinRepetidos(
+      'FailureCode',
+      FailureCode.values.map((FailureCode c) => c.wire).toList(),
+    );
     sinRepetidos(
       'CanaryVerdict',
       CanaryVerdict.values.map((CanaryVerdict v) => v.wire).toList(),
@@ -276,7 +332,9 @@ Set<String> _cadenasDeLaFuncion({
 
 /// Saca los valores del bloque de constantes `Code` de protocol.go.
 Set<String> _codigosDelProtocolo(Directory repo) {
-  final File fuente = File('${repo.path}/daemon/transport/protocol/protocol.go');
+  final File fuente = File(
+    '${repo.path}/daemon/transport/protocol/protocol.go',
+  );
   if (!fuente.existsSync()) {
     fail('no se encuentra protocol.go desde ${repo.path}');
   }

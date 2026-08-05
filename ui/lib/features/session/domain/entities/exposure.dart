@@ -33,11 +33,11 @@ class ExposureReport {
   /// deliberado: el estado inicial de la pantalla tiene que ser "no lo sé" y
   /// jamás "no hay nada abierto".
   const ExposureReport.blind()
-      : measured = false,
-        gate = GateState.unknown,
-        measuredAt = null,
-        ports = const <ExposedPort>[],
-        unexpected = const <String>[];
+    : measured = false,
+      gate = GateState.unknown,
+      measuredAt = null,
+      ports = const <ExposedPort>[],
+      unexpected = const <String>[];
 
   /// Si esto es una medición o una ceguera.
   ///
@@ -91,11 +91,13 @@ class ExposureReport {
           : null,
       gate: GateState.fromWire(json['gate'] as String?),
       ports: <ExposedPort>[
-        for (final Object? p in (json['ports'] as List<Object?>?) ?? const <Object?>[])
+        for (final Object? p
+            in (json['ports'] as List<Object?>?) ?? const <Object?>[])
           if (p is Map<String, Object?>) ExposedPort.fromJson(p),
       ],
       unexpected: <String>[
-        for (final Object? u in (json['unexpected'] as List<Object?>?) ?? const <Object?>[])
+        for (final Object? u
+            in (json['unexpected'] as List<Object?>?) ?? const <Object?>[])
           if (u is String) u,
       ],
     );
@@ -140,16 +142,18 @@ class ExposedPort {
   String get label => '${proto.toUpperCase()} $portLabel';
 
   static ExposedPort fromJson(Map<String, Object?> json) => ExposedPort(
-        proto: (json['proto'] as String?) ?? '',
-        from: (json['from'] as int?) ?? 0,
-        to: (json['to'] as int?) ?? 0,
-        applied: json['applied'] == true,
-        isControl: json['control'] == true,
-        reachableBy: <String>[
-          for (final Object? m in (json['members'] as List<Object?>?) ?? const <Object?>[])
-            if (m is String) m,
-          for (final Object? n in (json['nets'] as List<Object?>?) ?? const <Object?>[])
-            if (n is String) n,
-        ],
-      );
+    proto: (json['proto'] as String?) ?? '',
+    from: (json['from'] as int?) ?? 0,
+    to: (json['to'] as int?) ?? 0,
+    applied: json['applied'] == true,
+    isControl: json['control'] == true,
+    reachableBy: <String>[
+      for (final Object? m
+          in (json['members'] as List<Object?>?) ?? const <Object?>[])
+        if (m is String) m,
+      for (final Object? n
+          in (json['nets'] as List<Object?>?) ?? const <Object?>[])
+        if (n is String) n,
+    ],
+  );
 }

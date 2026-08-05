@@ -181,7 +181,10 @@ class _AccountMenu extends StatelessWidget {
       // ata visualmente al botón del que sale.
       builder: (BuildContext context, double t, Widget? child) => Opacity(
         opacity: t,
-        child: Transform.translate(offset: Offset(0, -6 * (1 - t)), child: child),
+        child: Transform.translate(
+          offset: Offset(0, -6 * (1 - t)),
+          child: child,
+        ),
       ),
       child: Container(
         width: 210,
@@ -247,7 +250,11 @@ class _WindowButtons extends StatelessWidget {
       children: <Widget>[
         AppIconButton(
           tooltip: 'Minimizar',
-          glyph: Container(width: 11, height: AppStroke.hairline, color: colors.textMuted),
+          glyph: Container(
+            width: 11,
+            height: AppStroke.hairline,
+            color: colors.textMuted,
+          ),
           onPressed: windowManager.minimize,
         ),
         AppIconButton(

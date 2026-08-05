@@ -211,18 +211,50 @@ abstract final class AppTypography {
     bodyLg: _sans.copyWith(fontSize: 15, height: 1.6),
     body: _sans.copyWith(fontSize: 13.5, height: 1.6),
     bodySm: _sans.copyWith(fontSize: 12.5, height: 1.5),
-    labelLg: _sans.copyWith(fontSize: 15, height: 1.3, fontWeight: FontWeight.w500),
-    label: _sans.copyWith(fontSize: 13.5, height: 1.3, fontWeight: FontWeight.w500),
+    labelLg: _sans.copyWith(
+      fontSize: 15,
+      height: 1.3,
+      fontWeight: FontWeight.w500,
+    ),
+    label: _sans.copyWith(
+      fontSize: 13.5,
+      height: 1.3,
+      fontWeight: FontWeight.w500,
+    ),
     // Interlínea 1 y no 1.3: los tres sitios que la usan son rótulos de una
     // línea metidos en cajas de alto fijo (la píldora de la cuenta, la barra
     // de estado, la pista bajo un campo), y ahí 1.3 es aire que descuadra la
     // caja sin separar nada de nada.
-    labelSm: _sans.copyWith(fontSize: 12.5, height: 1, fontWeight: FontWeight.w500),
-    strong: _sans.copyWith(fontSize: 14, height: 1.3, fontWeight: FontWeight.w600),
-    strongSm: _sans.copyWith(fontSize: 13.5, height: 1.4, fontWeight: FontWeight.w600),
-    buttonLg: _sans.copyWith(fontSize: 15, height: 1, fontWeight: FontWeight.w700),
-    button: _sans.copyWith(fontSize: 14.5, height: 1, fontWeight: FontWeight.w700),
-    buttonSm: _sans.copyWith(fontSize: 13.5, height: 1, fontWeight: FontWeight.w700),
+    labelSm: _sans.copyWith(
+      fontSize: 12.5,
+      height: 1,
+      fontWeight: FontWeight.w500,
+    ),
+    strong: _sans.copyWith(
+      fontSize: 14,
+      height: 1.3,
+      fontWeight: FontWeight.w600,
+    ),
+    strongSm: _sans.copyWith(
+      fontSize: 13.5,
+      height: 1.4,
+      fontWeight: FontWeight.w600,
+    ),
+    buttonLg: _sans.copyWith(
+      fontSize: 15,
+      height: 1,
+      fontWeight: FontWeight.w700,
+    ),
+    button: _sans.copyWith(
+      fontSize: 14.5,
+      height: 1,
+      fontWeight: FontWeight.w700,
+    ),
+    buttonSm: _sans.copyWith(
+      fontSize: 13.5,
+      height: 1,
+      fontWeight: FontWeight.w700,
+    ),
     kicker: _mono.copyWith(
       fontSize: 11.5,
       height: 1,

@@ -50,27 +50,31 @@ void main() {
   }
 
   const String tituloFirewall = 'Tu Firewall de Windows está apagado';
-  const String tituloRouter = 'Tu router tiene un puerto abierto hacia internet';
+  const String tituloRouter =
+      'Tu router tiene un puerto abierto hacia internet';
 
   // LA AFIRMACIÓN QUE MATA LA MAQUETA.
   //
   // Con el daemon sin avisos, la portada no pinta ni uno. Volver a poner una
   // lista literal hace fallar esto y nada más lo haría fallar.
-  testWidgets('sin avisos del daemon la portada no pinta ninguno',
-      (WidgetTester tester) async {
+  testWidgets('sin avisos del daemon la portada no pinta ninguno', (
+    WidgetTester tester,
+  ) async {
     await pintaPortada(tester, const HealthReport.unknown());
 
     expect(find.text(tituloFirewall), findsNothing);
     expect(
       find.text(tituloRouter),
       findsNothing,
-      reason: 'estas dos eran las de la maqueta: si aparecen sin que el daemon '
+      reason:
+          'estas dos eran las de la maqueta: si aparecen sin que el daemon '
           'las mande, la lista literal volvió',
     );
   });
 
-  testWidgets('se pinta lo que mandó el daemon y solo eso',
-      (WidgetTester tester) async {
+  testWidgets('se pinta lo que mandó el daemon y solo eso', (
+    WidgetTester tester,
+  ) async {
     await pintaPortada(
       tester,
       const HealthReport(
@@ -87,8 +91,9 @@ void main() {
   // El detalle es del daemon y el copy es del producto. La maqueta lo tiraba:
   // llamaba a `alert(kind)` sin detalle, así que el dato medido no llegaba a la
   // pantalla ni cuando existía.
-  testWidgets('el detalle del daemon viaja hasta la pantalla',
-      (WidgetTester tester) async {
+  testWidgets('el detalle del daemon viaja hasta la pantalla', (
+    WidgetTester tester,
+  ) async {
     await pintaPortada(
       tester,
       const HealthReport(
@@ -110,13 +115,17 @@ void main() {
   // El daemon y la app se actualizan por separado. Una clave que este enum no
   // tiene va a existir tarde o temprano, y la respuesta correcta jamás es
   // callarla: se pierde el copy bueno y se conserva el aviso.
-  testWidgets('un aviso que esta versión no conoce se pinta igual',
-      (WidgetTester tester) async {
+  testWidgets('un aviso que esta versión no conoce se pinta igual', (
+    WidgetTester tester,
+  ) async {
     await pintaPortada(
       tester,
       const HealthReport(
         alerts: <HealthAlert>[
-          HealthAlert(wire: 'algo_que_no_existe_todavia', detail: 'puerto 9999'),
+          HealthAlert(
+            wire: 'algo_que_no_existe_todavia',
+            detail: 'puerto 9999',
+          ),
         ],
       ),
     );
@@ -181,15 +190,18 @@ void main() {
     // El usuario puede no abrir jamás la pantalla de exposición. Si la alarma
     // viviera solo allí, una protección que dejó de contener se quedaría sin
     // ver hasta que a alguien se le ocurriera ir a mirar.
-    testWidgets('con la alarma puesta la sala la enseña sola',
-        (WidgetTester tester) async {
+    testWidgets('con la alarma puesta la sala la enseña sola', (
+      WidgetTester tester,
+    ) async {
       await pintaSala(tester, conFuga);
 
       expect(find.text('Tu protección no está conteniendo'), findsOneWidget);
       expect(find.textContaining('51234'), findsOneWidget);
     });
 
-    testWidgets('sin la alarma la sala no la enseña', (WidgetTester tester) async {
+    testWidgets('sin la alarma la sala no la enseña', (
+      WidgetTester tester,
+    ) async {
       await pintaSala(tester, const HealthReport.unknown());
 
       expect(find.text('Tu protección no está conteniendo'), findsNothing);
@@ -200,8 +212,9 @@ void main() {
     // Es lo único que el test del widget no puede afirmar: allí el callback es
     // de mentira. Acá se comprueba que la pantalla lo cableó al cubit y que el
     // cubit llama al repositorio.
-    testWidgets('pulsar reponer llega hasta el repositorio',
-        (WidgetTester tester) async {
+    testWidgets('pulsar reponer llega hasta el repositorio', (
+      WidgetTester tester,
+    ) async {
       final RepoConSalud repo = await pintaSala(tester, conFuga);
 
       await tester.tap(find.text('Volver a aplicar la protección'));
@@ -211,7 +224,8 @@ void main() {
       expect(
         find.text('Tu protección no está conteniendo'),
         findsNothing,
-        reason: 'el daemon contestó sin la alerta, así que la banda tiene que '
+        reason:
+            'el daemon contestó sin la alerta, así que la banda tiene que '
             'irse sola: dejarla puesta obligaría al usuario a adivinar si su '
             'pulsación sirvió de algo',
       );
@@ -238,7 +252,8 @@ void main() {
       expect(
         session.state.health.kinds,
         isNot(contains(AlertKind.canaryLeaking)),
-        reason: 'la pantalla tiene que redibujar sin la alerta que se acaba de '
+        reason:
+            'la pantalla tiene que redibujar sin la alerta que se acaba de '
             'resolver, y para eso el cubit guarda lo que contestó el daemon en '
             'vez de volver a preguntar',
       );
@@ -251,7 +266,10 @@ void main() {
     test('un fallo al reponer no deja el botón apagado', () async {
       final SessionCubit session = SessionCubit(_RepoQueFalla());
 
-      await expectLater(session.reapplyProtection(), throwsA(isA<StateError>()));
+      await expectLater(
+        session.reapplyProtection(),
+        throwsA(isA<StateError>()),
+      );
 
       expect(session.state.isReapplying, isFalse);
     });

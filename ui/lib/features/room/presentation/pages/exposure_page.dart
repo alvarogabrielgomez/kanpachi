@@ -140,7 +140,11 @@ class _ExposurePageState extends State<ExposurePage> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.report, required this.busy, required this.onRefresh});
+  const _Header({
+    required this.report,
+    required this.busy,
+    required this.onRefresh,
+  });
 
   final ExposureReport? report;
   final bool busy;
@@ -160,7 +164,9 @@ class _Header extends StatelessWidget {
               if (when.isNotEmpty)
                 Text(
                   'Medido a las $when',
-                  style: context.type.bodySm.copyWith(color: context.colors.textMuted),
+                  style: context.type.bodySm.copyWith(
+                    color: context.colors.textMuted,
+                  ),
                 ),
             ],
           ),
@@ -194,7 +200,9 @@ class _Body extends StatelessWidget {
         if (report.ports.isEmpty)
           const AppNotice.line(
             tone: AppNoticeTone.neutral,
-            body: Text('Ahora mismo no hay ningún puerto abierto por Kanpachi.'),
+            body: Text(
+              'Ahora mismo no hay ningún puerto abierto por Kanpachi.',
+            ),
           )
         else
           AppRowList(
@@ -230,7 +238,9 @@ class _PortRow extends StatelessWidget {
                 Text(port.label, style: context.type.body),
                 Text(
                   _who(port),
-                  style: context.type.bodySm.copyWith(color: context.colors.textMuted),
+                  style: context.type.bodySm.copyWith(
+                    color: context.colors.textMuted,
+                  ),
                 ),
               ],
             ),
@@ -247,7 +257,9 @@ class _PortRow extends StatelessWidget {
   /// y una regla sin alcance remoto no llega a existir. Si llegara vacía, decir
   /// "nadie" es el lado seguro, porque el puerto no le sirve a nadie.
   static String _who(ExposedPort p) {
-    final String quien = p.reachableBy.isEmpty ? 'nadie' : p.reachableBy.join(', ');
+    final String quien = p.reachableBy.isEmpty
+        ? 'nadie'
+        : p.reachableBy.join(', ');
     return p.isControl ? 'Canal de la sala · $quien' : 'Abierto para $quien';
   }
 }

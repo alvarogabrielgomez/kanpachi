@@ -32,7 +32,8 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  ProbeReport informe(List<ProbeResult> results, ProbeVerdict verdict) => ProbeReport(
+  ProbeReport informe(List<ProbeResult> results, ProbeVerdict verdict) =>
+      ProbeReport(
         measured: true,
         verdict: verdict,
         target: '100.64.1.1',
@@ -49,18 +50,23 @@ void main() {
     rttMs: 11,
   );
 
-  testWidgets('antes de pulsar no dice que esté cerrado', (WidgetTester tester) async {
+  testWidgets('antes de pulsar no dice que esté cerrado', (
+    WidgetTester tester,
+  ) async {
     await pinta(tester, run: () async => const ProbeReport.blind());
 
     expect(find.textContaining('Todavía no se ha probado'), findsOneWidget);
     expect(
       find.textContaining('no se alcanza nada más'),
       findsNothing,
-      reason: 'sin haber marcado nada, la pantalla no puede afirmar que está cerrado',
+      reason:
+          'sin haber marcado nada, la pantalla no puede afirmar que está cerrado',
     );
   });
 
-  testWidgets('el host no tiene botón, y se le dice por qué', (WidgetTester tester) async {
+  testWidgets('el host no tiene botón, y se le dice por qué', (
+    WidgetTester tester,
+  ) async {
     bool lanzado = false;
     await pinta(
       tester,
@@ -71,63 +77,67 @@ void main() {
       },
     );
 
-    expect(find.textContaining('lo tiene que pulsar alguien más'), findsOneWidget);
+    expect(
+      find.textContaining('lo tiene que pulsar alguien más'),
+      findsOneWidget,
+    );
     expect(find.byType(AppButton), findsNothing);
     expect(find.textContaining('Probar la PC'), findsNothing);
     expect(
       lanzado,
       isFalse,
-      reason: 'sondearse a uno mismo no atraviesa el firewall y diría que está '
+      reason:
+          'sondearse a uno mismo no atraviesa el firewall y diría que está '
           'todo abierto en una máquina blindada',
     );
   });
 
-  testWidgets('una fuga se nombra con el puerto que contestó', (WidgetTester tester) async {
+  testWidgets('una fuga se nombra con el puerto que contestó', (
+    WidgetTester tester,
+  ) async {
     await pinta(
       tester,
-      run: () async => informe(
-        const <ProbeResult>[
-          canal,
-          ProbeResult(
-            port: 445,
-            kind: ProbeKind.forbidden,
-            label: 'compartir archivos (SMB)',
-            outcome: ProbeOutcome.answered,
-            rttMs: 9,
-          ),
-        ],
-        ProbeVerdict.leaky,
-      ),
+      run: () async => informe(const <ProbeResult>[
+        canal,
+        ProbeResult(
+          port: 445,
+          kind: ProbeKind.forbidden,
+          label: 'compartir archivos (SMB)',
+          outcome: ProbeOutcome.answered,
+          rttMs: 9,
+        ),
+      ], ProbeVerdict.leaky),
     );
     await tester.tap(find.textContaining('Probar la PC de alvaro'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('se llega a algo que Kanpachi no abrió'), findsOneWidget);
+    expect(
+      find.textContaining('se llega a algo que Kanpachi no abrió'),
+      findsOneWidget,
+    );
     // Decir "hay algo abierto" sin decir qué manda al usuario a buscar a ciegas.
     expect(find.textContaining('445 · compartir archivos (SMB)'), findsWidgets);
   });
 
-  testWidgets('sin respuesta del canal no se afirma que esté cerrado',
-      (WidgetTester tester) async {
+  testWidgets('sin respuesta del canal no se afirma que esté cerrado', (
+    WidgetTester tester,
+  ) async {
     await pinta(
       tester,
-      run: () async => informe(
-        const <ProbeResult>[
-          ProbeResult(
-            port: 57623,
-            kind: ProbeKind.reference,
-            label: 'el canal de la sala',
-            outcome: ProbeOutcome.silent,
-          ),
-          ProbeResult(
-            port: 445,
-            kind: ProbeKind.forbidden,
-            label: 'compartir archivos (SMB)',
-            outcome: ProbeOutcome.silent,
-          ),
-        ],
-        ProbeVerdict.unreachable,
-      ),
+      run: () async => informe(const <ProbeResult>[
+        ProbeResult(
+          port: 57623,
+          kind: ProbeKind.reference,
+          label: 'el canal de la sala',
+          outcome: ProbeOutcome.silent,
+        ),
+        ProbeResult(
+          port: 445,
+          kind: ProbeKind.forbidden,
+          label: 'compartir archivos (SMB)',
+          outcome: ProbeOutcome.silent,
+        ),
+      ], ProbeVerdict.unreachable),
     );
     await tester.tap(find.textContaining('Probar la PC de alvaro'));
     await tester.pumpAndSettle();
@@ -137,12 +147,12 @@ void main() {
     expect(find.textContaining('no se alcanza nada más'), findsNothing);
   });
 
-  testWidgets('un puerto callado se enseña como sin respuesta, jamás como cerrado',
-      (WidgetTester tester) async {
-    await pinta(
-      tester,
-      run: () async => informe(
-        const <ProbeResult>[
+  testWidgets(
+    'un puerto callado se enseña como sin respuesta, jamás como cerrado',
+    (WidgetTester tester) async {
+      await pinta(
+        tester,
+        run: () async => informe(const <ProbeResult>[
           canal,
           ProbeResult(
             port: 3389,
@@ -150,28 +160,29 @@ void main() {
             label: 'Escritorio remoto',
             outcome: ProbeOutcome.silent,
           ),
-        ],
-        ProbeVerdict.sealed,
-      ),
-    );
-    await tester.tap(find.textContaining('Probar la PC de alvaro'));
-    await tester.pumpAndSettle();
+        ], ProbeVerdict.sealed),
+      );
+      await tester.tap(find.textContaining('Probar la PC de alvaro'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('sin respuesta'), findsOneWidget);
-    expect(
-      find.text('cerrado'),
-      findsNothing,
-      reason: 'en Windows el silencio no distingue bloqueado de nada escuchando, '
-          'así que esa fila no puede llamarse cerrada',
-    );
-    // Y la fila dice por qué está cada puerto en la lista: sin eso, el canal
-    // contestando se lee igual que SMB contestando, y son lo contrario.
-    expect(find.textContaining('Tiene que contestar'), findsOneWidget);
-    expect(find.text('No tiene que contestar'), findsOneWidget);
-  });
+      expect(find.text('sin respuesta'), findsOneWidget);
+      expect(
+        find.text('cerrado'),
+        findsNothing,
+        reason:
+            'en Windows el silencio no distingue bloqueado de nada escuchando, '
+            'así que esa fila no puede llamarse cerrada',
+      );
+      // Y la fila dice por qué está cada puerto en la lista: sin eso, el canal
+      // contestando se lee igual que SMB contestando, y son lo contrario.
+      expect(find.textContaining('Tiene que contestar'), findsOneWidget);
+      expect(find.text('No tiene que contestar'), findsOneWidget);
+    },
+  );
 
-  testWidgets('el veredicto limpio lleva su advertencia de alcance',
-      (WidgetTester tester) async {
+  testWidgets('el veredicto limpio lleva su advertencia de alcance', (
+    WidgetTester tester,
+  ) async {
     await pinta(
       tester,
       run: () async => informe(const <ProbeResult>[canal], ProbeVerdict.sealed),
@@ -185,8 +196,9 @@ void main() {
     expect(find.textContaining('no todos'), findsOneWidget);
   });
 
-  testWidgets('un fallo se enseña y no deja el resultado viejo en pantalla',
-      (WidgetTester tester) async {
+  testWidgets('un fallo se enseña y no deja el resultado viejo en pantalla', (
+    WidgetTester tester,
+  ) async {
     bool primera = true;
     await pinta(
       tester,
@@ -210,7 +222,8 @@ void main() {
     expect(
       find.textContaining('no se alcanza nada más'),
       findsNothing,
-      reason: 'un resultado viejo al lado de un error nuevo se lee como si '
+      reason:
+          'un resultado viejo al lado de un error nuevo se lee como si '
           'siguiera valiendo',
     );
   });

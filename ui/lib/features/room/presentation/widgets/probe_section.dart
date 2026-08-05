@@ -133,7 +133,9 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String quien = hostName.isEmpty ? 'la PC del host' : 'la PC de $hostName';
+    final String quien = hostName.isEmpty
+        ? 'la PC del host'
+        : 'la PC de $hostName';
     return Row(
       children: <Widget>[
         Expanded(
@@ -145,7 +147,9 @@ class _Header extends StatelessWidget {
                 measuredLabel.isEmpty
                     ? 'Marca a $quien y cuenta qué contesta'
                     : 'Probado a las $measuredLabel',
-                style: context.type.bodySm.copyWith(color: context.colors.textMuted),
+                style: context.type.bodySm.copyWith(
+                  color: context.colors.textMuted,
+                ),
               ),
             ],
           ),
@@ -195,10 +199,7 @@ class _Failed extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppNotice(
-      title: 'No se pudo probar',
-      body: Text(detail),
-    );
+    return AppNotice(title: 'No se pudo probar', body: Text(detail));
   }
 }
 
@@ -234,7 +235,9 @@ class _ResultRow extends StatelessWidget {
                 Text(result.title, style: context.type.body),
                 Text(
                   _porQue(result.kind),
-                  style: context.type.bodySm.copyWith(color: context.colors.textMuted),
+                  style: context.type.bodySm.copyWith(
+                    color: context.colors.textMuted,
+                  ),
                 ),
               ],
             ),
@@ -248,10 +251,11 @@ class _ResultRow extends StatelessWidget {
   /// Por qué ese puerto está en la lista. Sin esto, la fila del canal de la sala
   /// contestando se lee igual que la de SMB contestando, y son lo contrario.
   static String _porQue(ProbeKind kind) => switch (kind) {
-        ProbeKind.reference => 'Tiene que contestar: es la prueba de que la comprobación llegó',
-        ProbeKind.forbidden => 'No tiene que contestar',
-        ProbeKind.game => 'Lo abrió el juego',
-      };
+    ProbeKind.reference =>
+      'Tiene que contestar: es la prueba de que la comprobación llegó',
+    ProbeKind.forbidden => 'No tiene que contestar',
+    ProbeKind.game => 'Lo abrió el juego',
+  };
 }
 
 class _Outcome extends StatelessWidget {
@@ -280,9 +284,9 @@ class _Outcome extends StatelessWidget {
   /// callado no distingue "bloqueado" de "no hay nada escuchando". Escribir
   /// "cerrado" en esa fila sería afirmar lo que la medición no dice.
   static String _texto(ProbeResult r) => switch (r.outcome) {
-        ProbeOutcome.answered => 'contesta · ${r.rttMs} ms',
-        ProbeOutcome.refused => 'rebota',
-        ProbeOutcome.silent => 'sin respuesta',
-        ProbeOutcome.failed => 'no se pudo probar',
-      };
+    ProbeOutcome.answered => 'contesta · ${r.rttMs} ms',
+    ProbeOutcome.refused => 'rebota',
+    ProbeOutcome.silent => 'sin respuesta',
+    ProbeOutcome.failed => 'no se pudo probar',
+  };
 }

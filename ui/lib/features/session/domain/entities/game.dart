@@ -30,10 +30,8 @@ class PortRule {
 
   String get label => '$range ${protocol.label}';
 
-  PortRule copyWith({String? range, PortProtocol? protocol}) => PortRule(
-        range: range ?? this.range,
-        protocol: protocol ?? this.protocol,
-      );
+  PortRule copyWith({String? range, PortProtocol? protocol}) =>
+      PortRule(range: range ?? this.range, protocol: protocol ?? this.protocol);
 
   @override
   bool operator ==(Object other) =>

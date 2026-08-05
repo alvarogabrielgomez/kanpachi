@@ -23,30 +23,30 @@ class AppCover extends StatelessWidget {
   // con el tamaño del hueco (6 / 7 / 8 / 10), y una cadena de ternarios sobre
   // `height` acierta hoy y miente en cuanto aparezca un quinto tamaño.
   const AppCover.thumb({super.key, this.badge})
-      : width = 34,
-        height = 46,
-        radius = AppRadius.allXs;
+    : width = 34,
+      height = 46,
+      radius = AppRadius.allXs;
 
   const AppCover.grid({super.key, this.badge})
-      : width = double.infinity,
-        height = 104,
-        radius = AppRadius.allSm;
+    : width = double.infinity,
+      height = 104,
+      radius = AppRadius.allSm;
 
   const AppCover.room({super.key, this.badge})
-      : width = 44,
-        height = 60,
-        radius = AppRadius.all7;
+    : width = 44,
+      height = 60,
+      radius = AppRadius.all7;
 
   const AppCover.dialog({super.key, this.badge})
-      : width = 52,
-        height = 70,
-        radius = AppRadius.allSm;
+    : width = 52,
+      height = 70,
+      radius = AppRadius.allSm;
 
   /// La vista previa del alta manual: ocupa el ancho y es la más grande.
   const AppCover.preview({super.key, this.badge})
-      : width = double.infinity,
-        height = 150,
-        radius = AppRadius.all10;
+    : width = double.infinity,
+      height = 150,
+      radius = AppRadius.all10;
 
   final double width;
   final double height;
@@ -105,10 +105,7 @@ class AppInstalledBadge extends StatelessWidget {
     final colors = context.colors;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: colors.ok,
-        borderRadius: AppRadius.pill,
-      ),
+      decoration: BoxDecoration(color: colors.ok, borderRadius: AppRadius.pill),
       child: Text(
         'INSTALADO',
         style: context.type.monoXxs.copyWith(

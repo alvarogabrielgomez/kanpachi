@@ -57,12 +57,11 @@ class FakeSessionRepository implements SessionRepository {
     String range,
     PortProtocol protocol, {
     bool installed = false,
-  }) =>
-      Game(
-        name: name,
-        installed: installed,
-        rules: <PortRule>[PortRule(range: range, protocol: protocol)],
-      );
+  }) => Game(
+    name: name,
+    installed: installed,
+    rules: <PortRule>[PortRule(range: range, protocol: protocol)],
+  );
 
   @override
   Future<List<Game>> catalog() async => <Game>[..._manual, ..._catalog];
@@ -164,28 +163,29 @@ class FakeSessionRepository implements SessionRepository {
 
   @override
   Future<Room> kick(Room room, Member member) async => room.copyWith(
-        members: room.members
-            .where((Member m) => m.name != member.name)
-            .toList(growable: false),
-      );
+    members: room.members
+        .where((Member m) => m.name != member.name)
+        .toList(growable: false),
+  );
 
   @override
   Future<Room> renewCode(Room room) async => Room(
-        name: room.name,
-        code: _newCode(),
-        members: room.members,
-        selfIsHost: room.selfIsHost,
-        game: room.game,
-        hostName: room.hostName,
-        network: room.network,
-        foreignRule: room.foreignRule,
-      );
+    name: room.name,
+    code: _newCode(),
+    members: room.members,
+    selfIsHost: room.selfIsHost,
+    game: room.game,
+    hostName: room.hostName,
+    network: room.network,
+    foreignRule: room.foreignRule,
+  );
 
   @override
   Future<Room> resolveForeignRule(Room room, {required bool disable}) async =>
       room.copyWith(
-        foreignRule:
-            disable ? ForeignRuleState.disabled : ForeignRuleState.kept,
+        foreignRule: disable
+            ? ForeignRuleState.disabled
+            : ForeignRuleState.kept,
       );
 
   @override

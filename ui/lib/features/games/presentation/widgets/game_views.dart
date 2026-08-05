@@ -108,9 +108,10 @@ class GameCollection extends StatelessWidget {
       builder: (BuildContext context, BoxConstraints constraints) {
         const double gap = AppSpacing.xl;
         final int columns =
-            ((constraints.maxWidth + gap) / (minTileWidth + gap))
-                .floor()
-                .clamp(1, 8);
+            ((constraints.maxWidth + gap) / (minTileWidth + gap)).floor().clamp(
+              1,
+              8,
+            );
         final double tile =
             (constraints.maxWidth - gap * (columns - 1)) / columns;
         return Wrap(

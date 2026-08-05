@@ -23,7 +23,10 @@ class ScreenEnter extends StatelessWidget {
       builder: (BuildContext context, double t, Widget? body) {
         return Opacity(
           opacity: t,
-          child: Transform.translate(offset: Offset(0, 8 * (1 - t)), child: body),
+          child: Transform.translate(
+            offset: Offset(0, 8 * (1 - t)),
+            child: body,
+          ),
         );
       },
       child: child,

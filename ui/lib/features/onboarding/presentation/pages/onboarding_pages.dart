@@ -119,8 +119,10 @@ class _NicknameScreenState extends State<NicknameScreen> {
             'Hasta 12 letras y números',
             // El rol de nota, el mismo de «Paso 2 de 2»: es una pista, no una
             // etiqueta, y en semi-negrita competía con el campo que explica.
-            style: context.type.bodySm
-                .copyWith(color: colors.textMuted, height: 1),
+            style: context.type.bodySm.copyWith(
+              color: colors.textMuted,
+              height: 1,
+            ),
           ),
           const SizedBox(height: AppSpacing.x7l),
           const AppExplainer(
@@ -156,10 +158,11 @@ class ProgressScreen extends StatelessWidget {
   });
 
   const ProgressScreen.creating({super.key})
-      : title = 'Creando la sala…',
-        note = 'Levantando la red de la sala y generando el código. Todavía no '
-            'hay ningún puerto abierto.',
-        onCancel = null;
+    : title = 'Creando la sala…',
+      note =
+          'Levantando la red de la sala y generando el código. Todavía no '
+          'hay ningún puerto abierto.',
+      onCancel = null;
 
   final String title;
   final String note;

@@ -41,7 +41,9 @@ void main() {
     reachableBy: <String>['100.64.1.5'],
   );
 
-  testWidgets('una medición que falló no enseña ninguna lista', (WidgetTester tester) async {
+  testWidgets('una medición que falló no enseña ninguna lista', (
+    WidgetTester tester,
+  ) async {
     await pinta(tester, const ExposureReport.blind());
 
     expect(
@@ -52,32 +54,37 @@ void main() {
     expect(
       find.textContaining('16261'),
       findsNothing,
-      reason: 'un informe ciego no puede pintar puertos: sería la última lista '
+      reason:
+          'un informe ciego no puede pintar puertos: sería la última lista '
           'buena sobre una medición que no ocurrió',
     );
   });
 
-  testWidgets('la lista nunca va sola: la segunda fila dice qué pasa con el resto',
-      (WidgetTester tester) async {
-    await pinta(
-      tester,
-      ExposureReport(
-        measured: true,
-        measuredAt: DateTime(2026, 8, 4, 20, 14, 3),
-        gate: GateState.present,
-        ports: const <ExposedPort>[juego],
-      ),
-    );
+  testWidgets(
+    'la lista nunca va sola: la segunda fila dice qué pasa con el resto',
+    (WidgetTester tester) async {
+      await pinta(
+        tester,
+        ExposureReport(
+          measured: true,
+          measuredAt: DateTime(2026, 8, 4, 20, 14, 3),
+          gate: GateState.present,
+          ports: const <ExposedPort>[juego],
+        ),
+      );
 
-    expect(find.textContaining('UDP 16261-16262'), findsOneWidget);
-    expect(find.textContaining('100.64.1.5'), findsOneWidget);
-    // Sin esta fila la lista es cierta y engañosa a la vez: enumera lo propio
-    // sin decir nada de la puerta de al lado.
-    expect(find.textContaining('Todo lo demás está cerrado'), findsOneWidget);
-    expect(find.textContaining('20:14:03'), findsOneWidget);
-  });
+      expect(find.textContaining('UDP 16261-16262'), findsOneWidget);
+      expect(find.textContaining('100.64.1.5'), findsOneWidget);
+      // Sin esta fila la lista es cierta y engañosa a la vez: enumera lo propio
+      // sin decir nada de la puerta de al lado.
+      expect(find.textContaining('Todo lo demás está cerrado'), findsOneWidget);
+      expect(find.textContaining('20:14:03'), findsOneWidget);
+    },
+  );
 
-  testWidgets('sin compuerta la pantalla lo dice, y no calla', (WidgetTester tester) async {
+  testWidgets('sin compuerta la pantalla lo dice, y no calla', (
+    WidgetTester tester,
+  ) async {
     await pinta(
       tester,
       ExposureReport(
@@ -96,7 +103,9 @@ void main() {
     );
   });
 
-  testWidgets('un puerto que se pidió y no está se marca', (WidgetTester tester) async {
+  testWidgets('un puerto que se pidió y no está se marca', (
+    WidgetTester tester,
+  ) async {
     await pinta(
       tester,
       ExposureReport(
@@ -121,8 +130,9 @@ void main() {
     expect(find.text('no está puesto'), findsOneWidget);
   });
 
-  testWidgets('el hueco del canal se distingue de un puerto de juego',
-      (WidgetTester tester) async {
+  testWidgets('el hueco del canal se distingue de un puerto de juego', (
+    WidgetTester tester,
+  ) async {
     await pinta(
       tester,
       ExposureReport(
@@ -149,7 +159,9 @@ void main() {
     expect(find.textContaining('Abierto para 100.64.1.5'), findsOneWidget);
   });
 
-  testWidgets('una regla que nadie pidió se denuncia', (WidgetTester tester) async {
+  testWidgets('una regla que nadie pidió se denuncia', (
+    WidgetTester tester,
+  ) async {
     await pinta(
       tester,
       ExposureReport(

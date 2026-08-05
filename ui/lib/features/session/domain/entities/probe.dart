@@ -31,12 +31,12 @@ class ProbeReport {
   /// El informe de antes de pulsar nada. Es el estado inicial de la pantalla, y
   /// es deliberado que no diga "cerrado": no se ha probado.
   const ProbeReport.blind()
-      : measured = false,
-        verdict = ProbeVerdict.blind,
-        target = '',
-        name = '',
-        measuredAt = null,
-        results = const <ProbeResult>[];
+    : measured = false,
+      verdict = ProbeVerdict.blind,
+      target = '',
+      name = '',
+      measuredAt = null,
+      results = const <ProbeResult>[];
 
   final bool measured;
   final ProbeVerdict verdict;
@@ -87,7 +87,8 @@ class ProbeReport {
           ? DateTime.fromMillisecondsSinceEpoch(at, isUtc: true).toLocal()
           : null,
       results: <ProbeResult>[
-        for (final Object? r in (json['results'] as List<Object?>?) ?? const <Object?>[])
+        for (final Object? r
+            in (json['results'] as List<Object?>?) ?? const <Object?>[])
           if (r is Map<String, Object?>) ProbeResult.fromJson(r),
       ],
     );
@@ -127,10 +128,10 @@ class ProbeResult {
   String get title => '$port · $label';
 
   static ProbeResult fromJson(Map<String, Object?> json) => ProbeResult(
-        port: (json['port'] as int?) ?? 0,
-        kind: ProbeKind.fromWire(json['kind'] as String?),
-        label: (json['label'] as String?) ?? '',
-        outcome: ProbeOutcome.fromWire(json['outcome'] as String?),
-        rttMs: (json['rtt_ms'] as int?) ?? 0,
-      );
+    port: (json['port'] as int?) ?? 0,
+    kind: ProbeKind.fromWire(json['kind'] as String?),
+    label: (json['label'] as String?) ?? '',
+    outcome: ProbeOutcome.fromWire(json['outcome'] as String?),
+    rttMs: (json['rtt_ms'] as int?) ?? 0,
+  );
 }

@@ -10,9 +10,9 @@ class AppSegment<T> {
     this.icon,
     this.label,
   }) : assert(
-          (icon == null) != (label == null),
-          'Un segmento lleva icono O palabra, nunca los dos ni ninguno',
-        );
+         (icon == null) != (label == null),
+         'Un segmento lleva icono O palabra, nunca los dos ni ninguno',
+       );
 
   final T value;
   final IconData? icon;

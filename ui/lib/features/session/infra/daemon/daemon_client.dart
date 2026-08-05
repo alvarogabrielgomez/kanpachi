@@ -95,9 +95,7 @@ class DaemonClient {
 
     try {
       await transport.send(
-        _codec.encode(
-          DaemonRequest(id: id, method: method, params: params),
-        ),
+        _codec.encode(DaemonRequest(id: id, method: method, params: params)),
       );
     } on Object catch (e) {
       _esperando.remove(id);

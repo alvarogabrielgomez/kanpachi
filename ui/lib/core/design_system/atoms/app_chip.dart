@@ -29,8 +29,9 @@ class AppChip extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: (mono ? type.monoSm : type.labelSm)
-            .copyWith(color: colors.textOnChip),
+        style: (mono ? type.monoSm : type.labelSm).copyWith(
+          color: colors.textOnChip,
+        ),
       ),
     );
   }

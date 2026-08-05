@@ -61,8 +61,7 @@ class _AppStatusDotState extends State<AppStatusDot>
     (_controller ??= AnimationController(
       vsync: this,
       duration: widget.pulseDuration ~/ 2,
-    ))
-        .repeat(reverse: true);
+    )).repeat(reverse: true);
   }
 
   @override
@@ -95,9 +94,10 @@ class _AppStatusDotState extends State<AppStatusDot>
     return FadeTransition(
       // Con curva: un latido lineal se lee como un parpadeo de aviso, y esto
       // dice "vivo", no "atención".
-      opacity: Tween<double>(begin: 1, end: 0.3).animate(
-        CurvedAnimation(parent: c, curve: Curves.easeInOut),
-      ),
+      opacity: Tween<double>(
+        begin: 1,
+        end: 0.3,
+      ).animate(CurvedAnimation(parent: c, curve: Curves.easeInOut)),
       child: dot,
     );
   }

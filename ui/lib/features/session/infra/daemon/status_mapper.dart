@@ -9,11 +9,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 /// catálogo pone el texto. Nadie más en la app vuelve a mirar una cadena del
 /// cable.
 class DaemonStatus {
-  const DaemonStatus({
-    required this.conn,
-    required this.alerts,
-    this.lastExit,
-  });
+  const DaemonStatus({required this.conn, required this.alerts, this.lastExit});
 
   /// En qué anda la conexión. Ausente o desconocido cuenta como [ConnState.idle],
   /// que es el estado por defecto y no un error.
@@ -72,9 +68,9 @@ abstract final class StatusMapper {
   /// basura. Acá solo se le pone el copy encima. Dos recorridos con las mismas
   /// reglas escritas dos veces es cómo una se queda atrás sin que nadie lo note.
   static List<AppMessage> alertsFrom(Object? crudo) => <AppMessage>[
-        for (final HealthAlert a in HealthAlert.listFrom(crudo))
-          AppMessages.alertFromWire(a.wire, detail: a.detail),
-      ];
+    for (final HealthAlert a in HealthAlert.listFrom(crudo))
+      AppMessages.alertFromWire(a.wire, detail: a.detail),
+  ];
 
   static AppMessage? _exitFrom(Object? crudo) {
     if (crudo is! String || crudo.isEmpty) return null;

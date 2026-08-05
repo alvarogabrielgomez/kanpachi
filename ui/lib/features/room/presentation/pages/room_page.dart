@@ -54,7 +54,9 @@ class RoomScreen extends StatelessWidget {
           // El usuario puede no abrir jamás la pantalla de exposición, y una
           // protección que dejó de contener no puede esperar a que vaya a
           // buscarla. La banda se pinta sola cuando no hay alarma.
-          if (session.health.kinds.contains(AlertKind.canaryLeaking)) ...<Widget>[
+          if (session.health.kinds.contains(
+            AlertKind.canaryLeaking,
+          )) ...<Widget>[
             CanaryAlarm(
               alerts: session.health.kinds,
               check: session.health.canary,
@@ -767,11 +769,7 @@ class _ExposureTitle extends StatelessWidget {
 /// El copy vive en el catálogo y no acá. Antes estaba escrito dentro de este
 /// widget, que es justo lo que el catálogo existe para impedir.
 class _ForeignRuleNotice extends StatelessWidget {
-  const _ForeignRuleNotice({
-    required this.kind,
-    this.gameName,
-    this.program,
-  });
+  const _ForeignRuleNotice({required this.kind, this.gameName, this.program});
 
   final RuleClass kind;
   final String? gameName;

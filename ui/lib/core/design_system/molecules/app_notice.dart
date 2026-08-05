@@ -43,9 +43,9 @@ class AppNotice extends StatelessWidget {
     this.tone = AppNoticeTone.warn,
     this.pulse = false,
     super.key,
-  })  : title = null,
-        actions = null,
-        titleStyle = null;
+  }) : title = null,
+       actions = null,
+       titleStyle = null;
 
   final String? title;
 
@@ -81,27 +81,27 @@ class AppNotice extends StatelessWidget {
     // lo que distingue "una línea de estado" de "algo que hay que decidir".
     final (BorderRadius radius, EdgeInsets padding) = switch (this) {
       _ when oneLine => (
-          AppRadius.allLg,
-          const EdgeInsets.symmetric(horizontal: AppSpacing.x3l, vertical: 13),
-        ),
+        AppRadius.allLg,
+        const EdgeInsets.symmetric(horizontal: AppSpacing.x3l, vertical: 13),
+      ),
       _ when actions != null => (
-          AppRadius.allXl,
-          const EdgeInsets.symmetric(horizontal: 17, vertical: 15),
-        ),
+        AppRadius.allXl,
+        const EdgeInsets.symmetric(horizontal: 17, vertical: 15),
+      ),
       _ when tone == AppNoticeTone.neutral => (
-          AppRadius.allXl,
-          const EdgeInsets.symmetric(
-            horizontal: AppSpacing.x4l,
-            vertical: AppSpacing.x3l,
-          ),
+        AppRadius.allXl,
+        const EdgeInsets.symmetric(
+          horizontal: AppSpacing.x4l,
+          vertical: AppSpacing.x3l,
         ),
+      ),
       _ => (
-          AppRadius.allLg,
-          const EdgeInsets.symmetric(
-            horizontal: AppSpacing.x3l,
-            vertical: AppSpacing.xxl,
-          ),
+        AppRadius.allLg,
+        const EdgeInsets.symmetric(
+          horizontal: AppSpacing.x3l,
+          vertical: AppSpacing.xxl,
         ),
+      ),
     };
 
     return Container(
@@ -109,8 +109,9 @@ class AppNotice extends StatelessWidget {
       padding: padding,
       decoration: BoxDecoration(color: background, borderRadius: radius),
       child: Row(
-        crossAxisAlignment:
-            oneLine ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+        crossAxisAlignment: oneLine
+            ? CrossAxisAlignment.center
+            : CrossAxisAlignment.start,
         children: <Widget>[
           Padding(
             padding: EdgeInsets.only(top: oneLine ? 0 : 5),
@@ -129,8 +130,9 @@ class AppNotice extends StatelessWidget {
                 if (title != null) ...<Widget>[
                   Text(
                     title!,
-                    style: (titleStyle ?? context.type.strong)
-                        .copyWith(color: colors.text),
+                    style: (titleStyle ?? context.type.strong).copyWith(
+                      color: colors.text,
+                    ),
                   ),
                   const SizedBox(height: 3),
                 ],

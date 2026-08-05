@@ -76,19 +76,18 @@ class ShellState {
     bool? pickerCameFromRoom,
     Member? kickTarget,
     bool clearKickTarget = false,
-  }) =>
-      ShellState(
-        screen: screen ?? this.screen,
-        dialog: dialog ?? this.dialog,
-        themeMode: themeMode ?? this.themeMode,
-        density: density ?? this.density,
-        artMode: artMode ?? this.artMode,
-        ambient: ambient ?? this.ambient,
-        showHealthAlerts: showHealthAlerts ?? this.showHealthAlerts,
-        accountMenuOpen: accountMenuOpen ?? this.accountMenuOpen,
-        pickerCameFromRoom: pickerCameFromRoom ?? this.pickerCameFromRoom,
-        kickTarget: clearKickTarget ? null : (kickTarget ?? this.kickTarget),
-      );
+  }) => ShellState(
+    screen: screen ?? this.screen,
+    dialog: dialog ?? this.dialog,
+    themeMode: themeMode ?? this.themeMode,
+    density: density ?? this.density,
+    artMode: artMode ?? this.artMode,
+    ambient: ambient ?? this.ambient,
+    showHealthAlerts: showHealthAlerts ?? this.showHealthAlerts,
+    accountMenuOpen: accountMenuOpen ?? this.accountMenuOpen,
+    pickerCameFromRoom: pickerCameFromRoom ?? this.pickerCameFromRoom,
+    kickTarget: clearKickTarget ? null : (kickTarget ?? this.kickTarget),
+  );
 }
 
 /// Navegación y preferencias de presentación.
@@ -98,31 +97,33 @@ class ShellState {
 /// es de la ventana y sólo de la ventana.
 class ShellCubit extends Cubit<ShellState> {
   ShellCubit({AppScreen initial = AppScreen.welcome})
-      : super(ShellState(screen: initial));
+    : super(ShellState(screen: initial));
 
-  void go(AppScreen screen) => emit(state.copyWith(
-        screen: screen,
-        dialog: AppDialog.none,
-        accountMenuOpen: false,
-      ));
+  void go(AppScreen screen) => emit(
+    state.copyWith(
+      screen: screen,
+      dialog: AppDialog.none,
+      accountMenuOpen: false,
+    ),
+  );
 
   /// Abre el selector recordando de dónde vino.
-  void openGamePicker({required bool fromRoom}) => emit(state.copyWith(
-        screen: AppScreen.gamePicker,
-        dialog: AppDialog.none,
-        pickerCameFromRoom: fromRoom,
-        accountMenuOpen: false,
-      ));
+  void openGamePicker({required bool fromRoom}) => emit(
+    state.copyWith(
+      screen: AppScreen.gamePicker,
+      dialog: AppDialog.none,
+      pickerCameFromRoom: fromRoom,
+      accountMenuOpen: false,
+    ),
+  );
 
   void showDialog(AppDialog dialog) => emit(state.copyWith(dialog: dialog));
 
   void closeDialog() =>
       emit(state.copyWith(dialog: AppDialog.none, clearKickTarget: true));
 
-  void askKick(Member member) => emit(state.copyWith(
-        dialog: AppDialog.confirmKick,
-        kickTarget: member,
-      ));
+  void askKick(Member member) =>
+      emit(state.copyWith(dialog: AppDialog.confirmKick, kickTarget: member));
 
   void toggleAccountMenu() =>
       emit(state.copyWith(accountMenuOpen: !state.accountMenuOpen));
@@ -139,19 +140,23 @@ class ShellCubit extends Cubit<ShellState> {
   void setHealthAlerts({required bool enabled}) =>
       emit(state.copyWith(showHealthAlerts: enabled));
 
-  void cycleTheme() => emit(state.copyWith(
-        themeMode: switch (state.themeMode) {
-          ThemeMode.system => ThemeMode.light,
-          ThemeMode.light => ThemeMode.dark,
-          ThemeMode.dark => ThemeMode.system,
-        },
-      ));
+  void cycleTheme() => emit(
+    state.copyWith(
+      themeMode: switch (state.themeMode) {
+        ThemeMode.system => ThemeMode.light,
+        ThemeMode.light => ThemeMode.dark,
+        ThemeMode.dark => ThemeMode.system,
+      },
+    ),
+  );
 
-  void cycleDensity() => emit(state.copyWith(
-        density: switch (state.density) {
-          AppDensity.airy => AppDensity.balanced,
-          AppDensity.balanced => AppDensity.dense,
-          AppDensity.dense => AppDensity.airy,
-        },
-      ));
+  void cycleDensity() => emit(
+    state.copyWith(
+      density: switch (state.density) {
+        AppDensity.airy => AppDensity.balanced,
+        AppDensity.balanced => AppDensity.dense,
+        AppDensity.dense => AppDensity.airy,
+      },
+    ),
+  );
 }

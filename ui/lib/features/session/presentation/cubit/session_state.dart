@@ -87,16 +87,15 @@ class SessionState {
     String? nickname,
     HealthReport? health,
     ProtectionWork? protection,
-  }) =>
-      SessionState(
-        phase: phase ?? this.phase,
-        room: clearRoom ? null : (room ?? this.room),
-        work: work ?? this.work,
-        catalog: catalog ?? this.catalog,
-        installed: installed ?? this.installed,
-        pendingGame: clearPending ? null : (pendingGame ?? this.pendingGame),
-        nickname: nickname ?? this.nickname,
-        health: health ?? this.health,
-        protection: protection ?? this.protection,
-      );
+  }) => SessionState(
+    phase: phase ?? this.phase,
+    room: clearRoom ? null : (room ?? this.room),
+    work: work ?? this.work,
+    catalog: catalog ?? this.catalog,
+    installed: installed ?? this.installed,
+    pendingGame: clearPending ? null : (pendingGame ?? this.pendingGame),
+    nickname: nickname ?? this.nickname,
+    health: health ?? this.health,
+    protection: protection ?? this.protection,
+  );
 }

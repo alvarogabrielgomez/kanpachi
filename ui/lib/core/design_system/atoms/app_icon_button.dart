@@ -19,9 +19,9 @@ class AppIconButton extends StatefulWidget {
     this.outlined = false,
     super.key,
   }) : assert(
-          (icon == null) != (glyph == null),
-          'Un botón de icono lleva un icono O un dibujo propio',
-        );
+         (icon == null) != (glyph == null),
+         'Un botón de icono lleva un icono O un dibujo propio',
+       );
 
   final IconData? icon;
 
@@ -97,7 +97,8 @@ class _AppIconButtonState extends State<AppIconButton> {
                     )
                   : null,
             ),
-            child: widget.glyph ??
+            child:
+                widget.glyph ??
                 Icon(
                   widget.icon,
                   size: widget.iconSize,

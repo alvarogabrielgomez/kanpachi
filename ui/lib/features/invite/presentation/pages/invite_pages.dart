@@ -35,8 +35,11 @@ class InviteScreen extends StatelessWidget {
           Text(
             'Te invitaron a una sala de Kanpachi',
             textAlign: TextAlign.center,
-            style: context.type.titleLg
-                .copyWith(color: colors.text, fontSize: 25, height: 1.25),
+            style: context.type.titleLg.copyWith(
+              color: colors.text,
+              fontSize: 25,
+              height: 1.25,
+            ),
           ),
           const SizedBox(height: AppSpacing.x5l),
           AppCard(
@@ -123,8 +126,9 @@ class _InviteRow extends StatelessWidget {
           const Spacer(),
           Text(
             value,
-            style: (mono ? context.type.monoMd : context.type.label)
-                .copyWith(color: colors.text),
+            style: (mono ? context.type.monoMd : context.type.label).copyWith(
+              color: colors.text,
+            ),
           ),
         ],
       ),

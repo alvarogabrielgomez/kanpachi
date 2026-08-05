@@ -61,8 +61,10 @@ class AppMessage {
   /// `null` para que el catálogo pueda ser total, o sea que toda clave tenga
   /// respuesta, y quien pregunte no tenga que distinguir "no sé" de "no hay
   /// nada que decir".
-  static const AppMessage none =
-      AppMessage(severity: MessageSeverity.neutral, body: '');
+  static const AppMessage none = AppMessage(
+    severity: MessageSeverity.neutral,
+    body: '',
+  );
 
   /// Qué pasó. Opcional: los avisos de una sola línea no llevan.
   final String? title;

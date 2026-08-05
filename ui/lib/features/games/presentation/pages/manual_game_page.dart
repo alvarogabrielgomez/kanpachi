@@ -47,17 +47,19 @@ class _ManualGameScreenState extends State<ManualGameScreen> {
 
   List<PortRule> get _portRules => _rules
       .where((_RuleDraft r) => r.controller.text.trim().isNotEmpty)
-      .map((_RuleDraft r) => PortRule(
-            range: r.controller.text.trim(),
-            protocol: r.protocol,
-          ))
+      .map(
+        (_RuleDraft r) =>
+            PortRule(range: r.controller.text.trim(), protocol: r.protocol),
+      )
       .toList(growable: false);
 
   void _save() {
     final SessionCubit session = context.read<SessionCubit>();
     session.saveManualGame(
       Game(
-        name: _name.text.trim().isEmpty ? 'Juego sin nombre' : _name.text.trim(),
+        name: _name.text.trim().isEmpty
+            ? 'Juego sin nombre'
+            : _name.text.trim(),
         rules: _portRules,
         manual: true,
         coverUrl: _cover.text.trim().isEmpty ? null : _cover.text.trim(),
@@ -76,10 +78,13 @@ class _ManualGameScreenState extends State<ManualGameScreen> {
         children: <Widget>[
           ScreenHeader(
             title: 'Agregar un juego',
-            note: 'Para lo que no está en el catálogo. Kanpachi solo necesita '
+            note:
+                'Para lo que no está en el catálogo. Kanpachi solo necesita '
                 'los puertos que el juego abre en tu PC.',
             noteMaxWidth: 520,
-            leading: AppBackButton(onPressed: () => shell.go(AppScreen.catalog)),
+            leading: AppBackButton(
+              onPressed: () => shell.go(AppScreen.catalog),
+            ),
           ),
           const SizedBox(height: AppSpacing.x7l),
           // El `Align` no es decorativo: la Column padre estira a lo ancho con
@@ -90,43 +95,43 @@ class _ManualGameScreenState extends State<ManualGameScreen> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 860),
               child: LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final Widget form = _Form(
-                name: _name,
-                cover: _cover,
-                rules: _rules,
-                onChanged: () => setState(() {}),
-                onAddRule: () => setState(() => _rules.add(_RuleDraft())),
-                onRemoveRule: (int i) => setState(() {
-                  _rules.removeAt(i).dispose();
-                  if (_rules.isEmpty) _rules.add(_RuleDraft());
-                }),
-                onCancel: () => shell.go(AppScreen.catalog),
-                onSave: _save,
-              );
-              final Widget preview = _Preview(
-                name: _name.text.trim(),
-                rules: _portRules,
-              );
-              if (constraints.maxWidth < 620) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    form,
-                    const SizedBox(height: AppSpacing.x8l),
-                    preview,
-                  ],
-                );
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Expanded(child: form),
-                  const SizedBox(width: AppSpacing.x8l),
-                  Expanded(child: preview),
-                ],
-              );
-            },
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final Widget form = _Form(
+                    name: _name,
+                    cover: _cover,
+                    rules: _rules,
+                    onChanged: () => setState(() {}),
+                    onAddRule: () => setState(() => _rules.add(_RuleDraft())),
+                    onRemoveRule: (int i) => setState(() {
+                      _rules.removeAt(i).dispose();
+                      if (_rules.isEmpty) _rules.add(_RuleDraft());
+                    }),
+                    onCancel: () => shell.go(AppScreen.catalog),
+                    onSave: _save,
+                  );
+                  final Widget preview = _Preview(
+                    name: _name.text.trim(),
+                    rules: _portRules,
+                  );
+                  if (constraints.maxWidth < 620) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        form,
+                        const SizedBox(height: AppSpacing.x8l),
+                        preview,
+                      ],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Expanded(child: form),
+                      const SizedBox(width: AppSpacing.x8l),
+                      Expanded(child: preview),
+                    ],
+                  );
+                },
               ),
             ),
           ),

@@ -159,18 +159,17 @@ class Room {
     ForeignRuleState? foreignRule,
     RuleClass? foreignRuleClass,
     String? foreignRuleProgram,
-  }) =>
-      Room(
-        name: name ?? this.name,
-        code: code,
-        members: members ?? this.members,
-        selfIsHost: selfIsHost,
-        game: clearGame ? null : (game ?? this.game),
-        hostName: hostName,
-        hostLeft: hostLeft ?? this.hostLeft,
-        network: network ?? this.network,
-        foreignRule: foreignRule ?? this.foreignRule,
-        foreignRuleClass: foreignRuleClass ?? this.foreignRuleClass,
-        foreignRuleProgram: foreignRuleProgram ?? this.foreignRuleProgram,
-      );
+  }) => Room(
+    name: name ?? this.name,
+    code: code,
+    members: members ?? this.members,
+    selfIsHost: selfIsHost,
+    game: clearGame ? null : (game ?? this.game),
+    hostName: hostName,
+    hostLeft: hostLeft ?? this.hostLeft,
+    network: network ?? this.network,
+    foreignRule: foreignRule ?? this.foreignRule,
+    foreignRuleClass: foreignRuleClass ?? this.foreignRuleClass,
+    foreignRuleProgram: foreignRuleProgram ?? this.foreignRuleProgram,
+  );
 }

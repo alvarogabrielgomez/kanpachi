@@ -48,18 +48,22 @@ class _TransporteFalso implements DaemonTransport {
   }
 
   void responde(int id, Map<String, Object?> result) {
-    _entrada.add(utf8.encode(
-      '${jsonEncode(<String, Object?>{'id': id, 'result': result})}\n',
-    ));
+    _entrada.add(
+      utf8.encode(
+        '${jsonEncode(<String, Object?>{'id': id, 'result': result})}\n',
+      ),
+    );
   }
 
   void respondeConError(int id, String code, String message) {
-    _entrada.add(utf8.encode(
-      '${jsonEncode(<String, Object?>{
-            'id': id,
-            'error': <String, String>{'code': code, 'message': message},
-          })}\n',
-    ));
+    _entrada.add(
+      utf8.encode(
+        '${jsonEncode(<String, Object?>{
+          'id': id,
+          'error': <String, String>{'code': code, 'message': message},
+        })}\n',
+      ),
+    );
   }
 
   void crudo(String texto) => _entrada.add(utf8.encode(texto));
@@ -96,10 +100,7 @@ void main() {
 
       // Sin esto, la primera llamada de cada conexión fallaría con
       // unauthorized y el usuario vería un error que no es el suyo.
-      await expectLater(
-        c.call('status'),
-        throwsA(isA<DaemonUnreachable>()),
-      );
+      await expectLater(c.call('status'), throwsA(isA<DaemonUnreachable>()));
       expect(t.enviado, isEmpty);
       await c.close();
     });
@@ -167,7 +168,11 @@ void main() {
       await c.connect();
 
       final Future<Map<String, Object?>> f = c.call('status');
-      t.respondeConError(t.enviado[1]['id']! as int, 'del_futuro', 'algo nuevo');
+      t.respondeConError(
+        t.enviado[1]['id']! as int,
+        'del_futuro',
+        'algo nuevo',
+      );
 
       final DaemonError e = await f.then<DaemonError>(
         (_) => throw StateError('debió fallar'),
@@ -220,15 +225,17 @@ void main() {
       await c.close();
     });
 
-    test('no se puede escribir: falla como inalcanzable, no como error de la API',
-        () async {
-      final _TransporteFalso t = _TransporteFalso();
-      final DaemonClient c = DaemonClient(transport: t, token: 'x');
-      t.escrituraRota = true;
+    test(
+      'no se puede escribir: falla como inalcanzable, no como error de la API',
+      () async {
+        final _TransporteFalso t = _TransporteFalso();
+        final DaemonClient c = DaemonClient(transport: t, token: 'x');
+        t.escrituraRota = true;
 
-      await expectLater(c.connect(), throwsA(isA<DaemonUnreachable>()));
-      await c.close();
-    });
+        await expectLater(c.connect(), throwsA(isA<DaemonUnreachable>()));
+        await c.close();
+      },
+    );
   });
 
   group('el troceo del flujo', () {
@@ -261,7 +268,9 @@ void main() {
       final int idA = t.enviado[1]['id']! as int;
       final int idB = t.enviado[2]['id']! as int;
 
-      t.crudo('{"id":$idA,"result":{"q":"a"}}\n{"id":$idB,"result":{"q":"b"}}\n');
+      t.crudo(
+        '{"id":$idA,"result":{"q":"a"}}\n{"id":$idB,"result":{"q":"b"}}\n',
+      );
 
       expect((await a)['q'], equals('a'));
       expect((await b)['q'], equals('b'));
@@ -276,7 +285,8 @@ void main() {
       expect(
         () => codec.feed(utf8.encode('x' * 200)),
         throwsA(isA<DaemonProtocolError>()),
-        reason: 'sin tope, un daemon que nunca cierra la línea se come la '
+        reason:
+            'sin tope, un daemon que nunca cierra la línea se come la '
             'memoria de la app',
       );
       // Y no se reanuda: quien mandó una línea imposible ya perdió el hilo, y
@@ -344,8 +354,9 @@ void main() {
 
     test('un estado desconocido cuenta como idle', () {
       // Es el único valor seguro: no promete que haya sala.
-      final DaemonStatus s =
-          StatusMapper.fromJson(<String, Object?>{'conn': 'teletransportando'});
+      final DaemonStatus s = StatusMapper.fromJson(<String, Object?>{
+        'conn': 'teletransportando',
+      });
       expect(s.conn, equals(ConnState.idle));
     });
 
@@ -357,30 +368,36 @@ void main() {
       );
       expect(
         StatusMapper.fromJson(<String, Object?>{
-          'alerts': <Object?>[42, null, <String, Object?>{'sin': 'kind'}],
+          'alerts': <Object?>[
+            42,
+            null,
+            <String, Object?>{'sin': 'kind'},
+          ],
         }).alerts,
         isEmpty,
-        reason: 'un elemento sin kind no es una alerta a medias: no es una '
+        reason:
+            'un elemento sin kind no es una alerta a medias: no es una '
             'alerta',
       );
     });
 
-    test('el motivo de salida sale resuelto, y salir por tu cuenta no dice nada',
-        () {
-      expect(
-        StatusMapper.fromJson(<String, Object?>{'last_exit': 'kicked'})
-            .lastExit!
-            .body,
-        contains('te sacó'),
-      );
-      expect(
-        StatusMapper.fromJson(<String, Object?>{'last_exit': 'user'}).lastExit,
-        isNull,
-      );
-      expect(
-        StatusMapper.fromJson(<String, Object?>{}).lastExit,
-        isNull,
-      );
-    });
+    test(
+      'el motivo de salida sale resuelto, y salir por tu cuenta no dice nada',
+      () {
+        expect(
+          StatusMapper.fromJson(<String, Object?>{
+            'last_exit': 'kicked',
+          }).lastExit!.body,
+          contains('te sacó'),
+        );
+        expect(
+          StatusMapper.fromJson(<String, Object?>{
+            'last_exit': 'user',
+          }).lastExit,
+          isNull,
+        );
+        expect(StatusMapper.fromJson(<String, Object?>{}).lastExit, isNull);
+      },
+    );
   });
 }

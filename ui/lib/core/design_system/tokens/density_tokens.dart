@@ -27,7 +27,8 @@ enum AppDensity {
 /// `static const` para no costarle el `const` a toda la app: acá el precio se
 /// paga a propósito y sólo lo pagan los widgets que de verdad respiran.
 @TailorMixin()
-class DensityTokens extends ThemeExtension<DensityTokens> with _$DensityTokensTailorMixin {
+class DensityTokens extends ThemeExtension<DensityTokens>
+    with _$DensityTokensTailorMixin {
   const DensityTokens({
     required this.pagePad,
     required this.rowPadVertical,
@@ -72,10 +73,10 @@ class DensityTokens extends ThemeExtension<DensityTokens> with _$DensityTokensTa
   static const DensityTokens fallback = balanced;
 
   static DensityTokens of(AppDensity density) => switch (density) {
-        AppDensity.airy => airy,
-        AppDensity.balanced => balanced,
-        AppDensity.dense => dense,
-      };
+    AppDensity.airy => airy,
+    AppDensity.balanced => balanced,
+    AppDensity.dense => dense,
+  };
 }
 
 /// Fuera de la clase a propósito: theme_tailor toma por token cada getter que
@@ -84,7 +85,7 @@ class DensityTokens extends ThemeExtension<DensityTokens> with _$DensityTokensTa
 /// dos fuentes para el mismo dato terminan discrepando.
 extension DensityPadding on DensityTokens {
   EdgeInsets get rowPadding => EdgeInsets.symmetric(
-        vertical: rowPadVertical,
-        horizontal: rowPadHorizontal,
-      );
+    vertical: rowPadVertical,
+    horizontal: rowPadHorizontal,
+  );
 }
