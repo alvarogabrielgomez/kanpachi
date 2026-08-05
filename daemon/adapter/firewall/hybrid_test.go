@@ -180,7 +180,7 @@ func armado(t *testing.T) (*Firewall, *diario, *permisosFalsos, *compuertaFalsa)
 
 func conSala(t *testing.T, fw *Firewall) {
 	t.Helper()
-	if err := fw.SetScope("kanpachi0", luidDePrueba, salaDePrueba()); err != nil {
+	if err := fw.SetScopeForMeasurement("kanpachi0", luidDePrueba, salaDePrueba()); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -412,7 +412,7 @@ func TestAScopeThatDoesNotNarrowIsRefused(t *testing.T) {
 	}
 	for _, c := range casos {
 		t.Run(c.nombre, func(t *testing.T) {
-			if err := fw.SetScope(c.adaptador, c.luid, c.sala); err == nil {
+			if err := fw.SetScopeForMeasurement(c.adaptador, c.luid, c.sala); err == nil {
 				t.Fatal("se aceptó un alcance que no acota")
 			}
 			if p.adaptador != "" {

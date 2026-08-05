@@ -135,20 +135,26 @@ func New(permits Permits, audit PermitAudit, gate Gate, log Logger, luidOf LUIDR
 // en core, el error sale acá y no donde se cablee.
 var _ port.FirewallPort = (*Firewall)(nil)
 
-// SetScope anota dónde vive la sala, y las dos capas se enteran a la vez.
+// SetScopeForMeasurement acota a un adaptador elegido A MANO.
 //
-// # Por qué una sola llamada y no dos
+// # Por qué el nombre lo dice, en vez de llamarse SetScope a secas
 //
-// Porque si las dos capas discreparan sobre qué adaptador es la sala, los
-// permisos se escribirían sobre uno y el bloqueo sobre otro. El resultado es un
-// adaptador con los permisos y sin compuerta, o sea el agujero abierto, y una
-// pantalla que dice que todo está puesto porque las dos capas contestan que sí.
+// Porque el producto NO entra por acá: entra por [Firewall.BindRoom], que
+// resuelve las constantes del dominio y además cubre el vestíbulo. Esto existe
+// solo para `internal/fwprobe`, que mide la compuerta sobre un adaptador FÍSICO
+// de verdad, que es como se comprobó con dos máquinas que el bloqueo de WFP le
+// gana a un permiso del Firewall de Windows.
 //
-// Recibe el adaptador YA RESUELTO, así que es lo que usan las herramientas de
-// medición, que trabajan sobre un adaptador que eligieron a mano. El producto
-// entra por [Firewall.BindRoom], que resuelve las constantes del dominio y
-// además cubre el vestíbulo.
-func (f *Firewall) SetScope(adapter string, luid uint64, room netip.Prefix) error {
+// El nombre largo es lo que permite que el guardián del cableado no tenga
+// excepciones silenciosas: exige que todo método de unión se llame desde
+// producción, y este se salta la regla diciendo en su propio nombre por qué.
+// Dos veces ya pasó que un método de unión estuviera escrito, probado y sin
+// llamar desde el daemon, y las dos veces se descubrió corriendo el producto.
+//
+// Acotar sigue siendo una sola llamada para las dos capas: si discreparan sobre
+// qué adaptador es la sala, los permisos irían sobre uno y el bloqueo sobre
+// otro, con las dos contestando que sí.
+func (f *Firewall) SetScopeForMeasurement(adapter string, luid uint64, room netip.Prefix) error {
 	if adapter == "" {
 		return fmt.Errorf("los permisos necesitan el NOMBRE del adaptador, y llegó vacío")
 	}

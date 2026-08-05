@@ -269,7 +269,7 @@ Vuelve a correrlo con -yes cuando lo tengas claro.
 	}
 	defer func() { _ = cerrar() }()
 
-	if err := fw.SetScope(*nombre, luid, red); err != nil {
+	if err := fw.SetScopeForMeasurement(*nombre, luid, red); err != nil {
 		return err
 	}
 	if err := fw.Apply(context.Background(), rs); err != nil {

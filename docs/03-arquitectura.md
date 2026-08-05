@@ -350,6 +350,16 @@ Vale más que cualquier documento, porque no se puede ignorar sin querer. Si ese
 
 Existe en `internal/arch/arch_test.go` y lo ejecuta el job `core` del workflow de CI, en Ubuntu. Vive fuera de `core/` a propósito: necesita `os` y `path/filepath` para recorrer el disco, y ponerlo dentro lo obligaría a saltarse a sí mismo con una excepción, que es una regla más débil. Lleva un segundo test que comprueba el detector contra casos conocidos, porque un guardián que nunca se probó no es un guardián.
 
+**La mitad pura de los adaptadores partidos tiene su propio guardián**, y mira por ARCHIVO en vez de por paquete, que es lo que lo distingue del de arriba: ahí el paquete entero sí conoce Windows, y lo que se vigila es que la frontera esté donde dice estar. Un archivo sin sufijo `_windows` es lo que el job de Linux compila y prueba, y lo que se queda sin pruebas si alguien mete Windows dentro son justo las decisiones caras: el alcance de un bloqueo duro en `wfp`, qué dice cada regla en `windowscom`, qué rutas se ponen y cuál se borra en `netcfg`, qué prefijos se descartan en `routes`. El fallo sería silencioso, porque el paquete sigue compilando en la máquina donde se programa. La lista de imports prohibidos es más corta que la de `core`: la mitad pura sí puede leer y escribir ficheros, que es lo que hace el libro de ajustes; lo que no puede es hablar con Windows.
+
+#### El guardián del cableado
+
+Vigila el fallo que ocurrió **dos veces**: un método de unión escrito, probado y sin llamar desde producción. `control.Attach` dejaba a `Serve` devolviendo `ErrNotAttached`, así que crear una sala fallaba entera con el motor ya levantado; el alcance de la compuerta hacía que ninguna sala tuviera compuerta. Un test de paquete no lo puede ver, porque el test SÍ los llama; lo que lo ve es correr el producto.
+
+La regla: todo método exportado de `daemon/` cuyo nombre empiece por `Attach`, `Bind`, `Unbind` o `SetScope` tiene que llamarse desde `core/` o `daemon/`, en código que no sea de test. **`internal/` NO cuenta**, y esa exclusión es la mitad importante: `SetScope` sí se llamaba, desde `internal/fwprobe`, y ese era exactamente el estado del fallo. Una herramienta de medición que ejercita un método no prueba que el producto lo use.
+
+La única forma de saltarse la regla se declara en el nombre: un método terminado en `ForMeasurement` queda fuera. Por eso el que usa `fwprobe` se llama `SetScopeForMeasurement`: acota a un adaptador físico elegido a mano, que es como se comprobó con dos máquinas que el bloqueo de WFP le gana a un permiso del Firewall de Windows. La excepción vive en el nombre del método y no en una lista dentro del guardián, que es justo donde una excepción deja de leerse.
+
 ### Lo que deliberadamente no se hace
 
 - **DTOs entre capas.** `domain.GameProfile` pasa por el puerto directamente. Un `port.GameProfileDTO` idéntico no compra nada aquí.

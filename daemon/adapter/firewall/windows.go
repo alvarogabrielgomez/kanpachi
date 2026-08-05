@@ -7,7 +7,7 @@ package firewall
 // El binario sigue eligiendo si USA este firewall o no, que es lo que dice la
 // doctrina de `cmd/kanpachid`. Lo que no puede elegir es con qué componerlo:
 // juntar la capa de permisos de un sitio con la compuerta de otro es justo el
-// error que [Firewall.SetScope] existe para impedir, y dejar la composición
+// error que [Firewall.BindRoom] existe para impedir, y dejar la composición
 // suelta lo volvería posible otra vez.
 
 import (
