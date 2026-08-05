@@ -45,7 +45,14 @@ enum AlertKind {
   /// El módulo de exposición no pudo comprobar lo que existe para comprobar.
   ///
   /// No dice que algo esté mal: dice que nadie está mirando.
-  auditFailed('audit_failed');
+  auditFailed('audit_failed'),
+
+  /// La compuerta NO está conteniendo, y reponerla no aguantó.
+  ///
+  /// Es la única que sale de una medición POR LA RED, y la única que ve el caso
+  /// que ninguna otra puede ver: el filtro existe y no contiene nada. La levanta
+  /// el socket propio del host y jamás el mensaje de un miembro.
+  canaryLeaking('canary_leaking');
 
   const AlertKind(this.wire);
 
@@ -324,6 +331,53 @@ enum ProbeVerdict {
       if (v.wire == wire) return v;
     }
     return ProbeVerdict.blind;
+  }
+}
+
+/// La conclusión de una ronda del canario. Espejo de `domain.CanaryVerdict`.
+///
+/// # Las dos fuentes no valen lo mismo, y estos valores lo dicen
+///
+/// El host abre un oyente que la compuerta tiene que bloquear y le pide a TODOS
+/// los de la sala que lo marquen. Lo que concluye sale de su PROPIO socket, no
+/// de lo que diga nadie: un mensaje se puede mentir, que un paquete haya llegado
+/// hasta el oyente no.
+///
+/// Por eso [CanaryVerdict.clean] se llama así y no "bloqueando": describe que no
+/// hay evidencia de fuga, que es más débil y es lo que de verdad se sabe. Un
+/// miembro que se quede quieto produce ese mismo estado.
+enum CanaryVerdict {
+  /// El paquete CRUZÓ. La compuerta no está conteniendo el adaptador. Es lo
+  /// único que se afirma con certeza.
+  leaking('leaking'),
+
+  /// No hay evidencia de fuga y alguien dice haber marcado.
+  clean('clean'),
+
+  /// Nadie contestó, o no había a quién preguntarle. No dice nada de la
+  /// compuerta.
+  unconfirmed('unconfirmed'),
+
+  /// Un miembro dijo que llegó y al canario no lo tocó nadie. No acusa a nadie
+  /// por sí solo: también sale de una carrera entre el informe y el cierre.
+  mismatch('mismatch'),
+
+  /// No se comprobó.
+  blind('blind');
+
+  const CanaryVerdict(this.wire);
+
+  /// La cadena exacta que viaja en el JSON, campo `verdict` de `CanaryView`.
+  final String wire;
+
+  /// Lo que no se reconoce cae en [CanaryVerdict.blind], jamás en
+  /// [CanaryVerdict.clean]. Un valor que esta versión no conoce no puede leerse
+  /// como que no hay evidencia de fuga.
+  static CanaryVerdict fromWire(String? wire) {
+    for (final CanaryVerdict v in CanaryVerdict.values) {
+      if (v.wire == wire) return v;
+    }
+    return CanaryVerdict.blind;
   }
 }
 

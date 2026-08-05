@@ -90,6 +90,20 @@ abstract final class AppMessages {
                 'lo está vigilando. Reinicia Kanpachi y si sigue igual, copia '
                 'el diagnóstico.',
           ),
+        // El texto dice lo que la alarma SIGNIFICA de verdad, y por eso habla en
+        // pasado del intento. Kanpachi ya repuso la protección una vez sola,
+        // callado, y esto aparece porque no aguantó. Un texto que solo dijera
+        // "pulsa el botón" dejaría al usuario creyendo que nada pasó hasta que
+        // él hiciera algo.
+        AlertKind.canaryLeaking => const AppMessage(
+            severity: MessageSeverity.warn,
+            title: 'Tu protección no está conteniendo',
+            body: 'Alguien de la sala alcanzó un puerto de esta PC que tenía '
+                'que estar cerrado. Kanpachi ya intentó reponer la protección '
+                'y no aguantó.',
+            hint: 'Vuelve a aplicarla. Si el problema sigue, sal de la sala: '
+                'eso cierra todo lo que Kanpachi abrió.',
+          ),
       };
 
   /// Lo que se le cuenta al usuario sobre una regla de firewall que Kanpachi no

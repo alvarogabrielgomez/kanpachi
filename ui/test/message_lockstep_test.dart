@@ -191,6 +191,25 @@ void main() {
       );
     });
 
+    test('CanaryVerdict tiene los mismos veredictos que canaryVerdictName en Go', () {
+      final Set<String> enGo = _cadenasDeLaFuncion(
+        repo: repo,
+        archivo: 'daemon/transport/protocol/view.go',
+        funcion: 'canaryVerdictName',
+      );
+      final Set<String> enDart =
+          CanaryVerdict.values.map((CanaryVerdict v) => v.wire).toSet();
+
+      expect(enGo, isNotEmpty, reason: 'no se leyó ningún veredicto de canaryVerdictName');
+      expect(
+        enDart,
+        equals(enGo),
+        reason: 'CanaryVerdict y canaryVerdictName dejaron de coincidir. Un '
+            'veredicto que la UI no conoce cae en "sin comprobar", y eso deja '
+            'una fuga demostrada sin pintar en la pantalla.',
+      );
+    });
+
     test('FailureCode tiene los mismos códigos que protocol.Code en Go', () {
       final Set<String> enGo = _codigosDelProtocolo(repo);
       final Set<String> enDart =
@@ -220,6 +239,10 @@ void main() {
     sinRepetidos('RuleClass', RuleClass.values.map((RuleClass c) => c.wire).toList());
     sinRepetidos('ExitReason', ExitReason.values.map((ExitReason r) => r.wire).toList());
     sinRepetidos('FailureCode', FailureCode.values.map((FailureCode c) => c.wire).toList());
+    sinRepetidos(
+      'CanaryVerdict',
+      CanaryVerdict.values.map((CanaryVerdict v) => v.wire).toList(),
+    );
   });
 }
 
