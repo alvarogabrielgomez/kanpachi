@@ -342,9 +342,14 @@ abstract final class AppMessages {
     ConnState.resolving ||
     ConnState.connecting ||
     ConnState.connected => AppMessage.none,
+    // Degradado NO es reintentando, y el texto viejo decía las dos cosas mal:
+    // ni la conexión está inestable ni hay nada reintentándose. Degradado es
+    // que alguien llega por el relay del seed, con el túnel entero en pie.
+    // Decirlo así es lo que evita que se culpe al juego de una latencia que es
+    // de la red.
     ConnState.degraded => const AppMessage(
       severity: MessageSeverity.warn,
-      body: 'Conexión inestable, reintentando',
+      body: 'Alguien llega por el relay, la partida va más lenta',
     ),
     ConnState.reconnecting => const AppMessage(
       severity: MessageSeverity.warn,

@@ -171,7 +171,8 @@ enum ConnState {
   /// Dentro y estable.
   connected('connected'),
 
-  /// Dentro, con el túnel inestable.
+  /// Dentro, con algún miembro llegando por el relay del seed. El túnel está
+  /// entero: lo degradado es el camino hasta alguien, no la sala.
   degraded('degraded'),
 
   /// El túnel se cayó y se está reintentando. Acotado a diez minutos.

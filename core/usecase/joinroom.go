@@ -245,6 +245,10 @@ func (s *Session) refreshPeersLocked(ctx context.Context) error {
 		return fmt.Errorf("consultando los miembros de la sala: %w", err)
 	}
 	s.state.Peers = markRoles(peers, s.state.LocalIP, s.state.Role, s.state.Subnet)
+	// La calidad de la conexión sale de esta tabla y de nada más. Va ANTES de
+	// deducir la presencia del host, que exige un estado concreto para no
+	// dispararse a mitad de un ingreso.
+	s.rederiveConnLocked()
 	s.inferHostPresenceLocked()
 	return nil
 }
@@ -264,12 +268,20 @@ func (s *Session) refreshPeersLocked(ctx context.Context) error {
 // colgado.
 //
 // Los dos guardas evitan el falso positivo. Una lista vacía es que el motor no
-// tiene nada que decir, no que el host se haya ido. Y exigir StateConnected
-// impide que dispare a mitad de un ingreso, cuando todavía no hay a quién ver.
+// tiene nada que decir, no que el host se haya ido. Y exigir que la conexión
+// esté establecida impide que dispare a mitad de un ingreso, cuando todavía no
+// hay a quién ver.
+//
+// **Establecida incluye DEGRADADO,** y escribirlo como `== StateConnected` era
+// un fallo: una sala degradada tiene túnel y tiene tabla de miembros, así que
+// esto vale ahí exactamente igual. Con el pestillo de degradado que se midió el
+// 2026-08-05, un invitado se quedaba en degradado para siempre tras cualquier
+// corte de red, y con eso esta capa entera se apagaba sin que nada lo dijera:
+// justo la que existe para cuando el canal de control ya no sirve.
 //
 // Asume el candado tomado.
 func (s *Session) inferHostPresenceLocked() {
-	if s.state.Role != domain.RoleGuest || s.state.Conn != domain.StateConnected || len(s.state.Peers) == 0 {
+	if s.state.Role != domain.RoleGuest || !s.state.Conn.Established() || len(s.state.Peers) == 0 {
 		return
 	}
 	hostIP := domain.HostAddress(s.state.Subnet)

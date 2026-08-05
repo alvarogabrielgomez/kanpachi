@@ -38,12 +38,26 @@ func (s *Session) OnEngineEvent(ctx context.Context, ev domain.EngineEvent) (dom
 		return s.onPeersChangedLocked(ctx)
 
 	case domain.EngineDegraded:
-		// No arranca ningún contador, y esa ausencia es el punto: degradado es
-		// que el túnel sigue en pie y va peor, normalmente por relay. Contarlo
-		// como una caída sacaría de la sala a quien está jugando por relay, que
-		// es un caso soportado y no un fallo.
-		if err := s.state.Transition(domain.StateDegraded, razón(ev, "el motor reporta la conexión degradada")); err != nil {
-			s.deps.Log.Warn("transición rechazada", "error", err)
+		// El evento es una PISTA con causa, no el estado.
+		//
+		// Antes esto fijaba StateDegraded, y nada lo soltaba: el motor emite
+		// `connected` en UN solo sitio, cuando sube el adaptador virtual, y un
+		// corte de red no tira el adaptador. Medido el 2026-08-05, doce
+		// segundos con la WiFi apagada dejaron la sala en degradado para
+		// siempre, con la red entera recuperada y un solo miembro, que era uno
+		// mismo. Ver [domain.RoomState.ConnFromPeers].
+		//
+		// No arranca ningún contador, y esa ausencia sigue siendo el punto:
+		// degradado es que el túnel sigue en pie y va peor, normalmente por
+		// relay. Contarlo como una caída sacaría de la sala a quien está
+		// jugando por relay, que es un caso soportado y no un fallo.
+		s.deps.Log.Info("el motor reporta la conexión degradada",
+			"motivo", razón(ev, "sin motivo"))
+		// Releer los miembros es lo que decide: si de verdad hay alguien por
+		// relay, la derivación lo marca degradado; si el error fue un intento
+		// suelto contra una dirección que no contestó, no cambia nada.
+		if err := s.refreshPeersLocked(ctx); err != nil {
+			return domain.RoomState{}, err
 		}
 		return s.snapshot(), nil
 
@@ -168,6 +182,41 @@ func (s *Session) tunnelUpLocked(ctx context.Context, reason string) (domain.Roo
 	}
 	s.deps.Log.Info("el túnel volvió", "miembros", len(s.state.Peers))
 	return s.snapshot(), nil
+}
+
+// rederiveConnLocked recalcula degradado ↔ conectado desde la tabla de miembros.
+//
+// La calidad de la conexión es una PROPIEDAD de quién está y por dónde llega,
+// no un recuerdo de lo último que dijo el motor. Derivarla es lo que la hace
+// curarse sola: en cuanto el miembro que iba por relay pasa a directo, o en
+// cuanto se va, la sala deja de estar degradada sin que nadie tenga que mandar
+// un evento de recuperación.
+//
+// Se llama desde [Session.refreshPeersLocked], o sea desde TODOS los caminos
+// que releen miembros, y por eso no hay ninguno que se pueda olvidar.
+//
+// Asume el candado tomado.
+func (s *Session) rederiveConnLocked() {
+	// Solo entre esos dos estados. Reconectando manda sobre esto: sin túnel, la
+	// tabla de miembros describe una sala que ahora mismo no se alcanza, y
+	// pisarlo con "conectado" sería la pantalla mintiendo. Durante un ingreso
+	// todavía no hay a quién ver.
+	if !s.state.Conn.Established() || s.state.TunnelDown() {
+		return
+	}
+	quiero := s.state.ConnFromPeers()
+	if quiero == s.state.Conn {
+		return
+	}
+	motivo := "todos los miembros llegan directo"
+	if quiero == domain.StateDegraded {
+		motivo = "hay algún miembro llegando por relay"
+	}
+	if err := s.state.Transition(quiero, motivo); err != nil {
+		s.deps.Log.Warn("transición rechazada", "error", err)
+		return
+	}
+	s.deps.Log.Info("cambió la calidad de la conexión", "estado", quiero.String(), "motivo", motivo)
 }
 
 // tunnelDownLocked es quedarse sin red. Asume el candado tomado.

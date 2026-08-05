@@ -113,12 +113,15 @@ func TestElExpulsadoVuelveAEntrarConElMismoCódigo(t *testing.T) {
 // Antes de esto, StateDegraded y StateReconnecting eran inalcanzables desde
 // fuera de core: nadie consumía el canal del motor y la máquina de estados solo
 // se movía desde crear, entrar y salir.
+//
+// `degraded` NO está en esta tabla, y esa ausencia es deliberada: dejó de ser un
+// evento que fija un estado y pasó a ser una pista que manda releer los
+// miembros. Sus casos están abajo, con la tabla de miembros que los decide.
 func TestCadaEventoDelMotorLlegaASuTransición(t *testing.T) {
 	casos := []struct {
 		kind   domain.EngineEventKind
 		quiero domain.ConnState
 	}{
-		{domain.EngineDegraded, domain.StateDegraded},
 		{domain.EngineDisconnected, domain.StateReconnecting},
 		{domain.EngineDied, domain.StateReconnecting},
 		{domain.EngineConnected, domain.StateConnected},
@@ -140,14 +143,129 @@ func TestCadaEventoDelMotorLlegaASuTransición(t *testing.T) {
 // TestDegradadoNoArrancaNingúnPlazo. Degradado es que el túnel sigue en pie y
 // va peor, normalmente por relay, que es un caso soportado y no un fallo.
 func TestDegradadoNoArrancaNingúnPlazo(t *testing.T) {
-	b := salaCreada(t)
-	if _, err := b.sesión.OnEngineEvent(ctx(), domain.EngineEvent{Kind: domain.EngineDegraded}); err != nil {
-		t.Fatal(err)
-	}
+	b := salaConAlguienPorRelay(t)
 	b.reloj.avanza(domain.ReconnectLimit + time.Hour)
 	if st := b.sesión.Tick(ctx()); st.Conn == domain.StateIdle {
 		t.Fatal("estar degradado sacó de la sala, y el túnel seguía en pie")
 	}
+}
+
+// TestUnErrorDeConexiónSueltoNoDejaLaSalaDegradada es el fallo que se midió con
+// el producto entero, escrito como test.
+//
+// # Lo medido, el 2026-08-05
+//
+// Sala de host abierta contra kanpachi.accentio.dev, un solo miembro que era uno
+// mismo. Se apagó la WiFi doce segundos y se volvió a encender. La sala pasó a
+// `degraded` y se quedó ahí: ciento cincuenta segundos después seguía degradada
+// con la red entera recuperada, los dos adaptadores arriba, el motor original
+// vivo y cero avisos en el log.
+//
+// La causa: el motor emite `connected` en UN solo sitio, cuando SUBE el
+// adaptador virtual, y un corte de red no tira el adaptador. Así que degradado
+// era una puerta de un solo sentido para toda la vida de esa sala.
+//
+// Que la sala tenga un solo miembro no es un detalle del test: es lo que hace
+// absurda la etiqueta. No había nadie con quien ir por relay.
+func TestUnErrorDeConexiónSueltoNoDejaLaSalaDegradada(t *testing.T) {
+	b := salaCreada(t)
+	self := b.sesión.Status().LocalIP
+	b.motor.peers = []domain.Peer{{VirtualIP: self, Name: nick(t, "alvaro")}}
+
+	st, err := b.sesión.OnEngineEvent(ctx(), domain.EngineEvent{
+		Kind:   domain.EngineDegraded,
+		Reason: "could not reach 1.2.3.4: timed out",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Conn != domain.StateConnected {
+		t.Fatalf("una sala de uno quedó en %s por un error de conexión suelto.\n"+
+			"  No hay nadie con quien ir por relay, así que no hay nada degradado.", st.Conn)
+	}
+}
+
+// Y el degradado de verdad se cura solo en cuanto el relay se va.
+//
+// Es la mitad que le da sentido a la otra: el arreglo no es dejar de marcar
+// degradado, es derivarlo de los hechos para que pueda VOLVER.
+func TestElDegradadoSeCuraCuandoElRelaySePasaADirecto(t *testing.T) {
+	b := salaConAlguienPorRelay(t)
+	self := b.sesión.Status().LocalIP
+
+	b.motor.peers = []domain.Peer{
+		{VirtualIP: self, Name: nick(t, "alvaro")},
+		{VirtualIP: self.Next(), Name: nick(t, "humberto"), Path: domain.PathDirect},
+	}
+	st, err := b.sesión.OnPeersChanged(ctx())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Conn != domain.StateConnected {
+		t.Fatalf("el miembro pasó a directo y la sala quedó en %s", st.Conn)
+	}
+}
+
+// Un invitado DEGRADADO sigue deduciendo la presencia del host desde la tabla.
+//
+// Es la segunda consecuencia del mismo pestillo, y es peor que la etiqueta:
+// `inferHostPresenceLocked` exigía StateConnected, así que un invitado clavado
+// en degradado se quedaba sin la única capa que sigue funcionando cuando el
+// canal de control está roto, colgado o nunca arrancó. El contador de veinte
+// minutos de la decisión 20 perdía su respaldo, en silencio.
+func TestUnInvitadoDegradadoSigueViendoDesaparecerAlHost(t *testing.T) {
+	b := salaConInvitado(t)
+	host := domain.HostAddress(b.sesión.Status().Subnet)
+	otro := netip.MustParseAddr("100.87.3.9")
+
+	// Alguien por relay: la sala queda degradada, con el host todavía presente.
+	b.motor.peers = []domain.Peer{
+		{VirtualIP: host, Name: nick(t, "alvaro")},
+		{VirtualIP: otro, Name: nick(t, "humberto"), Path: domain.PathRelay},
+	}
+	st, err := b.sesión.OnPeersChanged(ctx())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Conn != domain.StateDegraded {
+		t.Fatalf("con alguien por relay el invitado quedó en %s", st.Conn)
+	}
+	if !st.HostPresent {
+		t.Fatal("el host estaba en la tabla y se dio por ausente")
+	}
+
+	// Y ahora el host desaparece de la tabla, con la sala todavía degradada.
+	b.motor.peers = []domain.Peer{
+		{VirtualIP: otro, Name: nick(t, "humberto"), Path: domain.PathRelay},
+	}
+	st, err = b.sesión.OnPeersChanged(ctx())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.HostPresent {
+		t.Fatal("el host desapareció de la red y sigue presente, porque la sala\n" +
+			"  estaba degradada y la deducción solo miraba el estado conectado")
+	}
+}
+
+// salaConAlguienPorRelay deja una sala de host con un miembro que llega por
+// relay, que es la ÚNICA forma de estar degradado desde que el estado se deriva
+// de los hechos en vez de recordarse.
+func salaConAlguienPorRelay(t *testing.T) *banco {
+	t.Helper()
+	b := salaCreada(t)
+	self := b.sesión.Status().LocalIP
+	b.motor.peers = []domain.Peer{
+		{VirtualIP: self, Name: nick(t, "alvaro")},
+		{VirtualIP: self.Next(), Name: nick(t, "humberto"), Path: domain.PathRelay},
+	}
+	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+		t.Fatal(err)
+	}
+	if st := b.sesión.Status(); st.Conn != domain.StateDegraded {
+		t.Fatalf("con alguien por relay la sala quedó en %s", st.Conn)
+	}
+	return b
 }
 
 // TestSinTúnelHayUnPlazoYAlVencerSeCierraTodo.

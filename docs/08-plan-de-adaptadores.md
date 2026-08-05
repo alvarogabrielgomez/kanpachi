@@ -850,6 +850,63 @@ Los tres cambios están congelados con tests, y el de `Restart` se vio fallar co
 un veneno. La corrida final quedó en verde con seis avisos en el log, todos
 esperados.
 
+## El cambio de red, y el décimo fallo
+
+Medido el 2026-08-05 con `scripts/medir-cambio-de-red.ps1`, elevado, contra
+`kanpachi.accentio.dev`. Esta máquina no tiene cable, y al buscar un sustituto
+apareció que **el cable nunca fue el punto**: "cambiar de WiFi a cable" mezcla
+dos preguntas y solo una necesita que la red cambie.
+
+| | Qué pregunta | Cómo se rompe | Resultado |
+|---|---|---|---|
+| **A** | ¿Vuelven métrica, MTU y rutas? | a mano, sin tocar la red | verde, en **103 s** |
+| **B** | ¿Sobrevive el túnel al corte? | apagando la NIC de WiFi 12 s | encontró un fallo |
+
+El acto A se queda así por ser mejor prueba que el cable: determinista y con el
+daño elegido. Métrica a 9999 y una ruta por defecto sobre `kanpachi0`, las dos
+con métrica absurda para que no pudieran robar tráfico. Los 103 s son el dato:
+cambiar una métrica **no dispara** ninguno de los tres avisos suscritos, así que
+lo repuso el respaldo periódico de los ocho latidos, que es justo su caso y es la
+primera vez que se le ve trabajar. Que lo repuso Kanpachi lo dice el log, `había
+una ruta por defecto sobre el adaptador virtual y se quitó`; sin esa línea, una
+ruta que desaparece sola se lee igual que una que borramos.
+
+### Degradado era una puerta de un solo sentido
+
+El acto B dio verde en todo lo que buscaba: ajustes intactos, los dos adaptadores
+arriba, la puerta escrita, la compuerta cubriendo los dos. **Lo que no volvía era
+la etiqueta:** `connected` antes, `degraded` durante, y `degraded` 150 s después,
+con la red recuperada, el motor original vivo, cero avisos en el log y un solo
+miembro en la sala, que era uno mismo.
+
+La causa son dos piezas que hay que leer juntas. El motor emite `connected` en un
+único sitio, `TunDeviceReady`, o sea cuando SUBE el adaptador virtual, y un corte
+de red no lo tira (medido: `kanpachi0 existe=True` con la WiFi apagada). Del otro
+lado, la sesión fijaba `StateDegraded` al recibir el evento, y **una transición
+que funciona no se loguea**, solo la rechazada. Log impecable, pantalla mintiendo.
+
+La segunda consecuencia era peor: `inferHostPresenceLocked` exigía `Connected`
+exacto, así que un invitado clavado en degradado perdía la capa que deduce la
+presencia del host desde la tabla de miembros, que es la que sigue funcionando
+con el canal de control roto. El contador de veinte minutos se quedaba sin
+respaldo, en silencio.
+
+El arreglo es derivar en vez de recordar: degradado es que algún otro miembro
+llega por relay AHORA, recalculado en cada relectura de miembros. Tres tests
+nuevos, los tres vistos fallar con veneno. Re-medido el mismo corte: `connected`
+antes, durante y al volver, en 1 s.
+
+**Lo que queda abierto.** Durante el corte la sala dice `connected`, porque el
+motor solo reporta desconexión si falla el adaptador. Antes decía `degraded`, que
+parecía enterarse sin enterarse. Con miembros de verdad el corte se ve, porque
+desaparecen de la tabla; sin miembros no hay nada que mostrar. Se revisa con una
+sala de dos máquinas, que es cuando se puede medir desde el otro lado.
+
+**Y un dato suelto:** `kanpachi1` tiene métrica 5/5 y no 1/20, porque
+`ApplyAdapter` resuelve solo `kanpachi0`. El vestíbulo no lleva tráfico de juego,
+así que no es un fallo; lo que importa es que no le aparezca una ruta por
+defecto, y el script lo comprueba aparte porque a `kanpachi1` no lo mira nadie.
+
 **RoomDirectory paga la deuda escrita en `docs/CLAUDE.md`**: `domain.CheckSeedAddr`
 está escrita y probada y **ningún adaptador la llama porque ninguno existe**. Se
 llama sobre lo que resolvió el DNS y en **cada** uso, porque un nombre impecable

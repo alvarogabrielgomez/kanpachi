@@ -136,6 +136,52 @@ func TestElHostNoSeEchaDeSuPropiaSala(t *testing.T) {
 	}
 }
 
+// Una sala de uno NO puede estar degradada, y es el caso que se midió pegado.
+//
+// El motor emitió `degraded` por un error de conexión durante un corte de red
+// de doce segundos. Con la red ya recuperada y un solo miembro, que era uno
+// mismo, la sala seguía diciendo degradado. No había nadie con quien ir por
+// relay: la etiqueta describía un evento pasado, no la sala.
+func TestUnaSalaDeUnoNoEstáDegradada(t *testing.T) {
+	r := RoomState{Peers: []Peer{
+		{VirtualIP: netip.MustParseAddr("10.99.1.1"), Self: true, Host: true, Path: PathSelf},
+	}}
+	if r.AnyRelay() {
+		t.Error("uno mismo contó como alguien por relay")
+	}
+	if got := r.ConnFromPeers(); got != StateConnected {
+		t.Errorf("una sala de uno quedó en %s", got)
+	}
+}
+
+// Y un miembro por relay SÍ degrada, que es la mitad que le da sentido a la
+// otra. Sin esto el arreglo sería borrar el estado degradado, no derivarlo.
+func TestUnMiembroPorRelayDegrada(t *testing.T) {
+	r := RoomState{Peers: []Peer{
+		{VirtualIP: netip.MustParseAddr("10.99.1.1"), Self: true, Host: true, Path: PathSelf},
+		{VirtualIP: netip.MustParseAddr("10.99.1.5"), Path: PathRelay},
+	}}
+	if !r.AnyRelay() {
+		t.Fatal("un miembro por relay no se vio")
+	}
+	if got := r.ConnFromPeers(); got != StateDegraded {
+		t.Errorf("con alguien por relay quedó en %s", got)
+	}
+}
+
+// Un camino todavía sin conocer no es una degradación. Es una tabla a medio
+// llenar, y tratarla como degradada haría parpadear la etiqueta en cada ingreso.
+func TestUnCaminoSinConocerNoDegrada(t *testing.T) {
+	r := RoomState{Peers: []Peer{
+		{VirtualIP: netip.MustParseAddr("10.99.1.1"), Self: true, Path: PathSelf},
+		{VirtualIP: netip.MustParseAddr("10.99.1.5")}, // sin camino todavía
+		{VirtualIP: netip.MustParseAddr("10.99.1.6"), Path: PathDirect},
+	}}
+	if got := r.ConnFromPeers(); got != StateConnected {
+		t.Errorf("un camino sin conocer degradó la sala: %s", got)
+	}
+}
+
 func TestEstarEnLaSalaNoEsEstarConectado(t *testing.T) {
 	if !StateReconnecting.InRoom() || !StateDegraded.InRoom() {
 		t.Error("reconectar y degradado siguen siendo estar en la sala")

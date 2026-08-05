@@ -126,6 +126,18 @@ func (s ConnState) CanGoTo(next ConnState) bool {
 // pegar ningún código.
 func (s ConnState) InRoom() bool { return s != StateIdle }
 
+// Established es dentro y CON túnel en pie, vaya directo o por relay.
+//
+// Existe porque degradado y conectado son el mismo hecho para casi todo el
+// producto: hay red y hay miembros que ver. Escribir `Conn == StateConnected`
+// donde se quería decir esto deja fuera al degradado en silencio, y eso ya
+// pasó: la deducción de la presencia del host desde la tabla de miembros se
+// apagaba entera en cuanto la sala se marcaba degradada, que es justo la capa
+// que sigue funcionando cuando el canal de control está roto.
+func (s ConnState) Established() bool {
+	return s == StateConnected || s == StateDegraded
+}
+
 // ErrBadTransition lo devuelve [RoomState.Transition]. Lleva los dos estados
 // porque el log de cada transición registra su causa, y "transición inválida"
 // a secas no dice cuál.
@@ -409,6 +421,45 @@ func (r RoomState) ShouldLeaveForReconnectTimeout(now time.Time) bool {
 		return false
 	}
 	return now.Sub(r.ReconnectingSince) >= ReconnectLimit
+}
+
+// AnyRelay dice si algún OTRO miembro llega por relay ahora mismo.
+//
+// Uno mismo no cuenta: [PathSelf] no es un camino, y un peer sin camino
+// conocido tampoco es una degradación, es una tabla a medio llenar.
+func (r RoomState) AnyRelay() bool {
+	for _, p := range r.Peers {
+		if !p.Self && p.Path == PathRelay {
+			return true
+		}
+	}
+	return false
+}
+
+// ConnFromPeers es el estado que los HECHOS implican, entre conectado y
+// degradado. No decide nada más.
+//
+// # El fallo que esto cierra, medido con el producto entero
+//
+// Degradado era un PESTILLO que nadie soltaba. Lo ponía el evento `degraded`
+// del motor, y volver a conectado exigía un evento `connected`, que el motor
+// emite en UN solo sitio: cuando SUBE el adaptador virtual. Un corte de red no
+// tira el adaptador, así que no había vuelta.
+//
+// Medido el 2026-08-05: doce segundos con la WiFi apagada dejaron la sala en
+// degradado, y ciento cincuenta segundos después seguía en degradado con la red
+// entera recuperada, los dos adaptadores arriba y un solo miembro, que era uno
+// mismo. Una sala de uno no puede estar degradada: no hay nadie con quien ir
+// por relay.
+//
+// Por eso el estado se DERIVA de la tabla de miembros en vez de recordarse. Es
+// la misma doctrina que [Session.tunnelUpLocked], que recalcula todo en vez de
+// suponer que nada cambió.
+func (r RoomState) ConnFromPeers() ConnState {
+	if r.AnyRelay() {
+		return StateDegraded
+	}
+	return StateConnected
 }
 
 // Self devuelve el peer que es esta máquina.

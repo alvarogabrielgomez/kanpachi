@@ -565,11 +565,21 @@ Los eventos de red son los cinco del motor, y el supervisor los traduce uno a un
 |---|---|---|
 | `EngineConnected` | `Connected` | Se relee la lista de miembros, se recalculan las reglas, se reajusta el adaptador, y siendo host se recorta el alcance del canal y se vuelve a anunciar |
 | `EnginePeersChanged` | ninguno | Recalcula el conjunto de reglas completo. Es la misma operación que un cambio de juego |
-| `EngineDegraded` | `Degraded` | **Nada más, y esa ausencia importa:** degradado es que el túnel sigue en pie y va peor, normalmente por relay, que es un caso soportado. Contarlo como caída echaría de la sala a quien está jugando por relay |
+| `EngineDegraded` | **ninguno** | Relee la lista de miembros, y el estado sale de ahí. El evento es una pista con causa, que queda en el log; no fija nada |
 | `EngineDisconnected` | `Reconnecting` | Arranca el plazo sin túnel, y en un invitado apaga la presencia del host |
 | `EngineDied` | `Reconnecting` | Igual, y además despierta al watchdog |
 
 **Estar en `Reconnecting` no es eterno.** A los 10 minutos sin túnel se sale de la sala con motivo propio, se cierran los puertos y se revierten los ajustes. Ver decisión 20.
+
+#### `Degraded` se DERIVA de la tabla de miembros, no se recuerda
+
+Degradado es que el túnel sigue en pie y va peor, normalmente porque alguien llega por el relay del seed. Sigue sin arrancar ningún plazo, y esa ausencia importa igual que antes: contarlo como caída echaría de la sala a quien está jugando por relay, que es un caso soportado.
+
+Lo que cambió es de dónde sale. **La sala está degradada cuando algún OTRO miembro llega por relay AHORA MISMO**, calculado en cada relectura de miembros, que ocurre en todos los caminos que pasan por `refreshPeersLocked`. Uno mismo no cuenta, y un camino todavía sin conocer tampoco: eso es una tabla a medio llenar, no una degradación.
+
+**El fallo que esto cierra, medido el 2026-08-05 con el producto entero.** Degradado era un pestillo que nadie soltaba. Lo ponía el evento del motor, y volver a conectado exigía un `EngineConnected`, que el motor emite en un único sitio: cuando SUBE el adaptador virtual. Un corte de red no tira el adaptador, así que no había vuelta. Se apagó la WiFi doce segundos con una sala abierta contra `kanpachi.accentio.dev`: la sala pasó a degradada y ciento cincuenta segundos después seguía degradada, con la red entera recuperada, los dos adaptadores arriba, el motor original vivo, cero avisos en el log y **un solo miembro, que era uno mismo**. Una sala de uno no puede estar degradada: no hay nadie con quien ir por relay.
+
+La segunda consecuencia era peor que la etiqueta. La deducción de la presencia del host desde la tabla de miembros exigía el estado `Connected` exacto, así que un invitado clavado en degradado se quedaba **sin la única capa que sigue funcionando cuando el canal de control está roto, colgado o nunca arrancó**, y el contador de veinte minutos de la decisión 20 perdía su respaldo en silencio. Por eso el predicado se llama `Established` y no se compara contra un estado suelto: degradado y conectado son el mismo hecho para todo lo que solo necesita que haya red y haya miembros.
 
 #### La ausencia del host no es un estado de conexión
 
