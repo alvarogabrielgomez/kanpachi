@@ -642,7 +642,7 @@ propia herramienta.
 | 1 | **Motor** | Todo lo demás | Alto | **HECHO** |
 | 2 | **Firewall** | La promesa central | Alto | **HECHO**, y su compuerta sin cablear, ver abajo |
 | 3 | **RoutingTable** | Que se pueda elegir subred, o sea crear una sala | Bajo | **HECHO** |
-| 4 | **netcfg** | Que el túnel sea usable | Medio | pendiente |
+| 4 | **netcfg** | Que el túnel sea usable | Medio | **HECHO** |
 | 5 | **RoomDirectory** | Crear y entrar con código | Medio | pendiente |
 | 6 | **Auditoría** | Que las alertas digan la verdad | Bajo | pendiente |
 | 7 | **SystemEvents** | Que los ajustes sobrevivan a Windows | Medio | pendiente |

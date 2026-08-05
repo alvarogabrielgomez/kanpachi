@@ -31,6 +31,52 @@ const (
 	MetricIPv6 = 20
 )
 
+// Los límites del MTU del túnel, y de dónde salen.
+//
+// # El síntoma que esto evita
+//
+// Es cruel para un juego y no se parece a un problema de red: el túnel levanta,
+// el ping anda, la partida conecta, y el mundo no termina de cargar. Los
+// paquetes chicos pasan y los grandes desaparecen en silencio, porque el ICMP
+// que avisaría del tamaño va filtrado en algún salto del camino.
+//
+// # Los números NO son de nuestra cosecha
+//
+// `TunnelOverhead` sale de la aritmética del propio motor, para que en el caso
+// común los dos escriban lo mismo y no se peleen. El motor arranca de 1380 y le
+// resta 20 más cuando el cifrado está encendido, que en Kanpachi lo está
+// siempre. Sobre un camino de 1500, que es lo que asume ese 1380, son
+// 120 + 20 = 140 bytes, y el resultado da 1360: exactamente lo que el motor
+// habría puesto solo. Así, sondear solo cambia algo cuando el camino de verdad
+// es más chico, que es justo para lo que existe.
+//
+// El techo es ese mismo 1380 y el suelo es el mínimo que exige IPv6.
+const (
+	TunnelOverhead = 140
+	MinTunnelMTU   = 1280
+	MaxTunnelMTU   = 1380
+)
+
+// TunnelMTU traduce el MTU medido del CAMINO al que le toca al adaptador.
+//
+// Un camino sin sondear, o sea cero, devuelve cero: quien llama tiene que dejar
+// el valor que haya en vez de escribir uno inventado. Escribir un cero apagaría
+// la interfaz, y escribir el máximo a ciegas es justo el agujero negro que esto
+// existe para evitar.
+func TunnelMTU(path int) int {
+	if path <= 0 {
+		return 0
+	}
+	mtu := path - TunnelOverhead
+	if mtu > MaxTunnelMTU {
+		mtu = MaxTunnelMTU
+	}
+	if mtu < MinTunnelMTU {
+		mtu = MinTunnelMTU
+	}
+	return mtu
+}
+
 // AdapterState es el estado que netcfg mantiene contra la voluntad de Windows.
 //
 // "Mantiene" y no "aplica": Windows revierte la métrica, la categoría de red y

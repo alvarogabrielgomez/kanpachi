@@ -1257,6 +1257,16 @@ Lo que `netcfg` mantiene:
 
 **MTU.** WireGuard usa 1420 por defecto sobre un camino de 1500. Enlaces PPPoE dan 1492, móvil y 5G suelen dar menos, e IPv6 exige mínimo 1280. El síntoma clásico es cruel para un juego: el túnel levanta, el ping anda, la partida conecta, y el mundo no termina de cargar, porque los paquetes chicos pasan y los grandes desaparecen en silencio cuando el ICMP está filtrado. `netcfg` sondea el camino con ping de no fragmentar antes de fijar el valor, y `Diagnostics` reporta el MTU efectivo.
 
+El número del túnel lo decide `domain.TunnelMTU`, y **no sale de nuestra cosecha**: son 140 bytes menos que el camino, acotado a `[1280, 1380]`. Esos 140 son la aritmética del propio motor, que arranca de 1380 y le resta 20 más con el cifrado encendido, que en Kanpachi lo está siempre. Sobre un camino de 1500 da 1360, exactamente lo que el motor habría escrito solo, así que los dos coinciden en el caso común y no se pelean por la interfaz en cada reaplicado. Sondear solo cambia algo cuando el camino de verdad es más chico, que es para lo que existe. Medido: `MTU 1360` sobre el adaptador con una sala abierta.
+
+**A quién se le sondea, y qué no cubre.** A la puerta de enlace por defecto, o sea al router del usuario. Dos razones: no hace falta contactar con nadie de fuera, lo que encaja con que este producto no habla con terceros; y ahí está el caso dominante, el enlace PPPoE que da 1492. **No cubre un estrechamiento a mitad de camino**, más allá del primer salto: para eso habría que marcar al otro extremo, y el otro extremo no existe todavía cuando esto corre. El margen del túnel deja el resultado del lado seguro.
+
+**La categoría de red no está implementada, y se dice en vez de fingirla.** `setPrivateCategory` devuelve error a propósito. Nada de la contención depende de ella: las reglas se aplican a los tres perfiles justamente porque un adaptador sin puerta de enlace se queda en "Red no identificada" y Windows lo mete en Público. Devolver `nil` habría dejado un log que dice "hecho" sobre algo que nadie hizo.
+
+**El libro de ajustes.** De todo lo que `netcfg` toca, casi nada necesita recordarse: el adaptador, su dirección, su métrica, su MTU y sus rutas mueren con la red virtual, que el motor crea por sala. Sobreviven exactamente dos, la política de prefijo IPv6 y DirectPlay, que son ajustes de la máquina entera. Esos dos van a `applied-tweaks.json` en ProgramData **con el valor que había antes**, no con lo que se hizo: "encendimos DirectPlay" no dice si hay que apagarlo, y si el usuario ya lo tenía puesto, apagarlo al salir rompería algo suyo. `RevertTweaks` lee el libro y no la memoria, que es lo que hace que funcione tras una muerte sucia, en el arranque siguiente.
+
+**Preguntar por DirectPlay cuesta segundos**, porque es DISM. Por eso hay un atajo que además es lo correcto: si se pide apagarlo y el libro dice que nadie lo encendió, no hay nada que hacer y no se pregunta. Sin ese atajo, crear una sala sin juego pagaba una consulta a la instalación de características de Windows, y la API local se pasaba de plazo con la red ya levantada. Medido.
+
 **Conflicto de rango CGNAT.** Ver la sección de direccionamiento más abajo.
 
 ### adapter/routes, implementa `RoutingTable`

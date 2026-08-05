@@ -22,6 +22,7 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/adapter/canary/opener"
 	catalogstore "github.com/accentiostudios/kanpachi/daemon/adapter/catalog/jsonfile"
 	kanpachiengine "github.com/accentiostudios/kanpachi/daemon/adapter/engine/kanpachi"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/netcfg"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/probe"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/routes"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/sinimplementar"
@@ -121,7 +122,11 @@ func correr(consola bool, datos, nombre string) error {
 	sesion, err := usecase.NewSession(ctx, usecase.Deps{
 		Engine:   motor,
 		Firewall: fw,
-		NetCfg:   sinimplementar.NetConfig{},
+		// Los ajustes del adaptador. MANTIENE en vez de aplicar: Windows revierte
+		// la métrica, la categoría y las rutas en cada evento de identificación
+		// de red, así que el supervisor lo reaplica entero, y además cada tantos
+		// latidos por si esa suscripción está muerta.
+		NetCfg: netcfg.New(datos, log),
 		// La tabla de rutas REAL. Se consulta al crear o al entrar a una sala,
 		// nunca al instalar: la LAN de una laptop cambia entre la casa y la
 		// oficina, y un rango elegido en la instalación sería correcto solo el
