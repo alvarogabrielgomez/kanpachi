@@ -63,9 +63,23 @@ type Deps struct {
 type Engine struct {
 	deps Deps
 
-	mu      sync.Mutex
-	proc    child
-	w       *wire.Writer
+	mu   sync.Mutex
+	proc child
+	w    *wire.Writer
+	// writeMu serializa las escrituras al tubo, y es OTRO mutex a propósito.
+	//
+	// Escribir con `mu` tomado es un interbloqueo latente: si el búfer de
+	// entrada del hijo se llenara, `Write` se quedaría esperando con `mu` en la
+	// mano, y el lector, que necesita `mu` para repartir las respuestas, no
+	// podría vaciar nada. Los dos esperando al otro.
+	//
+	// En la práctica los mensajes son cortos y el hijo lee sin parar, así que
+	// no pasaría casi nunca. Casi nunca es exactamente cuándo aparecen estos, y
+	// el síntoma sería una sala congelada sin ningún error en ningún log.
+	//
+	// Hace falta uno igual porque `wire.Writer` lleva un `bufio.Writer` dentro,
+	// que no admite dos escritores a la vez.
+	writeMu sync.Mutex
 	nextID  uint64
 	pending map[uint64]chan response
 	// events es el canal del proceso ACTUAL. Tras un Restart hay uno nuevo y el
@@ -250,8 +264,12 @@ func (e *Engine) call(ctx context.Context, build func(id uint64) request) (*resp
 	ch := make(chan response, 1)
 	e.pending[id] = ch
 	w := e.w
-	err := w.Write(req)
 	e.mu.Unlock()
+
+	// FUERA de `mu`, ver el comentario de writeMu.
+	e.writeMu.Lock()
+	err := w.Write(req)
+	e.writeMu.Unlock()
 
 	if err != nil {
 		e.mu.Lock()
