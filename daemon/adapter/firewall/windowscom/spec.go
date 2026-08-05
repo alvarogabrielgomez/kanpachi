@@ -85,11 +85,23 @@ type ruleSpec struct {
 
 // specFor translates one domain rule into the Windows shape.
 //
-// `adapter` is the friendly name of the virtual adapter, and it does not come
-// from the domain: it is a fact about the machine, like the IP the engine
-// assigns. Empty means "do not scope by interface", which is what the tests of
-// the pure layer use and what a caller that cannot resolve the name yet must
-// pass rather than inventing one.
+// `adapter` is the friendly name of the ROOM's virtual adapter. Empty means "do
+// not scope by interface", which is what the tests of the pure layer use and
+// what a caller that cannot resolve the name yet must pass rather than inventing
+// one.
+//
+// # The lobby rule goes on the LOBBY's adapter
+//
+// The host lives on two networks at once, and the door where people who are not
+// members yet knock is on the second one. Pinning every permit to the room's
+// adapter left that rule scoped to an interface its own local address does not
+// live on, so it matched nothing: the door was shut at the Windows layer while
+// everything reported green. Measured on a real room, where the rule read back
+// `local=100.127.255.1 ifaces=kanpachi0`.
+//
+// Which adapter is read off the rule's LOCAL ADDRESS, exactly like the gate does
+// it one layer up. An address inside [domain.RendezvousSubnet] can only be on
+// the lobby adapter.
 func specFor(r domain.FirewallRule, adapter string) (ruleSpec, error) {
 	proto, err := protocolOf(r.Proto)
 	if err != nil {
@@ -116,7 +128,11 @@ func specFor(r domain.FirewallRule, adapter string) (ruleSpec, error) {
 		Enabled:         true,
 	}
 	if adapter != "" {
-		s.Interfaces = []string{adapter}
+		if domain.RendezvousSubnet.Contains(r.Local) {
+			s.Interfaces = []string{domain.LobbyAdapterName}
+		} else {
+			s.Interfaces = []string{adapter}
+		}
 	}
 	return s, nil
 }
@@ -189,15 +205,82 @@ func remoteOf(r domain.FirewallRule) (string, error) {
 	return strings.Join(parts, ","), nil
 }
 
+// normalizeAddresses puts an address list in the shape Windows gives it back.
+//
+// # Why this is not cosmetic
+//
+// Windows does not store what you write. It stores an equivalent, and hands the
+// equivalent back on the next read. Measured on a real machine:
+//
+//	written "10.99.7.1"       read back "10.99.7.1/255.255.255.255"
+//	written "10.99.7.0/24"    read back "10.99.7.0/255.255.255.0"
+//	written ""                read back "*"
+//
+// Comparing the two strings raw makes EVERY rule look altered, forever, and the
+// two consequences are both real. The base quarantine logged a drift warning for
+// all 48 of its rules on every start, which is the surest way to guarantee
+// nobody reads the log. And `Apply` retires and rewrites every rule on every
+// heartbeat: the code goes out of its way to avoid a rule being half old and
+// half new precisely because that window is on the wire, and this reopened it on
+// a timer.
+//
+// The list order is sorted for the same reason `remoteOf` sorts: Windows is free
+// to hand the members back in another order.
+func normalizeAddresses(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "*" {
+		// The two spellings of "any". Kanpachi writes the empty one and Windows
+		// reads back the star.
+		return "*"
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		out = append(out, normalizeAddress(strings.TrimSpace(p)))
+	}
+	sort.Strings(out)
+	return strings.Join(out, ",")
+}
+
+// normalizeAddress renders one entry as address plus DOTTED mask, which is what
+// Windows returns.
+//
+// Anything it cannot parse comes back untouched. Windows accepts shapes this
+// does not model, ranges among them, and turning one of those into a guess would
+// make two different scopes compare equal, which is worse than reporting a
+// difference that is not one.
+func normalizeAddress(s string) string {
+	if a, err := netip.ParseAddr(s); err == nil {
+		if a.Is4() {
+			return s + "/255.255.255.255"
+		}
+		return s
+	}
+	p, err := netip.ParsePrefix(s)
+	if err != nil || !p.Addr().Is4() {
+		return s
+	}
+	var mask [4]byte
+	for i := 0; i < p.Bits(); i++ {
+		mask[i/8] |= 1 << (7 - i%8)
+	}
+	return fmt.Sprintf("%s/%d.%d.%d.%d", p.Addr(), mask[0], mask[1], mask[2], mask[3])
+}
+
 // sameScope says whether a live rule still matches what was asked for.
 //
 // Only the fields Kanpachi sets are compared. Windows fills in a pile of others
 // with defaults, and demanding equality on those would report every rule as
 // altered forever.
+//
+// The addresses go through [normalizeAddresses] because Windows stores an
+// equivalent of what it was given, not the same string.
 func (s ruleSpec) sameScope(other ruleSpec) bool {
 	if s.Name != other.Name || s.Protocol != other.Protocol ||
-		s.LocalPorts != other.LocalPorts || s.LocalAddresses != other.LocalAddresses ||
-		s.RemoteAddresses != other.RemoteAddresses || s.Action != other.Action ||
+		s.LocalPorts != other.LocalPorts ||
+		normalizeAddresses(s.LocalAddresses) != normalizeAddresses(other.LocalAddresses) ||
+		normalizeAddresses(s.RemoteAddresses) != normalizeAddresses(other.RemoteAddresses) ||
+		s.Action != other.Action ||
 		s.Direction != other.Direction || s.Profiles != other.Profiles ||
 		s.Enabled != other.Enabled {
 		return false

@@ -189,3 +189,82 @@ func TestSameScopeIgnoresWhatWindowsFillsIn(t *testing.T) {
 			"the port shut just like a missing one")
 	}
 }
+
+// Windows no guarda lo que se le escribe: guarda un equivalente, y devuelve el
+// equivalente. Las cadenas de este test están MEDIDAS en una máquina real.
+//
+// Compararlas crudas hacía que toda regla pareciera alterada, para siempre, y
+// eso tenía dos consecuencias de verdad. La cuarentena de base avisaba de deriva
+// en sus 48 reglas en cada arranque, que es la forma más segura de garantizar
+// que nadie lea el log. Y `Apply` retiraba y reescribía cada regla en cada
+// latido: el código evita a propósito que una regla quede mitad vieja y mitad
+// nueva porque esa ventana está en el cable, y esto la reabría con un
+// temporizador.
+func TestWindowsGivesTheAddressesBackInItsOwnShape(t *testing.T) {
+	// Lo que Kanpachi escribe, y lo que Windows devolvió al leerlo.
+	casos := []struct{ escrito, leído string }{
+		{"100.127.255.1", "100.127.255.1/255.255.255.255"},
+		{"100.127.255.0/24", "100.127.255.0/255.255.255.0"},
+		{"", "*"},
+		{"10.99.7.5,10.99.7.6", "10.99.7.6/255.255.255.255,10.99.7.5/255.255.255.255"},
+	}
+	for _, c := range casos {
+		if normalizeAddresses(c.escrito) != normalizeAddresses(c.leído) {
+			t.Errorf("escrito %q y leído %q se comparan distinto:\n  %q\n  %q",
+				c.escrito, c.leído, normalizeAddresses(c.escrito), normalizeAddresses(c.leído))
+		}
+	}
+
+	// Y lo que de verdad cambió sigue viéndose. Sin esto, normalizar sería
+	// apagar el detector en vez de arreglarlo.
+	distintos := []struct{ a, b string }{
+		{"10.99.7.5", "10.99.7.6"},
+		{"10.99.7.0/24", "10.99.7.0/16"},
+		{"10.99.7.5", ""},
+		{"10.99.7.5", "10.99.7.5,10.99.7.6"},
+	}
+	for _, c := range distintos {
+		if normalizeAddresses(c.a) == normalizeAddresses(c.b) {
+			t.Errorf("%q y %q se comparan iguales, y son alcances distintos", c.a, c.b)
+		}
+	}
+}
+
+// La puerta del vestíbulo va en el adaptador del VESTÍBULO.
+//
+// El host vive en dos redes a la vez, y la puerta donde toca quien todavía no es
+// miembro está en la segunda. Anclando todos los permisos al adaptador de la
+// sala, esa regla quedaba acotada a una interfaz donde su propia dirección local
+// no vive, o sea que no casaba con nada: la puerta cerrada en la capa de
+// Windows, con todo reportando verde. Medido en una sala real, donde la regla se
+// leyó como `local=100.127.255.1 ifaces=kanpachi0`.
+func TestTheLobbyDoorGoesOnTheLobbyAdapter(t *testing.T) {
+	puerta := domain.FirewallRule{
+		Name:  domain.FirewallGroup + ": canal de control puerta",
+		Proto: domain.ProtoTCP,
+		From:  domain.ControlPort,
+		To:    domain.ControlPort,
+		Local: domain.RendezvousSubnet.Addr().Next(),
+		Nets:  []netip.Prefix{domain.RendezvousSubnet},
+	}
+	s, err := specFor(puerta, domain.AdapterName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Interfaces) != 1 || s.Interfaces[0] != domain.LobbyAdapterName {
+		t.Errorf("la puerta quedó en %v, y vive en %s", s.Interfaces, domain.LobbyAdapterName)
+	}
+
+	// Y una regla de la sala sigue en el adaptador de la sala.
+	sala := puerta
+	sala.Local = netip.MustParseAddr("10.99.7.1")
+	sala.Nets = nil
+	sala.Remote = []netip.Addr{netip.MustParseAddr("10.99.7.5")}
+	s, err = specFor(sala, domain.AdapterName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Interfaces) != 1 || s.Interfaces[0] != domain.AdapterName {
+		t.Errorf("una regla de la sala quedó en %v", s.Interfaces)
+	}
+}
