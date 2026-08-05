@@ -308,7 +308,6 @@ Lo que **dejó de ser cierto** es que quien tenga el código entre para siempre.
 
 - Cuarentena en la interfaz virtual desde la instalación, en los tres perfiles.
 - Se abre únicamente lo que pide el perfil del juego activo, únicamente en el host, únicamente hacia las IPs de miembros presentes en la sala.
-- ICMP echo permitido, para que el diagnóstico funcione.
 - 445, 3389, 22 y todo lo no listado: cerrado siempre. La API no tiene forma de abrirlos.
 - Jamás exit node, jamás subnet routing, jamás IP forwarding. No existen como opción.
 
@@ -330,7 +329,6 @@ O sea que un bloqueo entrante gana sobre las reglas de permiso que Kanpachi crea
 |---|---|
 | Bloqueo **entrante** de los puertos prohibidos, en todas las interfaces | Es lo que gana contra una regla permisiva que dejó el instalador de un juego, que es el escenario de la decisión 19. **No se acota ni por IP ni por adaptador**, y la razón es la misma que ya está en `core/domain/policy.go`: un bloqueo acotado que deja de casar ABRE. El instalador tampoco podría acotarlo, porque la `/24` de la sala se elige en tiempo de ejecución |
 | Bloqueo **saliente** de los mismos puertos | Esto es el "en ambas direcciones" que sí se sostiene: impide que algo infectado en esta máquina barra SMB por la sala, sin tocar el tráfico del juego |
-| Permiso de **ICMP echo** | Para que el diagnóstico funcione |
 
 **Jamás se solapa con lo que Kanpachi abre**, y eso no es cuidado, es imposible por construcción: esos puertos no se pueden expresar en un perfil, lo impide `forbiddenPorts` en el dominio y lo recomprueba `BuildRuleSet`. Encima es un upgrade sobre lo que había escrito, porque convierte la invariante de puertos prohibidos de una ausencia ("no hay forma de abrirlos") en una presencia que gana sobre reglas ajenas.
 
@@ -345,11 +343,45 @@ La segunda es de ciclo de vida. El daemon purga por grupo al arrancar. Con un so
 | Grupo | Quién lo pone | Qué lleva | Cuándo se va |
 |---|---|---|---|
 | `Kanpachi` | El daemon, en cada cambio de sala | Las reglas del juego activo y el hueco del canal | Purga del arranque, o salir de la sala |
-| `Kanpachi-base` | El instalador, una vez | La cuarentena de arriba | El desinstalador |
+| `Kanpachi-base` | El daemon, en cada arranque, y solo AGREGA | La cuarentena de arriba | El desinstalador |
 
-**El daemon jamás nombra el grupo base,** así que la cuarentena sigue puesta con el servicio detenido, deshabilitado o a medio desinstalar. Lo vigila `internal/arch/grupobase_test.go`, que además comprueba lo que un lector distraído rompería sin notarlo: `Kanpachi` es prefijo de `Kanpachi-base`, así que una purga escrita con `HasPrefix` en vez de igualdad se lleva la cuarentena por delante.
+**El daemon jamás la BORRA,** así que la cuarentena sigue puesta con el servicio detenido, deshabilitado o a medio desinstalar. Lo vigila `internal/arch/grupobase_test.go`, que además comprueba lo que un lector distraído rompería sin notarlo: `Kanpachi` es prefijo de `Kanpachi-base`, así que una purga escrita con `HasPrefix` en vez de igualdad se lleva la cuarentena por delante.
 
 **Alternativa descartada:** meter la base dentro del conjunto deseado que el daemon reaplica. Deja de existir cada vez que el daemon no está, que es justo cuando más hace falta, y paga el costo de agregarle acción y dirección a `FirewallRule`.
+
+### La cuarentena la escribe el daemon, porque no hay instalador
+
+Esto decía que la ponía el instalador y que el daemon jamás la nombraba. **No hay instalador**, y una cuarentena que depende de un programa que no existe es una promesa apagada: la máquina arranca sin ella y nadie se entera, porque todo sigue funcionando igual.
+
+**Elección:** la escribe el daemon en cada arranque, con `ApplyBaseQuarantine`, antes de `PurgeOwned`.
+
+Antes de la purga y no después, porque la purga es el instante de menos protección de todo el arranque, con las reglas de la sala anterior cayendo. Y su fallo es fatal: un daemon que no pudo escribirla es un daemon con la promesa apagada, y arrancar igual le dejaría al usuario la app abierta diciendo que todo está bien encima de una máquina sin lo único que la protege con el servicio parado.
+
+**Lo que cambia es quién la pone. Lo que NO cambia es lo que la hace valiosa,** y por eso la regla que protege se movió en vez de desaparecer:
+
+| Antes | Ahora |
+|---|---|
+| El daemon jamás nombra el grupo base | Lo nombra **un solo paquete**, `daemon/adapter/firewall/windowscom/` |
+| — | **Ninguna llamada destructiva de `daemon/` puede apuntarle**, comprobado por AST |
+| — | **No existe el método para borrarla en `FirewallPort`**, comprobado sobre la interfaz |
+
+El tercero es el que de verdad reemplaza al primero. Un barrido de llamadas caza a quien la borre hoy; una comprobación sobre la interfaz caza a quien haga posible borrarla mañana, y la capacidad es lo que hay que impedir.
+
+`ApplyBaseQuarantine` **solo agrega**. Repone lo que falte y reactiva una regla propia que alguien haya desactivado, en el sitio, sobre el objeto exacto que devuelve la enumeración. Una regla cuyo alcance cambió se avisa en el log y se deja: reescribirla obligaría a borrarla primero, y esa capacidad vale más que cerrar una edición que un administrador hizo a conciencia en su propia máquina.
+
+**Alternativa descartada:** reponerla como "purgo y vuelvo a escribir", que es la forma natural de reponer cualquier cosa. Convierte cada arranque del servicio en una ventana sin protección, y si ese arranque falla a la mitad, la ventana no se cierra nunca.
+
+**Alternativa descartada:** ensanchar `FirewallRule` con un campo de acción para que la cuarentena entre en el `RuleSet`. Ese tipo es el que produce `BuildRuleSet` a partir de un perfil del catálogo, o sea de un archivo que el usuario puede importar: con un campo de acción ahí, **un perfil de juego podría emitir bloqueos**. Hoy la invariante "un perfil solo ABRE" la sostiene el tipo. Se resolvió con un tipo aparte, `QuarantineRule`, que no tiene campo de acción y por lo tanto solo puede expresar bloqueos.
+
+### Sin permiso de ICMP echo
+
+Esta cuarentena prometía un permiso de ICMP echo "para que el diagnóstico funcione". **No se escribe.**
+
+**Ninguna función del producto depende de él.** El sondeo de MTU manda el ping hacia AFUERA, y la salida no la bloquea nadie. La latencia de un miembro la mide el motor por su propio protocolo. O sea que el diagnóstico funciona igual sin la regla.
+
+Y el costo no era pequeño: sería la única regla de la cuarentena que **abre en vez de cerrar**, sin acotar, o sea contestando el ping en toda red a la que la máquina se conecte. Para siempre, y con Kanpachi apagado, porque de eso trata este grupo. Se paga una superficie permanente por un diagnóstico que nadie usa.
+
+**El disparador para reabrirlo** está en `07-futuro.md`: un caso de uso concreto que necesite que esta máquina CONTESTE un ping, y una forma de acotarlo al adaptador virtual que no lo convierta en nada cuando el adaptador no existe.
 
 **Consecuencia para el adaptador del firewall, cuando se escriba:** con el bloqueo explícito de puertos prohibidos puesto, `SuspendForeign` deja de hacer falta para SMB y RDP, porque el bloqueo ya gana sobre esas reglas ajenas. Le queda su caso real, que es una regla permisiva del propio juego en su propio puerto.
 
@@ -368,7 +400,7 @@ El canal de la sala de la decisión 23 necesita que el host escuche en un puerto
 
 **Se recalcula con los miembros presentes, como las de juego.** Consecuencia buena y gratis: expulsar cierra el hueco para el expulsado en el firewall, y no solo en la lista del oyente. Son dos capas que fallan por motivos distintos, que es la doctrina de la decisión 26 aplicada acá.
 
-Lo que NO vive en el conjunto declarativo: la cuarentena de base, o sea el bloqueo de los puertos prohibidos en las dos direcciones y el permiso de ICMP echo. La pone el instalador con el grupo `Kanpachi-base` y el daemon jamás la toca. Es la instalación, no la sala.
+Lo que NO vive en el conjunto declarativo: la cuarentena de base, o sea el bloqueo de los puertos prohibidos en las dos direcciones. La escribe el daemon en cada arranque con el grupo `Kanpachi-base`, y jamás la borra. Es la instalación, no la sala.
 
 ## 5. Cliente solo Windows en la v1
 

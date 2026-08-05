@@ -135,7 +135,66 @@ ofrecer la comprobación solo cuando la IP sea de verdad del usuario.
 Hasta que eso esté resuelto, no se hace. Escanear la IP de un tercero no es algo
 que este producto pueda hacer aunque el resultado fuera útil.
 
-## 11. Lo que se decidió NO hacer
+## 11. El desinstalador, que tiene que borrar los DOS grupos de firewall
+
+Hoy no hay desinstalador, y la cuarentena de base la escribe el daemon en cada
+arranque, con un método que solo agrega. O sea que hay una forma de ponerla y
+ninguna de quitarla.
+
+**Es requisito de producto, no cortesía.** Dejar bloqueos explícitos sobre el 445
+y el 3389 en toda la máquina con Kanpachi ya borrado deja al usuario sin
+compartir archivos ni Escritorio remoto, **sin causa visible y sin nada que
+culpar**. El síntoma aparece semanas después, en una máquina donde el producto ya
+no está instalado, así que nadie va a relacionarlo.
+
+Lo que tiene que hacer, en este orden: detener y borrar el servicio, purgar los
+grupos `Kanpachi` y `Kanpachi-base` **por igualdad exacta de cada nombre y jamás
+por prefijo**, eliminar el adaptador Wintun, borrar ProgramData y borrar Program
+Files.
+
+**Disparador:** cualquier instalador que se distribuya fuera de la máquina de
+desarrollo. Es el mismo trabajo, no se puede hacer uno sin el otro.
+
+Mientras tanto, `04-flujos-y-configuracion.md` lleva el comando de PowerShell
+exacto para quitarla a mano.
+
+## 12. El permiso de ICMP echo en la cuarentena de base
+
+La cuarentena lo prometía "para que el diagnóstico funcione" y **no se escribe**.
+Ninguna función depende de él: el sondeo de MTU manda el ping hacia AFUERA, que
+la salida no bloquea, y la latencia de un miembro la mide el motor por su propio
+protocolo.
+
+El costo de tenerlo no era pequeño: sería la única regla de la cuarentena que
+ABRE en vez de cerrar, sin acotar, contestando el ping en toda red a la que la
+máquina se conecte, para siempre y con Kanpachi apagado.
+
+**Disparador, y son dos a la vez:** un caso de uso concreto que necesite que esta
+máquina CONTESTE un ping, y una forma de acotarlo que no lo convierta en nada
+cuando el adaptador virtual no existe. La segunda es la difícil, y es la misma
+razón por la que los bloqueos de la cuarentena tampoco se acotan: un alcance que
+deja de casar convierte un permiso en un cierre y un bloqueo en nada.
+
+## 13. Una alerta para un miembro que miente demostrablemente
+
+`CanaryMismatch` es el veredicto de una ronda donde el canario NO fue tocado y
+algún miembro informó que sí llegó. El host tiene una prueba propia de que ese
+informe es falso.
+
+Hoy llega al log, al `CanaryView` y a la pantalla, y **no se vuelve un
+`AlertKind`**. El motivo es que también sale de una carrera inocente entre un
+informe y el cierre del canario, y una alerta que se enciende por una carrera le
+enseña al usuario a ignorar las alertas. Es la misma doctrina ya escrita para
+`AlertAuditFailed`.
+
+**Disparador:** que los `CanaryMismatch` se midan y se vea que no vienen de la
+carrera, o sea que se repitan sobre el mismo remitente en rondas seguidas. Ahí
+deja de ser ruido y pasa a ser una señal sobre una persona concreta, y ahí hace
+falta decidir antes qué se le ofrece al usuario: nombrarlo no sirve de nada si la
+única acción posible es expulsar, porque expulsar no impide volver y el código de
+invitación no es un secreto. Ver decisión 8.
+
+## 14. Lo que se decidió NO hacer
 
 Escrito para resistir la tentación:
 

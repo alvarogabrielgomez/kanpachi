@@ -245,7 +245,7 @@ nada al usuario.
 
 | Capa | Quién | Qué |
 |---|---|---|
-| Instalador | COM, grupo `Kanpachi-base` | Los 9 puertos prohibidos en las dos direcciones, **todas** las interfaces, más ICMP echo. **No cambia nada.** |
+| Daemon, en cada arranque | COM, grupo `Kanpachi-base` | Los 12 puertos prohibidos en las dos direcciones, **todas** las interfaces. Solo agrega: no existe el método para borrarla. |
 | Daemon, permisos | COM, grupo `Kanpachi` | `Apply(RuleSet)` igual que hoy. Son los que **abren**. Se suma `Interfaces = ["kanpachi0"]`. |
 | Daemon, compuerta | Sesión WFP propia | `blockAll` sobre `kanpachi0`, más permisos espejo soft del **mismo** `RuleSet`. Solo en `ALE_AUTH_RECV_ACCEPT_V4/V6`. |
 

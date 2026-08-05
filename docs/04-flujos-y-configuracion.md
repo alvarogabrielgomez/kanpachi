@@ -42,9 +42,11 @@ Nota de rol: "host" es quien corre el servidor del juego. Cualquier miembro pued
 5. Política de recuperación del servicio: reiniciar a los 5 s, 10 s, 30 s.
 6. Crea el adaptador Wintun `kanpachi0`, fija su categoría de red en **Privada** y escribe `Category=1` en su perfil del registro. Hacerlo aquí evita el diálogo de "¿quieres que este equipo sea detectable?" a mitad de una partida.
 7. Fija la métrica del adaptador: IPv4 en 1, IPv6 en 20, `AutomaticMetric` desactivado en ambas pilas.
-8. Aplica la cuarentena de base, con el grupo `Kanpachi-base` y en los tres perfiles de firewall: bloqueo de los puertos prohibidos **en las dos direcciones**, sin acotar por dirección ni por adaptador, más ICMP echo permitido. **No es un deny-all**, y no puede serlo: los bloqueos ganan sobre los permisos sin desempate por especificidad, así que un bloqueo total taparía las reglas del juego activo que crea el propio daemon. Ver decisión 4.
+8. **La cuarentena de base ya no es paso del instalador.** La escribe el DAEMON en cada arranque, con el grupo `Kanpachi-base` y en los tres perfiles: bloqueo de los puertos prohibidos **en las dos direcciones**, sin acotar por dirección ni por adaptador. **No es un deny-all**, y no puede serlo: los bloqueos ganan sobre los permisos sin desempate por especificidad, así que un bloqueo total taparía las reglas del juego activo que crea el propio daemon. Ver decisión 4.
 
-   **Por qué la cuarentena no se acota.** Este paso decía "sobre la IP del adaptador" y era imposible de cumplir: la `/24` de la red se elige **por sala y en tiempo de ejecución**, contra las redes que ya tiene la máquina, así que el instalador no puede conocerla. La razón de fondo es más fuerte que la mecánica, y ya está escrita en `core/domain/policy.go`: **un bloqueo acotado que deja de casar ABRE.** Un permiso acotado que deja de casar cierra, que es el lado correcto de fallar. Por eso el alcance por interfaz va solo en los permisos que crea el daemon, jamás en los bloqueos.
+   **Por qué la cuarentena no se acota.** Este paso decía "sobre la IP del adaptador" y era imposible de cumplir: la `/24` de la red se elige **por sala y en tiempo de ejecución**, contra las redes que ya tiene la máquina, así que nadie la conoce de antemano. La razón de fondo es más fuerte que la mecánica, y ya está escrita en `core/domain/policy.go`: **un bloqueo acotado que deja de casar ABRE.** Un permiso acotado que deja de casar cierra, que es el lado correcto de fallar. Por eso el alcance por interfaz va solo en los permisos que crea el daemon, jamás en los bloqueos.
+
+   **El puerto de las reglas es siempre el LOCAL, en las dos direcciones**, y de eso depende que la cuarentena no rompa la máquina. Entrante con puerto local 445 es "nadie llega a MI compartir archivos", que es la protección. Saliente con puerto local 445 cierra ese mismo servicio por el otro lado. Lo que NO hace: **impedir que esta PC sea CLIENTE**. Montar un disco de red, entrar por Escritorio remoto a otra máquina o usar git por SSH salen de un puerto local efímero hacia el 445, el 3389 o el 22 del OTRO, así que ninguna de estas reglas los toca. Bloquear por puerto remoto sí los rompería, y para siempre, porque la cuarentena sigue puesta con Kanpachi apagado.
 9. Genera el token de la API local en ProgramData.
 10. Accesos directos en Menú Inicio y escritorio.
 11. Arranca el servicio y abre la UI.
@@ -86,6 +88,20 @@ El daemon imprime el nombre del pipe y el token al arrancar. La segunda llamada 
 En orden: detener y borrar el servicio, purgar las reglas de **los dos grupos**, "Kanpachi" y "Kanpachi-base", eliminar el adaptador Wintun, borrar ProgramData, borrar Program Files. Criterio de calidad: instalar y desinstalar veinte veces seguidas en una VM sin dejar rastro.
 
 **El desinstalador es el único que borra los dos.** Es la razón por la que conviene que los nombres se parezcan, y también la trampa: la comparación va por igualdad exacta contra cada uno, jamás por prefijo contra "Kanpachi", porque el mismo atajo escrito dentro del daemon borraría la cuarentena en cada arranque.
+
+**Borrar la cuarentena es requisito de producto, no cortesía.** Dejar bloqueos explícitos sobre el 445 y el 3389 en toda la máquina con Kanpachi ya borrado deja al usuario sin compartir archivos ni Escritorio remoto, sin causa visible y sin nada que culpar. El desinstalador todavía no existe: está en `07-futuro.md` con su disparador.
+
+### Hasta que exista, el comando de soporte
+
+Consola de PowerShell **elevada**:
+
+```powershell
+Get-NetFirewallRule -Group 'Kanpachi-base' | Remove-NetFirewallRule
+```
+
+Igualdad exacta del grupo, **jamás un comodín**. `Kanpachi` es prefijo de `Kanpachi-base`, así que un `-Group 'Kanpachi*'` se lleva también las reglas de la sala, y un `-DisplayName` parcial se lleva lo que ni siquiera es de Kanpachi.
+
+Ese comando NO es para el uso normal: el daemon vuelve a escribir la cuarentena en el arranque siguiente, que es exactamente lo que tiene que hacer. Sirve para desinstalar a mano y para diagnosticar, con el servicio ya detenido.
 
 ## Configuración del droplet (kanpachi-seed)
 

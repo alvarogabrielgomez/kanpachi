@@ -106,7 +106,14 @@ void main() {
     expect(find.text(tituloAlarma), findsOneWidget);
   });
 
-  testWidgets('el detalle nombra el puerto y a cuántos se preguntó', (
+  // EL PUERTO NO SE NOMBRA, Y ES UNA REGLA ESCRITA EN docs/05-ui.md.
+  //
+  // El canario vive en un puerto al azar que Kanpachi abrió hace dos segundos y
+  // YA CERRÓ. Nombrarlo manda al usuario a buscar algo que no existe, y de paso
+  // dice que lo que falló es un hueco cuando lo que falló es la contención
+  // entera. Lo que sí va es quién lo comprobó: es lo que hace creíble la frase y
+  // explica por qué el aviso aparece ahora y no antes.
+  testWidgets('el detalle dice quién lo comprobó y jamás el puerto', (
     WidgetTester tester,
   ) async {
     await pinta(
@@ -117,11 +124,28 @@ void main() {
 
     expect(
       find.textContaining('49876'),
-      findsOneWidget,
+      findsNothing,
       reason:
-          'sin el puerto, el aviso es una frase sin dato y no se puede comprobar',
+          'ese puerto ya está cerrado: nombrarlo manda al usuario a buscar algo que no existe',
     );
-    expect(find.textContaining('2 en la sala'), findsOneWidget);
+    expect(find.textContaining('2 personas de la sala'), findsOneWidget);
+  });
+
+  testWidgets('con un solo preguntado se le nombra', (
+    WidgetTester tester,
+  ) async {
+    await pinta(
+      tester,
+      alerts: <AlertKind>[AlertKind.canaryLeaking],
+      check: const CanaryCheck(
+        measured: true,
+        verdict: CanaryVerdict.leaking,
+        touched: true,
+        asked: <String>['humberto'],
+      ),
+    );
+
+    expect(find.textContaining('desde la PC de humberto'), findsOneWidget);
   });
 
   testWidgets('una comprobación ciega enseña la alarma sin inventar detalle', (
@@ -130,7 +154,7 @@ void main() {
     await pinta(tester, alerts: <AlertKind>[AlertKind.canaryLeaking]);
 
     expect(find.text(tituloAlarma), findsOneWidget);
-    expect(find.textContaining('Puerto 0'), findsNothing);
+    expect(find.textContaining('Comprobado'), findsNothing);
   });
 
   testWidgets('pulsar repone una sola vez', (WidgetTester tester) async {

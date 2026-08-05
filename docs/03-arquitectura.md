@@ -104,10 +104,16 @@ type FirewallPort interface {
     // idempotente, y que reaplicar el mismo conjunto REPARE lo que alguien
     // haya borrado o agregado por fuera
     Apply(ctx context.Context, desired domain.RuleSet) error
+    // ApplyBaseQuarantine escribe la cuarentena de base y REPONE lo que falte.
+    // Solo AGREGA, y no existe el método para borrarla: esa ausencia es la
+    // protección, porque lo que hace valiosa a la cuarentena es seguir puesta
+    // con el daemon detenido. La llama NewSession al arrancar, ANTES de
+    // PurgeOwned. Ver decisión 4
+    ApplyBaseQuarantine(ctx context.Context, rules []domain.QuarantineRule) error
     // PurgeOwned borra todo lo del grupo "Kanpachi", por igualdad exacta y
-    // jamás por prefijo. NUNCA toca "Kanpachi-base": esa es la cuarentena que
-    // puso el instalador, y es lo que protege la máquina cuando el daemon no
-    // corre. Ver decisión 4
+    // jamás por prefijo. NUNCA toca "Kanpachi-base": esa es la cuarentena de
+    // base, y es lo que protege la máquina cuando el daemon no corre.
+    // Ver decisión 4
     PurgeOwned(ctx context.Context) error
     AuditForeign(ctx context.Context, p domain.GameProfile) ([]domain.ForeignRule, error)
     SuspendForeign(ctx context.Context, r []domain.ForeignRule) error
@@ -943,14 +949,27 @@ les diga.
 
 #### Qué cubre EN EXCLUSIVA
 
-Conviene acotarlo, porque no cubre todo lo que parece. Que la compuerta **no esté
-puesta** ya lo caza la auditoría local en cada barrido, preguntando por
-`GateKey`, y eso levanta `AlertRulesTampered` sin necesitar a nadie.
+Conviene acotarlo con precisión, porque la versión anterior de este párrafo decía
+de más. Afirmaba que una compuerta ausente "ya lo caza la auditoría local, y eso
+levanta `AlertRulesTampered`". Es cierto solo a medias, y la mitad que falta es
+justo la que importa.
 
-Lo que solo el canario puede ver es el otro caso, que es justo el riesgo escrito
-en `wfp/spec.go`: **el filtro existe por su GUID y no contiene**. Si la condición
-de interfaz llegara vacía al reautorizar un flujo, el bloqueo dejaría de casar en
-silencio y la auditoría local seguiría diciendo verde.
+Que la compuerta **no esté puesta** sí lo mira la auditoría local en cada
+barrido, preguntando por `GateKey`. Lo que hace con el hallazgo no es avisar: lo
+**repara en silencio**. `repairOwnRulesLocked` la repone hasta `TamperRepairLimit`
+veces, así que `AlertRulesTampered` solo se levanta a la cuarta detección
+seguida, o si la reposición falla, o si no hay sala. Las tres primeras veces el
+usuario no ve nada, que es lo correcto para el toque puntual de alguien mirando
+la consola del firewall, y es cero información para el caso de abajo.
+
+Y hay un hueco que la auditoría local **no puede ver por su forma**: `present()`
+comprueba que la CLAVE del filtro exista, no que el filtro CASE. Un filtro vivo
+por su GUID con la condición de interfaz vacía lee como `GatePresent` y no
+contiene nada. Es el riesgo escrito en `wfp/spec.go`: si la condición de interfaz
+llegara vacía al reautorizar un flujo, el bloqueo dejaría de casar en silencio.
+
+Eso es lo que solo el canario ve: **el filtro existe y no contiene**. La
+auditoría local sigue diciendo verde y el paquete cruza.
 
 #### El radio de explosión es exactamente lo que se mide
 
@@ -1075,13 +1094,75 @@ que el usuario toque nada, y una alarma eterna deja de ser información. El bot�
 de reponer entra por esa misma vía, porque el botón **es** un `Apply`.
 
 ```
-limpio  ──(el canario es tocado)──►  alarma
-   ▲                                    │
-   └────(un Apply y una ronda limpia)───┘
+limpio ──(1ª fuga)──► se REPARA sola, sin avisar
+   ▲                        │
+   │                        └──(2ª fuga seguida)──► alarma, y se deja de comprobar
+   │                                                     │
+   └──────────(un Apply y una ronda que MIDIÓ limpia)────┘
 ```
 
 Con cero miembros no se comprueba, y está bien: solo hay de quién protegerse
 cuando hay alguien.
+
+#### Reparar primero, avisar después
+
+`CanaryRepairLimit = 1`. La primera fuga no enciende nada: llama a `applyPolicy`,
+que repone la compuerta, y deja que la ronda siguiente juzgue. Solo la segunda
+seguida levanta la alarma.
+
+**Lo que se gana es que la reparación deja de depender de que el usuario haga
+caso.** Un usuario que ignore el aviso para siempre igual tiene la protección
+repuesta. Y cierra un riesgo concreto: el canario es alcanzable por loopback
+desde la propia máquina, porque el tráfico a la dirección propia no pasa por
+`FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4`, que es lo que ya documenta `ErrProbeSelf`.
+O sea que un proceso local sin privilegios puede encender la alarma cuando
+quiera. **No expone la máquina:** la única acción que la alarma ofrece es
+reponer, que solo sube y jamás baja. Lo que ese proceso podría comprar es que el
+usuario deje de creerle al aviso, y con la reparación automática dejar de creerle
+no cuesta protección.
+
+**El límite es UNO y no tres, al revés que `TamperRepairLimit`.** Las dos
+evidencias no valen igual: la auditoría local dice "falta una clave", que sale en
+falso por carreras normales, y un toque del canario dice **un paquete cruzó de
+verdad, medido desde otra máquina**. Cada ronda cuesta diez segundos con la
+compuerta rota, así que tres serían medio minuto de exposición real esperando.
+
+**Lo que dispara la reparación es `Touched` y nada más, y esa es la línea de zero
+trust.** Un informe de un invitado no repara: si reparara, cualquier miembro haría
+que el host reescribiera su firewall mandando un mensaje. `CanaryMismatch` tampoco.
+
+#### La ronda corre FUERA del despachador
+
+`Supervisor.rondaCanario` la lanza en una goroutine propia, con su propio
+`recover`, y el single-flight lo lee y lo escribe **solo el despachador**: se pone
+ahí y se quita con un `tagCanaryDone` que vuelve por el mismo canal de trabajo
+que todo lo demás.
+
+No es organización, es funcional: una ronda dura hasta diez segundos y el
+despachador es de un solo hilo. Corriéndola dentro, el latido de quince segundos
+que hace vencer el corte de los veinte minutos se quedaría esperando a la red.
+Mismo trato para el lado del invitado, que son hasta seis segundos de sondeo.
+
+**`CanaryReports()` NO entra en `ControlSource`, y es deliberado.** Un informe
+solo significa algo dentro de una ronda abierta, correlacionado por puerto.
+Drenado por el supervisor habría que aparcarlo en algún sitio hasta que una ronda
+lo pidiera, que es un segundo estado con su propia caducidad y su propio bug. La
+ronda lee ese canal directo durante sus diez segundos, y fuera de una ronda
+`emitir` descarta con aviso: un informe sin ronda abierta es el informe tardío de
+un canario ya cerrado.
+
+#### La ronda sabe a qué sala pertenece
+
+Entre soltar el candado y volver a tomarlo pasan hasta diez segundos, y en ese
+hueco el host puede salir de la sala y crear otra. La ronda vieja despertaría y
+escribiría su conclusión **en la sala nueva**: un verde medido contra otros
+miembros y otro conjunto de reglas, con la hora de ahora. La simétrica es peor,
+una alarma pegajosa colgada de una sala que ya no existe.
+
+Lo resuelve `RoomState.Gen`, un contador que sube **donde se vacía la sala** y no
+en cada llamador, así que los cinco caminos que llegan a `StateIdle` lo heredan
+por construcción. La ronda se lleva el `Gen` de cuando arrancó y descarta su
+conclusión si no coincide.
 
 #### Dos trampas que hay que respetar
 
@@ -1125,7 +1206,7 @@ El verbo `probe` tenía un `DialTimeout` propio, y era exactamente el error que 
 
   Por dentro Windows lo guarda como GUID del adaptador (`IF={...}` en el almacén de reglas) y lo devuelve resuelto a nombre. De ahí salen las dos propiedades que importan: sobrevive a que el usuario renombre la conexión, y **no** sobrevive a que el adaptador se recree con un GUID nuevo. Lo segundo es justo lo que hace `Apply` al reaplicar, que enumera lo vivo y calcula la diferencia.
 
-  **El alcance por interfaz va SOLO en los permisos, jamás en los bloqueos de `Kanpachi-base`.** No es simetría estética: si el alcance deja de casar, un permiso que deja de aplicar CIERRA y un bloqueo que deja de aplicar ABRE. La cuarentena del instalador se acota por dirección y nada más.
+  **El alcance por interfaz va SOLO en los permisos, jamás en los bloqueos de `Kanpachi-base`.** No es simetría estética: si el alcance deja de casar, un permiso que deja de aplicar CIERRA y un bloqueo que deja de aplicar ABRE. La cuarentena de base se acota por dirección y nada más.
 
   Esto importa de verdad por el direccionamiento: Kanpachi usa `100.64.0.0/10`, que es espacio CGNAT, y la decisión 10 ya anota que CGNAT domina en LatAm. Con acotar solo por IP, un router 4G que reparta `100.64.x` en la LAN de casa haría que el permiso del juego alcance también a la red física.
 - Reglas aplicadas a los tres perfiles de firewall (dominio, privado, público) y el adaptador fijado como red **Privada** desde el instalador. Si Windows clasificara el adaptador en otro perfil, las reglas seguirían aplicando.

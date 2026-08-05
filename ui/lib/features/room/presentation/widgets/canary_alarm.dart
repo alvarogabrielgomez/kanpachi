@@ -61,12 +61,29 @@ class CanaryAlarm extends StatelessWidget {
     );
   }
 
-  /// El dato concreto, que es lo que hace creíble la frase. Vacío si no hay
-  /// comprobación, y entonces el aviso se queda con su texto de catálogo.
+  /// Quién lo comprobó y cuándo. Vacío si no hay comprobación, y entonces el
+  /// aviso se queda con su texto de catálogo.
+  ///
+  /// # El puerto NO se nombra, y es una regla escrita
+  ///
+  /// Está en `docs/05-ui.md` con su razón, y la razón es buena: el canario vive
+  /// en un puerto al azar que Kanpachi abrió hace dos segundos y **ya cerró**.
+  /// Decir "puerto 51023" sería mandar al usuario a buscar algo que no existe, y
+  /// además diría que lo que falló es un hueco cuando lo que falló es la
+  /// contención entera.
+  ///
+  /// Lo que sí va es QUIÉN lo comprobó, que es lo que hace creíble la frase y de
+  /// paso explica por qué el aviso aparece ahora y no antes.
   String get _detalle {
-    if (!check.measured || check.port == 0) return '';
-    return 'Puerto ${check.port}, comprobado a las ${check.measuredLabel} '
-        'con ${check.asked.length} en la sala.';
+    if (!check.measured || check.asked.isEmpty) return '';
+    final String cuando = check.measuredLabel.isEmpty
+        ? ''
+        : ' a las ${check.measuredLabel}';
+    if (check.asked.length == 1) {
+      return 'Comprobado$cuando desde la PC de ${check.asked.first}.';
+    }
+    return 'Comprobado$cuando desde las PCs de ${check.asked.length} '
+        'personas de la sala.';
   }
 }
 

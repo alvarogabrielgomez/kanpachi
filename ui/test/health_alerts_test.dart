@@ -196,7 +196,10 @@ void main() {
       await pintaSala(tester, conFuga);
 
       expect(find.text('Tu protección no está conteniendo'), findsOneWidget);
-      expect(find.textContaining('51234'), findsOneWidget);
+      // El puerto NO se nombra, por la regla de docs/05-ui.md: es efimero y ya
+      // esta cerrado. Lo que va es quien lo comprobo.
+      expect(find.textContaining('51234'), findsNothing);
+      expect(find.textContaining('2 personas de la sala'), findsOneWidget);
     });
 
     testWidgets('sin la alarma la sala no la enseña', (
