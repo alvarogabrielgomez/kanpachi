@@ -282,7 +282,7 @@ core/
 
 daemon/
   adapter/
-    engine/easytier/
+    engine/kanpachi/
     firewall/windowscom/
     netcfg/windows/
     catalog/jsonfile/
@@ -1274,12 +1274,30 @@ Ese `15888` es el portal de administración del motor, **no tiene autenticación
 
 Responsabilidades:
 
-- Traducir `domain.HostSpec`, `domain.RendezvousSpec` y `domain.GuestSpec` a la configuración del motor, que viaja por **stdin como TOML** y jamás por la línea de comandos. Medido: el `CommandLine` del proceso hijo solo muestra la ruta del ejecutable, así que el secreto de la red deja de ser legible con el Administrador de tareas por cualquier usuario de la máquina.
+- Traducir `domain.HostSpec`, `domain.RendezvousSpec` y `domain.GuestSpec` a órdenes del motor, que viajan por **el tubo de entrada del proceso hijo** y jamás por la línea de comandos. Medido: el `CommandLine` del proceso hijo solo muestra la ruta del ejecutable, así que el secreto de la red deja de ser legible con el Administrador de tareas por cualquier usuario de la máquina.
+
+  **El tubo queda abierto y lleva mensajes JSON, uno por línea, en las dos direcciones.** Este documento decía "TOML por stdin", y eso solo describía el arranque: `EnginePort` tiene trece métodos y once ocurren después, con la sala ya abierta. Emitir una credencial cuando alguien toca la puerta no cabe en un fichero de configuración. El TOML sigue existiendo como detalle interno del motor, que es quien construye su propia configuración.
+
+  **Ese tubo es una tubería anónima, y ahí está la propiedad que el binario oficial no tiene.** No tiene nombre, no tiene ruta y no tiene dirección: no es que conectarse esté prohibido, es que la operación no existe. Los dos extremos viven como handles dentro del daemon y del motor. Un puerto o una named pipe serían puertas, y una puerta necesita cerradura, y una cerradura se puede escribir mal, que es exactamente lo que le pasó al 15888. Acá no hay autenticación que escribir porque el canal ES la identidad.
+
+  **Regla dura: stdin es la única entrada de órdenes del motor.** Jamás un puerto, ni una named pipe, ni un fichero vigilado, ni una señal. El binario además no acepta argumentos. Lo vigila `internal/arch/motor_test.go`, que prohíbe construir cualquier escucha dentro del paquete del adaptador.
+
+  Se distinguen tres tipos de mensaje y ninguno más: una orden lleva `id`, su respuesta lleva el mismo `id`, y un evento no lleva ninguno. Esa ausencia es lo que los separa, sin adivinar nada por el contenido. La decodificación es **estricta de los dos lados**: un campo desconocido rechaza el mensaje entero.
+
+  Los cinco eventos son los de `domain.EngineEventKind`, y uno de ellos no viene del motor: `EngineDied` lo levanta el adaptador cuando el proceso hijo termina, porque un motor muerto no puede avisar de su propia muerte.
 
   El entorno del hijo se arma **explícito**, nunca heredado. Cada bandera de EasyTier tiene una gemela por variable de entorno, `ET_CONFIG_SERVER` y `ET_PORT_FORWARD` entre ellas, así que un hijo que hereda el entorno acepta capacidades prohibidas sin que nadie las escriba en el argv. Lo vigila `internal/arch/motor_test.go`.
 
   **No traduce el descubrimiento LAN, porque no llega hasta acá.** `HostSpec` y `GuestSpec` no tienen campo para él: encenderlo significa `--enable-udp-broadcast-relay`, o sea capturar el tráfico de la red de casa del usuario con un driver de captura de paquetes, y la decisión 1 lo difiere hasta que exista un juego que lo pida. El perfil sí declara `lan_discovery`, porque el catálogo es la capa de conocimiento; esta es la capa que decide qué se concede.
-- Ciclo de vida del hijo: arranque, supervisión, apagado limpio, y matar huérfanos al arrancar el servicio por si una salida sucia dejó uno vivo.
+- Ciclo de vida del hijo: arranque, supervisión, apagado limpio, y matar huérfanos al arrancar el servicio por si una salida sucia dejó uno vivo. Los huérfanos se comparan por **ruta completa y jamás por nombre**: esto corre como SYSTEM, y matar cualquier proceso llamado `kanpachi-engine.exe` sería matar el de otra instalación.
+
+  El hijo va dentro de un **Job Object con `KILL_ON_JOB_CLOSE`**, que es lo único que garantiza que muera con un daemon que muere de forma sucia, sin correr ningún `defer`. Sin eso queda un motor vivo con la red arriba y el firewall ya purgado, o sea la red virtual abierta sin nada conteniéndola.
+
+  **No hace falta acotar qué handles hereda, porque Go ya lo hace.** Verificado en el fuente instalado, `syscall/exec_windows.go`: `StartProcess` arma `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` con exactamente los tres estándar más `AdditionalInheritedHandles`, con el comentario *"Do not accidentally inherit more than these handles"*. El motor no recibe por herencia la sesión de WFP ni el pipe de la UI. La única consecuencia práctica: `AdditionalInheritedHandles` se deja vacío, siempre.
+
+  **Packet.dll tiene que estar al lado del ejecutable.** Es una importación DURA del motor propio, medida con `dumpbin /imports` sobre el binario construido, sin sección de delay import. Sin ella el proceso no llega ni a arrancar, y Windows solo dice `0xC0000135` sin nombrar cuál falta. Por eso el directorio de trabajo del hijo es el del binario.
+
+- **Dos adaptadores virtuales, no uno.** El host está en dos redes a la vez, la sala y el vestíbulo, y cada red del motor trae el suyo: `kanpachi0` y `kanpachi1`. Los nombra el DAEMON y no el motor, y esa dirección importa: la compuerta de WFP se acota a un adaptador por nombre, así que un motor que eligiera el suyo podría devolver un adaptador que la compuerta no cubre.
 - Consultar estado y traducirlo a `[]domain.Peer` y `domain.NetCheck`. La salida del motor ya distingue conexión directa de relay y reporta el tipo de NAT, que es exactamente lo que la UI pinta en verde o ámbar.
 
 El binario del motor se distribuye dentro de `Program Files\Kanpachi\`, y el día que haya firma de código son dos binarios que firmar, no uno.
@@ -1563,7 +1581,7 @@ El registro vive en memoria con TTL, sin base de datos y sin disco, salvo la lla
 ## Almacenamiento
 
 ```
-Program Files\Kanpachi\      binarios (daemon, ui, easytier-core) + wintun.dll + perfiles builtin
+Program Files\Kanpachi\      binarios (daemon, ui, kanpachi-engine) + Packet.dll + wintun.dll + WinDivert64.sys + perfiles builtin
 ProgramData\Kanpachi\
   config.json                nombre visible, sala activa, rol
   api.token                  rotado por arranque del servicio
