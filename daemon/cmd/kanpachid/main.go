@@ -21,6 +21,7 @@ import (
 	"github.com/accentiostudios/kanpachi/core/usecase"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/canary/opener"
 	catalogstore "github.com/accentiostudios/kanpachi/daemon/adapter/catalog/jsonfile"
+	kanpachiengine "github.com/accentiostudios/kanpachi/daemon/adapter/engine/kanpachi"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/probe"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/sinimplementar"
 	statestore "github.com/accentiostudios/kanpachi/daemon/adapter/state/jsonfile"
@@ -91,7 +92,26 @@ func correr(consola bool, datos, nombre string) error {
 	defer func() { _ = eventos.Close() }()
 
 	canal := control.New(control.Deps{Clock: relojReal{}, Log: log})
-	motor := sinimplementar.Engine{}
+
+	// El motor REAL. Vive al lado de este binario y no se busca en el PATH: un
+	// PATH que alguien pueda escribir es una forma de que este proceso, que
+	// corre como SYSTEM, ejecute otro ejecutable con ese nombre.
+	//
+	// No arranca acá. El proceso hijo se lanza con la primera orden que lo
+	// necesite, así que un daemon que nunca abre una sala nunca levanta un
+	// motor.
+	motor, err := kanpachiengine.New(kanpachiengine.Deps{
+		Exe: filepath.Join(dirDelBinario(), "kanpachi-engine.exe"),
+		Log: log,
+	})
+	if err != nil {
+		return err
+	}
+	// El cierre va acá arriba y no al final por el orden de los `defer`: se
+	// ejecutan al revés, así que este corre DESPUÉS del cierre del firewall.
+	// Es el orden que hace falta: primero se va el motor y con él la red
+	// virtual, y solo entonces se sueltan las reglas que la contenían.
+	defer func() { _ = motor.Close() }()
 
 	// NewSession PURGA el firewall antes de devolver, así que a partir de acá la
 	// máquina está en el estado que este arranque decidió y no en el que dejó el

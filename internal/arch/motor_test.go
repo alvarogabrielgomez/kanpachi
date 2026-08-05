@@ -6,118 +6,120 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 )
 
 // El guardián de cómo se arranca el motor.
 //
-// # Por qué existe, y por qué existe ANTES que el adaptador
+// # Lo que cambió, y por qué había que reescribirlo entero
 //
-// `01-que-es-kanpachi.md`, la decisión 1 y `docs/CLAUDE.md` prometen que todo
-// arranque de `easytier-core` lleva `--disable-upnp true` y que hay un test que
-// falla si alguien lo saca. Esa frase era cierta **solo para el seed**, que sí lo
-// comprueba en `registry/setup`. Para el cliente no había nada.
+// Este fichero estuvo en VERDE sin comprobar nada del motor. Tres defectos, cada
+// uno suficiente por su cuenta:
 //
-// # Lo que este guardián puede y lo que NO puede
+//  1. Localizaba el paquete buscando el literal `"easytier-core"`. El motor es
+//     un binario propio, `kanpachi-engine.exe`, así que el `t.Skip` duraba para
+//     siempre. Un skip eterno es un test que miente.
+//  2. Exigía `--rpc-portal 127.0.0.1:` en el argv. El motor propio no recibe
+//     argumentos, y el campo `rpc_portal` **desapareció del TOML en la v2.5.0**:
+//     hoy es imposible de satisfacer y además inútil.
+//  3. Buscaba las prohibidas con sus guiones, `--enable-exit-node`. En una
+//     configuración se escriben sin ellos, `enable_exit_node`, así que el
+//     barrido pasaba en verde por encima de lo que existe para impedir.
 //
-// Puede afirmar que en `daemon/` no aparece ninguna bandera prohibida. Eso vale
-// para todo el árbol y no depende de dónde aterrice el adaptador, que fue el
-// primer agujero de la versión anterior: buscaba en una ruta fija, así que un
-// adaptador en un directorio hermano lo dejaba saltando para siempre con el CI
-// en verde.
+// # Dónde vive ahora cada garantía, dicho sin adornos
 //
-// **No puede afirmar el valor de una bandera en el caso general.** Lee cadenas
-// literales, y `--disable-upnp` seguido de `"false"` en dos literales distintos
-// era exactamente igual de verde que el arranque correcto. Se cubre lo que sí se
-// puede: dentro de un literal de slice, que es como se arma un argv, se miran los
-// pares en ORDEN. Y para lo demás, la garantía de valor vive donde tiene que
-// vivir, en el test del propio adaptador, que este guardián exige que exista.
+// El diseño movió una parte de la responsabilidad al repositorio del motor, y
+// este guardián NO puede alcanzarla. Conviene que esté escrito para que nadie
+// crea que sigue cubierta desde acá:
 //
-// La revisión adversarial que encontró todo esto también dejó claro para qué NO
-// sirve la lista de nodos públicos: vigila lo que escribimos nosotros, jamás lo
-// que manda un desconocido. Un código de invitación puede nombrar cualquier
-// host, `public.easytier.cn` incluido, y contra eso no hay lista que sirva. Lo
-// que acota ese caso es que la UI resalta un seed que no es el por defecto y la
-// confirmación de la decisión 17.
+//   - **Que el arranque lleve `disable_upnp` en verdadero y las prohibidas en
+//     falso**: eso lo decide `src/config.rs` del motor, en Rust y con setters
+//     tipados, y lo vigila su propio CI. Desde Go no hay nada que leer.
+//   - **Que el motor no abra ningún puerto**: lo mide su test de invariante de
+//     sockets, arrancando con la configuración real y el TUN levantado.
+//
+// # Lo que este guardián SÍ puede afirmar, y afirma
+//
+//   - Que en `daemon/` no aparece ninguna capacidad prohibida, **en las dos
+//     grafías**, con guiones y sin ellos.
+//   - Que el paquete del motor no nombra `rpc_portal` de ninguna forma.
+//   - Que el adaptador **no escucha**: habla con el motor, nunca por él.
+//   - Que le arma el entorno al hijo en vez de heredarlo.
+//   - Que existe un test que evalúa lo que la construcción GENERA.
 
-// banderasProhibidas expresan capacidades que el producto no tiene.
+// prohibidas son capacidades que el producto no tiene.
 //
-// La lista salió de leer la struct `Cli` del fuente de la v2.6.4, que es la
-// versión fijada, y no del texto de ayuda. Ahí aparecieron cuatro que este
-// guardián no vigilaba y que rompen invariantes igual de fuerte que las que sí.
-var banderasProhibidas = map[string]string{
+// **Cada una en sus dos grafías, y eso no es celo de más.** El cliente dejó de
+// usar argv: el motor recibe su configuración por el tubo y la traduce a claves
+// sin guiones. Un guardián que solo buscara `--enable-exit-node` pasaría en
+// verde por encima de un `enable_exit_node` puesto en cualquier parte del
+// daemon.
+var prohibidas = map[string]string{
 	"--enable-exit-node": "jamás exit node",
+	"enable_exit_node":   "jamás exit node",
 	"--exit-nodes":       "jamás exit node",
+	"exit_nodes":         "jamás exit node",
 	"--proxy-networks":   "jamás subnet routing",
+	"proxy_network":      "jamás subnet routing",
 	"--vpn-portal":       "nada escucha en público",
-	"--socks5":           "nada escucha en público",
-	"--accept-dns":       "el DNS de la máquina no se toca",
+	"vpn_portal_config":  "nada escucha en público",
+	"--socks5":           "superficie sin razón",
+	"socks5_proxy":       "superficie sin razón",
+	"--accept-dns":       "el DNS de la máquina no se toca, y magic DNS abre un puerto de loopback",
+	"accept_dns":         "el DNS de la máquina no se toca, y magic DNS abre un puerto de loopback",
 	"--listeners": "deshace --no-listener, que es la invariante de que el cliente " +
 		"jamás escucha en un puerto público. Solo el seed escucha",
 	"--enable-udp-broadcast-relay": "es capturar el tráfico de la red de casa del usuario " +
-		"con un driver de captura de paquetes. La decisión 1 lo difiere hasta que exista un juego que lo pida",
-
-	// Las cuatro que faltaban.
+		"con un driver de captura de paquetes",
+	"enable_udp_broadcast_relay": "es capturar el tráfico de la red de casa del usuario " +
+		"con un driver de captura de paquetes",
 	"--config-server": "haría que el motor se traiga su configuración de un servidor remoto, " +
 		"o sea que lo que corre en la máquina del usuario deja de decidirlo Kanpachi",
-	"--external-node": "su propia ayuda dice `use a public shared node to discover peers`, " +
-		"y Kanpachi apunta a su propio seed y jamás a un nodo público",
+	"config_server": "el motor dejaría de tomar su configuración de Kanpachi",
+	"--external-node": "su ayuda dice `use a public shared node to discover peers`, " +
+		"y Kanpachi apunta a su propio seed",
 	"--port-forward": "reenvía un puerto local hacia la red virtual POR DEBAJO del cálculo de " +
 		"reglas, así que abriría algo que el módulo de exposición no ve ni puede auditar",
-	"--mapped-listeners": "publica direcciones alcanzables desde fuera, que es lo mismo que " +
-		"escuchar en público con otro nombre",
+	"port_forward":       "abriría un puerto que el módulo de exposición no ve ni puede auditar",
+	"--mapped-listeners": "publica direcciones alcanzables desde fuera",
+	"mapped_listeners":   "publica direcciones alcanzables desde fuera",
 }
 
-// paresProhibidos son banderas que pierden todo su sentido con el valor
-// equivocado. Se comprueban por posición dentro de un literal de slice.
-var paresProhibidos = map[string]string{
-	"--disable-upnp": "false",
-	"--no-listener":  "false",
-}
-
-// paresObligatorios exigen que el VALOR de una bandera contenga algo.
+// escuchas son las formas de abrir un canal de entrada.
 //
-// Existe por un agujero medido, no imaginado. `banderasObligatorias` pedía el
-// literal `127.0.0.1` en algún lugar del paquete, y eso pasaba en verde con
-// `--rpc-portal 15888`, que es exactamente el arranque malo:
+// **El adaptador del motor no puede tener ninguna.** El motor tiene UNA sola
+// entrada de órdenes, el tubo del proceso hijo, y ese tubo es anónimo: no tiene
+// nombre, no tiene ruta, y no existe la operación de conectarse a él. Un segundo
+// canal añadido de buena fe reconstruye el portal 15888 con otro nombre.
 //
-//	// easytier/src/rpc_service/api.rs:178-181, en el tag v2.6.4
-//	if let Some(Ok(port)) = rpc_portal.as_ref().map(|s| s.parse::<u16>()) {
-//	    Ok(SocketAddr::from(([0, 0, 0, 0], port)))
-//
-// Un puerto suelto escucha en TODAS las interfaces. Comprobado con netstat
-// contra el binario fijado, con un fichero de configuración que no nombra el
-// portal en ninguna parte: `TCP 0.0.0.0:15888 LISTENING`. El texto de ayuda
-// oficial dice `localhost` y el binario hace otra cosa.
-var paresObligatorios = map[string]string{
-	"--rpc-portal": "127.0.0.1:",
-}
-
-// banderasObligatorias son las que no pueden faltar donde se arma el arranque.
-var banderasObligatorias = map[string]string{
-	"--disable-upnp": "EasyTier mapea puertos en el router del usuario por defecto, " +
-		"y la invariante dice que el router no se toca nunca",
-	"--no-listener": "el cliente jamás escucha en un puerto público. Solo el seed escucha",
-	"--rpc-portal": "sin la bandera el motor arma `0.0.0.0:0` y busca puerto libre entre 15888 " +
-		"y 15900, o sea que el panel de control del motor queda expuesto a la LAN de casa",
+// Las banderas prohibidas vigilan lo que el motor HACE. Esto vigila por dónde se
+// le puede MANDAR, que no lo miraba nadie.
+var escuchas = []string{
+	"net.Listen",
+	"net.ListenPacket",
+	"ListenPipe",
+	"CreateNamedPipe",
+	"ListenConfig",
 }
 
 // nodosPúblicos son los peers compartidos de EasyTier. Vigila NUESTRO código.
+//
+// No sirve, y conviene recordarlo, contra lo que manda un desconocido: un código
+// de invitación puede nombrar cualquier host. Eso lo acota que la UI resalte un
+// seed que no es el por defecto, más `domain.CheckSeedAddr` sobre lo resuelto.
 var nodosPúblicos = []string{"easytier.top", "public.easytier", "easytier.cn"}
 
-// TestEnElDaemonNoApareceNingunaBanderaProhibida.
-//
-// Barre `daemon/` entero, así que no hay dónde esconder el adaptador del motor.
-func TestEnElDaemonNoApareceNingunaBanderaProhibida(t *testing.T) {
+// TestNoForbiddenCapabilityAppearsInTheDaemon barre `daemon/` entero, así que no
+// hay dónde esconder el adaptador del motor.
+func TestNoForbiddenCapabilityAppearsInTheDaemon(t *testing.T) {
 	archivos := literalesPorArchivo(t, "../../daemon")
 	if len(archivos) == 0 {
 		t.Fatal("no se leyó ni un archivo de daemon/, así que este test no probaría nada")
 	}
 
 	for ruta, literales := range archivos {
-		for bandera, motivo := range banderasProhibidas {
+		for bandera, motivo := range prohibidas {
 			if lit, ok := buscaLiteral(literales, bandera); ok {
 				t.Errorf("%s: apareció %s en %q: %s", ruta, bandera, lit, motivo)
 			}
@@ -132,123 +134,171 @@ func TestEnElDaemonNoApareceNingunaBanderaProhibida(t *testing.T) {
 	}
 }
 
-// TestElArranqueDelMotorLlevaLoQueTieneQueLlevar.
+// TestTheEngineAdapterExistsAndDoesNotListen.
 //
-// Encuentra el paquete del motor por su CONTENIDO y no por una ruta fija: el que
-// mencione `easytier-core` es el que arranca el motor, viva donde viva.
-func TestElArranqueDelMotorLlevaLoQueTieneQueLlevar(t *testing.T) {
+// Falla, y no salta, cuando no encuentra el paquete. La versión anterior saltaba
+// y por eso pasó meses sin comprobar nada: si el adaptador cambia de nombre, lo
+// correcto es que este test se rompa a gritos y no que se apague solo.
+func TestTheEngineAdapterExistsAndDoesNotListen(t *testing.T) {
 	paquete := buscaElPaqueteDelMotor(t, "../../daemon")
 	if paquete == "" {
-		t.Skip("todavía no hay ningún paquete que mencione easytier-core. El guardián está " +
-			"escrito antes a propósito, y el barrido de banderas prohibidas ya cubre daemon/ entero")
+		t.Fatal("ningún paquete de daemon/ ejecuta `kanpachi-engine`.\n" +
+			"  O el adaptador del motor desapareció, o cambió el nombre del binario y este " +
+			"guardián dejó de encontrarlo.\n" +
+			"  Las dos cosas hay que mirarlas: un guardián que no encuentra a quién vigilar " +
+			"no es un guardián.")
 	}
 
 	literales := literalesDe(t, paquete)
-	for bandera, motivo := range banderasObligatorias {
-		if !algunoContiene(literales, bandera) {
-			t.Errorf("%s: falta %s en el arranque del motor: %s", paquete, bandera, motivo)
+
+	// El portal RPC no se configura, no existe. `ApiRpcServer::new` se construye
+	// en un solo sitio del árbol de EasyTier, dentro de su binario de línea de
+	// comandos, y el arranque por librería no lo nombra. Además el campo salió
+	// del TOML en la v2.5.0 y `Config` no lleva `deny_unknown_fields`, así que
+	// escribirlo no da error: lo ignora en silencio. Nombrarlo acá solo puede
+	// significar que alguien creyó estar acotándolo.
+	for _, aguja := range []string{"rpc_portal", "rpc-portal", "15888"} {
+		if lit, ok := buscaLiteral(literales, aguja); ok {
+			t.Errorf("%s nombra %q en %q.\n"+
+				"  El motor propio NO abre el portal, y el campo ya no existe en la "+
+				"configuración: ponerlo se ignora sin avisar.", paquete, aguja, lit)
 		}
 	}
 
-	// El valor, donde se puede verlo: los pares en orden dentro de un argv.
-	pares := paresEnOrden(t, paquete)
-	for _, par := range pares {
-		if malo, vigilada := paresProhibidos[par.bandera]; vigilada && par.valor == malo {
-			t.Errorf("%s: %s va con %q, que es lo mismo que no ponerla", paquete, par.bandera, par.valor)
-		}
-		if quiere, vigilada := paresObligatorios[par.bandera]; vigilada && !strings.Contains(par.valor, quiere) {
-			t.Errorf("%s: %s va con %q, y tiene que contener %q.\n"+
-				"  Un puerto suelto NO es loopback: el motor lo convierte en 0.0.0.0:<puerto> "+
-				"y escucha en todas las interfaces", paquete, par.bandera, par.valor, quiere)
+	// Lo que este guardián puede ver de la ÚNICA entrada de órdenes.
+	for _, l := range escuchas {
+		if hayLlamada(t, paquete, l) {
+			t.Errorf("%s construye %s.\n"+
+				"  El motor tiene una sola entrada de órdenes, el tubo del proceso hijo, y es "+
+				"anónimo: no tiene nombre ni dirección, así que no existe la operación de "+
+				"conectarse a él.\n"+
+				"  Un segundo canal reconstruye el portal sin autenticación con otro nombre.", paquete, l)
 		}
 	}
 
-	// El entorno, que es la vía que este guardián no puede ver leyendo argv.
+	// El entorno, que es la vía que no se ve leyendo argv.
 	//
-	// Cada bandera de EasyTier tiene una gemela por variable de entorno:
+	// Cada bandera de EasyTier tiene gemela por variable de entorno:
 	// `--config-server` es `ET_CONFIG_SERVER`, `--port-forward` es
-	// `ET_PORT_FORWARD`, y así con todas. Un proceso hijo que HEREDA el entorno
-	// acepta en silencio cualquiera de ellas, y la lista de banderas prohibidas
-	// de arriba no se entera. `--disable-env-parsing` no lo tapa: su ayuda dice
-	// `disable environment variable parsing in config file`, o sea la
-	// interpolación dentro del fichero, que es otra cosa.
-	//
-	// La única defensa es armar el entorno del hijo a mano.
+	// `ET_PORT_FORWARD`. Un hijo que HEREDA el entorno acepta en silencio
+	// cualquiera de ellas, y la lista de prohibidas de arriba no se entera.
+	// `--disable-env-parsing` no lo tapa: su ayuda dice `in config file`, o sea
+	// la interpolación dentro del fichero, que es otra cosa.
 	if !asignaEntorno(t, paquete) {
 		t.Errorf("%s arranca el motor sin fijarle el entorno.\n"+
-			"  Cada bandera de EasyTier tiene gemela por variable de entorno, así que un hijo "+
-			"que hereda el entorno acepta ET_CONFIG_SERVER, ET_PORT_FORWARD y las demás sin "+
-			"que nadie las escriba en el argv.\n"+
-			"  Asigna cmd.Env con una lista explícita, aunque sea vacía.", paquete)
+			"  Asigna cmd.Env con una lista explícita, aunque sea vacía. Una lista vacía "+
+			"cuenta, y es lo correcto acá.", paquete)
 	}
 
-	// Y la garantía de valor de verdad, que este guardián no puede dar, vive en
-	// el test del propio adaptador. Igual que el del seed, que evalúa lo que
-	// GENERA la función en vez de mirar el fuente. Ver registry/setup/setup_test.go.
+	// Y la garantía de valor de verdad, que este guardián no puede dar porque lee
+	// cadenas literales: vive en el test del propio adaptador, que evalúa lo que
+	// la construcción GENERA. Mismo patrón que registry/setup/setup_test.go.
 	if !hayTestDeArgumentos(t, paquete) {
-		t.Errorf("%s no tiene un test de los argumentos del motor.\n"+
-			"  Este guardián lee cadenas literales y no puede afirmar el valor de una bandera "+
-			"en el caso general.\n"+
-			"  El adaptador tiene que exponer la construcción del argv en Go PURO, sin build tags, "+
-			"y afirmarla sobre el slice que devuelve, uno por cada camino de arranque.", paquete)
+		t.Errorf("%s no tiene un test de lo que le manda al motor.\n"+
+			"  Este guardián lee literales y no puede afirmar el valor de nada en el caso "+
+			"general.\n"+
+			"  El adaptador tiene que construir la orden en Go PURO, sin build tags, y "+
+			"afirmarla sobre lo que devuelve, uno por cada camino de arranque.", paquete)
 	}
 }
 
-// buscaElPaqueteDelMotor devuelve el directorio del paquete que arranca el
-// motor, encontrado por lo que dice y no por dónde está.
+// buscaElPaqueteDelMotor devuelve el directorio del adaptador del motor,
+// encontrado por lo que ES y no por dónde está ni por lo que nombra.
+//
+// # Por qué no vale buscar el nombre del binario
+//
+// La versión anterior buscaba un literal y se quedaba con el directorio más
+// corto que lo tuviera. Con `main.go` nombrando la ruta del ejecutable para
+// cablear el adaptador, eso apunta al paquete del `main`, que no es quien
+// conduce el motor. El test entonces exige cosas donde no tienen que estar y
+// deja sin mirar el sitio que importa, que es la peor forma de fallar: ruidosa y
+// en el sitio equivocado.
+//
+// # El criterio que sí distingue
+//
+// Dos hechos a la vez, y ninguno de los dos solo:
+//
+//   - **Declara los métodos de `port.EnginePort`.** Eso lo cumple también
+//     `sinimplementar`, que lo implementa devolviendo error en todo.
+//   - **Lanza un proceso.** Eso es lo que separa al adaptador de verdad del
+//     provisional, y de cualquier otro que aparezca mañana.
+//
+// Juntos identifican una cosa: el paquete que implementa el motor ejecutándolo.
 func buscaElPaqueteDelMotor(t *testing.T, raíz string) string {
 	t.Helper()
-	var encontrado string
 
-	for ruta, literales := range literalesPorArchivo(t, raíz) {
-		if algunoContiene(literales, "easytier-core") {
-			dir := filepath.Dir(ruta)
-			if encontrado == "" || len(dir) < len(encontrado) {
-				encontrado = dir
+	implementa := map[string]bool{}
+	lanza := map[string]bool{}
+
+	porArchivo(t, raíz, func(ruta string, archivo *ast.File) {
+		dir := filepath.Dir(ruta)
+		for _, d := range archivo.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Recv == nil {
+				continue
+			}
+			// `JoinWithCredential` es el método más distintivo de EnginePort:
+			// no existe en ningún otro puerto del proyecto.
+			if fn.Name.Name == "JoinWithCredential" {
+				implementa[dir] = true
 			}
 		}
-	}
-	return encontrado
-}
-
-type parDeArgumentos struct{ bandera, valor string }
-
-// paresEnOrden saca las parejas consecutivas de un literal de slice, que es como
-// se arma una lista de argumentos.
-func paresEnOrden(t *testing.T, dir string) []parDeArgumentos {
-	t.Helper()
-	var out []parDeArgumentos
-
-	porArchivo(t, dir, func(_ string, archivo *ast.File) {
 		ast.Inspect(archivo, func(n ast.Node) bool {
-			lit, ok := n.(*ast.CompositeLit)
+			llamada, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
 			}
-			cadenas := make([]string, 0, len(lit.Elts))
-			for _, e := range lit.Elts {
-				b, ok := e.(*ast.BasicLit)
-				if !ok || b.Kind != token.STRING {
-					cadenas = append(cadenas, "")
-					continue
-				}
-				v, err := strconv.Unquote(b.Value)
-				if err != nil {
-					v = b.Value
-				}
-				cadenas = append(cadenas, v)
-			}
-			for i := 0; i+1 < len(cadenas); i++ {
-				out = append(out, parDeArgumentos{bandera: cadenas[i], valor: cadenas[i+1]})
+			if strings.HasPrefix(expresión(llamada.Fun), "exec.Command") {
+				lanza[dir] = true
 			}
 			return true
 		})
 	})
-	return out
+
+	for dir := range implementa {
+		if lanza[dir] {
+			return dir
+		}
+	}
+	return ""
 }
 
-// asignaEntorno dice si el paquete le fija el entorno a algo, o sea si en algún
-// lado hay un `algo.Env = ...`.
+// hayLlamada dice si el paquete llama a algo cuyo nombre termine en `aguja`.
+//
+// Por AST y sobre la EXPRESIÓN llamada, no por texto: así un comentario que diga
+// "acá jamás un net.Listen" no lo dispara, y una cadena que lo nombre tampoco.
+func hayLlamada(t *testing.T, dir, aguja string) bool {
+	t.Helper()
+	var encontrado bool
+
+	porArchivo(t, dir, func(_ string, archivo *ast.File) {
+		ast.Inspect(archivo, func(n ast.Node) bool {
+			llamada, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if strings.HasSuffix(expresión(llamada.Fun), aguja) {
+				encontrado = true
+			}
+			return true
+		})
+	})
+	return encontrado
+}
+
+// expresión rearma el nombre de lo que se llama, `net.Listen` o `Listen`.
+func expresión(e ast.Expr) string {
+	switch v := e.(type) {
+	case *ast.Ident:
+		return v.Name
+	case *ast.SelectorExpr:
+		return expresión(v.X) + "." + v.Sel.Name
+	default:
+		return ""
+	}
+}
+
+// asignaEntorno dice si el paquete le fija el entorno a algo.
 //
 // Por AST y no por texto: mira que el lado IZQUIERDO de una asignación sea un
 // campo llamado `Env`, que es como se le pone el entorno a un `exec.Cmd`. Una
@@ -286,7 +336,7 @@ func asignaEntorno(t *testing.T, dir string) bool {
 	return encontrado
 }
 
-// hayTestDeArgumentos dice si el paquete tiene un test que mire los argumentos.
+// hayTestDeArgumentos dice si el paquete tiene un test que mire lo que se manda.
 func hayTestDeArgumentos(t *testing.T, dir string) bool {
 	t.Helper()
 	entradas, err := os.ReadDir(dir)
@@ -316,8 +366,8 @@ func literalesDe(t *testing.T, dir string) []string {
 // archivo que no sea un test.
 //
 // Por AST y no por texto, para que un comentario que diga "jamás --socks5" no lo
-// dispare. Los tests quedan fuera por lo mismo: uno que afirme la ausencia de una
-// bandera tiene que poder nombrarla.
+// dispare. Los tests quedan fuera por lo mismo: uno que afirme la ausencia de
+// una bandera tiene que poder nombrarla.
 func literalesPorArchivo(t *testing.T, raíz string) map[string][]string {
 	t.Helper()
 	out := map[string][]string{}
