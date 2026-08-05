@@ -26,7 +26,7 @@ jobs:
           cache: true
 
       - name: go vet
-        run: go vet ./core/... ./internal/... ./daemon/service/... ./daemon/transport/protocol/... ./daemon/transport/wire/... ./daemon/transport/control/... ./daemon/transport/pipe/... ./daemon/adapter/sinimplementar/... ./daemon/adapter/safewrite/... ./daemon/adapter/state/... ./daemon/adapter/catalog/... ./registry/...
+        run: go vet ./core/... ./internal/... ./daemon/service/... ./daemon/transport/protocol/... ./daemon/transport/wire/... ./daemon/transport/control/... ./daemon/transport/pipe/... ./daemon/adapter/sinimplementar/... ./daemon/adapter/safewrite/... ./daemon/adapter/state/... ./daemon/adapter/catalog/... ./daemon/adapter/canary/... ./registry/...
 
       - name: Test de pureza de imports
         # Se ejecuta aparte y primero para que su fallo sea inconfundible en el
@@ -52,6 +52,12 @@ jobs:
       #   adapter/probe/      marca un puerto TCP. Es `net` puro, y el caso que
       #                       más importa, el rechazo de Winsock, se prueba acá
       #                       con su número escrito a mano
+      #   adapter/canary/     el oyente que existe para ser bloqueado. Abre
+      #                       sockets de verdad sobre loopback y no toca ninguna
+      #                       API de Windows. El `/...` incluye a `opener/`, que
+      #                       es el traductor a la lengua de core y vive en su
+      #                       propio paquete justo para que el de arriba conserve
+      #                       su grafo de imports libre de `core`
       #   adapter/firewall + wfp/  la capa pura de la compuerta, y el orden de las
       #                       dos capas, que es una regla probada. Entraron el día
       #                       que `wfp.Measurement` se mudó a un archivo portable:
@@ -78,6 +84,7 @@ jobs:
           ./daemon/adapter/state/...
           ./daemon/adapter/catalog/...
           ./daemon/adapter/probe/...
+          ./daemon/adapter/canary/...
           ./daemon/adapter/firewall
           ./daemon/adapter/firewall/wfp/...
 
@@ -117,3 +124,47 @@ jobs:
       # Ver docs/07-futuro.md.
       - name: Compilar todo
         run: go build ./...
+
+  # La UI corre en UBUNTU, con el cliente siendo solo de Windows, y no es un
+  # descuido.
+  #
+  # `flutter test` corre sobre la VM de Dart, y los guardianes que de verdad
+  # importan acá leen fuente de GO del disco para comprobar que los dos lados del
+  # cable dicen lo mismo. Ninguna de las dos cosas depende del sistema operativo.
+  # Compilar el bundle de Windows es otro trabajo y no es el que falta hoy: lo
+  # que falta es que `message_lockstep_test.dart` deje de correr solo cuando
+  # alguien se acuerda. El día que un enum del daemon crezca sin su caso en Dart,
+  # esto es lo que lo dice.
+  ui:
+    name: la UI de Flutter
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fijada por SHA y no por tag. Corre en el mismo trabajo que el checkout,
+      # así que un tag movido ejecutaría código nuevo sobre el fuente de este
+      # repo sin que nada en el diff lo diga. El comentario lleva la versión
+      # legible porque un SHA suelto no se puede leer.
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          # A dedo y no con flutter-version-file: `ui/pubspec.yaml` declara el
+          # SDK de Dart (`sdk: ^3.12.1`) y NO tiene clave `flutter:`, así que no
+          # hay nada que ese fichero pueda leer.
+          flutter-version: '3.44.1'
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: dart format
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      # --fatal-infos y no --fatal-warnings: hoy pasa limpio, así que el listón
+      # se pone donde está el proyecto y no un escalón por debajo.
+      - name: flutter analyze
+        run: flutter analyze --fatal-infos
+
+      - run: flutter test
