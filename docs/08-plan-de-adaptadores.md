@@ -261,10 +261,37 @@ gratis en repo público.
    Ese puerto solo aparece con `accept_dns`, que viene en `false` y que Kanpachi
    ya prohíbe. La lección no es cuál gana: es que **la ausencia de puertos no
    puede ser una creencia**.
-3. Features de cargo elegidas a propósito. El default trae `socks5`, `magic-dns`,
-   `wireguard` y `faketcp`, que Kanpachi no usa. Compilar sin ellas **borra la
-   capacidad del binario**, que es más fuerte que vigilar el argv. Ojo: `tun` se
-   queda, y `windivert` no se puede sacar en ningún caso.
+3. **Features de cargo reducidas, y el resultado está medido.** El default trae
+   `socks5`, `magic-dns`, `wireguard` y `faketcp`, que Kanpachi no usa. Compilar
+   sin ellas **borra la capacidad del binario**, que es más fuerte que apagarla
+   con una bandera: una bandera deja el código dentro y confía en la bandera.
+
+   Comprobado con `cargo tree -i` sobre el árbol ya reducido, que es lo único
+   que distingue una feature quitada de una que uno cree haber quitado:
+
+   | Crate | Qué traía | Estado |
+   |---|---|---|
+   | `hickory-server` | el servidor de magic DNS | **fuera del grafo** |
+   | `boringtun-easytier` | el portal WireGuard de `--vpn-portal` | **fuera** |
+   | `flume` | faketcp | **fuera** |
+   | `windivert` | el driver de captura de paquetes | **sigue dentro** |
+
+   La primera fila es la que más vale: magic DNS es lo que abre el puerto de
+   loopback que la primera medición de sockets no vio. Ya no está apagado, no
+   está.
+
+   **La última fila es la limitación, y hay que leerla.** `windivert` es una
+   dependencia incondicional en Windows x86 y x86_64, así que ninguna
+   combinación de features lo saca. Por eso la cuarentena del producto no se
+   apoya en que el motor sea incapaz: se apoya en el firewall.
+
+   `tun` se queda por definición, y `enable_encryption` NO depende de la feature
+   `wireguard`: esa feature es `boringtun`, o sea el servidor de VPN, y el
+   cifrado del túnel es `encryption_algorithm`, que sigue puesto. Confundirlas
+   habría sacado el cifrado creyendo sacar un portal.
+
+   La combinación reducida compila: 5 min 32 s, exit 0, y el protocolo contesta
+   igual en la prueba de humo.
 4. Los ficheros de licencia: aviso, copia de LGPL-3.0 **y** de GPLv3 (EasyTier no
    incluye la segunda), y enlace al tag. **No es deuda de hoy**: se comprobó que
    `third_party/` está en `.gitignore`, que no hay instalador, y que la ruta
