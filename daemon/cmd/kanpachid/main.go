@@ -89,7 +89,12 @@ func main() {
 		// Y en una ventana si no hay consola, que es el caso del doble clic.
 		// Sin esto, un acceso directo que falla no hace nada visible. Ver
 		// [avisar].
-		avisar("Kanpachi no pudo arrancar.\n\n" + err.Error())
+		//
+		// El motivo va con su etiqueta y no suelto: los errores de este camino
+		// son de dos clases muy distintas —los que están escritos para leerse,
+		// como el permiso del servicio, y los que son la cadena cruda de una
+		// API de Windows— y quien lee no tiene por qué adivinar cuál le tocó.
+		avisar("Kanpachi no pudo arrancar.\n\nMotivo:\n" + err.Error())
 		os.Exit(1)
 	}
 }

@@ -115,8 +115,18 @@ func (h *Host) Start(show bool) error {
 		// Say it on the user desktop. Without this, failing to launch is total
 		// silence: no tray, no window, no error, and a daemon running with
 		// nothing on screen — the shape the invariant forbids.
-		Warn("Kanpachi no pudo abrir su ventana.\n\n" + err.Error() +
-			"\n\nEl servicio sigue corriendo. Cierra Kanpachi desde Servicios de Windows si quieres pararlo.")
+		//
+		// The order of the sentences is the whole point, and the first version
+		// got it wrong: it opened with a raw Go error, so the first thing the
+		// reader met was a Windows API string in English. What somebody needs
+		// from a box like this is, in order: what happened, whether it broke
+		// anything, what to do, and only then the line to copy into a report.
+		Warn("Kanpachi se está ejecutando y no consiguió abrir su ventana.\n\n" +
+			"Nada se rompió: si tenías una sala abierta, sigue abierta. " +
+			"Lo que falta es la ventana.\n\n" +
+			"Qué hacer: vuelve a abrir Kanpachi desde su acceso directo. " +
+			"Si sigue sin aparecer, reinicia la PC.\n\n" +
+			"Detalle técnico, por si hay que reportarlo:\n" + err.Error())
 		return err
 	}
 	h.watching.Add(1)

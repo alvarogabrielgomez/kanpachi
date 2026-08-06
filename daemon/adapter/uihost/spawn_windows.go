@@ -237,8 +237,11 @@ func (h *Host) watch() {
 		if caídas > maxRelaunches {
 			h.deps.Log.Error("la interfaz se cayó demasiadas veces seguidas y no se relanza más",
 				"intentos", caídas)
-			Warn("Kanpachi no consigue mantener su ventana abierta y va a cerrarse.\n\n" +
-				"Se intentó abrirla varias veces seguidas y se cerró sola cada vez.")
+			Warn("Kanpachi va a cerrarse porque no consigue mantener su ventana abierta.\n\n" +
+				"Se abrió y se cerró sola tres veces seguidas, así que se deja de " +
+				"intentar. Al cerrarse, Kanpachi cierra también la sala y todo lo " +
+				"que hubiera abierto en el firewall.\n\n" +
+				"Qué hacer: vuelve a abrirlo desde su acceso directo.")
 			if h.deps.OnGiveUp != nil {
 				h.deps.OnGiveUp()
 			}

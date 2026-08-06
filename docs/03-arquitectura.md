@@ -187,6 +187,32 @@ Por eso todo modo que no sea consola manda el log a `logs\kanpachid.log` dentro 
 
 No va al Visor de eventos, que sería lo idiomático: exigiría registrar una fuente en el instalador, y si esa fuente falta cada línea se convierte en "no se encuentra la descripción del ID de evento". Un archivo de texto al lado de los otros datos lo abre cualquiera, se pega en un reporte de fallo, y ya está protegido por la ACL que el instalador le puso al directorio.
 
+### Cancelar una operación larga
+
+Crear una sala y entrar a una tardan decenas de segundos con todo funcionando, y hay motivos legítimos para no querer esperar: el código estaba mal pegado, el host todavía no abrió, o simplemente se arrepintió. Sin una forma de cortar, la única salida es esperar al final o matar el proceso, y matar el proceso a mitad de una creación es justo el momento en el que hay una red virtual arriba y reglas escritas.
+
+**Se pide por una conexión APARTE, igual que el progreso, y por el mismo motivo:** el bucle de una conexión es secuencial, así que mandarlo por la que está esperando lo pondría en cola detrás de justo lo que viene a cortar.
+
+Del lado del caso de uso son tres piezas:
+
+- La operación envuelve su contexto y deja anotado el cancelador **bajo un candado propio**. El de la sesión lo tiene tomado ella misma durante todo el minuto que dura, que es exactamente el rato en el que alguien pulsa Cancelar; un cancelador que lo pidiera esperaría a que terminara lo que viene a cortar. Mismo argumento que el diario de progreso.
+- Cancelar el contexto hace que la operación falle en la primera llamada que lo mire, y de ahí en adelante corre **el mismo camino de limpieza que un fallo cualquiera**. No hay un deshacer aparte que mantener.
+- Esa limpieza recibe un contexto **propio y vivo**, desprendido del que se acaba de cancelar. Sin eso, cada paso del `teardown` devolvería "context canceled" sin llegar a tocar Windows, o sea que cancelar dejaría abierto exactamente lo que el botón promete cerrar. Lleva su propio plazo para que un adaptador colgado no deje el candado de la sesión tomado para siempre.
+
+**No es instantáneo, y se dice.** Medido: cancelada a los 6,5 segundos con un adaptador ya levantado, el daemon contestó al cancelador en 3,2 s y la creación devolvió `canceled` a los 21,1 s, porque una espera dentro de una llamada de Windows termina antes de mirar el contexto. Lo que importa es lo de después: cero adaptadores, cero reglas del grupo `Kanpachi`, y la sesión en `idle`. La pantalla no espera esos veintiún segundos, ver `docs/05`.
+
+### Preguntar si el código existe, antes de levantar nada
+
+Entrar a una sala con un código inventado o vencido se descubría al final: se levantaba el motor, se entraba a un vestíbulo donde no espera nadie, y se agotaban los reintentos del canal de control. Alrededor de un minuto de espera para llegar a "no se pudo", cuando la respuesta se sabía en el primer segundo, y con una red virtual arriba durante todo ese rato por una sala que no existe.
+
+Así que `JoinRoom` le pregunta primero al registro. La forma exacta de esa pregunta es lo que la hace segura:
+
+- **Solo un "no existe" detiene el ingreso.** El registro es solo presentación y que no conteste jamás puede impedir entrar a una sala, porque la sala vive en las máquinas de sus miembros. Sin red, con un 500, con un plazo vencido: se anota y se sigue. Confundir las dos mitades rompería la promesa en la dirección cara, que es un seed caído dejando a la gente sin entrar a salas abiertas.
+- Ese "no existe" viaja como centinela propio, `port.ErrUnknownRoom`, y es la única respuesta del registro que lo lleva.
+- **Se comprueba antes que el seed sea el mismo.** Un invite ID solo significa algo en el registro que lo emitió: preguntarle a este por un código servido por otro devolvería "no existe" sobre una sala que existe perfectamente. Cuando no coinciden, la comprobación se salta y se entra como siempre.
+
+Medido: un código inexistente falla en **0,8 s** con el código `no_such_room`, sin arrancar el motor y sin escribir una sola regla.
+
 ### Salir de Kanpachi
 
 "Salir de Kanpachi" en el menú de la bandeja **no cierra la UI**. Manda la orden al daemon, que es el único que puede cerrar bien: sale de la sala, purga las reglas, baja el motor y el adaptador, y al final se detiene él. La UI muere de camino, con el `job`.
