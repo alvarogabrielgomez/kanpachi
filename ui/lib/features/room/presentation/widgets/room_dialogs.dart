@@ -170,6 +170,71 @@ class ConfirmKickDialog extends StatelessWidget {
 }
 
 /// Confirmar la renovación del código.
+/// Cerrar la sala siendo el host, con gente dentro.
+///
+/// # Por qué esta sí pregunta
+///
+/// Porque no es salirse: es terminar la partida de todos los que están dentro.
+/// Es la única acción de la app que le cambia el estado a otras máquinas sin
+/// que ellas hagan nada, y la diferencia entre "me voy" y "se acabó" no cabe en
+/// el nombre de un botón.
+///
+/// El texto enumera lo que se cierra en vez de decir "se cerrará la sala",
+/// porque lo primero se puede comprobar y lo segundo hay que creérselo.
+class ConfirmCloseDialog extends StatelessWidget {
+  const ConfirmCloseDialog({required this.membersInside, super.key});
+
+  /// Cuántos hay dentro, contándote a ti.
+  final int membersInside;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final ShellCubit shell = context.read<ShellCubit>();
+    final int otros = membersInside - 1;
+
+    return AppModal(
+      width: 430,
+      onDismiss: shell.closeDialog,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            'Cerrar la sala',
+            style: context.type.titleXs.copyWith(color: colors.text),
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          Text(
+            otros == 1
+                ? 'Hay 1 persona más dentro y se le va a cortar la partida.'
+                : 'Hay $otros personas más dentro y se les va a cortar la '
+                      'partida.',
+            style: context.type.body.copyWith(color: colors.textOnChip),
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          Text(
+            'Se avisa a cada uno, se cierran los puertos del juego, se '
+            'devuelven las reglas que se hubieran desactivado y se baja la red '
+            'de la sala. El código deja de servir.',
+            style: context.type.body.copyWith(color: colors.textMuted),
+          ),
+          const SizedBox(height: AppSpacing.x6l),
+          AppModalActions(
+            confirmLabel: 'Cerrar la sala',
+            onCancel: shell.closeDialog,
+            onConfirm: () {
+              context.read<SessionCubit>().leave();
+              shell.closeDialog();
+              shell.go(AppScreen.home);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class ConfirmRenewDialog extends StatelessWidget {
   const ConfirmRenewDialog({required this.membersInside, super.key});
 

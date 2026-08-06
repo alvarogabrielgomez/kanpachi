@@ -63,11 +63,12 @@ abstract interface class SessionRepository {
   ///
   /// Existe porque el daemon es petición y respuesta puro: no empuja nada, así
   /// que la única forma de enterarse de que alguien entró, de que alguien se
-  /// fue o de que el túnel se degradó es volver a preguntar. Quién decide
-  /// cuándo es la pantalla, y la respuesta acordada es al entrar y cuando el
-  /// usuario lo pide. **No hay temporizador en ninguna capa**, y la
-  /// consecuencia se acepta a sabiendas: entre un refresco y el siguiente, lo
-  /// que se ve puede haber dejado de ser cierto.
+  /// fue o de que el túnel se degradó es volver a preguntar.
+  ///
+  /// **Lo pregunta un latido, cada dos segundos.** Antes se refrescaba al
+  /// entrar a una pantalla y cuando el usuario lo pedía, sin temporizador en
+  /// ninguna capa, y eso resultó ser mucho peor que ver datos viejos: la app se
+  /// bloqueaba sola. Ver [SessionCubit.watchSession] y `docs/03`.
   Future<Room?> currentRoom();
 
   /// Lo que la máquina tiene abierto AHORA, medido.

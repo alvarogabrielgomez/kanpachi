@@ -82,7 +82,7 @@ class _WindowBody extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
-        const _CurrentScreen(),
+        const _RoomFollower(child: _CurrentScreen()),
         // The failure notice sits ABOVE the screen and below the dialogs.
         //
         // Here and not inside each screen, because every screen has buttons
@@ -96,6 +96,66 @@ class _WindowBody extends StatelessWidget {
         // el velo es lo que da contexto a qué se está confirmando.
         _DialogLayer(shell: shell, session: session),
       ],
+    );
+  }
+}
+
+/// Lleva la pantalla a donde diga la sala DE VERDAD, la que tiene el daemon.
+///
+/// # El agujero que tapa
+///
+/// La navegación era de ida y nada más: se entraba a la sala porque el usuario
+/// pulsó crear, y desde ahí la pantalla y la sala solo coincidían por
+/// costumbre. Crear una sala, ir a Configuración y volver dejaba la app en la
+/// portada con el daemon dentro de una sala, y crear otra contestaba `busy`:
+/// una app bloqueada sin nada que la desbloqueara.
+///
+/// Ahora el latido trae la sala de verdad y esto la sigue. Los dos sentidos
+/// hacen falta y son distintos:
+///
+///  - **Aparece una sala** y estamos en una pantalla de "sin sala": se va a la
+///    sala. Cubre volver de Configuración, cubre reanudar la sala del arranque
+///    anterior, y cubre que la sala la haya abierto otra cosa.
+///  - **Desaparece la sala** y estamos en una pantalla que la necesita: se va a
+///    la portada. Es lo que ya hacía el suelo de [_CurrentScreen], que se queda
+///    igualmente como red de seguridad para el primer fotograma.
+///
+/// **No arrastra al usuario fuera de donde eligió estar.** Configuración, el
+/// selector de juego y la exposición se ven con sala y sin ella, así que
+/// aparecer una sala mientras alguien mira los ajustes no lo saca de ahí.
+class _RoomFollower extends StatelessWidget {
+  const _RoomFollower({required this.child});
+
+  final Widget child;
+
+  /// Las pantallas desde las que SÍ se salta al aparecer una sala.
+  ///
+  /// Lista corta y explícita en vez de "todas menos algunas": una pantalla
+  /// nueva no debería empezar arrastrando a nadie por omisión.
+  static const Set<AppScreen> _sinSala = <AppScreen>{
+    AppScreen.home,
+    AppScreen.welcome,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocListener<SessionCubit, SessionState>(
+      listenWhen: (SessionState a, SessionState b) =>
+          (a.room == null) != (b.room == null),
+      listener: (BuildContext context, SessionState state) {
+        final ShellCubit shell = context.read<ShellCubit>();
+        final AppScreen ahora = shell.state.screen;
+        if (state.room != null) {
+          if (_sinSala.contains(ahora)) shell.go(AppScreen.room);
+          return;
+        }
+        if (ahora == AppScreen.room ||
+            ahora == AppScreen.invite ||
+            ahora == AppScreen.exposure) {
+          shell.go(AppScreen.home);
+        }
+      },
+      child: child,
     );
   }
 }
@@ -230,6 +290,9 @@ class _DialogLayer extends StatelessWidget {
             ? const SizedBox.shrink()
             : ConfirmKickDialog(member: shell.kickTarget!),
       AppDialog.confirmRenew => ConfirmRenewDialog(
+        membersInside: session.room?.members.length ?? 0,
+      ),
+      AppDialog.confirmClose => ConfirmCloseDialog(
         membersInside: session.room?.members.length ?? 0,
       ),
     };

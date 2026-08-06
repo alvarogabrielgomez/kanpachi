@@ -119,8 +119,14 @@ enum ForeignRuleState {
   /// valor, una sala sin reglas ajenas tendría que fingir una de las otras.
   none,
 
-  /// Existe y sigue activa: el juego es alcanzable sin pasar por el control
-  /// de Kanpachi, así que expulsar a alguien no lo tapa.
+  /// Existe y sigue activa: el juego queda alcanzable en las redes de esta
+  /// máquina que Kanpachi no controla, con Kanpachi cerrado.
+  ///
+  /// **No afecta a la sala**, y decía lo contrario. La compuerta es un bloqueo
+  /// duro de WFP acotado al adaptador virtual, y en WFP un Block gana sobre
+  /// cualquier permiso ajeno: dentro de la sala esta regla no consigue nada y a
+  /// un expulsado lo sigue tapando. Lo que queda expuesto es la red de casa,
+  /// justamente porque la compuerta no sale del adaptador virtual.
   open,
 
   /// Desactivada mientras dure la sala, y se restaura al salir.

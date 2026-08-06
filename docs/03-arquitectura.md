@@ -187,6 +187,28 @@ Por eso todo modo que no sea consola manda el log a `logs\kanpachid.log` dentro 
 
 No va al Visor de eventos, que sería lo idiomático: exigiría registrar una fuente en el instalador, y si esa fuente falta cada línea se convierte en "no se encuentra la descripción del ID de evento". Un archivo de texto al lado de los otros datos lo abre cualquiera, se pega en un reporte de fallo, y ya está protegido por la ACL que el instalador le puso al directorio.
 
+### El latido: la interfaz pregunta sin parar
+
+**Esto revierte una decisión escrita**, y conviene leer por qué antes que el cómo. Decía que no había temporizador en ninguna capa: se refrescaba al entrar a una pantalla y cuando el usuario lo pedía, y la consecuencia aceptada era que lo que se ve pudiera estar viejo entre un refresco y el siguiente.
+
+La consecuencia real era mucho peor que "estar viejo", y no en un caso raro:
+
+- **La app se bloqueaba sola.** Crear una sala, entrar a Configuración y volver dejaba la interfaz sin sala, con el daemon dentro de una. Crear otra contestaba `busy`, y no había nada que pudiera desbloquearlo salvo cerrar la ventana.
+- Lo mismo para un invitado que saliera de la pantalla de sala.
+- Nada de lo que ocurriera del lado del daemon llegaba nunca: alguien entrando, alguien yéndose, el túnel degradándose, el host cerrando la sala.
+- "Servicio activo" era una foto del arranque. Con el daemon caído y vuelto a levantar había que **cerrar y abrir la ventana** para que la app se enterara.
+
+El error de fondo era tratar la navegación como la fuente de los refrescos. El estado del daemon cambia sin que nadie entre a ninguna pantalla, así que refrescar al entrar deja fuera justo los casos que importan.
+
+Así que la interfaz late: cada dos segundos pregunta por la sala y por la salud. No cambia nada del contrato —el daemon sigue siendo petición y respuesta puro, sin empuje— y **se puede preguntar tan seguido porque `Status` no toma el candado de la sesión**: lee la copia publicada, que existe exactamente para esto. Por eso el latido sigue contestando mientras una creación de sala tiene la sesión tomada durante un minuto.
+
+Dos guardas que hacen que no estorbe:
+
+- **Se calla mientras se crea o se entra.** Ahí el estado lo manda la operación en curso, y un latido llegado en medio pintaría la sala a medio abrir o la borraría porque todavía no existe.
+- **El catálogo no entra en el latido.** Se pide una vez cuando vuelve el servicio: es una lista que no cambia sola, y pedirla cada dos segundos sería releer el disco del daemon para nada.
+
+Del lado de la pantalla, la navegación pasa a SEGUIR a la sala en vez de suponerla. Ver `docs/05`.
+
 ### Cancelar una operación larga
 
 Crear una sala y entrar a una tardan decenas de segundos con todo funcionando, y hay motivos legítimos para no querer esperar: el código estaba mal pegado, el host todavía no abrió, o simplemente se arrepintió. Sin una forma de cortar, la única salida es esperar al final o matar el proceso, y matar el proceso a mitad de una creación es justo el momento en el que hay una red virtual arriba y reglas escritas.

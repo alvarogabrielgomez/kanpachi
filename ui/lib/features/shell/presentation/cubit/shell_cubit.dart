@@ -31,7 +31,16 @@ enum AppScreen {
 }
 
 /// Los diálogos, que se dibujan por encima de la pantalla actual.
-enum AppDialog { none, confirmGame, confirmKick, confirmRenew }
+enum AppDialog {
+  none,
+  confirmGame,
+  confirmKick,
+  confirmRenew,
+
+  /// Cerrar la sala siendo el host, con gente dentro. Se pregunta porque no es
+  /// salirse: es terminar la sala para todos los que están jugando.
+  confirmClose,
+}
 
 /// Cómo se listan los juegos.
 enum GameArtMode { cover, list }

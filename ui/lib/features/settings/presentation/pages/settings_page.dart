@@ -103,8 +103,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             note:
                 'Lo poco que hay que decidir. Kanpachi funciona sin tocar nada '
                 'de acá.',
+            // **Vuelve a la sala si hay sala**, y no siempre a la portada.
+            //
+            // Siempre a la portada era la mitad de un fallo que dejaba la app
+            // bloqueada: se salía de la sala en la pantalla y el daemon seguía
+            // dentro, así que crear otra contestaba que ya estabas en una. La
+            // otra mitad, que el estado ni siquiera sobrevivía, la arregla el
+            // latido. Esta mitad es que volver tiene que volver a donde
+            // estabas.
             leading: AppBackButton(
-              onPressed: () => context.read<ShellCubit>().go(AppScreen.home),
+              onPressed: () => context.read<ShellCubit>().go(
+                session.hasRoom ? AppScreen.room : AppScreen.home,
+              ),
             ),
           ),
           const SizedBox(height: AppSpacing.x7l),

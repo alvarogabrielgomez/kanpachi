@@ -62,8 +62,23 @@ class _WindowSizeMemoryState extends State<WindowSizeMemory>
     super.dispose();
   }
 
+  /// Los DOS avisos de redimensionado, y hacen falta los dos.
+  ///
+  /// `onWindowResized` llega al soltar el ratón, o sea con `WM_EXITSIZEMOVE`,
+  /// que solo existe cuando el arrastre lo hizo una persona. Medido: cambiar el
+  /// tamaño desde fuera con `SetWindowPos` no guardaba nada. `onWindowResize`
+  /// llega en cada paso del cambio, venga de donde venga, y el retardo de abajo
+  /// convierte esa ráfaga en una sola escritura.
+  @override
+  void onWindowResize() => _remember();
+
   @override
   void onWindowResized() => _remember();
+
+  /// Restaurar también cuenta: es cuando la ventana vuelve a tener un tamaño
+  /// que tiene sentido guardar, y no llega como redimensionado.
+  @override
+  void onWindowUnmaximize() => _remember();
 
   /// Maximising counts too, and it is the case that would look like a bug.
   ///

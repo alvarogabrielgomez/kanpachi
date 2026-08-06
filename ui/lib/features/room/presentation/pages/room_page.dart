@@ -857,6 +857,11 @@ class _ForeignRuleNotice extends StatelessWidget {
     final SessionCubit session = context.read<SessionCubit>();
     final bool blocks =
         kind == RuleClass.remoteControl || kind == RuleClass.onOurAdapter;
+    // Escribir en el firewall por COM tarda alrededor de un segundo. Sin esto
+    // el botón se ve muerto todo ese rato, y lo que hace la gente entonces es
+    // pulsarlo otra vez.
+    final bool trabajando =
+        context.watch<SessionCubit>().state.work == RoomWork.resolvingForeign;
 
     return AppMessageNotice(
       message: AppMessages.foreignRule(
@@ -867,13 +872,17 @@ class _ForeignRuleNotice extends StatelessWidget {
       pulse: blocks,
       actions: <Widget>[
         AppButton(
-          label: blocks
-              ? 'Desactivarlo mientras juego'
-              : 'Desactivar mientras juego',
+          label: trabajando
+              ? 'Desactivando…'
+              : (blocks
+                    ? 'Desactivarlo mientras juego'
+                    : 'Desactivar mientras juego'),
           variant: AppButtonVariant.primaryFlat,
           height: 34,
           horizontalPadding: 15,
-          onPressed: () => session.resolveForeignRule(disable: true),
+          onPressed: trabajando
+              ? null
+              : () => session.resolveForeignRule(disable: true),
         ),
         // La salida de la de control remoto NO es equivalente a la del juego.
         // "Dejar así" abriría la sala con el escritorio del host alcanzable por
@@ -885,7 +894,9 @@ class _ForeignRuleNotice extends StatelessWidget {
             variant: AppButtonVariant.ghost,
             height: 34,
             horizontalPadding: 15,
-            onPressed: () => session.resolveForeignRule(disable: false),
+            onPressed: trabajando
+                ? null
+                : () => session.resolveForeignRule(disable: false),
           ),
       ],
     );
@@ -917,12 +928,27 @@ class _RoomMembers extends StatelessWidget {
           ],
         ),
         const SizedBox(height: AppSpacing.xxl),
+        // **El host CIERRA, el invitado SALE, y no es la misma acción.**
+        //
+        // El botón decía "Salir de la sala" para los dos, y para el host era
+        // mentira por omisión: cuando el host se va, la sala se acaba para
+        // todos. El daemon ya lo hacía —avisa a cada miembro, cierra los
+        // puertos, restaura las reglas ajenas, suelta la compuerta, revierte
+        // los ajustes del adaptador, cierra el canal y baja la red— y lo único
+        // que faltaba era decirlo antes de hacerlo.
         AppButton(
-          label: 'Salir de la sala',
+          label: room.selfIsHost ? 'Cerrar la sala' : 'Salir de la sala',
           variant: AppButtonVariant.quiet,
           height: 44,
           textStyle: context.type.strong,
           onPressed: () {
+            // Con gente dentro se pregunta, y solo entonces. Un host solo en
+            // su sala cerrándola no le está haciendo nada a nadie, y un
+            // diálogo ahí es una pulsación de más en el caso normal.
+            if (room.selfIsHost && room.members.length > 1) {
+              context.read<ShellCubit>().showDialog(AppDialog.confirmClose);
+              return;
+            }
             context.read<SessionCubit>().leave();
             context.read<ShellCubit>().go(AppScreen.home);
           },

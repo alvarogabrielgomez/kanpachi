@@ -136,14 +136,29 @@ abstract final class AppMessages {
     RuleClass kind,
     String? gameName,
   ) => switch (kind) {
+    // **Habla de la red de casa y NO de la sala**, y esa corrección importa.
+    //
+    // Decía que la regla dejaba el juego alcanzable "por toda la sala, sin
+    // pasar por el control de Kanpachi: expulsar a alguien no lo tapa". Eso es
+    // justo lo que la compuerta existe para que sea falso: es un bloqueo duro
+    // de WFP acotado al adaptador virtual, y en WFP un Block gana sobre
+    // cualquier permiso ajeno. Dentro de la sala esta regla no consigue nada, y
+    // a un expulsado lo sigue tapando la compuerta.
+    //
+    // Lo que sí queda al descubierto es todo lo demás: la compuerta está
+    // acotada al adaptador virtual a propósito, y esa acotación es lo que
+    // impide dejar al usuario sin su red de casa. Ahí esta regla vale, y la
+    // dejó puesta el instalador del juego para siempre.
+    //
+    // Sobrestimar un aviso no lo hace más seguro: enseña a no leerlos.
     RuleClass.game => AppMessage(
       severity: MessageSeverity.warn,
       title: '${gameName ?? 'El juego'} dejó una regla en tu firewall',
       body:
-          'Con ella el juego es alcanzable desde tu red de casa y por '
-          'toda la sala, sin pasar por el control de Kanpachi: expulsar '
-          'a alguien no lo tapa. Se puede desactivar mientras juegas y '
-          'se devuelve al salir.',
+          'La puso su instalador, y deja el juego alcanzable desde tu red de '
+          'casa y desde cualquier otra a la que conectes este PC, con Kanpachi '
+          'cerrado. Dentro de la sala no cambia nada: ahí manda Kanpachi. Se '
+          'puede desactivar mientras juegas y se devuelve al salir.',
     ),
 
     // La única que impide abrir la sala, y por eso no ofrece "dejar así"

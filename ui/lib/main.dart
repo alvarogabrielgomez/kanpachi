@@ -158,6 +158,15 @@ Future<void> _prepareWindow({required bool silent, required Size size}) async {
     title: 'Kanpachi',
   );
   await windowManager.waitUntilReadyToShow(options, () async {
+    // **Centrada a mano, además de pedirlo en las opciones.**
+    //
+    // `WindowOptions.center` no es fiable, y no es una sospecha: medido dos
+    // veces seguidas con la misma compilación, una abrió centrada en el
+    // monitor principal, en (268,130), y la otra en (2450,377), que no es el
+    // centro de ninguno de los dos monitores de esta máquina. Se centra otra
+    // vez acá, que es después de aplicar las opciones y con el tamaño ya
+    // puesto.
+    await windowManager.center();
     if (silent) return;
     await windowManager.show();
     await windowManager.focus();
@@ -217,13 +226,12 @@ class KanpachiApp extends StatelessWidget {
                 ..go(onboarded ? AppScreen.home : AppScreen.welcome),
         ),
         BlocProvider<SessionCubit>(
-          // La salud se pide en el arranque y no cuando el usuario abre una
-          // sala: los avisos que importan en la portada, con el Firewall de
-          // Windows apagado a la cabeza, son ciertos antes de que haya nada que
-          // hospedar, y esperar a la sala sería avisar tarde.
-          create: (_) => Injector.instance.get<SessionCubit>()
-            ..loadCatalog()
-            ..refreshHealth(),
+          // El latido, y con él todo lo demás: la sala, la salud y el catálogo.
+          //
+          // Antes eran dos llamadas sueltas al arrancar la ventana, y esa era
+          // toda la vida del estado: lo que el daemon hiciera después no
+          // llegaba nunca. Ver [SessionCubit.watchSession].
+          create: (_) => Injector.instance.get<SessionCubit>()..watchSession(),
         ),
       ],
       // Por encima de la app y por debajo de los cubits: tiene que durar lo

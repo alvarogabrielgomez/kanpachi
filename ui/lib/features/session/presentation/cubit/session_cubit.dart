@@ -232,9 +232,92 @@ class SessionCubit extends Cubit<SessionState> {
     _pollingProgreso = null;
   }
 
+  // ------------------------------------------------------------------ latido
+
+  /// Pregunta por la sala y por la salud, sin parar, mientras la app viva.
+  ///
+  /// # Por qué existe, y qué decisión revierte
+  ///
+  /// `docs/03` decía **"no hay temporizador en ninguna capa"**: se refrescaba
+  /// al entrar a una pantalla y cuando el usuario lo pedía. La consecuencia
+  /// aceptada era que lo que se ve pudiera estar viejo. Resultó ser mucho peor
+  /// que eso, y no en un caso raro:
+  ///
+  ///  - Crear una sala, ir a Configuración y volver dejaba a la app **sin
+  ///    sala**, con el daemon dentro de una. Crear otra contestaba `busy`, así
+  ///    que la app quedaba bloqueada sin nada que la desbloqueara.
+  ///  - Lo mismo para un invitado que saliera de la pantalla de sala.
+  ///  - Nada de lo que pasara del lado del daemon llegaba nunca: alguien
+  ///    entrando, alguien yéndose, el túnel degradándose, la sala cerrándose.
+  ///  - "Servicio activo" era una foto del arranque. Con el daemon caído y
+  ///    vuelto a levantar había que **cerrar y abrir la ventana** para que la
+  ///    app se enterara.
+  ///
+  /// El daemon es petición y respuesta puro y no empuja nada, así que la única
+  /// forma de saber es preguntar. Refrescar "al entrar a una pantalla" no
+  /// alcanza porque el estado cambia sin que nadie entre a ninguna pantalla.
+  ///
+  /// # Por qué se puede preguntar tan seguido
+  ///
+  /// Porque `status` no toca el candado de la sesión: lee la copia publicada,
+  /// que existe justo para esto. Así que el latido sigue contestando mientras
+  /// una creación de sala tiene la sesión tomada durante un minuto.
+  static const Duration _latido = Duration(seconds: 2);
+
+  Timer? _pulso;
+
+  /// Arranca el latido. Idempotente.
+  void watchSession() {
+    _pulso?.cancel();
+    _pulso = Timer.periodic(_latido, (_) => unawaited(_beat()));
+    unawaited(_beat());
+  }
+
+  /// Una ronda: la sala y la salud, tal como las ve el daemon AHORA.
+  ///
+  /// Los fallos no suben y no rompen nada visible. Un latido perdido es lo
+  /// normal cuando el daemon se está reiniciando, y lo que se hace con él es
+  /// marcar que no hay servicio, que es exactamente lo que la barra de estado
+  /// tiene que decir en ese momento.
+  Future<void> _beat() async {
+    // Mientras se crea o se entra, el estado lo manda la operación en curso.
+    // Un latido que llegara en medio pintaría la sala a medio abrir, o la
+    // borraría porque todavía no existe.
+    if (isClosed || state.isWaiting) return;
+    try {
+      final Room? sala = await _repository.currentRoom();
+      final HealthReport salud = await _repository.health();
+      if (isClosed) return;
+      emit(
+        state.copyWith(
+          room: sala,
+          clearRoom: sala == null,
+          health: salud,
+          daemonDown: false,
+          // Volver a estar dentro de una sala tras haberla perdido de vista
+          // tiene que devolver también la fase, o la app se queda con la sala
+          // puesta y la pantalla de portada.
+          phase: sala == null ? SessionPhase.idle : SessionPhase.inRoom,
+        ),
+      );
+      // El catálogo se pide UNA vez, cuando vuelve el servicio. No entra en el
+      // latido: es una lista que no cambia sola, y pedirla cada dos segundos
+      // sería releer el disco del daemon para nada.
+      if (state.catalog.isEmpty) unawaited(loadCatalog());
+    } on Object {
+      if (!isClosed) emit(state.copyWith(daemonDown: true));
+    }
+  }
+
+  void _stopBeating() {
+    _pulso?.cancel();
+    _pulso = null;
+  }
+
   @override
   Future<void> close() {
     _stopWatching();
+    _stopBeating();
     return super.close();
   }
 
@@ -378,9 +461,17 @@ class SessionCubit extends Cubit<SessionState> {
     });
   }
 
+  /// Resuelve una regla ajena: la desactiva mientras juegas, o la deja.
+  ///
+  /// Lleva bandera de trabajo, y no es cosmético. Escribir en el almacén de
+  /// reglas de Windows por COM tarda alrededor de un segundo, y sin nada que lo
+  /// diga el botón parece muerto: se pulsa otra vez, y eso son dos escrituras
+  /// del firewall a la vez. Es el mismo argumento que apaga el botón de reponer
+  /// la protección.
   Future<void> resolveForeignRule({required bool disable}) async {
     final Room? current = state.room;
-    if (current == null) return;
+    if (current == null || state.isBusy) return;
+    emit(state.copyWith(work: RoomWork.resolvingForeign));
     await _try(FailedAction.suspendForeignRules, () async {
       emit(
         state.copyWith(
@@ -388,6 +479,9 @@ class SessionCubit extends Cubit<SessionState> {
         ),
       );
     });
+    // Baja pase lo que pase. Dejada arriba tras un fallo, la sala entera se
+    // queda en gris y la única salida es reiniciar.
+    if (!isClosed) emit(state.copyWith(work: RoomWork.none));
   }
 
   /// Leaves the room.

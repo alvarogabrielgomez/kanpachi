@@ -25,7 +25,20 @@ enum SessionPhase {
 /// Está aparte de [SessionPhase] porque la sala NO desaparece mientras se
 /// aplica: abrir un juego cambia los puertos, no la sala, y la pantalla tiene
 /// que seguir mostrando los miembros y el código mientras tanto.
-enum RoomWork { none, openingGame, closingGame }
+enum RoomWork {
+  none,
+  openingGame,
+  closingGame,
+
+  /// Resolviendo una regla ajena: desactivarla o dejarla como está.
+  ///
+  /// Es trabajo de la sala y no de la protección, aunque hable del firewall:
+  /// desactivar una regla recalcula los puertos de la sala y devuelve la sala
+  /// entera, así que mientras corre los botones de la sala no pueden estar
+  /// vivos. Tarda de verdad, alrededor de un segundo, porque escribe en el
+  /// almacén de reglas de Windows por COM.
+  resolvingForeign,
+}
 
 /// Qué se está haciendo con la protección.
 ///
