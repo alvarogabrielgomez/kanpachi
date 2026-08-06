@@ -1,0 +1,279 @@
+{
+  "kanpachi_catalog": 1,
+  "profiles": [
+    {
+      "id": "project-zomboid",
+      "schema": 2,
+      "name": "Project Zomboid",
+      "detect": {
+        "steam_appid": 108600,
+        "executables": ["ProjectZomboid64.exe", "ProjectZomboid32.exe"]
+      },
+      "host_ports": [{ "proto": "udp", "range": "16261-16262" }],
+      "client_ports": [],
+      "lan_discovery": false,
+      "system_tweaks": {
+        "broadcast_route": false,
+        "multicast_route": false,
+        "prefer_ipv4": false,
+        "directplay": false
+      },
+      "connect_hint": {
+        "kind": "direct_ip",
+        "text_es": "En el juego: Join, y escribe la IP del host."
+      },
+      "bind_hint": {
+        "file": "Zomboid/Server/servertest.ini",
+        "key": "ServerIP",
+        "note_es": "Se puede fijar a la IP de Kanpachi para no escuchar en la tarjeta fisica."
+      }
+    },
+    {
+      "id": "minecraft-java",
+      "schema": 2,
+      "name": "Minecraft (Java)",
+      "detect": {
+        "executables": ["MinecraftLauncher.exe"]
+      },
+      "host_ports": [{ "proto": "tcp", "range": "25565" }],
+      "client_ports": [],
+      "lan_discovery": false,
+      "system_tweaks": {
+        "broadcast_route": false,
+        "multicast_route": false,
+        "prefer_ipv4": false,
+        "directplay": false
+      },
+      "connect_hint": {
+        "kind": "direct_ip",
+        "text_es": "Multijugador, Anadir servidor, y escribe la IP del host. Ojo: Abrir para LAN desde el menu de pausa usa un puerto distinto cada vez, asi que hace falta un servidor."
+      },
+      "bind_hint": {
+        "file": "server.properties",
+        "key": "server-port",
+        "note_es": "El servidor escucha en 25565 por defecto. Si se cambia ahi, este perfil deja de servir."
+      }
+    },
+    {
+      "id": "age-of-empires-2",
+      "schema": 2,
+      "name": "Age of Empires II: The Conquerors",
+      "detect": {
+        "executables": ["empires2.exe", "age2_x1.exe"]
+      },
+      "host_ports": [
+        { "proto": "tcp", "range": "47624" },
+        { "proto": "both", "range": "2300-2400" },
+        { "proto": "udp", "range": "6073" }
+      ],
+      "client_ports": [],
+      "lan_discovery": false,
+      "system_tweaks": {
+        "broadcast_route": true,
+        "multicast_route": false,
+        "prefer_ipv4": false,
+        "directplay": true
+      },
+      "connect_hint": {
+        "kind": "lan_browser",
+        "text_es": "Multijugador, Red de area local (DirectPlay), y la partida del host aparece en la lista. Ojo: la Definitive Edition no tiene LAN, y este perfil no le sirve."
+      },
+      "bind_hint": {
+        "note_es": "Este juego es de la era DirectPlay, asi que Kanpachi enciende esa caracteristica de Windows mientras dure la sala y la devuelve como estaba al salir."
+      }
+    },
+    {
+      "id": "counter-strike-1-6",
+      "schema": 2,
+      "name": "Counter-Strike 1.6",
+      "detect": {
+        "steam_appid": 10,
+        "executables": ["hl.exe", "cstrike.exe"]
+      },
+      "host_ports": [{ "proto": "udp", "range": "27015" }],
+      "client_ports": [],
+      "lan_discovery": false,
+      "system_tweaks": {
+        "broadcast_route": true,
+        "multicast_route": false,
+        "prefer_ipv4": false,
+        "directplay": false
+      },
+      "connect_hint": {
+        "kind": "lan_browser",
+        "text_es": "Buscar servidores, pestana LAN. Si la partida no aparece, en la consola: connect IP-del-host:27015"
+      },
+      "bind_hint": {}
+    },
+    {
+      "id": "valheim",
+      "schema": 2,
+      "name": "Valheim",
+      "detect": {
+        "steam_appid": 892970,
+        "executables": ["valheim.exe", "valheim_server.exe"]
+      },
+      "host_ports": [{ "proto": "udp", "range": "2456-2458" }],
+      "client_ports": [],
+      "lan_discovery": false,
+      "system_tweaks": {
+        "broadcast_route": false,
+        "multicast_route": false,
+        "prefer_ipv4": false,
+        "directplay": false
+      },
+      "connect_hint": {
+        "kind": "direct_ip",
+        "text_es": "Unirse a partida, pestana Unirse por IP, y escribe la IP del host con el puerto 2456."
+      },
+      "bind_hint": {}
+    },
+    {
+      "id": "terraria",
+      "schema": 2,
+      "name": "Terraria",
+      "detect": {
+        "steam_appid": 105600,
+        "executables": ["Terraria.exe", "TerrariaServer.exe"]
+      },
+      "host_ports": [{ "proto": "tcp", "range": "7777" }],
+      "client_ports": [],
+      "lan_discovery": false,
+      "system_tweaks": {
+        "broadcast_route": false,
+        "multicast_route": false,
+        "prefer_ipv4": false,
+        "directplay": false
+      },
+      "connect_hint": {
+        "kind": "direct_ip",
+        "text_es": "Multijugador, Unirse por IP, y escribe la IP del host."
+      },
+      "bind_hint": {}
+    },
+    {
+      "id": "factorio",
+      "schema": 2,
+      "name": "Factorio",
+      "detect": {
+        "steam_appid": 427520,
+        "executables": ["factorio.exe"]
+      },
+      "host_ports": [{ "proto": "udp", "range": "34197" }],
+      "client_ports": [],
+      "lan_discovery": false,
+      "system_tweaks": {
+        "broadcast_route": false,
+        "multicast_route": false,
+        "prefer_ipv4": false,
+        "directplay": false
+      },
+      "connect_hint": {
+        "kind": "direct_ip",
+        "text_es": "Multijugador, Conectar a la direccion, y escribe la IP del host."
+      },
+      "bind_hint": {}
+    },
+    {
+      "id": "left-4-dead-2",
+      "schema": 2,
+      "name": "Left 4 Dead 2",
+      "detect": {
+        "steam_appid": 550,
+        "executables": ["left4dead2.exe"]
+      },
+      "host_ports": [{ "proto": "udp", "range": "27015" }],
+      "client_ports": [],
+      "lan_discovery": false,
+      "system_tweaks": {
+        "broadcast_route": false,
+        "multicast_route": false,
+        "prefer_ipv4": false,
+        "directplay": false
+      },
+      "connect_hint": {
+        "kind": "direct_ip",
+        "text_es": "El host pone sv_lan 1 y crea la partida. Los demas, con la consola de desarrollador: connect IP-del-host:27015"
+      },
+      "bind_hint": {}
+    },
+    {
+      "id": "stardew-valley",
+      "schema": 2,
+      "name": "Stardew Valley",
+      "detect": {
+        "steam_appid": 413150,
+        "executables": ["Stardew Valley.exe"]
+      },
+      "host_ports": [{ "proto": "both", "range": "24642" }],
+      "client_ports": [],
+      "lan_discovery": false,
+      "system_tweaks": {
+        "broadcast_route": false,
+        "multicast_route": false,
+        "prefer_ipv4": false,
+        "directplay": false
+      },
+      "connect_hint": {
+        "kind": "direct_ip",
+        "text_es": "Co-op, Unirse por IP, y escribe la IP del host."
+      },
+      "bind_hint": {}
+    },
+    {
+      "id": "7-days-to-die",
+      "schema": 2,
+      "name": "7 Days to Die",
+      "detect": {
+        "steam_appid": 251570,
+        "executables": ["7DaysToDie.exe", "7DaysToDieServer.exe"]
+      },
+      "host_ports": [
+        { "proto": "both", "range": "26900" },
+        { "proto": "udp", "range": "26901-26903" }
+      ],
+      "client_ports": [],
+      "lan_discovery": false,
+      "system_tweaks": {
+        "broadcast_route": false,
+        "multicast_route": false,
+        "prefer_ipv4": false,
+        "directplay": false
+      },
+      "connect_hint": {
+        "kind": "direct_ip",
+        "text_es": "Multijugador, Conectar a IP, y escribe la IP del host."
+      },
+      "bind_hint": {
+        "file": "serverconfig.xml",
+        "key": "ServerPort",
+        "note_es": "El 26900 es el puerto base. Cambiarlo mueve tambien los tres de arriba, y este perfil deja de servir."
+      }
+    },
+    {
+      "id": "dont-starve-together",
+      "schema": 2,
+      "name": "Don't Starve Together",
+      "detect": {
+        "steam_appid": 322330,
+        "executables": ["dontstarve_steam.exe", "dontstarve_steam_x64.exe"]
+      },
+      "host_ports": [{ "proto": "udp", "range": "10998-10999" }],
+      "client_ports": [],
+      "lan_discovery": false,
+      "system_tweaks": {
+        "broadcast_route": false,
+        "multicast_route": false,
+        "prefer_ipv4": false,
+        "directplay": false
+      },
+      "connect_hint": {
+        "kind": "direct_ip",
+        "text_es": "Examinar juegos, pestana LAN. Si la partida no aparece, en la consola del juego: c_connect('IP-del-host', 10999)"
+      },
+      "bind_hint": {
+        "note_es": "El 10999 es el mundo de arriba y el 10998 es el segundo fragmento, que es el que usan las cuevas. Van los dos por eso."
+      }
+    }
+  ]
+}

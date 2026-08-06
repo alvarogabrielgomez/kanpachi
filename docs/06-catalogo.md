@@ -94,7 +94,7 @@ Qué alimenta cada campo:
 | `detect.executables` | Auditoría de reglas de firewall ajenas, y el modo observación del creador |
 | `host_ports` | Reglas de firewall en la máquina que hospeda |
 | `client_ports` | Reglas en quien se une. **Vacío en la enorme mayoría**, ver abajo |
-| `lan_discovery` | Activa el relay de broadcast UDP para ese juego |
+| `lan_discovery` | **Hoy no lo lee nadie.** Se parsea y se conserva, y ningún adaptador lo consume. Ver abajo |
 | `system_tweaks` | Ajustes de Windows que ese juego necesita, aplicados por `netcfg` y revertidos al salir de la sala |
 | `connect_hint` | El texto exacto de la pantalla en sala |
 | `bind_hint` | Información para el usuario avanzado. Kanpachi jamás edita ese archivo |
@@ -105,6 +105,23 @@ Qué alimenta cada campo:
 `proto` acepta: `udp`, `tcp`, `both`. El tercero existe porque hay juegos que piden el mismo rango en los dos protocolos, y obligar a escribirlo dos veces gastaría dos de los ocho rangos del tope para decir una sola cosa. **No es un protocolo, es escritura:** el código lo expande a dos reglas antes de llegar al Firewall de Windows, que tiene un protocolo por regla y solo uno. La UI lo escribe `TCP/UDP` y lo acepta también así al leer.
 
 `origin` es la excepción de una sola capa. Solo lo escribe `local.json`, que es el único archivo que mezcla perfiles propios con importados, y sirve para que la distinción sobreviva a un reinicio. **En un archivo de intercambio va ausente, y si viene se ignora:** la capa la fija quien carga, jamás el archivo. Sin esa regla, un `.json` que llegara por Telegram podría declararse `mine` y ganarle en precedencia a un builtin verificado.
+
+### `lan_discovery` está declarado y todavía no lo paga nadie
+
+El campo se parsea, sobrevive al viaje de ida y vuelta a disco, y **ningún
+adaptador lo lee**. Lo que activaría sería el relay de broadcast UDP del motor,
+y esa capacidad está en la lista de las que van siempre apagadas, con su motivo:
+capturaría el tráfico de la red de casa del usuario. Encenderla exige antes
+decidir cómo se acota a la red virtual, y esa decisión no está tomada.
+
+Lo que sí funciona hoy, y es lo que usan los perfiles clásicos de LAN, es
+`system_tweaks.broadcast_route`: una ruta `255.255.255.255/32` sobre el
+adaptador virtual, que manda el descubrimiento por la sala en vez de por la
+tarjeta física. Cubre el caso de un buscador de partidas que emite a la
+dirección de difusión.
+
+Disparador para pagar `lan_discovery`: un juego del catálogo que no aparezca en
+su lista de partidas con `broadcast_route` puesto.
 
 ### `client_ports` decide la topología, y por eso es el campo más delicado
 
@@ -313,6 +330,97 @@ Reglas del importador:
 4. **Origen `imported`,** visible en la lista de juegos.
 5. **Selección por perfil.** Se importa lo que se marque, nunca todo o nada.
 6. **Esquema desconocido:** un perfil con `schema` mayor al soportado se salta con un aviso de actualizar Kanpachi. Uno con esquema viejo se migra si hay migración definida.
+
+## Qué trae el catálogo de fábrica
+
+Once perfiles, y **ninguno viene verificado**. Verificado significa que alguien
+jugó una partida real y lo confirmó al salir de la sala, y `MarkVerified` es un
+no-op deliberado sobre un perfil builtin: lo que se escriba en ese bloque queda
+congelado para la vida del producto. La insignia se gana jugando.
+
+| Juego | Puertos del host | Cómo se une la gente | Ajustes |
+|---|---|---|---|
+| Project Zomboid | `udp 16261-16262` | IP directa | |
+| Minecraft (Java) | `tcp 25565` | IP directa, con servidor | |
+| Age of Empires II: The Conquerors | `tcp 47624`, `tcp/udp 2300-2400`, `udp 6073` | lista de partidas | `broadcast_route`, `directplay` |
+| Counter-Strike 1.6 | `udp 27015` | pestaña LAN, o `connect` | `broadcast_route` |
+| Valheim | `udp 2456-2458` | IP directa | |
+| Terraria | `tcp 7777` | IP directa | |
+| Factorio | `udp 34197` | IP directa | |
+| Left 4 Dead 2 | `udp 27015` | consola, con `sv_lan 1` | |
+| Stardew Valley | `tcp/udp 24642` | IP directa | |
+| 7 Days to Die | `tcp/udp 26900`, `udp 26901-26903` | IP directa | |
+| Don't Starve Together | `udp 10998-10999` | pestaña LAN, o `c_connect` | |
+
+### Las seis reglas que se aplicaron a los nueve
+
+1. **`client_ports` vacío en todos.** Los nueve son de servidor autoritativo. La
+   vara de la malla está unas líneas más arriba y exige haber comprobado que la
+   estrella no funcionaba, y de eso no hay evidencia de ninguno. Una malla mal
+   clasificada como estrella falla ruidosamente y se corrige; al revés abre
+   puertos en cuatro máquinas para siempre.
+2. **Los cuatro `system_tweaks` en `false`, con dos excepciones nombradas.** En
+   la duda, `false`. Las dos excepciones son los juegos clásicos de LAN, que
+   buscan la partida emitiendo a la dirección de difusión y no tienen forma de
+   escribir una IP: Age of Empires II lleva `broadcast_route` y `directplay`,
+   y Counter-Strike 1.6 lleva `broadcast_route`. Sin ellos la partida no
+   aparece en la lista, que es el único camino que esos dos ofrecen.
+3. **`lan_discovery: false` en todos**, incluidos los dos de arriba: hoy ese
+   campo no lo consume nadie, y prenderlo sería una promesa que el producto no
+   cumple. Ver la subsección de más arriba.
+4. **`verified` omitido en todos**, por lo de arriba.
+5. **`origin` omitido.** La capa builtin lo ignora al cargar, así que escribirlo
+   es una afirmación que el archivo no tiene derecho a hacer.
+6. **En `detect.executables`, solo nombres propios del juego.** No es cosmético:
+   la auditoría de reglas ajenas compara por nombre de archivo contra TODO el
+   almacén de reglas de Windows. Un `javaw.exe` ahí dentro clasificaría la regla
+   de cualquier programa Java como "la regla del juego", y le ofrecería al
+   usuario un botón para desactivarlas.
+
+### El Age of Empires II que entra, y el que no
+
+El perfil es el de **The Conquerors**, el de 1999, que es el que tiene LAN de
+verdad: DirectPlay, la partida del host anunciada por difusión, y la lista de
+partidas como único camino de unión.
+
+**La Definitive Edition no sirve con este perfil, y no hay ninguno que le
+sirva.** Su multijugador va entero por el emparejamiento en línea, y la opción
+"LAN" de su navegador de partidas no llega a abrirse sin conexión a los
+servidores del juego. Un perfil suyo abriría puertos que no hacen nada y
+mostraría una pista de conexión falsa, con la insignia de venir de fábrica
+encima. Por eso el nombre del perfil dice cuál es, y su pista lo repite.
+
+Este es además el único perfil que ejercita `system_tweaks.directplay`, o sea
+que Kanpachi enciende esa característica de Windows mientras dure la sala y la
+devuelve como estaba al salir. El libro que guarda el estado previo es el mismo
+de los demás ajustes.
+
+### Dónde estos perfiles pueden estar mal
+
+Se escribe acá porque un puerto equivocado no falla en ningún sitio: el juego
+sencillamente no conecta, y nada apunta al perfil.
+
+- **Minecraft**: el 25565 es del servidor dedicado. "Abrir para LAN" desde el
+  menú de pausa liga un puerto distinto cada vez, y un perfil no puede expresar
+  eso, así que la pista dice que hace falta un servidor.
+- **Stardew Valley**: la guía oficial del juego dice TCP y UDP en el 24642, y va
+  así. El transporte del juego es UDP, de modo que el TCP puede sobrar.
+- **7 Days to Die**: el 26900 va en los dos protocolos, y del 26901 al 26903
+  solo UDP. Los puertos del panel web y de telnet quedan fuera a propósito.
+- **Don't Starve Together**: el 10999 es el mundo de arriba y el 10998 es el
+  segundo fragmento, que es el que usan las cuevas. Van los dos porque una
+  partida con cuevas y solo el primero se queda a medias.
+- **Left 4 Dead 2**: el puerto es seguro, la vía de unión es la incómoda. Sobre
+  una LAN virtual lo fiable es la consola de desarrollador.
+- **Counter-Strike 1.6**: sus ejecutables son los del motor GoldSrc, así que la
+  auditoría de reglas ajenas también señalará las de Half-Life y las de otros
+  juegos del mismo motor. Es una excepción angosta y consciente a la regla 6,
+  y su coste es una pregunta que el usuario puede contestar, jamás una acción
+  automática.
+- **Age of Empires II**: sus puertos son los de DirectPlay, y no están medidos
+  sobre el adaptador virtual. Es el perfil con más piezas nuevas de los once,
+  así que también es el primer candidato a que algo salga distinto de lo
+  escrito.
 
 ## Dónde viven los archivos
 
