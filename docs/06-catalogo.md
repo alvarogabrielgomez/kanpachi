@@ -18,9 +18,9 @@ La consecuencia práctica, escrita como regla: **si un perfil está corrupto, ma
 
 | Capa | Origen | Ubicación | Escribible |
 |---|---|---|---|
-| **builtin** | Viene en el instalador, verificado por el autor | `Program Files\Kanpachi\catalog\builtin.json` | No |
-| **mine** | Creado en esta máquina con el creador de perfiles | `ProgramData\Kanpachi\catalog\local.json` | Sí |
-| **imported** | Importado de un `.json` que compartió alguien | `ProgramData\Kanpachi\catalog\local.json` | Sí |
+| **builtin** | Viene en el instalador, verificado por el autor | `Program Files\Kanpachi\builtin.json` | No |
+| **mine** | Creado en esta máquina con el creador de perfiles | `ProgramData\Kanpachi\local.json` | Sí |
+| **imported** | Importado de un `.json` que compartió alguien | `ProgramData\Kanpachi\local.json` | Sí |
 
 **Precedencia:** `mine` gana sobre `imported`, que gana sobre `builtin`. Un perfil local nunca reemplaza a uno builtin en silencio: si al importar o crear hay colisión de `id`, la UI lo dice y el usuario elige, con el builtin como opción por defecto.
 
@@ -317,13 +317,18 @@ Reglas del importador:
 ## Dónde viven los archivos
 
 ```
-Program Files\Kanpachi\catalog\
+Program Files\Kanpachi\
   builtin.json          de solo lectura, se reemplaza al actualizar la app
 
-ProgramData\Kanpachi\catalog\
+ProgramData\Kanpachi\
   local.json            perfiles propios e importados
   local.json.bak        respaldo de la escritura anterior
 ```
+
+**Los dos van sueltos, sin subdirectorio `catalog\`.** El builtin se busca al
+lado del ejecutable del daemon, y el local en el directorio de datos, que son
+los dos sitios que el adaptador ya conoce sin que nadie se los tenga que
+configurar.
 
 El daemon carga builtin y local al arrancar, aplica precedencia, valida todo y publica la lista efectiva por la API. Un `local.json` corrupto se ignora entero, con aviso en la UI, y Kanpachi sigue funcionando con los builtin. Nunca se queda sin catálogo.
 

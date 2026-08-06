@@ -36,7 +36,7 @@ Nota de rol: "host" es quien corre el servidor del juego. Cualquier miembro pued
 ## Qué hace el instalador, paso a paso
 
 1. Manifiesto `requireAdministrator`: el único UAC de la vida del producto.
-2. Copia a `Program Files\Kanpachi\`: daemon, UI, `wintun.dll`, perfiles.
+2. Copia a `Program Files\Kanpachi\`: daemon, UI, `wintun.dll`, y `builtin.json`, que va suelto al lado del ejecutable del daemon y no en un subdirectorio.
 3. Crea `ProgramData\Kanpachi\` con ACL: escritura solo SYSTEM y Administradores.
 4. Registra el servicio `kanpachi-daemon`, arranque automático retrasado.
 5. Política de recuperación del servicio: reiniciar a los 5 s, 10 s, 30 s.

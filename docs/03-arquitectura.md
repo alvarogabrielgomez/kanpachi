@@ -1744,9 +1744,13 @@ El registro vive en memoria con TTL, sin base de datos y sin disco, salvo la lla
 ## Almacenamiento
 
 ```
-Program Files\Kanpachi\      binarios (daemon, ui, kanpachi-engine) + Packet.dll + wintun.dll + WinDivert64.sys + perfiles builtin
+Program Files\Kanpachi\      binarios (daemon, ui, kanpachi-engine) + Packet.dll + wintun.dll + WinDivert64.sys
+  builtin.json               el catálogo que viene con la app, suelto y al lado
+                             del ejecutable del daemon, sin subdirectorio
 ProgramData\Kanpachi\
   config.json                nombre visible, sala activa, rol
+  local.json                 perfiles propios e importados
+  local.json.bak             respaldo de la escritura anterior de local.json
   api.token                  rotado por arranque del servicio
   identity.key               llave privada larga de esta instalación (decisión 25).
                              La crea el primer uso del registro, con ACL propia
