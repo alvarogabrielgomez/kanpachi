@@ -168,6 +168,15 @@ class PipeSessionRepository implements SessionRepository {
     await _mapa(DaemonMethods.leaveRoom);
   }
 
+  @override
+  Future<Room?> currentRoom() async {
+    final Map<String, Object?> st = await _mapa(DaemonMethods.status);
+    // Sin código no hay sala: `status` contesta igual cuando no hay ninguna, y
+    // el estado vacío no es un error, es la portada.
+    if ((st['code'] as String? ?? '').isEmpty) return null;
+    return _sala(st);
+  }
+
   // ------------------------------------------------------------ diagnósticos
 
   @override

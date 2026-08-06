@@ -1,5 +1,6 @@
 import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
-import 'package:kanpachi_ui/features/session/infra/fake_session_repository.dart';
+import 'package:kanpachi_ui/features/session/infra/daemon/daemon_connector.dart';
+import 'package:kanpachi_ui/features/session/infra/daemon/pipe_session_repository.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/domain/tray_presence.dart';
 import 'package:kanpachi_ui/features/shell/infra/windows_tray.dart';
@@ -20,10 +21,15 @@ abstract final class IocManager {
   static void _registerSession() {
     final Injector i = Injector.instance;
 
-    // Hoy es la implementación falsa porque el daemon todavía no existe. El
-    // día que exista, esta línea es lo ÚNICO que cambia: ni las pantallas ni
-    // los cubits conocen otra cosa que el contrato.
-    i.registerLazySingleton<SessionRepository>(FakeSessionRepository.new);
+    // El daemon de verdad, y no hay otra opción a propósito.
+    //
+    // Hubo una implementación falsa mientras el named pipe no existía. Ya no
+    // existe: dejar un camino que inventa salas es dejar una forma de que la
+    // app se vea perfecta sin que nadie haya hablado con el daemon, y eso es lo
+    // contrario de lo que este producto tiene que poder demostrar de sí mismo.
+    i.registerLazySingleton<SessionRepository>(
+      () => PipeSessionRepository(DaemonConnector()),
+    );
 
     // lazySingleton y no factory, a diferencia del resto de cubits de la casa:
     // seis pantallas leen y escriben la misma sala, y una instancia por

@@ -28,19 +28,13 @@ import 'package:kanpachi_ui/features/session/infra/daemon/pipe/windows_pipe_tran
 /// restart is always wrong, and the symptom would be an `unauthorized` nobody
 /// can explain.
 class DaemonConnector {
-  DaemonConnector({
-    String? pipeName,
-    this.tokenPath,
-    DaemonTransport Function(String name)? buildTransport,
-  }) : _pipeName = pipeName ?? PipeNames.console,
-       _buildTransport =
-           buildTransport ?? ((String n) => WindowsPipeTransport(name: n));
+  DaemonConnector({String? pipeName, this.tokenPath})
+    : _pipeName = pipeName ?? PipeNames.console;
 
   final String _pipeName;
 
   /// Dónde está `api.token`. Null es el sitio de siempre.
   final String? tokenPath;
-  final DaemonTransport Function(String name) _buildTransport;
 
   DaemonClient? _vivo;
   Future<DaemonClient>? _abriendo;
@@ -66,7 +60,7 @@ class DaemonConnector {
       }
 
       final DaemonClient c = DaemonClient(
-        transport: _buildTransport(_pipeName),
+        transport: WindowsPipeTransport(name: _pipeName),
         token: token,
       );
       await c.connect();

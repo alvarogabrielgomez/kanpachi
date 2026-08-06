@@ -41,7 +41,6 @@ class ShellState {
     this.density = AppDensity.balanced,
     this.artMode = GameArtMode.cover,
     this.ambient = true,
-    this.showHealthAlerts = true,
     this.accountMenuOpen = false,
     this.pickerCameFromRoom = false,
     this.kickTarget,
@@ -56,9 +55,6 @@ class ShellState {
   /// El fondo en movimiento. Se puede apagar: corre durante horas mientras
   /// alguien juega, y a quien le molesta el movimiento le molesta de verdad.
   final bool ambient;
-
-  /// Los avisos de firewall y router en la portada.
-  final bool showHealthAlerts;
 
   final bool accountMenuOpen;
 
@@ -76,7 +72,6 @@ class ShellState {
     AppDensity? density,
     GameArtMode? artMode,
     bool? ambient,
-    bool? showHealthAlerts,
     bool? accountMenuOpen,
     bool? pickerCameFromRoom,
     Member? kickTarget,
@@ -88,7 +83,6 @@ class ShellState {
     density: density ?? this.density,
     artMode: artMode ?? this.artMode,
     ambient: ambient ?? this.ambient,
-    showHealthAlerts: showHealthAlerts ?? this.showHealthAlerts,
     accountMenuOpen: accountMenuOpen ?? this.accountMenuOpen,
     pickerCameFromRoom: pickerCameFromRoom ?? this.pickerCameFromRoom,
     kickTarget: clearKickTarget ? null : (kickTarget ?? this.kickTarget),
@@ -141,9 +135,6 @@ class ShellCubit extends Cubit<ShellState> {
 
   void setAmbient({required bool enabled}) =>
       emit(state.copyWith(ambient: enabled));
-
-  void setHealthAlerts({required bool enabled}) =>
-      emit(state.copyWith(showHealthAlerts: enabled));
 
   void cycleTheme() => emit(
     state.copyWith(

@@ -472,6 +472,23 @@ abstract final class AppMessages {
         'hasta que vuelva. La sala sigue en pie.',
   );
 
+  /// No se pudo hablar con el servicio de Kanpachi.
+  ///
+  /// **No es un `FailureCode`,** y la diferencia importa: aquellos son códigos
+  /// que MANDÓ el daemon, o sea que hubo daemon. Este es que no hubo con quién
+  /// hablar, así que no puede venir de ningún sitio salvo de acá.
+  ///
+  /// Dice qué hacer y no solo qué pasó, porque la causa habitual tiene arreglo
+  /// y el usuario no tiene forma de adivinarlo desde una pantalla vacía.
+  static const AppMessage daemonDown = AppMessage(
+    severity: MessageSeverity.warn,
+    title: 'No hay conexión con el servicio de Kanpachi',
+    body:
+        'La app no pudo hablar con el servicio que hace el trabajo, así que '
+        'no puede abrir salas ni leer el catálogo. Comprueba que Kanpachi '
+        'esté instalado y que su servicio esté arrancado.',
+  );
+
   /// El de reserva, para una clave que esta versión de la app no conoce.
   ///
   /// Existe porque el daemon y la UI se actualizan por separado, así que puede

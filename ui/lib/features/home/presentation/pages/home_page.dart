@@ -88,7 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
             roomName: _roomName,
             nameHint: _nameHint,
             canJoin: canJoin,
-            showAlerts: shell.showHealthAlerts,
+            daemonDown: session.daemonDown,
             alerts: session.health.alerts,
             onCodeChanged: _onCodeChanged,
             onJoin: _join,
@@ -130,7 +130,7 @@ class _JoinAndCreate extends StatelessWidget {
     required this.roomName,
     required this.nameHint,
     required this.canJoin,
-    required this.showAlerts,
+    required this.daemonDown,
     required this.alerts,
     required this.onCodeChanged,
     required this.onJoin,
@@ -142,12 +142,17 @@ class _JoinAndCreate extends StatelessWidget {
   final String nameHint;
   final bool canJoin;
 
-  /// El interruptor de la barra de prototipo. Decide si la sección se enseña,
-  /// jamás qué dice.
-  final bool showAlerts;
+  /// No se pudo hablar con el servicio. Va PRIMERO, por delante de cualquier
+  /// aviso: sin servicio los demás avisos son de una medición que no se hizo.
+  final bool daemonDown;
 
   /// Los avisos que mandó el daemon. Si no mandó ninguno no se pinta nada, que
   /// es el caso normal en una máquina sana.
+  ///
+  /// **No hay interruptor para esconderlos.** Lo hubo mientras la portada era
+  /// una maqueta, y no puede seguir habiéndolo: un aviso que dice que el
+  /// Firewall de Windows está apagado no es una sección decorativa que se
+  /// pueda plegar.
   final List<HealthAlert> alerts;
   final ValueChanged<String> onCodeChanged;
   final VoidCallback onJoin;
@@ -205,7 +210,10 @@ class _JoinAndCreate extends StatelessWidget {
           textAlign: TextAlign.center,
           style: context.type.bodySm.copyWith(color: colors.textMuted),
         ),
-        if (showAlerts && alerts.isNotEmpty) ...<Widget>[
+        if (daemonDown) ...<Widget>[
+          const SizedBox(height: AppSpacing.x5l),
+          const AppMessageNotice(message: AppMessages.daemonDown),
+        ] else if (alerts.isNotEmpty) ...<Widget>[
           const SizedBox(height: AppSpacing.x5l),
           _HealthAlerts(alerts: alerts),
         ],

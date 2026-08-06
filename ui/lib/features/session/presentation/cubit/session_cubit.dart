@@ -1,6 +1,8 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
+import 'package:kanpachi_ui/features/session/domain/daemon_failure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
@@ -18,10 +20,29 @@ class SessionCubit extends Cubit<SessionState> {
 
   final SessionRepository _repository;
 
+  /// Pide el catálogo al daemon.
+  ///
+  /// No deja subir el fallo, y no es pereza: esto corre al construir el cubit,
+  /// o sea al arrancar la ventana. Un servicio que no está dejaría la app sin
+  /// abrirse, que es la peor forma posible de contar que el servicio no está.
+  /// Lo que sí hace es MARCARLO, para que la portada lo diga en vez de pintarse
+  /// vacía y perfecta.
   Future<void> loadCatalog() async {
-    final List<Game> catalog = await _repository.catalog();
-    final List<Game> installed = await _repository.installedGames();
-    emit(state.copyWith(catalog: catalog, installed: installed));
+    try {
+      final List<Game> catalog = await _repository.catalog();
+      final List<Game> installed = await _repository.installedGames();
+      if (isClosed) return;
+      emit(
+        state.copyWith(
+          catalog: catalog,
+          installed: installed,
+          daemonDown: false,
+        ),
+      );
+    } on DaemonUnreachable {
+      if (isClosed) return;
+      emit(state.copyWith(daemonDown: true));
+    }
   }
 
   void setNickname(String value) =>
@@ -142,7 +163,47 @@ class SessionCubit extends Cubit<SessionState> {
   /// Se puede llamar sin sala, y así lo hace la portada: los avisos de salud de
   /// la máquina no esperan a que el usuario abra una.
   Future<void> refreshHealth() async {
-    emit(state.copyWith(health: await _repository.health()));
+    final HealthReport salud = await _repository.health();
+    if (isClosed) return;
+    emit(state.copyWith(health: salud));
+  }
+
+  /// Vuelve a preguntar por TODO: la sala y la salud.
+  ///
+  /// # Por qué hay que pedirlo, y por qué no hay temporizador
+  ///
+  /// El daemon es petición y respuesta puro: no empuja nada, así que la única
+  /// forma de enterarse de que alguien entró, de que alguien se fue, de que el
+  /// túnel se degradó o de que saltó el canario es volver a preguntar. Y no hay
+  /// temporizador en ninguna capa, por decisión: se refresca al ENTRAR a una
+  /// pantalla y cuando el usuario lo pide.
+  ///
+  /// **La consecuencia se acepta a sabiendas:** entre un refresco y el
+  /// siguiente, lo que se ve puede haber dejado de ser cierto. Las acciones no
+  /// sufren, porque cada una devuelve la sala recalculada por el daemon.
+  ///
+  /// Los fallos NO se dejan subir. Refrescar es de fondo, sin que nadie lo
+  /// haya pedido, y un daemon que no contesta no puede tumbar la pantalla que
+  /// el usuario está mirando: se queda lo último que sí se supo.
+  Future<void> refresh() async {
+    if (state.isRefreshing) return;
+    emit(state.copyWith(refreshing: true));
+    try {
+      final Room? sala = await _repository.currentRoom();
+      final HealthReport salud = await _repository.health();
+      if (isClosed) return;
+      if (sala == null) {
+        emit(state.copyWith(health: salud));
+        return;
+      }
+      emit(state.copyWith(room: sala, health: salud, daemonDown: false));
+    } on DaemonUnreachable {
+      if (!isClosed) emit(state.copyWith(daemonDown: true));
+    } on Object {
+      // Queda lo anterior. Ver arriba.
+    } finally {
+      emit(state.copyWith(refreshing: false));
+    }
   }
 
   /// Repone la protección y guarda lo que el daemon contestó.
@@ -170,9 +231,4 @@ class SessionCubit extends Cubit<SessionState> {
     return saved;
   }
 
-  /// Sustituye la sala entera. Lo usa la barra de prototipo para plantar un
-  /// escenario sin pasar por los tiempos de espera.
-  void debugReplaceRoom(Room room) => emit(
-    state.copyWith(phase: SessionPhase.inRoom, room: room, work: RoomWork.none),
-  );
 }

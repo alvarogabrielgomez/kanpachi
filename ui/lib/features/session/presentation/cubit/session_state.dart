@@ -45,6 +45,8 @@ class SessionState {
     this.nickname = '',
     this.health = const HealthReport.unknown(),
     this.protection = ProtectionWork.none,
+    this.refreshing = false,
+    this.daemonDown = false,
   });
 
   final SessionPhase phase;
@@ -71,9 +73,28 @@ class SessionState {
   /// Si se está reponiendo la protección ahora mismo.
   final ProtectionWork protection;
 
+  /// Si se está volviendo a preguntar por la sala y la salud.
+  ///
+  /// Va aparte de [RoomWork] y de [ProtectionWork] por lo mismo que aquellos
+  /// están separados entre sí: refrescar no cambia nada, así que no puede
+  /// apagar los botones de la sala mientras corre. Solo sirve para no lanzar
+  /// dos refrescos encima y para que el botón sepa que está ocupado.
+  final bool refreshing;
+
+  /// No se pudo hablar con el servicio de Kanpachi.
+  ///
+  /// Es distinto de que el daemon dijera que no: aquello es un fallo de la
+  /// operación, con su código y su mensaje, y esto es que no hubo con quién
+  /// hablar. Sin este dato la portada se pintaría vacía y perfecta, sin
+  /// juegos y sin avisos, que es exactamente igual a como se ve una máquina
+  /// sana. Un producto que no distingue "todo bien" de "no pude preguntar"
+  /// miente en el peor momento.
+  final bool daemonDown;
+
   bool get hasRoom => room != null;
   bool get isBusy => work != RoomWork.none;
   bool get isReapplying => protection == ProtectionWork.reapplying;
+  bool get isRefreshing => refreshing;
 
   SessionState copyWith({
     SessionPhase? phase,
@@ -87,6 +108,8 @@ class SessionState {
     String? nickname,
     HealthReport? health,
     ProtectionWork? protection,
+    bool? refreshing,
+    bool? daemonDown,
   }) => SessionState(
     phase: phase ?? this.phase,
     room: clearRoom ? null : (room ?? this.room),
@@ -97,5 +120,7 @@ class SessionState {
     nickname: nickname ?? this.nickname,
     health: health ?? this.health,
     protection: protection ?? this.protection,
+    refreshing: refreshing ?? this.refreshing,
+    daemonDown: daemonDown ?? this.daemonDown,
   );
 }

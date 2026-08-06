@@ -58,6 +58,17 @@ abstract interface class SessionRepository {
 
   Future<void> leaveRoom(Room room);
 
+  /// La sala tal como el daemon la ve AHORA, o null si no hay ninguna.
+  ///
+  /// Existe porque el daemon es petición y respuesta puro: no empuja nada, así
+  /// que la única forma de enterarse de que alguien entró, de que alguien se
+  /// fue o de que el túnel se degradó es volver a preguntar. Quién decide
+  /// cuándo es la pantalla, y la respuesta acordada es al entrar y cuando el
+  /// usuario lo pide. **No hay temporizador en ninguna capa**, y la
+  /// consecuencia se acepta a sabiendas: entre un refresco y el siguiente, lo
+  /// que se ve puede haber dejado de ser cierto.
+  Future<Room?> currentRoom();
+
   /// Lo que la máquina tiene abierto AHORA, medido.
   ///
   /// No devuelve error a propósito: la pantalla que lo enseña tiene que decir

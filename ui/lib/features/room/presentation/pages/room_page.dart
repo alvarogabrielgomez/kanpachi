@@ -33,8 +33,32 @@ import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dar
 /// acabarían divergiendo, y el invitado dejaría de ver cosas que sí le
 /// incumben — qué puertos están abiertos, quién está dentro, por dónde va su
 /// tráfico.
-class RoomScreen extends StatelessWidget {
+class RoomScreen extends StatefulWidget {
   const RoomScreen({super.key});
+
+  @override
+  State<RoomScreen> createState() => _RoomScreenState();
+}
+
+class _RoomScreenState extends State<RoomScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Al ENTRAR se vuelve a preguntar, y esa es media política de refresco del
+    // producto. La otra media es el botón del encabezado.
+    //
+    // No hay temporizador en ninguna capa, por decisión: el daemon no empuja
+    // nada, así que lo único que existe es preguntar, y preguntar solo cuando
+    // alguien mira. La consecuencia se acepta a sabiendas: entre un refresco y
+    // el siguiente, quién está dentro y por dónde llega puede haber cambiado.
+    //
+    // Va tras el primer fotograma porque emitir estado durante el montaje del
+    // widget es pedirle a Flutter que reconstruya algo que todavía se está
+    // construyendo.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<SessionCubit>().refresh();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -181,6 +205,22 @@ class _RoomHeaderState extends State<_RoomHeader> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: <Widget>[
                   AppChip(room.code),
+                  // La otra mitad de la política de refresco. El daemon no
+                  // empuja nada y no hay temporizador, así que sin esto la
+                  // única forma de ver quién entró es salir de la pantalla y
+                  // volver.
+                  AppButton(
+                    label: context.watch<SessionCubit>().state.isRefreshing
+                        ? 'Actualizando…'
+                        : 'Actualizar',
+                    variant: AppButtonVariant.ghost,
+                    height: 36,
+                    horizontalPadding: AppSpacing.x3l,
+                    textStyle: context.type.labelSm,
+                    onPressed: context.watch<SessionCubit>().state.isRefreshing
+                        ? null
+                        : () => context.read<SessionCubit>().refresh(),
+                  ),
                   CopyButton(
                     label: 'Copiar enlace',
                     height: 36,
