@@ -57,6 +57,9 @@ func (l *Listener) atender(ctx context.Context, conn net.Conn) {
 	l.deps.Log.Info("conexión nueva en la API local")
 
 	srv := protocol.NewServer(l.deps.API, l.deps.Token, l.deps.Clock, l.deps.Log)
+	// El host es OPCIONAL: en modo consola no hay interfaz que lanzar ni
+	// servicio que reconfigurar, y el servidor ya sabe contestar que no está.
+	srv.AttachHost(l.deps.Host)
 
 	// El vigilante del saludo corre aparte porque el hilo de abajo se queda
 	// bloqueado en Read, así que no puede vigilarse a sí mismo. Cerrar la

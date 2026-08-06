@@ -117,4 +117,25 @@ abstract interface class SessionRepository {
 
   /// Da de alta un juego que no estaba en el catálogo.
   Future<Game> saveManualGame(Game game);
+
+  /// "Salir de Kanpachi": apagarlo todo, de forma coordinada.
+  ///
+  /// **La app NO coordina este apagado, solo lo pide.** No controla nada de lo
+  /// que hay que apagar: la sala, las reglas del firewall, el motor y el
+  /// adaptador virtual son del daemon. Él sale de la sala, purga, baja el motor,
+  /// mata esta interfaz y se detiene al final.
+  ///
+  /// Por eso no devuelve nada y por eso puede fallar de forma rara: esta ventana
+  /// se muere a mitad de la llamada, con el mismo apagado que pidió. Una
+  /// excepción acá casi siempre significa que funcionó.
+  Future<void> quitEverything();
+
+  /// Lee, y opcionalmente cambia, si Kanpachi arranca con Windows.
+  ///
+  /// Una sola operación para las dos cosas porque son la misma pregunta, y la
+  /// pantalla que mueve el interruptor necesita el valor de vuelta para
+  /// dibujarlo. Devuelve lo que quedó puesto DE VERDAD, releído del sistema:
+  /// devolver lo que se pidió enseñaría como aceptado un cambio que Windows
+  /// pudo rechazar.
+  Future<bool> autostart({bool? enabled});
 }

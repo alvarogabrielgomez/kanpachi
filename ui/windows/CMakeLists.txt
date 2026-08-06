@@ -4,7 +4,11 @@ project(kanpachi_ui LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "kanpachi_ui")
+# El nombre del EJECUTABLE, y es un contrato con el daemon: `uiExeName` en
+# daemon/cmd/kanpachid lo busca por este nombre al lado de su propio binario.
+# Tambien es lo que el acceso directo del instalador y el registro de
+# `kanpachi://` van a nombrar, asi que es lo que el usuario ve.
+set(BINARY_NAME "Kanpachi")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.

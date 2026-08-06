@@ -21,6 +21,20 @@ const ServiceName = "kanpachi-daemon"
 func EnServicio() (bool, error) { return false, nil }
 
 // CorrerComoServicio no puede correr acá, y lo dice.
-func CorrerComoServicio(func(context.Context) (func() error, func(), error)) error {
+func CorrerComoServicio(func(context.Context, []string) (func() error, func(), error)) error {
 	return fmt.Errorf("kanpachid: el modo servicio es del Administrador de servicios de Windows")
+}
+
+// ArgShowUI existe fuera de Windows solo para que el nombre sea único en el
+// programa. Acá no hay servicio al que pasarle argumentos.
+const ArgShowUI = "--show-ui"
+
+// tiene dice si el argumento está en la lista.
+func tiene(args []string, quéBusco string) bool {
+	for _, a := range args {
+		if a == quéBusco {
+			return true
+		}
+	}
+	return false
 }

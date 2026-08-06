@@ -19,6 +19,29 @@ const ServiceName = "kanpachi-daemon"
 // escribió en la línea de comandos.
 func EnServicio() (bool, error) { return svc.IsWindowsService() }
 
+// ArgShowUI es el argumento con el que se pide arrancar el servicio Y abrir la
+// ventana de la interfaz.
+//
+// Lo manda quien arranca el servicio a mano —el acceso directo, vía
+// `StartService`— y NO lo manda el arranque automático de Windows. Esa es toda
+// la diferencia entre encender la PC, que deja solo el icono en la bandeja, y
+// hacer doble clic, que abre Kanpachi.
+//
+// Es un argumento del SERVICIO y no una bandera de la línea de comandos de este
+// proceso: quien lo arranca no es una consola, es el Administrador de
+// servicios, y esta es la única vía que tiene para pasarle algo.
+const ArgShowUI = "--show-ui"
+
+// tiene dice si el argumento está en la lista.
+func tiene(args []string, quéBusco string) bool {
+	for _, a := range args {
+		if a == quéBusco {
+			return true
+		}
+	}
+	return false
+}
+
 // CorrerComoServicio le entrega el control al Administrador de servicios.
 //
 // `arrancar` tiene que devolver cuando el daemon esté LISTO, y `esperar` bloquea
@@ -26,15 +49,18 @@ func EnServicio() (bool, error) { return svc.IsWindowsService() }
 // reporte en el momento correcto: después de que el pipe esté abierto y no
 // antes. Al revés, Windows daría el servicio por arrancado mientras todavía no
 // hay quien atienda, y el primer intento de la UI fallaría sin motivo visible.
-func CorrerComoServicio(arrancar func(context.Context) (esperar func() error, apagar func(), err error)) error {
+//
+// Recibe también los argumentos con los que se arrancó el servicio. Ver
+// [ArgShowUI].
+func CorrerComoServicio(arrancar func(context.Context, []string) (esperar func() error, apagar func(), err error)) error {
 	return svc.Run(ServiceName, &manejador{arrancar: arrancar})
 }
 
 type manejador struct {
-	arrancar func(context.Context) (func() error, func(), error)
+	arrancar func(context.Context, []string) (func() error, func(), error)
 }
 
-func (m *manejador) Execute(_ []string, pide <-chan svc.ChangeRequest, estado chan<- svc.Status) (bool, uint32) {
+func (m *manejador) Execute(args []string, pide <-chan svc.ChangeRequest, estado chan<- svc.Status) (bool, uint32) {
 	// StartPending mientras se purga el firewall y se levanta el motor. Windows
 	// espera con esto puesto en vez de dar el arranque por fallido.
 	estado <- svc.Status{State: svc.StartPending}
@@ -42,7 +68,9 @@ func (m *manejador) Execute(_ []string, pide <-chan svc.ChangeRequest, estado ch
 	ctx, cancelar := context.WithCancel(context.Background())
 	defer cancelar()
 
-	esperar, apagar, err := m.arrancar(ctx)
+	// `args[0]` es el nombre del servicio, que Windows pone siempre. Lo que
+	// alguien pasó en `StartService` empieza en el uno.
+	esperar, apagar, err := m.arrancar(ctx, args)
 	if err != nil {
 		// Un código distinto de cero es lo que hace que la política de
 		// recuperación del servicio reintente. Devolver éxito acá dejaría un

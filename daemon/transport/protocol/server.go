@@ -71,12 +71,46 @@ type API interface {
 	LastRoom() (domain.LastRoom, bool)
 }
 
+// Host es lo que el protocolo puede pedirle al PROCESO del daemon, en vez de a
+// la sala.
+//
+// Está aparte de [API] a propósito, y no es organización: son dos superficies
+// con dueños distintos. [API] es la sala, que vive en `core/usecase` y se prueba
+// sin Windows. Esto es el proceso —su interfaz, su apagado, su tipo de
+// arranque—, que solo el `main` puede saber montar. Meterlas juntas obligaría a
+// que el caso de uso conociera al servicio que lo hospeda.
+//
+// Es OPCIONAL. En modo consola no hay interfaz que lanzar ni servicio que
+// reconfigurar, así que sin host los tres métodos contestan que no están
+// disponibles, que es la verdad y no un fallo.
+type Host interface {
+	// ShowUI enseña la ventana de la interfaz, lanzándola si hace falta.
+	ShowUI() error
+	// Shutdown apaga TODO de forma coordinada: sale de la sala, purga las
+	// reglas, baja el motor y el adaptador, y al final se detiene el daemon.
+	//
+	// No devuelve nada y no bloquea. Quien lo pide es la interfaz, que se va a
+	// morir en el camino: esperar una respuesta que nadie va a poder leer sería
+	// dejar colgado el apagado a la espera de un lector muerto.
+	Shutdown()
+	// Autostart dice si Kanpachi arranca con Windows.
+	Autostart() (bool, error)
+	// SetAutostart cambia si Kanpachi arranca con Windows.
+	//
+	// Lo hace el DAEMON consigo mismo y no la interfaz, y esa es la razón de
+	// que exista este método: cambiar el tipo de arranque de un servicio exige
+	// `SERVICE_CHANGE_CONFIG`, y concedérselo al usuario para tener un
+	// interruptor sería ampliar permisos por comodidad. El daemon ya es SYSTEM.
+	SetAutostart(bool) error
+}
+
 // Server atiende una conexión.
 //
 // Una instancia por conexión, y ahí está el estado de autenticación: que una
 // conexión haya saludado no autentica a la siguiente.
 type Server struct {
 	api   API
+	host  Host
 	token string
 	clock port.Clock
 	log   port.Logger
@@ -98,6 +132,15 @@ type Server struct {
 func NewServer(api API, token string, clock port.Clock, log port.Logger) *Server {
 	return &Server{api: api, token: token, clock: clock, log: log}
 }
+
+// AttachHost le da al servidor el proceso que lo hospeda.
+//
+// Es un método de unión aparte del constructor porque el host es OPCIONAL y
+// porque quien lo tiene es el `main`, que construye el listener y no cada
+// conexión. El guardián de cableado de `internal/arch` vigila los métodos que
+// empiezan por `Attach` justo por esto: `control.Attach` estuvo escrito, probado
+// y sin llamar, y costó una sesión entera de diagnóstico.
+func (s *Server) AttachHost(h Host) { s.host = h }
 
 // Greeted dice si esta conexión ya saludó con el token válido.
 //
@@ -407,6 +450,33 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 	case MethodObserveGame:
 		return s.observe(ctx, req.Params)
 
+	case MethodShowUI:
+		if s.host == nil {
+			return nil, sinHost()
+		}
+		if err := s.host.ShowUI(); err != nil {
+			return nil, &Error{Code: CodeUnavailable, Message: err.Error()}
+		}
+		return result(struct {
+			OK bool `json:"ok"`
+		}{true})
+
+	case MethodShutdown:
+		if s.host == nil {
+			return nil, sinHost()
+		}
+		// Se contesta ANTES de apagar, y no es cortesía: el apagado se lleva
+		// por delante la interfaz que preguntó, así que una respuesta después
+		// no la leería nadie y quien la pidió vería el enlace caerse en vez de
+		// una confirmación. Ver [Host.Shutdown], que no bloquea.
+		s.host.Shutdown()
+		return result(struct {
+			OK bool `json:"ok"`
+		}{true})
+
+	case MethodAutostart:
+		return s.autostart(req.Params)
+
 	case MethodPendingRoom:
 		return s.pending()
 
@@ -506,6 +576,54 @@ func (s *Server) saveProfile(ctx context.Context, params json.RawMessage) (json.
 		return nil, errorFor(err)
 	}
 	return result(gameView(guardado, false))
+}
+
+// sinHost es lo que contestan los tres métodos del proceso cuando no hay quien
+// los atienda, que es el modo consola.
+//
+// `unavailable` y no `bad_request`: el método existe, está bien escrito, y lo
+// que pasa es que este daemon no tiene interfaz que lanzar ni servicio que
+// reconfigurar. Decir que la petición está mal mandaría a buscar el fallo al
+// sitio equivocado.
+func sinHost() *Error {
+	return &Error{
+		Code: CodeUnavailable,
+		Message: "este daemon no hospeda la interfaz, así que no puede mostrarla, " +
+			"apagarla ni cambiar su arranque. Es lo normal en modo consola",
+	}
+}
+
+// autostart lee o cambia si Kanpachi arranca con Windows.
+//
+// Un solo método para las dos cosas, con `enabled` opcional: leer y escribir
+// son la misma pregunta, y la pantalla que mueve el interruptor necesita el
+// valor de vuelta para dibujarlo. Con dos métodos, la UI tendría que encadenar
+// dos llamadas y quedarse a medias si la segunda falla.
+func (s *Server) autostart(params json.RawMessage) (json.RawMessage, *Error) {
+	if s.host == nil {
+		return nil, sinHost()
+	}
+	p, e := decodeStrict[struct {
+		Enabled *bool `json:"enabled"`
+	}](params)
+	if e != nil {
+		return nil, e
+	}
+	if p.Enabled != nil {
+		if err := s.host.SetAutostart(*p.Enabled); err != nil {
+			return nil, &Error{Code: CodeUnavailable, Message: err.Error()}
+		}
+	}
+	// Se RELEE siempre, incluso justo después de escribir. Devolver lo que se
+	// pidió sería devolver la intención en vez del estado, y un cambio que el
+	// sistema no aceptó se vería como aceptado.
+	puesto, err := s.host.Autostart()
+	if err != nil {
+		return nil, &Error{Code: CodeUnavailable, Message: err.Error()}
+	}
+	return result(struct {
+		Enabled bool `json:"enabled"`
+	}{puesto})
 }
 
 // observe es la foto de sockets, y es la ÚNICA función del programa que mira un

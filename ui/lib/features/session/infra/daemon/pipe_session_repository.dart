@@ -80,6 +80,36 @@ class PipeSessionRepository implements SessionRepository {
     );
   }
 
+  // ----------------------------------------------------------------- proceso
+
+  @override
+  Future<void> quitEverything() async {
+    // **Sin reintento y tragándose el fallo.** Esta llamada mata el proceso que
+    // la está haciendo: el daemon contesta, apaga, y por el camino se lleva
+    // esta ventana con el job. Que el enlace se corte a mitad es el resultado
+    // ESPERADO, no un error, y reintentar sería pedir un segundo apagado a un
+    // daemon que ya se está apagando.
+    try {
+      final DaemonClient c = await _connector.client();
+      await c.call(DaemonMethods.shutdown);
+    } on DaemonUnreachable {
+      // El enlace se cayó, que es exactamente lo que pasa cuando funciona.
+    } on DaemonError {
+      // El daemon dijo que no puede. En modo consola no hospeda la interfaz y
+      // eso es legítimo; la ventana se cierra igual, que es lo que el usuario
+      // pidió.
+    }
+  }
+
+  @override
+  Future<bool> autostart({bool? enabled}) async {
+    final Map<String, Object?> r = await _mapa(
+      DaemonMethods.autostart,
+      <String, Object?>{'enabled': ?enabled},
+    );
+    return r['enabled'] as bool? ?? false;
+  }
+
   // -------------------------------------------------------------------- sala
 
   @override

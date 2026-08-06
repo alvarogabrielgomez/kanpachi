@@ -27,13 +27,27 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
-  flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    this->Show();
-  });
-
-  // Flutter can complete the first frame before the "show window" callback is
-  // registered. The following call ensures a frame is pending to ensure the
-  // window is shown. It is a no-op if the first frame hasn't completed yet.
+  // La plantilla de Flutter ensena la ventana en el primer fotograma, desde
+  // aca. Se quito a proposito, y quien decide ensenarla es Dart.
+  //
+  // # Por que
+  //
+  // Porque Kanpachi arranca en silencio cuando lo levanta Windows al encender
+  // la PC: aparece el icono de la bandeja y no la ventana. Con el
+  // SetNextFrameCallback puesto, ese modo era imposible desde Dart: la ventana
+  // se ensenaba desde C++ en cuanto habia un fotograma, pasara lo que pasara
+  // arriba.
+  //
+  // MEDIDO, y solo se ve ejecutandolo: con --silent y sin llamar a show(),
+  // IsWindowVisible seguia contestando true. Ningun test de Dart lo puede ver,
+  // porque lo decide C++.
+  //
+  // La ventana nace oculta sola: CreateWindow usa WS_OVERLAPPEDWINDOW, que no
+  // trae WS_VISIBLE. Quien la ensena ahora es windowManager.show() en
+  // lib/main.dart, y solo cuando no se pidio silencio.
+  //
+  // El ForceRedraw se queda: hace falta igual para que haya un fotograma listo
+  // cuando Dart pida ensenarla, y sin el la ventana aparecia en blanco.
   flutter_controller_->ForceRedraw();
 
   return true;

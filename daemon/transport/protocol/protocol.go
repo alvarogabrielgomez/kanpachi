@@ -76,6 +76,27 @@ const (
 	MethodResumeRoom         Method = "resume_room"
 	MethodDiscardPendingRoom Method = "discard_pending_room"
 	MethodLastRoom           Method = "last_room"
+
+	// Los tres del PROCESO, no de la sala. Los contesta [Host] y no [API]. Ver
+	// el modelo de procesos en `docs/03`.
+
+	// MethodShowUI enseña la ventana de la interfaz.
+	//
+	// Existe porque el acceso directo apunta al daemon: hacer doble clic con
+	// Kanpachi ya corriendo tiene que abrir la ventana, que es lo que cualquiera
+	// espera del icono.
+	MethodShowUI Method = "show_ui"
+	// MethodShutdown es "Salir de Kanpachi" del menú de la bandeja.
+	//
+	// **No lo coordina la interfaz.** La interfaz no controla nada de lo que
+	// hay que apagar: manda la orden y se muere en el camino, con el job.
+	MethodShutdown Method = "shutdown"
+	// MethodAutostart lee o cambia si Kanpachi arranca con Windows.
+	//
+	// Uno solo para las dos cosas, con el valor opcional en los parámetros: son
+	// la misma pregunta y la pantalla que la cambia necesita leerla justo
+	// después para dibujar el interruptor.
+	MethodAutostart Method = "autostart"
 )
 
 // métodos es la tabla. Su existencia es la que hace que la lista sea cerrada.
@@ -107,6 +128,9 @@ var métodos = map[Method]bool{
 	MethodResumeRoom:          true,
 	MethodDiscardPendingRoom:  true,
 	MethodLastRoom:            true,
+	MethodShowUI:              true,
+	MethodShutdown:            true,
+	MethodAutostart:           true,
 }
 
 // Known dice si el método existe. Lo que no está no se interpreta.

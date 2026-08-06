@@ -31,6 +31,12 @@ class TrayBridge extends StatefulWidget {
 class _TrayBridgeState extends State<TrayBridge> with WindowListener {
   final TrayPresence _bandeja = Injector.instance.get<TrayPresence>();
 
+  /// Si el icono está puesto ahora mismo.
+  ///
+  /// Hace falta porque la bandeja va y viene con el servicio, y `start` y `stop`
+  /// no son idempotentes: pedir dos veces el icono deja dos.
+  bool _trayUp = false;
+
   @override
   void initState() {
     super.initState();
@@ -38,14 +44,8 @@ class _TrayBridgeState extends State<TrayBridge> with WindowListener {
     // Sin esto, la cruz del sistema y Alt+F4 cierran de verdad y se saltan
     // todo lo demás.
     unawaited(windowManager.setPreventClose(true));
-    unawaited(
-      _bandeja.start(
-        status: _estado(context.read<SessionCubit>().state),
-        onOpen: () => unawaited(_abrirVentana()),
-        onLeaveRoom: _salirDeLaSala,
-        onQuit: () => unawaited(_cerrarDeVerdad()),
-      ),
-    );
+    // El icono NO se pone acá. Se pone en `build`, cuando se sabe si hay
+    // servicio detrás. Ver [_syncTray].
   }
 
   @override
@@ -53,6 +53,42 @@ class _TrayBridgeState extends State<TrayBridge> with WindowListener {
     windowManager.removeListener(this);
     unawaited(_bandeja.stop());
     super.dispose();
+  }
+
+  /// Pone o quita el icono según haya daemon.
+  ///
+  /// # Por qué la bandeja depende del servicio
+  ///
+  /// Porque el icono SIGNIFICA que Kanpachi está funcionando. La invariante que
+  /// gobierna el producto entero, escrita en `docs/03`, es que hay bandeja si y
+  /// solo si hay daemon: un túnel abierto sin nada en pantalla que lo explique
+  /// tiene la forma de un troyano.
+  ///
+  /// La mitad de esa invariante la sostiene el kernel del otro lado, con el Job
+  /// Object que se lleva esta ventana cuando el daemon muere. Esta es la otra
+  /// mitad, la del caso raro: alguien abrió el ejecutable a mano sin servicio
+  /// detrás. Eso es legítimo y enseña el aviso de que no hay servicio, y lo que
+  /// no puede hacer es poner un icono que promete algo que no está.
+  void _syncTray(SessionState session) {
+    final bool wanted = !session.daemonDown;
+    if (wanted == _trayUp) {
+      // El caso normal de cada rebuild. Se actualiza el texto y ya.
+      if (_trayUp) unawaited(_bandeja.update(_estado(session)));
+      return;
+    }
+    _trayUp = wanted;
+    if (wanted) {
+      unawaited(
+        _bandeja.start(
+          status: _estado(session),
+          onOpen: () => unawaited(_abrirVentana()),
+          onLeaveRoom: _salirDeLaSala,
+          onQuit: () => unawaited(_cerrarDeVerdad()),
+        ),
+      );
+      return;
+    }
+    unawaited(_bandeja.stop());
   }
 
   /// La cruz esconde. Es media promesa; la otra media es que el icono de la
@@ -74,7 +110,20 @@ class _TrayBridgeState extends State<TrayBridge> with WindowListener {
     unawaited(context.read<SessionCubit>().leave());
   }
 
+  /// "Salir de Kanpachi" del menú de la bandeja.
+  ///
+  /// **Esta ventana no coordina nada: manda la orden y se apaga.** No controla
+  /// ninguna de las cosas que hay que apagar —la sala, las reglas del firewall,
+  /// el motor, el adaptador virtual—, así que quien las cierra en orden es el
+  /// daemon, que es su dueño.
+  ///
+  /// Lo más probable es que la línea de `destroy` no llegue a ejecutarse: para
+  /// entonces el daemon ya se llevó este proceso con el Job Object. Está igual
+  /// porque el otro caso existe: un daemon en modo consola no hospeda la
+  /// interfaz y contesta que no puede, y ahí cerrar la ventana es exactamente
+  /// lo que el usuario pidió.
   Future<void> _cerrarDeVerdad() async {
+    if (mounted) await context.read<SessionCubit>().quitKanpachi();
     await _bandeja.stop();
     await windowManager.setPreventClose(false);
     await windowManager.destroy();
@@ -91,9 +140,10 @@ class _TrayBridgeState extends State<TrayBridge> with WindowListener {
 
   @override
   Widget build(BuildContext context) {
-    // Escucha en vez de leer una vez: el menú dice cuánta gente hay dentro, y
-    // eso cambia sin que nadie navegue. `update` ya ignora lo que no cambió.
-    unawaited(_bandeja.update(_estado(context.watch<SessionCubit>().state)));
+    // Escucha en vez de leer una vez, y por DOS motivos: el menú dice cuánta
+    // gente hay dentro, que cambia sin que nadie navegue, y el icono aparece o
+    // desaparece con el servicio.
+    _syncTray(context.watch<SessionCubit>().state);
     return widget.child;
   }
 }

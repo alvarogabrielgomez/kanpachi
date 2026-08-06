@@ -126,7 +126,10 @@ var ErrSinDescriptor = errors.New("pipe: no se puede escuchar sin descriptor de 
 
 // Deps es lo que el oyente necesita de fuera.
 type Deps struct {
-	API   protocol.API
+	API protocol.API
+	// Host es el PROCESO del daemon: su interfaz, su apagado y su tipo de
+	// arranque. Nil en modo consola, y eso no es un hueco: ver [protocol.Host].
+	Host  protocol.Host
 	Token string
 	Clock port.Clock
 	Log   port.Logger

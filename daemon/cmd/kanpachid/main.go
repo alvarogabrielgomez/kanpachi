@@ -37,6 +37,7 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/adapter/sinimplementar"
 	statestore "github.com/accentiostudios/kanpachi/daemon/adapter/state/jsonfile"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/sysevents"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/uihost"
 	"github.com/accentiostudios/kanpachi/daemon/service"
 	"github.com/accentiostudios/kanpachi/daemon/service/supervisor"
 	"github.com/accentiostudios/kanpachi/daemon/transport/control"
@@ -155,6 +156,18 @@ func limpiar(datos string, desinstalar bool) error {
 	return nil
 }
 
+// La interfaz, nombrada en un solo sitio.
+//
+// El nombre del ejecutable y el de la bandera son un CONTRATO entre este
+// binario y el de Flutter, y de esos que no dan error al romperse: cambiar uno
+// sin el otro produce un daemon que no encuentra su interfaz, o una interfaz
+// que abre ventana cuando le pidieron que no. Escritos acá para que se vean
+// juntos.
+const (
+	uiExeName    = "Kanpachi.exe"
+	uiSilentFlag = "--silent"
+)
+
 // dirDeDatos resuelve el directorio de datos, vacío incluido.
 func dirDeDatos(datos string) string {
 	if datos != "" {
@@ -243,8 +256,13 @@ func correr(consola bool, datos, nombre string) error {
 		// no pedir un UAC en cada prueba, y un servicio que lo aceptara sería
 		// una forma de que el daemon de verdad atienda en un nombre que
 		// cualquiera puede ocupar.
-		return CorrerComoServicio(func(ctx context.Context) (func() error, func(), error) {
-			b, err := arrancar(ctx, datos, pipe.Name, false)
+		return CorrerComoServicio(func(ctx context.Context, args []string) (func() error, func(), error) {
+			// Los argumentos con los que ALGUIEN arrancó el servicio, que no son
+			// los de la línea de comandos de este proceso. Windows los pasa por
+			// `StartService`, y es como el acceso directo dice "ábrela con
+			// ventana": el arranque automático de Windows no manda ninguno, así
+			// que la interfaz sale en silencio.
+			b, err := arrancar(ctx, datos, pipe.Name, false, tiene(args, ArgShowUI))
 			if err != nil {
 				return nil, nil, err
 			}
@@ -259,7 +277,7 @@ func correr(consola bool, datos, nombre string) error {
 	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer parar()
 
-	b, err := arrancar(ctx, datos, nombre, consola)
+	b, err := arrancar(ctx, datos, nombre, consola, false)
 	if err != nil {
 		return err
 	}
@@ -278,7 +296,7 @@ func correr(consola bool, datos, nombre string) error {
 // `defer` correría el cierre justo cuando acaba de arrancar. Los cierres se
 // apuntan en orden y se corren al revés a mano, en dos sitios: si el arranque
 // falla a mitad, y dentro de `shutdown`.
-func arrancar(ctx context.Context, datos, nombre string, consola bool) (*booted, error) {
+func arrancar(ctx context.Context, datos, nombre string, consola, mostrarUI bool) (*booted, error) {
 	log := logConsola{}
 
 	// Los cierres, en orden de creación. Se corren al revés, que es lo que
@@ -324,6 +342,37 @@ func arrancar(ctx context.Context, datos, nombre string, consola bool) (*booted,
 		return abortar(err)
 	}
 	cierres = append(cierres, func() { _ = cerrarFirewall() })
+
+	// El host del proceso: lanzar la interfaz, apagar todo, y el arranque con
+	// Windows. Se construye acá porque el listener del pipe lo necesita, y su
+	// `apagar` se une al final, cuando existe.
+	host := &procesoHost{log: log}
+
+	// La interfaz NO se hospeda en modo consola, y esa es toda la diferencia.
+	// El modo consola es para desarrollar: quien lo usa ya tiene una terminal
+	// delante y arranca la interfaz cuando quiere. Levantarle una ventana en
+	// cada `--console` sería una molestia, y peor, taparía el caso que el
+	// producto de verdad tiene que resolver, que es el daemon lanzándola él.
+	var ui *uihost.Host
+	if !consola {
+		ui, err = uihost.New(uihost.Deps{
+			// Junto a este binario, y de `os.Executable()`. **Nunca del estado,
+			// de la configuración ni del pipe**: esto corre como SYSTEM, y una
+			// ruta que alguien pueda influir es escalada de privilegios.
+			Exe:        filepath.Join(dirDelBinario(), uiExeName),
+			SilentFlag: uiSilentFlag,
+			// Si la interfaz no arranca ni a la tercera, se apaga todo. Un
+			// daemon vivo sin forma de mostrarse es justo lo que la invariante
+			// de `docs/03` prohíbe.
+			OnGiveUp: func() { host.Shutdown() },
+			Log:      log,
+		})
+		if err != nil {
+			return abortar(err)
+		}
+		cierres = append(cierres, func() { _ = ui.Close() })
+		host.ui = ui
+	}
 
 	eventos := watch.Events
 
@@ -436,7 +485,10 @@ func arrancar(ctx context.Context, datos, nombre string, consola bool) (*booted,
 	cierres = append(cierres, func() { _ = pipe.RemoveToken(datos) })
 
 	ln, err := pipe.Listen(pipe.Deps{
-		API:   sesion,
+		API: sesion,
+		// El proceso, aparte de la sala. En consola va con `ui` nil y los tres
+		// métodos del proceso contestan que no están, que es la verdad.
+		Host:  host,
 		Token: token,
 		Clock: relojReal{},
 		Log:   log,
@@ -465,9 +517,9 @@ func arrancar(ctx context.Context, datos, nombre string, consola bool) (*booted,
 		log.Info("kanpachid listo", "pipe", nombre, "datos", datos)
 	}
 
-	// Una sola vez. Como servicio, `shutdown` lo puede llamar el SCM y además
-	// dispararlo el bucle al caerse solo, y dos apagados a la vez sueltan los
-	// mismos handles dos veces.
+	// Una sola vez. Como servicio, `shutdown` lo puede llamar el SCM, además
+	// pedirlo la interfaz por el pipe, y además dispararlo el bucle al caerse
+	// solo. Tres apagados a la vez sueltan los mismos handles tres veces.
 	var unaVez sync.Once
 	apagar := func() {
 		unaVez.Do(func() {
@@ -479,6 +531,25 @@ func arrancar(ctx context.Context, datos, nombre string, consola bool) (*booted,
 			}
 			cerrarTodo()
 		})
+	}
+
+	// El host y el apagado se unen ACÁ, y hace falta: la dependencia es
+	// circular por naturaleza. El host lo necesita el listener del pipe, el
+	// listener lo necesita el arranque del servicio, y el apagado sale de ese
+	// arranque. Mismo patrón que `canal.Attach(sesion)` unas líneas arriba, y
+	// por el mismo motivo.
+	host.apagar = apagar
+
+	// La interfaz, LO ÚLTIMO. Antes de esta línea el daemon no estaba listo
+	// para atenderla, y una interfaz que arranque contra un pipe que todavía no
+	// escucha enseñaría el cartel de "no hay servicio" justo al encender.
+	if ui != nil {
+		if err := ui.Start(!mostrarUI); err != nil {
+			// No aborta el arranque. Un daemon sin interfaz es un producto a
+			// medias y sigue siendo mejor que ninguno: la sala que estuviera
+			// abierta sigue en pie, y el usuario tiene un error que leer.
+			log.Error("no se pudo lanzar la interfaz", "error", err)
+		}
 	}
 
 	return &booted{wait: rt.Wait, shutdown: apagar}, nil

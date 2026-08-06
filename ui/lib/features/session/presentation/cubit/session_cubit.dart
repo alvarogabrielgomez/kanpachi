@@ -138,6 +138,22 @@ class SessionCubit extends Cubit<SessionState> {
     );
   }
 
+  /// "Salir de Kanpachi": apagarlo todo.
+  ///
+  /// **No sale de la sala primero.** Podría parecer más ordenado y sería peor:
+  /// serían dos operaciones donde la primera puede fallar dejando la segunda a
+  /// medias, y el daemon ya sale de la sala como primer paso de su propio
+  /// apagado. Él es quien sabe el orden, porque es quien tiene las piezas.
+  ///
+  /// No emite estado nuevo. Para cuando esto vuelva, esta ventana está muerta o
+  /// a punto: el daemon se la lleva con el job. Pintar algo sería pintar sobre
+  /// un proceso que ya no está.
+  Future<void> quitKanpachi() => _repository.quitEverything();
+
+  /// Lee, y opcionalmente cambia, si Kanpachi arranca con Windows.
+  Future<bool> autostart({bool? enabled}) =>
+      _repository.autostart(enabled: enabled);
+
   /// Lo que la máquina tiene abierto AHORA, medido.
   ///
   /// # Por qué pasa por acá si no toca el estado

@@ -44,6 +44,20 @@ abstract final class DaemonMethods {
   static const String resumeRoom = 'resume_room';
   static const String discardPendingRoom = 'discard_pending_room';
   static const String lastRoom = 'last_room';
+
+  // The three that are about the PROCESS rather than the room. The daemon
+  // answers these from its host, not from the session use case.
+
+  /// Shut everything down, in order, and stop the daemon.
+  static const String shutdown = 'shutdown';
+
+  /// Read, and optionally change, whether Kanpachi starts with Windows.
+  static const String autostart = 'autostart';
+
+  /// Show the window. The app never calls this one — the DAEMON does, when the
+  /// shortcut is double-clicked with Kanpachi already running. It is listed
+  /// here because the wire name has to live in one place.
+  static const String showUi = 'show_ui';
 }
 
 /// The default budget: what something answered from memory or with one small
