@@ -59,6 +59,15 @@ Nota de rol: "host" es quien corre el servidor del juego. Cualquier miembro pued
 
 Distribución silenciosa para el grupo: `kanpachi-setup.exe /VERYSILENT /NORESTART`.
 
+### Dónde está esto escrito, y qué está medido
+
+Son dos piezas y su estado es distinto:
+
+- **La carga**, `scripts/preparar-carga.ps1`. Compila el daemon con `-trimpath` y `-H windowsgui`, la interfaz en release con su bundle entero, copia `builtin.json`, `Packet.dll` y `wintun.dll`, trae el motor del otro repositorio, y deja un `SHA256SUMS`. **Medido**: 21 ficheros, 72 MB.
+- **El instalador**, `installer/kanpachi.iss`, para Inno Setup 6. **Escrito y sin medir**: en la máquina de desarrollo no hay Inno Setup, así que nunca se compiló ni se ejecutó. El criterio de aceptación sigue siendo el de arriba, instalar y desinstalar veinte veces en una VM sin dejar rastro.
+
+Nada de `-ldflags "-s -w"`: quitar los símbolos dispara falsos positivos de Defender sobre binarios de Go, y el binario que se firma tiene que ser el que se probó. Mismo criterio que `release-seed.yml`.
+
 ## Modo desarrollo
 
 El daemon corre como aplicación de consola, sin reinstalar el servicio. **Exige una consola elevada**, por dos motivos que se comprobaron a mano y no se dedujeron: el nombre del pipe vive bajo `ProtectedPrefix\Administrators`, que Windows no deja crear a un proceso sin elevar, y aceptar una conexión exige crear la instancia siguiente del pipe, cosa que el descriptor solo permite a SYSTEM y a los administradores.

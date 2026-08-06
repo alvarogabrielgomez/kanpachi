@@ -101,7 +101,9 @@ func limpiar(datos string, desinstalar bool) error {
 
 	log := logConsola{}
 
-	fw, _, cerrarFirewall, err := realFirewall(datos, log, sinimplementar.Audit{})
+	// El auditor se descarta (`_`): limpiar no pregunta nada. Va el de verdad
+	// igual, para que en el cableado no quede ni un provisional.
+	fw, _, cerrarFirewall, err := realFirewall(datos, log, igd.New(log))
 	if err != nil {
 		return err
 	}
