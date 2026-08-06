@@ -114,6 +114,13 @@ func resolveWithNet(host string) ([]netip.Addr, error) {
 	return net.DefaultResolver.LookupNetIP(context.Background(), "ip", host)
 }
 
+// Seed is the registry this adapter talks to.
+//
+// It exists so that a caller can tell whether a "not found" is about the right
+// registry at all: an invite ID only means something in the registry that
+// minted it. See [port.RoomDirectory.Seed].
+func (d *Directory) Seed() string { return d.deps.Seed }
+
 // Open asks the registry to mint an invite ID for this sealed card.
 func (d *Directory) Open(ctx context.Context, sealed []byte) (domain.Room, error) {
 	cuerpo, err := d.firmar(sealed)

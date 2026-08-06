@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/port"
 )
 
 // The budget of a call to the registry, and why there are two numbers.
@@ -233,7 +234,11 @@ func errorDelRegistro(código int, raw []byte) error {
 
 	switch código {
 	case http.StatusNotFound:
-		return fmt.Errorf("el registro no conoce esa sala (%s)", detalle)
+		// Envuelto en el centinela, y es la única respuesta del registro que lo
+		// lleva. Es lo que permite que entrar a una sala falle en el primer
+		// segundo con un código que no existe, sin que un registro caído
+		// impida entrar a una que sí. Ver [port.ErrUnknownRoom].
+		return fmt.Errorf("%w (%s)", port.ErrUnknownRoom, detalle)
 	case http.StatusForbidden:
 		return fmt.Errorf("el registro no acepta esta llave para esa sala, "+
 			"así que la reservó otro equipo (%s)", detalle)

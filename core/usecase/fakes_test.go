@@ -362,6 +362,15 @@ type registroFalso struct {
 	err           error
 }
 
+// Seed es con qué registro habla este falso. Vacío por defecto, que es lo que
+// hace que el fallo temprano de JoinRoom se salte a sí mismo en los tests que
+// no lo estén ejercitando: un código trae seed y este no es el mismo.
+func (r *registroFalso) Seed() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.seed
+}
+
 func (r *registroFalso) Open(_ context.Context, sealed []byte) (domain.Room, error) {
 	if r.err != nil {
 		return domain.Room{}, r.err

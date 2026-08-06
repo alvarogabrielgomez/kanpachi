@@ -24,6 +24,7 @@ package port
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"time"
 
@@ -445,6 +446,21 @@ type RendezvousProvider interface {
 	Resolve(input string) (domain.Room, domain.Rendezvous, error)
 }
 
+// ErrUnknownRoom es el registro diciendo que ese invite ID NO EXISTE.
+//
+// # Por qué es un centinela y no un error más
+//
+// Porque es la única respuesta del registro que un caso de uso tiene derecho a
+// creerse. Todo lo demás que puede salir mal —que no haya red, que el servidor
+// devuelva 500, que venza el plazo— es ausencia de información, y este puerto
+// es presentación: ante la duda se sigue adelante. Un "no existe" es distinto,
+// es el registro contestando, y es lo que permite parar en el primer segundo en
+// vez de al final de un minuto esperando en un vestíbulo vacío.
+//
+// Confundir los dos es lo que rompería la promesa de este puerto: un seed caído
+// impediría entrar a salas que están abiertas.
+var ErrUnknownRoom = errors.New("el registro no conoce esa sala")
+
 // RoomDirectory es el registro del seed, y es SOLO PRESENTACIÓN. Que falle no
 // impide entrar a ninguna sala: lo que se pierde es la tarjeta.
 //
@@ -454,6 +470,15 @@ type RendezvousProvider interface {
 // servidor. Que este puerto hablara de RoomCard en claro obligaría al
 // adaptador a cifrar, o sea a decidir con qué, y ahí es donde se filtraría.
 type RoomDirectory interface {
+	// Seed es el nombre del registro con el que este adaptador habla.
+	//
+	// Existe por una razón concreta y una sola: un invite ID **solo significa
+	// algo en el registro que lo emitió**, así que preguntarle a este por un
+	// código servido por otro devuelve "no existe" sobre una sala que existe
+	// perfectamente. Quien vaya a creerle a un "no existe" tiene que poder
+	// comprobar antes que está preguntando en el sitio correcto. Ver el fallo
+	// temprano de `JoinRoom`.
+	Seed() string
 	// Open pide un invite ID nuevo. Lo emite el registro porque es quien puede
 	// garantizar unicidad dentro de su espacio, y emitir evita el ida y vuelta
 	// de proponer y ser rechazado.
