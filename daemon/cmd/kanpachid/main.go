@@ -15,21 +15,27 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/port"
 	"github.com/accentiostudios/kanpachi/core/usecase"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/canary/opener"
 	catalogstore "github.com/accentiostudios/kanpachi/daemon/adapter/catalog/jsonfile"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/directory"
 	kanpachiengine "github.com/accentiostudios/kanpachi/daemon/adapter/engine/kanpachi"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/identity"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/inspector"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/library/steam"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/netcfg"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/probe"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/router/igd"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/routes"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/sinimplementar"
 	statestore "github.com/accentiostudios/kanpachi/daemon/adapter/state/jsonfile"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/sysevents"
 	"github.com/accentiostudios/kanpachi/daemon/service"
 	"github.com/accentiostudios/kanpachi/daemon/service/supervisor"
 	"github.com/accentiostudios/kanpachi/daemon/transport/control"
@@ -151,17 +157,38 @@ func dirDeDatos(datos string) string {
 	return filepath.Join(os.Getenv("ProgramData"), "Kanpachi")
 }
 
-func correr(consola bool, datos, nombre string) error {
-	// **Un binario con provisionales NO se instala como servicio.** El riesgo
-	// real nunca fue que fallen: es que uno con un firewall que dice que purgó
-	// termine corriendo en la máquina de alguien.
-	if sinimplementar.Presente && !consola {
-		return fmt.Errorf("este binario lleva adaptadores provisionales dentro, así que solo " +
-			"arranca con --console.\n" +
-			"  Un provisional que devuelve éxito hace la cuarentena inverificable, y eso " +
-			"instalado es peor que no tener daemon")
-	}
+// watchers son los cuatro adaptadores que MIRAN la máquina sin cambiarla: los
+// avisos del sistema, la biblioteca de Steam, la tabla de sockets y los mapeos
+// del router.
+//
+// Están juntos porque comparten la propiedad que importa: ninguno escribe nada,
+// así que ninguno puede romper una máquina si falla. Los que sí escriben
+// —firewall, netcfg, motor— se construyen aparte y con más ceremonia.
+//
+// Se eligen en un solo sitio porque de acá salen dos cosas: el cableado de la
+// sesión, y la comprobación de si alguno sigue siendo provisional.
+type watchers struct {
+	Events    port.SystemEvents
+	Library   port.GameLibrary
+	Inspector port.SocketInspector
+	Router    port.ExposureAudit
+}
 
+func chooseWatchers(log port.Logger) watchers {
+	return watchers{
+		Events:    sysevents.New(log),
+		Library:   steam.New(log),
+		Inspector: inspector.New(),
+		Router:    igd.New(log),
+	}
+}
+
+// provisionales pregunta cuáles de los elegidos todavía no existen de verdad.
+func (m watchers) stubbed() []string {
+	return sinimplementar.Names(m.Events, m.Library, m.Inspector, m.Router)
+}
+
+func correr(consola bool, datos, nombre string) error {
 	if nombre == "" {
 		nombre = pipe.ConsoleName
 	}
@@ -180,17 +207,36 @@ func correr(consola bool, datos, nombre string) error {
 
 	log := logConsola{}
 
-	// El firewall ANTES que nada, y no por orden de lectura: construir la sesión
-	// purga las reglas de la ejecución anterior, así que si el firewall no se
-	// puede abrir hay que enterarse acá y no a mitad del arranque.
-	fw, audit, cerrarFirewall, err := realFirewall(datos, log, sinimplementar.Audit{})
+	// Los watchers ANTES del guardián, porque el guardián les pregunta a ellos.
+	// Ninguno escribe nada, así que construirlos y descartarlos no deja rastro.
+	watch := chooseWatchers(log)
+	defer func() { _ = watch.Events.Close() }()
+
+	// **Un binario con provisionales NO se instala como servicio.** El riesgo
+	// real nunca fue que fallen: es que uno con un firewall que dice que purgó
+	// termine corriendo en la máquina de alguien.
+	//
+	// La lista se le pregunta al CABLEADO y no a una constante: ver
+	// [sinimplementar.Provisional]. Un provisional que vuelva se delata solo, y
+	// el error lo nombra en vez de decir que hay algo. Va ANTES del firewall,
+	// que es lo primero con efectos de verdad.
+	if missing := watch.stubbed(); len(missing) > 0 && !consola {
+		return fmt.Errorf("este binario lleva adaptadores provisionales dentro (%s), así que "+
+			"solo arranca con --console.\n"+
+			"  Un provisional que devuelve éxito hace la cuarentena inverificable, y eso "+
+			"instalado es peor que no tener daemon", strings.Join(missing, ", "))
+	}
+
+	// El firewall ANTES que el resto, y no por orden de lectura: construir la
+	// sesión purga las reglas de la ejecución anterior, así que si el firewall
+	// no se puede abrir hay que enterarse acá y no a mitad del arranque.
+	fw, audit, cerrarFirewall, err := realFirewall(datos, log, watch.Router)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = cerrarFirewall() }()
 
-	eventos := sinimplementar.NewEvents()
-	defer func() { _ = eventos.Close() }()
+	eventos := watch.Events
 
 	canal := control.New(control.Deps{Clock: relojReal{}, Log: log})
 
@@ -249,11 +295,11 @@ func correr(consola bool, datos, nombre string) error {
 		Routes:    routes.New(),
 		Store:     catalogstore.New(dirDelBinario(), datos, log),
 		State:     statestore.New(datos),
-		Library:   sinimplementar.Library{},
+		Library:   watch.Library,
 		Directory: directorio,
 		Control:   canal,
 		Audit:     audit,
-		Inspector: sinimplementar.Inspector{},
+		Inspector: watch.Inspector,
 		Prober:    probe.New(),
 		// El canario es real desde el primer día, y puede serlo porque es `net`
 		// puro: no toca Windows ni necesita privilegios para ligar en el

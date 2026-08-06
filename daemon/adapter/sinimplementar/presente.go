@@ -1,24 +1,23 @@
 package sinimplementar
 
-// Presente dice si este binario lleva adaptadores provisionales dentro.
+// Este archivo tenía una constante, `Presente`, y ya no.
 //
-// # Por qué la etiqueta va AL REVÉS de lo que parece
+// # Qué decía, y por qué se fue
 //
-// El build con provisionales es el POR DEFECTO, y el de release lleva la
-// etiqueta explícita `release`. Al revés sería lo intuitivo y rompería el CI:
-// el único paso del job de Windows es `go build ./...`, sin etiquetas, así que
-// un build por defecto que no compilara lo dejaría en rojo permanente.
+// Decía si este binario llevaba adaptadores provisionales dentro, con toda una
+// explicación de por qué la etiqueta de compilación iba al revés de lo
+// intuitivo. La explicación era buena y el mecanismo no: era un `const` a mano,
+// y la etiqueta `release` que lo gobernaba **no existía en ningún archivo del
+// repositorio**, así que `go build -tags release` producía un binario idéntico
+// al de siempre. La protección era una intención escrita, no una comprobación.
 //
-// Y hay una razón mejor que el CI. Con la etiqueta en el lado de los
-// provisionales, olvidarla produce un binario de release SILENCIOSO: compila,
-// arranca, se instala como servicio y no hace nada de lo que promete. Con la
-// etiqueta en el lado de release, olvidarla produce un binario que se NIEGA a
-// instalarse. El olvido tiene que doler del lado seguro.
+// Ahora la pregunta se la hace `cmd/kanpachid` al cableado, con [Names] sobre
+// los adaptadores que de verdad eligió. La diferencia que importa no es de
+// estilo: una constante hay que acordarse de encenderla el día que un
+// provisional VUELVA, y ese olvido es silencioso y caro. Una comprobación sobre
+// el cableado no se puede olvidar, porque cablear el provisional ES lo que la
+// dispara.
 //
-// # Qué hace con esto quien lo lee
-//
-// `cmd/kanpachid` se niega a correr como servicio de Windows cuando esto es
-// true, y solo arranca con `--console`. El riesgo de verdad nunca fue que los
-// provisionales fallen: es que un binario con un firewall que dice que purgó
-// termine instalado en la máquina de alguien.
-const Presente = true
+// El riesgo del que hablaba sigue siendo el mismo y sigue vigente: nunca fue
+// que los provisionales fallen, fue que un binario con un firewall que dice que
+// purgó termine instalado en la máquina de alguien.

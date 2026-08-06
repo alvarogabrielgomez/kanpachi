@@ -165,17 +165,26 @@ func TestLosEventosDelSistemaSonLaUnicaExcepcion(t *testing.T) {
 	}
 }
 
-// TestElBuildPorDefectoLlevaProvisionales.
+// TestCadaProvisionalSeDelata reemplaza al que fijaba la dirección de la
+// etiqueta `release`, que resultó no existir en ningún archivo.
 //
-// La etiqueta va al revés de lo intuitivo a propósito, y este test fija esa
-// dirección: si alguien la invierte, un binario de release sin la etiqueta
-// compilaría, arrancaría, se instalaría como servicio y no haría nada de lo que
-// promete. Con esta dirección, el olvido produce un binario que se NIEGA a
-// instalarse. El olvido tiene que doler del lado seguro.
-func TestElBuildPorDefectoLlevaProvisionales(t *testing.T) {
-	if !Presente {
-		t.Error("el build por defecto dice que NO lleva provisionales.\n" +
-			"  Si esto se compiló con la etiqueta de release, bien. Si no, la dirección\n" +
-			"  de la etiqueta se invirtió y un release olvidado pasa desapercibido.")
+// Lo que hay que defender es lo mismo de antes: que un binario con un
+// provisional dentro no pueda instalarse creyendo que está completo. Lo que
+// cambia es dónde se comprueba. Antes era una constante que alguien tenía que
+// acordarse de encender el día que un provisional volviera; ahora lo dice el
+// propio adaptador, así que cablear uno es lo que dispara la detección.
+func TestCadaProvisionalSeDelata(t *testing.T) {
+	todos := []any{
+		Engine{}, Firewall{}, NetConfig{}, Routing{},
+		Library{}, Inspector{}, Audit{}, NewEvents(),
+	}
+	nombres := Names(todos...)
+	if len(nombres) != len(todos) {
+		t.Errorf("hay %d provisionales y solo %d se delatan: %v.\n"+
+			"  Uno que no se delate es uno que puede instalarse sin que nadie lo note",
+			len(todos), len(nombres), nombres)
+	}
+	if len(Names(struct{}{})) != 0 {
+		t.Error("algo que no es provisional se delató como si lo fuera")
 	}
 }

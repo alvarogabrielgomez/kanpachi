@@ -322,12 +322,26 @@ class _CloseGlyph extends StatelessWidget {
 }
 
 /// La barra de estado del pie: el daemon y dónde estás conectado.
+///
+/// **La mitad izquierda dice lo que se midió, no lo que se espera.** Decía
+/// "Servicio activo" fijo en el código, así que con el daemon caído la ventana
+/// enseñaba a la vez el cartel de que no hay conexión y un punto verde
+/// diciendo lo contrario. De las dos, la que mentía era esta, y una barra de
+/// estado que miente es peor que no tenerla: es el sitio al que se mira para
+/// saber si hace falta mirar a otro lado.
 class ShellStatusBar extends StatelessWidget {
-  const ShellStatusBar({required this.right, super.key});
+  const ShellStatusBar({
+    required this.right,
+    required this.daemonDown,
+    super.key,
+  });
 
   /// El dato de la derecha: el adaptador y tu IP dentro de la sala, o el seed
   /// cuando no hay sala.
   final String right;
+
+  /// No se pudo hablar con el servicio.
+  final bool daemonDown;
 
   @override
   Widget build(BuildContext context) {
@@ -343,10 +357,15 @@ class ShellStatusBar extends StatelessWidget {
       ),
       child: Row(
         children: <Widget>[
-          AppStatusDot(color: colors.ok, pulse: true),
+          // Sin latido cuando no hay servicio: el pulso es lo que dice "esto
+          // está vivo", y es justo lo que no se puede afirmar.
+          AppStatusDot(
+            color: daemonDown ? colors.warn : colors.ok,
+            pulse: !daemonDown,
+          ),
           const SizedBox(width: AppSpacing.md),
           Text(
-            'Servicio activo',
+            daemonDown ? 'Sin servicio' : 'Servicio activo',
             style: context.type.statusLabel.copyWith(color: colors.textMuted),
           ),
           const Spacer(),

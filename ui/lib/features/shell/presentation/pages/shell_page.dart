@@ -36,7 +36,10 @@ class ShellPage extends StatelessWidget {
         children: <Widget>[
           ShellTitleBar(nickname: session.nickname),
           const Expanded(child: _WindowBody()),
-          ShellStatusBar(right: _statusRight(session)),
+          ShellStatusBar(
+            right: _statusRight(session),
+            daemonDown: session.daemonDown,
+          ),
         ],
       ),
     );

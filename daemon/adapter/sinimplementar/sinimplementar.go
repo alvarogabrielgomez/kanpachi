@@ -45,6 +45,50 @@ import (
 // muy distintas cuando estás leyendo un log a las dos de la mañana.
 var ErrSinImplementar = errors.New("sinimplementar: este adaptador todavía no existe")
 
+// Provisional es la marca que lleva cada tipo de este paquete, y es lo que
+// impide que un binario con provisionales dentro se instale.
+//
+// # Por qué una marca y no una constante
+//
+// Porque una constante hay que acordarse de cambiarla. `Presente` era eso: un
+// `const` que alguien tenía que recordar apagar el día que el último
+// provisional se fuera, y encender el día que uno volviera. El olvido en la
+// segunda dirección es el caro, y es silencioso.
+//
+// Con la marca, la pregunta se le hace al CABLEADO en vez de a la memoria de
+// nadie: `cmd/kanpachid` pasa los adaptadores que eligió por una comprobación
+// de tipo, y el que sea provisional lo dice él mismo. Volver a cablear uno lo
+// vuelve a detectar sin que haya que tocar nada más, que es la propiedad que
+// una constante no puede tener.
+//
+// El texto es el nombre del puerto, para que el error nombre lo que falta en
+// vez de decir "hay algo provisional".
+type Provisional interface {
+	Provisional() string
+}
+
+func (Engine) Provisional() string    { return "el motor" }
+func (Firewall) Provisional() string  { return "el firewall" }
+func (NetConfig) Provisional() string { return "la configuración del adaptador" }
+func (Routing) Provisional() string   { return "la tabla de rutas" }
+func (Library) Provisional() string   { return "la detección de juegos" }
+func (Inspector) Provisional() string { return "la foto de sockets" }
+func (Audit) Provisional() string     { return "la auditoría de exposición" }
+
+func (*Events) Provisional() string { return "los eventos del sistema" }
+
+// Names devuelve los nombres de los que sean provisionales, en el orden en que
+// se pasaron. Vacío significa que este binario no lleva ninguno.
+func Names(adaptadores ...any) []string {
+	var fuera []string
+	for _, a := range adaptadores {
+		if p, ok := a.(Provisional); ok {
+			fuera = append(fuera, p.Provisional())
+		}
+	}
+	return fuera
+}
+
 func falla(qué string) error { return fmt.Errorf("%w: %s", ErrSinImplementar, qué) }
 
 // Engine no arranca ningún motor.
