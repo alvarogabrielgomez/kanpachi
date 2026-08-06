@@ -166,6 +166,7 @@ func TestElEstadoViajaConLosEnumsComoCadenas(t *testing.T) {
 		},
 		Alerts:   []domain.Alert{{Kind: domain.AlertKickIncomplete, Detail: "a medias"}},
 		LastExit: domain.ExitTunnelLost,
+		CodeLost: true,
 	}
 	var v RoomView
 	lee(t, pide(t, s, `{"id":9,"method":"status"}`), &v)
@@ -181,6 +182,8 @@ func TestElEstadoViajaConLosEnumsComoCadenas(t *testing.T) {
 		t.Errorf("alertas = %+v", v.Alerts)
 	case v.LastExit != "tunnel_lost":
 		t.Errorf("last_exit = %q", v.LastExit)
+	case !v.CodeLost:
+		t.Error("code_lost no viajó en el estado")
 	}
 }
 

@@ -436,6 +436,7 @@ func (a *apiFalsa) Status() domain.RoomState {
 }
 
 func (a *apiFalsa) MissingGame() string { return "" }
+func (a *apiFalsa) InviteLink() string  { return "" }
 
 // apiQueRevienta es la API rota, para el test del recover.
 type apiQueRevienta struct{ protocol.API }

@@ -8,12 +8,10 @@
 #
 # Esto se lanza a mano desde la pestana Actions, o lo llama otro workflow.
 #
-# ESTADO CONOCIDO: el job de la interfaz FALLA hoy. `ui/test` referencia
-# `FakeSessionRepository`, que salio de `lib/`, asi que ni `flutter analyze`
-# sobre `test/` ni `flutter test` compilan. Se deja declarado y sin disparador
-# automatico en vez de recortarle el alcance: bajar el liston para que pase es
-# como se pierde `message_lockstep_test.dart`, que es el que ata los enums de
-# las dos puntas del cable.
+# La interfaz se prueba contra el repositorio REAL del pipe sobre un transporte
+# de bytes en memoria. No hay repositorio alternativo ni estado plantado en el
+# cubit: saludo, codec, metodos y mapeo de respuestas cruzan la misma frontera
+# que en produccion, sin necesitar Windows ni un daemon levantado.
 name: CI
 
 on:

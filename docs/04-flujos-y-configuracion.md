@@ -86,7 +86,7 @@ Se publica **por tag y solo por tag**. No hay CI en cada push ni en cada pull re
 
 | Workflow | Qué publica | Qué corre antes |
 |---|---|---|
-| `release.yml` | `kanpachi-setup.exe` y `SHA256SUMS-windows` | `./core/...` y `./internal/arch/...` |
+| `release.yml` | `kanpachi-setup.exe` y `SHA256SUMS-windows` | `./core/...`, `./internal/arch/...`, `flutter analyze` y `flutter test` |
 | `release-seed.yml` | `kanpseed` para amd64 y arm64, `index.html`, y `SHA256SUMS-linux` | `./core/...`, `./registry/...` y `./internal/arch/...` |
 
 `internal/arch` entra en los dos porque los dos publican algo que esos guardianes atan: el cliente y la página comparten el alfabeto del invite ID y la forma de la URL, escritos dos veces en dos lenguajes.
@@ -113,7 +113,7 @@ El pin de EasyTier viaja dentro del binario nuevo, así que subirlo en un releas
 
 **Sin firmar todavía.** Windows enseña el aviso de SmartScreen, y el cuerpo de la publicación lo dice con las palabras exactas que hay que pulsar, en vez de disimularlo. La vía elegida es SignPath Foundation, que firma gratis proyectos de código abierto; qué falta para poder solicitarlo está en `07-futuro.md`.
 
-**El job de la interfaz de `ci.yml` falla hoy.** `ui/test` referencia `FakeSessionRepository`, que salió de `lib/`, así que ni `flutter analyze` sobre `test/` ni `flutter test` compilan. Por eso la publicación no lo llama: bloquearía toda entrega. Se deja declarado y sin disparador automático en vez de recortarle el alcance, porque bajar el listón para que pase es como se pierde `message_lockstep_test.dart`, que es el guardián que ata los enums de las dos puntas del cable.
+**La interfaz no tiene un repositorio alternativo para tests.** Los widgets y el cubit hablan con `PipeSessionRepository` y `DaemonClient` reales sobre un transporte de bytes en memoria; atraviesan saludo, codec, nombres de método y mapeo de respuestas sin necesitar un daemon ni Windows. `flutter analyze` y `flutter test` pasan completos y vuelven a bloquear el release si se rompe la costura, incluido `message_lockstep_test.dart`, que ata los enums de las dos puntas del cable.
 
 ## La carpeta portable, y el script que la arma
 

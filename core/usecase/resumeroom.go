@@ -252,8 +252,14 @@ func (s *Session) republishCardLocked(ctx context.Context) {
 	// "No conozco esa sala" es distinto de "no contesto", y por eso se separa.
 	// Lo primero es definitivo: la entrada se fue del registro y publicar no
 	// crea, así que el código repartido ya no sirve y solo lo arregla renovarlo.
-	// Lo segundo se cura solo en el siguiente latido.
-	s.state.CodeLost = errors.Is(err, port.ErrUnknownRoom)
+	// Lo segundo se cura solo en el siguiente latido y NO borra un código ya
+	// declarado muerto: solo una publicación aceptada o renovarlo demuestra que
+	// vuelve a existir.
+	if err == nil {
+		s.state.CodeLost = false
+	} else if errors.Is(err, port.ErrUnknownRoom) {
+		s.state.CodeLost = true
+	}
 
 	switch {
 	case err == nil:

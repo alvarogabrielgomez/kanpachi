@@ -2,15 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kanpachi_ui/core/design_system/theme/app_theme.dart';
-import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/features/home/presentation/pages/home_page.dart';
 import 'package:kanpachi_ui/features/room/presentation/pages/room_page.dart';
-import 'package:kanpachi_ui/features/session/domain/entities/canary.dart';
-import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
-import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
-import 'package:kanpachi_ui/features/session/infra/fake_session_repository.dart';
+import 'package:kanpachi_ui/features/session/infra/daemon/daemon_methods.dart';
+import 'package:kanpachi_ui/features/session/infra/daemon/pipe_session_repository.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
+
+import 'daemon_client_test.dart' show DaemonTestFailure, daemonTestConnector;
 
 /// Los avisos de salud de la portada salen del daemon y de ningún otro sitio.
 ///
@@ -28,9 +27,13 @@ import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 void main() {
   Future<SessionCubit> pintaPortada(
     WidgetTester tester,
-    HealthReport salud,
+    Map<String, Object?> status,
   ) async {
-    final SessionCubit session = SessionCubit(RepoConSalud(salud));
+    final _DaemonScenario daemon = _DaemonScenario(status);
+    final SessionCubit session = SessionCubit(
+      PipeSessionRepository(daemonTestConnector(daemon.respond)),
+    );
+    addTearDown(session.close);
     await session.refreshHealth();
 
     await tester.pumpWidget(
@@ -60,7 +63,7 @@ void main() {
   testWidgets('sin avisos del daemon la portada no pinta ninguno', (
     WidgetTester tester,
   ) async {
-    await pintaPortada(tester, const HealthReport.unknown());
+    await pintaPortada(tester, <String, Object?>{});
 
     expect(find.text(tituloFirewall), findsNothing);
     expect(
@@ -75,14 +78,11 @@ void main() {
   testWidgets('se pinta lo que mandó el daemon y solo eso', (
     WidgetTester tester,
   ) async {
-    await pintaPortada(
-      tester,
-      const HealthReport(
-        alerts: <HealthAlert>[
-          HealthAlert(wire: 'router_mapping', kind: AlertKind.routerMapping),
-        ],
-      ),
-    );
+    await pintaPortada(tester, <String, Object?>{
+      'alerts': <Object?>[
+        <String, Object?>{'kind': 'router_mapping'},
+      ],
+    });
 
     expect(find.text(tituloRouter), findsOneWidget);
     expect(find.text(tituloFirewall), findsNothing);
@@ -94,18 +94,14 @@ void main() {
   testWidgets('el detalle del daemon viaja hasta la pantalla', (
     WidgetTester tester,
   ) async {
-    await pintaPortada(
-      tester,
-      const HealthReport(
-        alerts: <HealthAlert>[
-          HealthAlert(
-            wire: 'router_mapping',
-            kind: AlertKind.routerMapping,
-            detail: 'TCP 25565 hacia 192.168.1.40',
-          ),
-        ],
-      ),
-    );
+    await pintaPortada(tester, <String, Object?>{
+      'alerts': <Object?>[
+        <String, Object?>{
+          'kind': 'router_mapping',
+          'detail': 'TCP 25565 hacia 192.168.1.40',
+        },
+      ],
+    });
 
     expect(find.textContaining('TCP 25565 hacia 192.168.1.40'), findsOneWidget);
   });
@@ -118,17 +114,14 @@ void main() {
   testWidgets('un aviso que esta versión no conoce se pinta igual', (
     WidgetTester tester,
   ) async {
-    await pintaPortada(
-      tester,
-      const HealthReport(
-        alerts: <HealthAlert>[
-          HealthAlert(
-            wire: 'algo_que_no_existe_todavia',
-            detail: 'puerto 9999',
-          ),
-        ],
-      ),
-    );
+    await pintaPortada(tester, <String, Object?>{
+      'alerts': <Object?>[
+        <String, Object?>{
+          'kind': 'algo_que_no_existe_todavia',
+          'detail': 'puerto 9999',
+        },
+      ],
+    });
 
     expect(
       find.textContaining('esta versión de la app no sabe explicar'),
@@ -138,24 +131,19 @@ void main() {
   });
 
   group('la banda de la sala', () {
-    /// La sala se pide una sola vez: el repositorio falso simula la espera real
-    /// de crearla y pagarla en cada test multiplicaría lo que tarda la suite.
-    late final Room sala;
-
-    setUpAll(() async {
-      sala = await FakeSessionRepository().createRoom(
-      name: 'La Guarida',
-      nickname: 'Alvaro',
-    );
-    });
-
-    Future<RepoConSalud> pintaSala(
+    Future<_DaemonScenario> pintaSala(
       WidgetTester tester,
-      HealthReport salud,
+      Map<String, Object?> health,
     ) async {
-      final RepoConSalud repo = RepoConSalud(salud);
-      final SessionCubit session = SessionCubit(repo)..debugReplaceRoom(sala);
-      await session.refreshHealth();
+      final _DaemonScenario daemon = _DaemonScenario(<String, Object?>{
+        ..._roomStatus,
+        ...health,
+      });
+      final SessionCubit session = SessionCubit(
+        PipeSessionRepository(daemonTestConnector(daemon.respond)),
+      );
+      addTearDown(session.close);
+      await session.refresh();
 
       await tester.pumpWidget(
         MaterialApp(
@@ -165,28 +153,26 @@ void main() {
               BlocProvider<ShellCubit>(create: (_) => ShellCubit()),
               BlocProvider<SessionCubit>.value(value: session),
             ],
-            child: const Scaffold(
-              body: SingleChildScrollView(child: RoomScreen()),
-            ),
+            child: const Scaffold(body: RoomScreen()),
           ),
         ),
       );
       await tester.pumpAndSettle();
-      return repo;
+      return daemon;
     }
 
-    const HealthReport conFuga = HealthReport(
-      alerts: <HealthAlert>[
-        HealthAlert(wire: 'canary_leaking', kind: AlertKind.canaryLeaking),
+    final Map<String, Object?> conFuga = <String, Object?>{
+      'alerts': <Object?>[
+        <String, Object?>{'kind': 'canary_leaking'},
       ],
-      canary: CanaryCheck(
-        measured: true,
-        verdict: CanaryVerdict.leaking,
-        port: 51234,
-        touched: true,
-        asked: <String>['Gabriel', 'Santiago'],
-      ),
-    );
+      'canary': <String, Object?>{
+        'measured': true,
+        'verdict': 'leaking',
+        'port': 51234,
+        'touched': true,
+        'asked': <Object?>['Gabriel', 'Santiago'],
+      },
+    };
 
     // LA SALA TIENE QUE ENSEÑARLA SIN QUE NADIE LA BUSQUE.
     //
@@ -208,7 +194,7 @@ void main() {
     testWidgets('sin la alarma la sala no la enseña', (
       WidgetTester tester,
     ) async {
-      await pintaSala(tester, const HealthReport.unknown());
+      await pintaSala(tester, <String, Object?>{});
 
       expect(find.text('Tu protección no está conteniendo'), findsNothing);
     });
@@ -218,15 +204,15 @@ void main() {
     // Es lo único que el test del widget no puede afirmar: allí el callback es
     // de mentira. Acá se comprueba que la pantalla lo cableó al cubit y que el
     // cubit llama al repositorio.
-    testWidgets('pulsar reponer llega hasta el repositorio', (
+    testWidgets('pulsar reponer llega hasta el daemon', (
       WidgetTester tester,
     ) async {
-      final RepoConSalud repo = await pintaSala(tester, conFuga);
+      final _DaemonScenario daemon = await pintaSala(tester, conFuga);
 
       await tester.tap(find.text('Volver a aplicar la protección'));
       await tester.pumpAndSettle();
 
-      expect(repo.reposiciones, equals(1));
+      expect(daemon.reapplications, equals(1));
       expect(
         find.text('Tu protección no está conteniendo'),
         findsNothing,
@@ -236,28 +222,52 @@ void main() {
             'pulsación sirvió de algo',
       );
     });
+
+    testWidgets('un código perdido se renueva sin cortar la sala', (
+      WidgetTester tester,
+    ) async {
+      final _DaemonScenario daemon = await pintaSala(tester, <String, Object?>{
+        'code_lost': true,
+      });
+
+      expect(
+        find.text('El código de esta sala dejó de funcionar'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Renovar el código'));
+      await tester.pumpAndSettle();
+
+      expect(daemon.codeRenewals, equals(1));
+      expect(
+        find.text('El código de esta sala dejó de funcionar'),
+        findsNothing,
+      );
+      expect(find.text('B8L3-N4PZ'), findsOneWidget);
+    });
   });
 
   group('el cubit', () {
     test('reponer guarda lo que contestó el daemon', () async {
-      final RepoConSalud repo = RepoConSalud(
-        const HealthReport(
-          alerts: <HealthAlert>[
-            HealthAlert(wire: 'canary_leaking', kind: AlertKind.canaryLeaking),
-          ],
-          canary: CanaryCheck(measured: true, verdict: CanaryVerdict.leaking),
-        ),
+      final _DaemonScenario daemon = _DaemonScenario(<String, Object?>{
+        'alerts': <Object?>[
+          <String, Object?>{'kind': 'canary_leaking'},
+        ],
+        'canary': <String, Object?>{'measured': true, 'verdict': 'leaking'},
+      });
+      final SessionCubit session = SessionCubit(
+        PipeSessionRepository(daemonTestConnector(daemon.respond)),
       );
-      final SessionCubit session = SessionCubit(repo);
+      addTearDown(session.close);
       await session.refreshHealth();
-      expect(session.state.health.kinds, contains(AlertKind.canaryLeaking));
+      expect(session.state.health.alerts.single.wire, equals('canary_leaking'));
 
       await session.reapplyProtection();
 
-      expect(repo.reposiciones, equals(1));
+      expect(daemon.reapplications, equals(1));
       expect(
-        session.state.health.kinds,
-        isNot(contains(AlertKind.canaryLeaking)),
+        session.state.health.alerts,
+        isEmpty,
         reason:
             'la pantalla tiene que redibujar sin la alerta que se acaba de '
             'resolver, y para eso el cubit guarda lo que contestó el daemon en '
@@ -270,42 +280,77 @@ void main() {
     // `finally`, un fallo lo dejaría apagado para siempre y el usuario se
     // quedaría con la alarma puesta y sin forma de reintentar.
     test('un fallo al reponer no deja el botón apagado', () async {
-      final SessionCubit session = SessionCubit(_RepoQueFalla());
-
-      await expectLater(
-        session.reapplyProtection(),
-        throwsA(isA<StateError>()),
+      final _DaemonScenario daemon = _DaemonScenario(
+        <String, Object?>{},
+        failReapply: true,
       );
+      final SessionCubit session = SessionCubit(
+        PipeSessionRepository(daemonTestConnector(daemon.respond)),
+      );
+      addTearDown(session.close);
+
+      await session.reapplyProtection();
 
       expect(session.state.isReapplying, isFalse);
+      expect(session.state.failure, isNotNull);
     });
   });
 }
 
-/// El repositorio falso con la salud que pida cada test.
-///
-/// Hereda del falso de verdad en vez de escribir un doble a mano, y eso no es
-/// pereza: así el día que la interfaz crezca, este test deja de compilar en vez
-/// de seguir verde probando una pantalla que ya no existe.
-final class RepoConSalud extends FakeSessionRepository {
-  RepoConSalud(this.salud);
+const Map<String, Object?> _roomStatus = <String, Object?>{
+  'conn': 'connected',
+  'role': 'host',
+  'name': 'La Guarida',
+  'code': 'A7K2-M9QX',
+  'host_present': true,
+  'peers': <Object?>[
+    <String, Object?>{
+      'ip': '100.87.3.1',
+      'name': 'Alvaro',
+      'path': 'self',
+      'self': true,
+      'host': true,
+    },
+  ],
+};
 
-  final HealthReport salud;
+/// Mutable daemon-side facts; the repository and cubit above it remain real.
+final class _DaemonScenario {
+  _DaemonScenario(this.status, {this.failReapply = false});
 
-  int reposiciones = 0;
+  Map<String, Object?> status;
+  final bool failReapply;
+  int reapplications = 0;
+  int codeRenewals = 0;
 
-  @override
-  Future<HealthReport> health() async => salud;
-
-  @override
-  Future<HealthReport> reapplyProtection() async {
-    reposiciones++;
-    return const HealthReport();
+  Object? respond(String method, Map<String, Object?>? _) {
+    switch (method) {
+      case DaemonMethods.status:
+        return status;
+      case DaemonMethods.reapplyProtection:
+        if (failReapply) {
+          return const DaemonTestFailure('internal', 'el daemon dijo que no');
+        }
+        reapplications++;
+        status = <String, Object?>{
+          ...status,
+          'alerts': <Object?>[],
+          'canary': <String, Object?>{'measured': false},
+        };
+        return status;
+      case DaemonMethods.rotateInviteCode:
+        codeRenewals++;
+        status = <String, Object?>{
+          ...status,
+          'code': 'B8L3-N4PZ',
+          'code_lost': false,
+        };
+        return status;
+      case DaemonMethods.listGames:
+      case DaemonMethods.foreignRules:
+        return <Object?>[];
+      default:
+        return <String, Object?>{};
+    }
   }
-}
-
-final class _RepoQueFalla extends FakeSessionRepository {
-  @override
-  Future<HealthReport> reapplyProtection() async =>
-      throw StateError('el daemon dijo que no');
 }

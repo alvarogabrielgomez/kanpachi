@@ -1,7 +1,7 @@
 name: kanpachi_ui
 description: "Kanpachi: LAN virtual privada para jugar entre amigos. Cliente de escritorio."
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.1.1+2
 
 environment:
   sdk: ^3.12.1

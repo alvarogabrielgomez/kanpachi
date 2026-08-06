@@ -55,6 +55,7 @@ jobs:
           cache: true
 
       - name: Versión
+        id: version
         env:
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
@@ -80,7 +81,7 @@ jobs:
             TAG="$INPUT_TAG"
           fi
           echo "VERSION=${TAG:-dev}" >> "$GITHUB_ENV"
-          echo "RELEASE_TARGET=$TAG" >> "$GITHUB_ENV"
+          echo "release_target=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Tests antes de publicar
         # Publicar un binario que no pasa sus tests es peor que no publicar.
@@ -120,10 +121,10 @@ jobs:
       # paso de la versión. Preguntarlo otra vez acá, con otra expresión, es
       # como los dos sitios se separan.
       - name: Publicar
-        if: env.RELEASE_TARGET != ''
+        if: steps.version.outputs.release_target != ''
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.RELEASE_TARGET }}
+          tag_name: ${{ steps.version.outputs.release_target }}
           # Sin cuerpo: el texto del release lo escribe `release.yml`, que es el
           # que conoce el SHA del instalador. Dos workflows escribiendo el mismo
           # cuerpo daría un orden distinto en cada publicación.

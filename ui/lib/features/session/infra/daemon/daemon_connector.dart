@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:kanpachi_ui/features/session/domain/daemon_failure.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_client.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_transport.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/pipe/pipe_names.dart';
@@ -29,9 +30,29 @@ import 'package:kanpachi_ui/features/session/infra/daemon/pipe/windows_pipe_tran
 /// can explain.
 class DaemonConnector {
   DaemonConnector({String? pipeName, this.tokenPath})
-    : _pipeName = pipeName ?? PipeNames.defaultName;
+    : _pipeName = pipeName ?? PipeNames.defaultName,
+      _tokenLoader = null,
+      _transportFactory = null;
+
+  DaemonConnector.withTransport({
+    required Future<String?> Function() tokenLoader,
+    required DaemonTransport Function() transportFactory,
+  }) : this._withTransport(tokenLoader, transportFactory);
+
+  DaemonConnector._withTransport(this._tokenLoader, this._transportFactory)
+    : _pipeName = PipeNames.defaultName,
+      tokenPath = null;
 
   final String _pipeName;
+
+  /// Overrides the two system boundaries while keeping the connector, client,
+  /// codec and repository real.
+  ///
+  /// Production leaves both null. Protocol tests provide an in-memory
+  /// transport and a token without putting a fake repository above the wire.
+  /// The factory must return a fresh one-shot transport on every call.
+  final Future<String?> Function()? _tokenLoader;
+  final DaemonTransport Function()? _transportFactory;
 
   /// Dónde está `api.token`. Null es el sitio de siempre.
   final String? tokenPath;
@@ -50,20 +71,7 @@ class DaemonConnector {
 
   Future<DaemonClient> _abrir() async {
     try {
-      final String? token = await readApiToken(path: tokenPath);
-      if (token == null) {
-        throw const DaemonUnreachable(
-          'no está el archivo del token, así que el servicio de Kanpachi no '
-          'está corriendo',
-          kind: DaemonUnreachableKind.notConnected,
-        );
-      }
-
-      final DaemonClient c = DaemonClient(
-        transport: WindowsPipeTransport(name: _pipeName),
-        token: token,
-      );
-      await c.connect();
+      final DaemonClient c = await _nuevoCliente();
       _vivo = c;
       return c;
     } finally {
@@ -92,8 +100,13 @@ class DaemonConnector {
   /// closed after. The daemon takes eight, the interface holds one, so a
   /// second is well inside the budget — and closing it is the caller's job
   /// precisely so it cannot pile up.
-  Future<DaemonClient> spare() async {
-    final String? token = await readApiToken(path: tokenPath);
+  Future<DaemonClient> spare() => _nuevoCliente();
+
+  Future<DaemonClient> _nuevoCliente() async {
+    final Future<String?> Function()? loadToken = _tokenLoader;
+    final String? token = loadToken == null
+        ? await readApiToken(path: tokenPath)
+        : await loadToken();
     if (token == null) {
       throw const DaemonUnreachable(
         'no está el archivo del token, así que el servicio de Kanpachi no '
@@ -102,7 +115,8 @@ class DaemonConnector {
       );
     }
     final DaemonClient c = DaemonClient(
-      transport: WindowsPipeTransport(name: _pipeName),
+      transport:
+          _transportFactory?.call() ?? WindowsPipeTransport(name: _pipeName),
       token: token,
     );
     await c.connect();

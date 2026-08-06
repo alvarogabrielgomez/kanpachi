@@ -16,10 +16,9 @@
 
 import 'dart:io';
 
+import 'package:kanpachi_ui/features/session/domain/daemon_failure.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_client.dart';
-import 'package:kanpachi_ui/features/session/infra/daemon/daemon_codec.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_methods.dart';
-import 'package:kanpachi_ui/features/session/infra/daemon/daemon_transport.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/pipe/pipe_names.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/pipe/windows_pipe_transport.dart';
 
@@ -100,8 +99,10 @@ Future<void> main(List<String> args) async {
     paso('list_games, que es el que contesta con una lista');
     final List<Object?> juegos = await c.callList(DaemonMethods.listGames);
     if (juegos.isEmpty) {
-      mal('vino vacío: o falta builtin.json al lado del daemon, o el códec '
-          'volvió a tirar los resultados que son listas');
+      mal(
+        'vino vacío: o falta builtin.json al lado del daemon, o el códec '
+        'volvió a tirar los resultados que son listas',
+      );
     } else {
       bien('${juegos.length} juegos');
       for (final Object? j in juegos.take(3)) {
@@ -112,7 +113,9 @@ Future<void> main(List<String> args) async {
 
     paso('exposure');
     final Map<String, Object?> exp = await c.call(DaemonMethods.exposure);
-    bien('medido, ${(exp['rules'] as List<Object?>? ?? const <Object?>[]).length} reglas propias');
+    bien(
+      'medido, ${(exp['rules'] as List<Object?>? ?? const <Object?>[]).length} reglas propias',
+    );
 
     paso('un método que no existe');
     try {
@@ -152,7 +155,9 @@ Future<void> _laSala(DaemonClient c) async {
   });
   reloj.stop();
   bien('creada en ${reloj.elapsed.inSeconds} s, código ${sala['code']}');
-  nota('conn=${sala['conn']}  ip=${sala['local_ip']}  subred=${sala['subnet']}');
+  nota(
+    'conn=${sala['conn']}  ip=${sala['local_ip']}  subred=${sala['subnet']}',
+  );
 
   paso('poner un juego');
   final Map<String, Object?> conJuego = await c.call(

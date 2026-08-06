@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:kanpachi_ui/core/messages/message_keys.dart';
+import 'package:kanpachi_ui/features/session/domain/daemon_failure.dart';
 
 /// El tope de un mensaje, en bytes. El mismo que aplica el daemon.
 ///
@@ -62,38 +62,6 @@ class DaemonResponse {
     final Object? r = result;
     return r is List<Object?> ? r : null;
   }
-}
-
-/// El fallo de una operación, con su código cerrado.
-///
-/// Se decide por [code] y jamás por [message]: el texto viaja para el log y
-/// para el diagnóstico que el usuario copia, no para mostrarlo tal cual. Quien
-/// convierte el código en algo que se lee es el catálogo de mensajes.
-class DaemonError implements Exception {
-  const DaemonError({required this.code, required this.message, this.result});
-
-  /// El código tal como vino. Se guarda crudo además de resuelto, porque un
-  /// daemon más nuevo puede mandar uno que esta app no conoce y perderlo
-  /// dejaría el log sin la única pista útil.
-  final String code;
-  final String message;
-
-  /// The payload that came alongside the error, when there was one.
-  ///
-  /// Only `kick_partial` uses it today. It rides on the exception instead of
-  /// being returned separately so that the caller who handles the failure is
-  /// the same one holding the state it needs to redraw.
-  final Object? result;
-
-  FailureCode? get resolved => FailureCode.fromWire(code);
-
-  Map<String, Object?>? get resultMap {
-    final Object? r = result;
-    return r is Map<String, Object?> ? r : null;
-  }
-
-  @override
-  String toString() => 'DaemonError($code): $message';
 }
 
 /// El mensaje que llegó no tiene la forma del contrato.

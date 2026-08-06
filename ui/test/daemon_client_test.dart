@@ -3,10 +3,22 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kanpachi_ui/core/messages/message_keys.dart';
+import 'package:kanpachi_ui/features/session/domain/daemon_failure.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_client.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_codec.dart';
+import 'package:kanpachi_ui/features/session/infra/daemon/daemon_connector.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_transport.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/status_mapper.dart';
+
+typedef DaemonTestResponder =
+    Object? Function(String method, Map<String, Object?>? params);
+
+final class DaemonTestFailure {
+  const DaemonTestFailure(this.code, this.message);
+
+  final String code;
+  final String message;
+}
 
 /// El daemon falso: un transporte de memoria que habla el mismo contrato.
 ///
@@ -16,6 +28,10 @@ import 'package:kanpachi_ui/features/session/infra/daemon/status_mapper.dart';
 /// la correlación por id, los plazos y el troceo. Eso se prueba mejor sobre
 /// bytes en memoria, y así corre en cualquier máquina.
 class _TransporteFalso implements DaemonTransport {
+  _TransporteFalso({this.responseFor});
+
+  final DaemonTestResponder? responseFor;
+
   final StreamController<List<int>> _entrada =
       StreamController<List<int>>.broadcast();
 
@@ -50,10 +66,21 @@ class _TransporteFalso implements DaemonTransport {
     final String metodo = req['method'] as String;
     if (contestaSolo != null && !contestaSolo!.contains(metodo)) return;
 
-    responde(req['id'] as int, <String, Object?>{'ok': true});
+    final Object? rawParams = req['params'];
+    final Map<String, Object?>? params = rawParams is Map<String, Object?>
+        ? rawParams
+        : null;
+    final Object? result = responseFor == null
+        ? <String, Object?>{'ok': true}
+        : responseFor!(metodo, params);
+    if (result case final DaemonTestFailure failure) {
+      respondeConError(req['id'] as int, failure.code, failure.message);
+      return;
+    }
+    responde(req['id'] as int, result);
   }
 
-  void responde(int id, Map<String, Object?> result) {
+  void responde(int id, Object? result) {
     _entrada.add(
       utf8.encode(
         '${jsonEncode(<String, Object?>{'id': id, 'result': result})}\n',
@@ -82,6 +109,18 @@ class _TransporteFalso implements DaemonTransport {
     if (!_entrada.isClosed) await _entrada.close();
   }
 }
+
+/// The existing byte-level test double, shared by widget tests that exercise
+/// the real [DaemonClient] and [PipeSessionRepository].
+final class DaemonTestTransport extends _TransporteFalso {
+  DaemonTestTransport({super.responseFor});
+}
+
+DaemonConnector daemonTestConnector(DaemonTestResponder responder) =>
+    DaemonConnector.withTransport(
+      tokenLoader: () async => 'test-token',
+      transportFactory: () => DaemonTestTransport(responseFor: responder),
+    );
 
 void main() {
   group('el saludo', () {

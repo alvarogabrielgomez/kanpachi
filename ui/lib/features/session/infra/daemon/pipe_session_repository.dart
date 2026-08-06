@@ -7,12 +7,11 @@ import 'package:kanpachi_ui/features/session/domain/entities/pending_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
+import 'package:kanpachi_ui/features/session/domain/daemon_failure.dart';
 import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_client.dart';
-import 'package:kanpachi_ui/features/session/infra/daemon/daemon_codec.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_connector.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_methods.dart';
-import 'package:kanpachi_ui/features/session/infra/daemon/daemon_transport.dart';
 
 /// El contrato de la UI, hablado contra el daemon de verdad.
 ///

@@ -110,6 +110,10 @@ class _RoomScreenState extends State<RoomScreen> {
             ),
             SizedBox(height: d.gap),
           ],
+          if (room.codeLost && room.selfIsHost) ...<Widget>[
+            const _CodeLostNotice(),
+            SizedBox(height: d.gap),
+          ],
           if (room.hostLeft && !room.selfIsHost) ...<Widget>[
             AppMessageNotice(message: AppMessages.hostLeft(room.hostName)),
             SizedBox(height: d.gap),
@@ -820,6 +824,31 @@ class _ExposureTitle extends StatelessWidget {
             text,
             style: context.type.strongSm.copyWith(color: context.colors.text),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+/// El registro perdió la entrada de una sala que sigue funcionando.
+///
+/// El botón renueva solo el código: conserva la red real, el juego y a todos
+/// los que ya están dentro. Crear otra sala para llegar al mismo resultado
+/// cortaría la partida sin necesidad.
+class _CodeLostNotice extends StatelessWidget {
+  const _CodeLostNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return AppMessageNotice(
+      message: AppMessages.codeLost,
+      actions: <Widget>[
+        AppButton(
+          label: 'Renovar el código',
+          variant: AppButtonVariant.primaryFlat,
+          height: 34,
+          horizontalPadding: 15,
+          onPressed: context.read<SessionCubit>().renewCode,
         ),
       ],
     );

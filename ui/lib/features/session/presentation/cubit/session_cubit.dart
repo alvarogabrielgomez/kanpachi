@@ -13,7 +13,6 @@ import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart
 import 'package:kanpachi_ui/features/session/domain/entities/pending_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
-import 'package:kanpachi_ui/features/session/infra/daemon/daemon_codec.dart';
 import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
 

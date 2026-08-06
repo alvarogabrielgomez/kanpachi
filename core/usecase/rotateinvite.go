@@ -2,9 +2,11 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/port"
 )
 
 // RotateInviteCode cierra la puerta a quien está fuera.
@@ -176,6 +178,9 @@ func (s *Session) RenameRoom(ctx context.Context, name string) (domain.RoomState
 		return domain.RoomState{}, err
 	}
 	if err := s.deps.Directory.Publish(ctx, s.state.Room.InviteID, sealed); err != nil {
+		if errors.Is(err, port.ErrUnknownRoom) {
+			s.state.CodeLost = true
+		}
 		s.deps.Log.Warn("no se pudo publicar el nombre nuevo de la sala", "error", err)
 		// La clave y el blob NO se tocan: los que están en disco siguen siendo
 		// los de la tarjeta que el registro tiene, y esa sigue siendo la buena.

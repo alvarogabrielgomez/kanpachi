@@ -1,10 +1,5 @@
 import 'dart:async';
 
-// `DaemonUnreachable` y su tipo viven en el dominio, en `daemon_failure.dart`:
-// son parte del contrato y no del transporte. Se reexportan desde acá para que
-// quien implemente un transporte los tenga a mano sin buscar.
-export 'package:kanpachi_ui/features/session/domain/daemon_failure.dart';
-
 /// Por dónde viajan los bytes hasta el daemon.
 ///
 /// # Por qué es una interfaz y no directamente el named pipe

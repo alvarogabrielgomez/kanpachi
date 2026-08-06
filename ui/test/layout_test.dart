@@ -5,13 +5,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kanpachi_ui/core/design_system/theme/app_theme.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/density_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
-import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
-import 'package:kanpachi_ui/features/session/infra/fake_session_repository.dart';
+import 'package:kanpachi_ui/features/session/infra/daemon/daemon_methods.dart';
+import 'package:kanpachi_ui/features/session/infra/daemon/pipe_session_repository.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/pages/shell_page.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/shell_bars.dart';
+
+import 'daemon_client_test.dart' show daemonTestConnector;
 
 /// El candado del layout: ninguna pantalla se desborda en ningún tamaño de
 /// ventana que la app permita.
@@ -35,20 +37,37 @@ void main() {
     'maximizada en 1440p': Size(2560, 1440),
   };
 
-  /// Una sala de cada tipo. Se piden una sola vez porque el repositorio falso
-  /// simula la espera real de crearlas, y pagarla en cada test multiplicaría
-  /// por veinte lo que tarda la suite.
-  late final Room salaDeHost;
-  late final Room salaDeInvitado;
+  const Map<String, Object?> salaDeHost = <String, Object?>{
+    'conn': 'connected',
+    'role': 'host',
+    'name': 'La Guarida de los Panas',
+    'code': 'A7K2-M9QX',
+    'link': 'https://kanpachi.accentio.dev/A7K2-M9QX#test',
+    'host_present': true,
+    'peers': <Object?>[
+      <String, Object?>{
+        'ip': '100.87.3.1',
+        'name': 'Alvaro',
+        'path': 'self',
+        'self': true,
+        'host': true,
+      },
+      <String, Object?>{
+        'ip': '100.87.3.2',
+        'name': 'Humberto',
+        'path': 'relay',
+        'rtt_ms': 45,
+      },
+    ],
+  };
 
-  setUpAll(() async {
-    final FakeSessionRepository fake = FakeSessionRepository();
-    salaDeHost = await fake.createRoom(
-      name: 'La Guarida de los Panas',
-      nickname: 'Alvaro',
-    );
-    salaDeInvitado = await fake.joinRoom('A7K2-M9QX', nickname: 'Alvaro');
-  });
+  const Map<String, Object?> invitacion = <String, Object?>{
+    'link': 'kanpachi://A7K2-M9QX',
+    'code': 'A7K2-M9QX',
+    'seed': 'kanpachi.accentio.dev',
+    'room': 'La Guarida de los Panas',
+    'host': 'Alvaro',
+  };
 
   /// Pinta el marco entero con la pantalla puesta y devuelve los desbordes.
   ///
@@ -60,7 +79,8 @@ void main() {
     required Size ventana,
     required AppScreen pantalla,
     AppDialog dialogo = AppDialog.none,
-    Room? sala,
+    Map<String, Object?>? sala,
+    Map<String, Object?>? invite,
     ThemeMode tema = ThemeMode.dark,
   }) async {
     final List<String> desbordes = <String>[];
@@ -78,8 +98,17 @@ void main() {
     };
 
     final ShellCubit shell = ShellCubit(initial: pantalla);
-    final SessionCubit session = SessionCubit(FakeSessionRepository());
-    if (sala != null) session.debugReplaceRoom(sala);
+    Object? responde(String method, Map<String, Object?>? _) =>
+        switch (method) {
+          DaemonMethods.status => sala ?? <String, Object?>{},
+          DaemonMethods.pendingInvite => invite ?? <String, Object?>{},
+          DaemonMethods.pendingRoom => <String, Object?>{'found': false},
+          DaemonMethods.listGames || DaemonMethods.foreignRules => <Object?>[],
+          _ => <String, Object?>{},
+        };
+    final SessionCubit session = SessionCubit(
+      PipeSessionRepository(daemonTestConnector(responde)),
+    )..watchSession();
     if (dialogo != AppDialog.none) shell.showDialog(dialogo);
 
     try {
@@ -125,17 +154,21 @@ void main() {
           // Las pantallas de sala necesitan una sala plantada; el resto la
           // ignora. La de invitado trae host ajeno y una regla del firewall,
           // que es el estado con más cosas en pantalla a la vez.
-          final Room? sala = switch (pantalla) {
+          final Map<String, Object?>? sala = switch (pantalla) {
             AppScreen.room => salaDeHost,
-            AppScreen.invite => salaDeInvitado,
+            AppScreen.exposure => salaDeHost,
             _ => null,
           };
+          final Map<String, Object?>? invite = pantalla == AppScreen.invite
+              ? invitacion
+              : null;
 
           final List<String> desbordes = await desbordesDe(
             tester,
             ventana: ventana.value,
             pantalla: pantalla,
             sala: sala,
+            invite: invite,
           );
 
           expect(
@@ -178,7 +211,19 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     final ShellCubit shell = ShellCubit(initial: AppScreen.home);
-    final SessionCubit session = SessionCubit(FakeSessionRepository());
+    final SessionCubit session = SessionCubit(
+      PipeSessionRepository(
+        daemonTestConnector(
+          (String method, Map<String, Object?>? _) => switch (method) {
+            DaemonMethods.status ||
+            DaemonMethods.pendingInvite => <String, Object?>{},
+            DaemonMethods.pendingRoom => <String, Object?>{'found': false},
+            DaemonMethods.listGames => <Object?>[],
+            _ => <String, Object?>{},
+          },
+        ),
+      ),
+    );
     addTearDown(shell.close);
     addTearDown(session.close);
 

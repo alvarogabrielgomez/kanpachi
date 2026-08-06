@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:kanpachi_ui/features/session/domain/daemon_failure.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_codec.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_methods.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_transport.dart';

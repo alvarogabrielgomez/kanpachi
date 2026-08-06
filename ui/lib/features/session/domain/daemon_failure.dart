@@ -9,6 +9,40 @@
 /// distinción sigue siendo la misma y el error sigue siendo este.
 library;
 
+import 'package:kanpachi_ui/core/messages/message_keys.dart';
+
+/// El daemon rechazó una operación, con su código cerrado.
+///
+/// Vive junto a [DaemonUnreachable] porque las dos son parte del contrato que
+/// consume la presentación: una dice que el daemon contestó que no y la otra
+/// que no hubo con quién hablar. Ninguna depende de que el transporte sea un
+/// named pipe.
+class DaemonError implements Exception {
+  const DaemonError({required this.code, required this.message, this.result});
+
+  /// El código tal como vino. Se guarda crudo además de resuelto, porque un
+  /// daemon más nuevo puede mandar uno que esta app no conoce y perderlo
+  /// dejaría el diagnóstico sin la única pista útil.
+  final String code;
+  final String message;
+
+  /// La carga que acompañó al error, cuando existe.
+  ///
+  /// `kick_partial` trae además la sala recalculada para poder quitar de la UI
+  /// a quien ya salió aunque una de las dos capas de expulsión haya fallado.
+  final Object? result;
+
+  FailureCode? get resolved => FailureCode.fromWire(code);
+
+  Map<String, Object?>? get resultMap {
+    final Object? value = result;
+    return value is Map<String, Object?> ? value : null;
+  }
+
+  @override
+  String toString() => 'DaemonError($code): $message';
+}
+
 /// Dónde ocurrió el fallo, que es lo que decide si repetir es seguro.
 ///
 /// No es una taxonomía para el log. Repetir una petición que pudo haberse

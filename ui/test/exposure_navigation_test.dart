@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_icon_button.dart';
 import 'package:kanpachi_ui/core/design_system/theme/app_theme.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/density_tokens.dart';
-import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
-import 'package:kanpachi_ui/features/session/infra/fake_session_repository.dart';
+import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/features/session/infra/daemon/daemon_methods.dart';
+import 'package:kanpachi_ui/features/session/infra/daemon/pipe_session_repository.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/pages/shell_page.dart';
+
+import 'daemon_client_test.dart' show daemonTestConnector;
 
 /// El camino hasta la medición, y la vuelta.
 ///
@@ -24,21 +28,40 @@ import 'package:kanpachi_ui/features/shell/presentation/pages/shell_page.dart';
 /// que se vuelve. Sin la vuelta, la pantalla es una trampa: el usuario entra a
 /// mirar sus puertos y se queda sin su sala.
 void main() {
-  late Room sala;
+  const Map<String, Object?> sala = <String, Object?>{
+    'conn': 'connected',
+    'role': 'host',
+    'name': 'La Guarida',
+    'code': 'A7K2-M9QX',
+    'link': 'https://kanpachi.accentio.dev/A7K2-M9QX#test',
+    'host_present': true,
+    'peers': <Object?>[
+      <String, Object?>{
+        'ip': '100.87.3.1',
+        'name': 'Alvaro',
+        'path': 'self',
+        'self': true,
+        'host': true,
+      },
+    ],
+  };
 
-  setUpAll(() async {
-    sala = await FakeSessionRepository().createRoom(
-      name: 'La Guarida',
-      nickname: 'Alvaro',
-    );
-  });
+  Object? responde(String method, Map<String, Object?>? _) => switch (method) {
+    DaemonMethods.status => sala,
+    DaemonMethods.listGames || DaemonMethods.foreignRules => <Object?>[],
+    _ => <String, Object?>{},
+  };
 
   /// Monta el armazón ENTERO, y ahí está la gracia: es lo único que puede
   /// afirmar que una pantalla es alcanzable, porque es lo que enruta.
   Future<(ShellCubit, SessionCubit)> pinta(WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(AppSpacing.initialWindow);
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final ShellCubit shell = ShellCubit(initial: AppScreen.room);
-    final SessionCubit session = SessionCubit(FakeSessionRepository())
-      ..debugReplaceRoom(sala);
+    final SessionCubit session = SessionCubit(
+      PipeSessionRepository(daemonTestConnector(responde)),
+    );
+    await session.refresh();
 
     await tester.pumpWidget(
       MultiBlocProvider(
@@ -63,6 +86,19 @@ void main() {
   const String tituloExposicion = 'Qué tiene abierto tu PC';
   const String enlace = 'Ver lo que tu PC tiene abierto';
 
+  Finder botonExposicion() => find.byWidgetPredicate(
+    (Widget widget) => widget is AppButton && widget.label == enlace,
+  );
+
+  Future<void> abreExposicion(WidgetTester tester) async {
+    final Finder boton = botonExposicion();
+    await tester.ensureVisible(boton);
+    await tester.pump();
+    await tester.tap(boton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+  }
+
   testWidgets('desde la sala se llega a la medición', (
     WidgetTester tester,
   ) async {
@@ -78,9 +114,7 @@ void main() {
       reason: 'sin este enlace la pantalla de exposición no la alcanza nadie',
     );
 
-    await tester.tap(find.text(enlace));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+    await abreExposicion(tester);
 
     expect(find.text(tituloExposicion), findsOneWidget);
     expect(shell.state.screen, equals(AppScreen.exposure));
@@ -99,9 +133,7 @@ void main() {
       await session.close();
     });
 
-    await tester.tap(find.text(enlace));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+    await abreExposicion(tester);
 
     await tester.tap(find.byType(AppBackButton));
     await tester.pump();

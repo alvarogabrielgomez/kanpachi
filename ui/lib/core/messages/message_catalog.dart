@@ -503,6 +503,20 @@ abstract final class AppMessages {
         'hasta que vuelva. La sala sigue en pie.',
   );
 
+  /// El registro perdió la entrada de una sala que sigue abierta.
+  ///
+  /// No es una caída del seed: esa se cura sola y no afirma que el código haya
+  /// muerto. Acá el registro contestó explícitamente que no lo conoce, así que
+  /// la única salida que conserva la partida es renovarlo.
+  static const AppMessage codeLost = AppMessage(
+    severity: MessageSeverity.warn,
+    title: 'El código de esta sala dejó de funcionar',
+    body:
+        'La sala sigue funcionando para quienes ya están dentro, pero nadie '
+        'nuevo puede entrar con ese código. Renuévalo para abrir una puerta '
+        'nueva sin cortar la partida.',
+  );
+
   /// No se pudo hablar con el servicio de Kanpachi.
   ///
   /// **No es un `FailureCode`,** y la diferencia importa: aquellos son códigos

@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:kanpachi_ui/features/session/domain/daemon_failure.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_transport.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/pipe/pipe_names.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/pipe/pipe_workers.dart';
