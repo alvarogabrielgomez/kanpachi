@@ -28,6 +28,7 @@ func (s *Session) saveRoomLocked() {
 		NetworkSecret: s.hostSpec.NetworkSecret,
 		Subnet:        s.state.Subnet,
 		CardKey:       s.cardKey,
+		Card:          s.sealedCard,
 		GameID:        s.state.Game.ID,
 		SavedAt:       s.deps.Clock.Now(),
 	}.Encode()

@@ -129,6 +129,7 @@ func (s *Session) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
 	}}
 	s.hostSpec = spec
 	s.cardKey = saved.CardKey
+	s.sealedCard = saved.Card
 	s.nick = saved.Host
 
 	s.configureAdapter(ctx)
@@ -167,6 +168,8 @@ func (s *Session) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
 		return domain.RoomState{}, err
 	}
 
+	s.republishCardLocked(ctx)
+
 	s.saveRoomLocked()
 	s.pending = domain.PersistedRoom{}
 	s.hasPending = false
@@ -199,4 +202,39 @@ func (s *Session) restoreGameLocked(ctx context.Context, gameID string) {
 	}
 	s.configureAdapter(ctx)
 	s.deps.Log.Info("juego repuesto de la sala anterior", "juego", gameID)
+}
+
+// republishCardLocked vuelve a subir la tarjeta que ya estaba publicada.
+//
+// # Por qué hace falta reabrir para eso
+//
+// El registro guarda las tarjetas EN MEMORIA y con vencimiento, así que una
+// sala que sobrevive a un apagón se encuentra a sí misma en pie y su tarjeta
+// muerta: la página de invitación mostraría la genérica sobre una sala que está
+// funcionando. Nada más en el producto la vuelve a subir.
+//
+// Se suben los MISMOS bytes, no una tarjeta nueva. Es lo que conserva válidos
+// los enlaces que ya se repartieron: la clave que los abre es la que se acaba de
+// cargar del disco, y volver a sellar produciría otra.
+//
+// **No es fatal y no es un reintento.** Que falle cuesta la tarjeta y nada más,
+// que es exactamente lo que este puerto promete costar. Y se intenta UNA vez,
+// porque el límite de tasa del registro cuenta también lo que falla.
+//
+// Sin tarjeta guardada no se llama a nadie: es el caso de un `room.json` escrito
+// antes de que el campo existiera, y el del respaldo de crear, donde el invite ID
+// lo generó esta máquina y el registro no lo emitió nunca.
+//
+// Asume el candado tomado.
+func (s *Session) republishCardLocked(ctx context.Context) {
+	if len(s.sealedCard) == 0 {
+		return
+	}
+	if err := s.deps.Directory.Publish(ctx, s.state.Room.InviteID, s.sealedCard); err != nil {
+		s.deps.Log.Warn("la tarjeta de la sala no se pudo republicar, la página de invitación "+
+			"va a mostrar la genérica", "error", err)
+		return
+	}
+	s.deps.Log.Info("tarjeta de la sala republicada al reabrir",
+		"código", s.state.Room.InviteID.String())
 }

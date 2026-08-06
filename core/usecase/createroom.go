@@ -70,7 +70,7 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 		return domain.RoomState{}, fmt.Errorf("generando el secreto de la red: %w", err)
 	}
 
-	room, key, err := s.publishCard(ctx, nick, roomName)
+	room, key, sealed, err := s.publishCard(ctx, nick, roomName)
 	if err != nil {
 		return domain.RoomState{}, err
 	}
@@ -97,7 +97,11 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 		VirtualIP: local, Name: nick, Path: domain.PathSelf, Self: true, Host: true,
 	}}
 	s.hostSpec = spec
+	// La clave y el blob se fijan JUNTOS, siempre. Es la invariante de los dos:
+	// la clave persistida tiene que abrir el blob persistido, y separarlos deja
+	// en disco un enlace que no descifra la tarjeta que el registro tiene.
 	s.cardKey = key
+	s.sealedCard = sealed
 	s.nick = nick
 
 	s.configureAdapter(ctx)
@@ -165,13 +169,18 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 // identifica como host, y lo que se gana al seguir sin él es que crear una
 // sala no dependa de que un servidor esté vivo. En ese caso el ID se genera
 // acá, con el mismo alfabeto, y la sala funciona igual.
-func (s *Session) publishCard(ctx context.Context, nick domain.Nickname, roomName string) (domain.Room, [domain.CardKeyLen]byte, error) {
+//
+// Devuelve también el blob SELLADO, y solo cuando el registro lo aceptó. Con el
+// respaldo devuelve nada: ese invite ID no lo emitió el registro, así que no
+// tiene ninguna tarjeta suya que restaurar, y guardar una haría que cada
+// reapertura intentara republicarla y se llevara un "esa sala no existe".
+func (s *Session) publishCard(ctx context.Context, nick domain.Nickname, roomName string) (domain.Room, [domain.CardKeyLen]byte, []byte, error) {
 	var key [domain.CardKeyLen]byte
 
 	card := domain.RoomCard{Host: nick, Room: domain.ClampRoomName(roomName)}
 	sealed, key, err := domain.SealRoomCard(card, s.deps.Rand)
 	if err != nil {
-		return domain.Room{}, key, err
+		return domain.Room{}, key, nil, err
 	}
 
 	room, err := s.deps.Directory.Open(ctx, sealed)
@@ -179,14 +188,14 @@ func (s *Session) publishCard(ctx context.Context, nick domain.Nickname, roomNam
 		s.deps.Log.Warn("el registro del seed no respondió, la sala va sin tarjeta", "error", err)
 		id, err := domain.NewInviteID(s.deps.Rand)
 		if err != nil {
-			return domain.Room{}, key, fmt.Errorf("generando un código sin registro: %w", err)
+			return domain.Room{}, key, nil, fmt.Errorf("generando un código sin registro: %w", err)
 		}
 		// Sin registro que conteste no hay forma de saber a qué seed pertenece
 		// el código, y el por defecto es el único que el otro lado va a probar
 		// con un ID pelado.
-		return domain.Room{InviteID: id, Seed: domain.DefaultSeedHost}, key, nil
+		return domain.Room{InviteID: id, Seed: domain.DefaultSeedHost}, key, nil, nil
 	}
-	return room, key, nil
+	return room, key, sealed, nil
 }
 
 // configureAdapter sondea el MTU y aplica el estado del adaptador.

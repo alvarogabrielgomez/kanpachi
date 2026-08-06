@@ -39,6 +39,10 @@ func (s *Session) RotateInviteCode(ctx context.Context) (domain.RoomState, error
 		return domain.RoomState{}, err
 	}
 
+	// Lo publicado, o nada. El respaldo genera el ID acá, así que el registro no
+	// lo emitió nunca y no tiene ninguna tarjeta de esa sala que restaurar.
+	publicada := sealed
+
 	room, err := s.deps.Directory.Open(ctx, sealed)
 	if err != nil {
 		s.deps.Log.Warn("el registro del seed no respondió al renovar, el código nuevo va sin tarjeta", "error", err)
@@ -49,6 +53,7 @@ func (s *Session) RotateInviteCode(ctx context.Context) (domain.RoomState, error
 		// El seed se conserva: renovar cambia la llave de búsqueda, no el
 		// registro donde vive la sala.
 		room = domain.Room{InviteID: id, Seed: old.Seed}
+		publicada = nil
 	}
 
 	// El vestíbulo se rehospeda con el nombre nuevo, y esto NO es opcional: el
@@ -73,6 +78,7 @@ func (s *Session) RotateInviteCode(ctx context.Context) (domain.RoomState, error
 
 	s.state.Room = room
 	s.cardKey = key
+	s.sealedCard = publicada
 	s.saveRoomLocked()
 
 	// El código nuevo se le reparte a los que están DENTRO.
@@ -162,9 +168,29 @@ func (s *Session) RenameRoom(ctx context.Context, name string) (domain.RoomState
 	}
 	if err := s.deps.Directory.Publish(ctx, s.state.Room.InviteID, sealed); err != nil {
 		s.deps.Log.Warn("no se pudo publicar el nombre nuevo de la sala", "error", err)
+		// La clave y el blob NO se tocan: los que están en disco siguen siendo
+		// los de la tarjeta que el registro tiene, y esa sigue siendo la buena.
 		return s.snapshot(), nil
 	}
+
+	// Y se vuelve a guardar, que es lo que faltaba.
+	//
+	// # El desajuste que esto cierra
+	//
+	// El `saveRoomLocked` de arriba corre ANTES de sellar, así que grababa el
+	// nombre nuevo con la clave VIEJA. La clave nueva se fijaba solo en memoria,
+	// y un apagón después de renombrar dejaba en disco una clave que no abre la
+	// tarjeta que el registro tiene: al reabrir, el enlace repartido mostraba la
+	// tarjeta genérica sin que nada hubiera fallado.
+	//
+	// Queda una ventana entre publicar y guardar, más angosta que la anterior y
+	// elegida a sabiendas. La alternativa, guardar antes de publicar, se repara
+	// sola en la siguiente reapertura a cambio de que un publish fallido deje en
+	// disco una clave que no abre lo que el registro sirve, que es el mismo daño
+	// en el caso que SÍ ocurre.
 	s.cardKey = key
+	s.sealedCard = sealed
+	s.saveRoomLocked()
 	return s.snapshot(), nil
 }
 

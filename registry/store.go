@@ -63,9 +63,19 @@ type Room struct {
 //
 // Que sea volátil es una elección, no una limitación: una sala muere cuando se
 // va el último, así que persistir su tarjeta solo alargaría la vida de un dato
-// que ya no describe nada. Reiniciar el registro cuesta que los invitados vean
-// la tarjeta genérica hasta que el host vuelva a publicar, y jamás impide
-// entrar, porque entrar no pasa por acá.
+// que ya no describe nada. Reiniciar el registro **jamás impide entrar**, porque
+// entrar no pasa por acá.
+//
+// # Lo que cuesta reiniciar, dicho con precisión
+//
+// Los invitados ven la tarjeta genérica, y **el host no la puede reponer solo**:
+// [Store.Publish] exige que la entrada exista, así que tras un reinicio contesta
+// que no conoce la sala. El host la recupera renovando el código, que pide un
+// invite ID nuevo y vuelve a fijar su llave.
+//
+// Decir "hasta que el host vuelva a publicar" era falso y estuvo escrito acá:
+// publicar no crea. Y no debe crear, porque eso reabriría la carrera que el
+// fijado existe para cerrar: quien se quedó con el código llegaría primero.
 type Store struct {
 	mu    sync.RWMutex
 	rooms map[string]*Room

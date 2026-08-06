@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -58,7 +59,9 @@ func TestLaSalaGuardadaVaYVuelvePorElDecodificadorDelDominio(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lo que se guardó no se pudo releer: %v", err)
 	}
-	if tengo != quiero {
+	// DeepEqual y no `!=`: la sala guardada lleva la tarjeta sellada, que es un
+	// slice, así que el struct dejó de ser comparable con el operador.
+	if !reflect.DeepEqual(tengo, quiero) {
 		t.Fatalf("la vuelta por disco cambió la sala:\n%+v\n%+v", tengo, quiero)
 	}
 }

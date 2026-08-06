@@ -60,6 +60,24 @@ type PersistedRoom struct {
 	Subnet  netip.Prefix
 	CardKey [CardKeyLen]byte
 
+	// Card es la tarjeta SELLADA que el registro aceptó, tal cual se subió.
+	//
+	// Existe para poder republicarla al reabrir sin volver a sellarla: el
+	// registro guarda las tarjetas en memoria y con vencimiento, así que un
+	// daemon que vuelve encuentra su sala en pie y su tarjeta muerta. Subir los
+	// MISMOS bytes conserva los enlaces que ya se repartieron, porque la clave
+	// que los abre es [PersistedRoom.CardKey] y sigue siendo esta.
+	//
+	// **Vacío es válido y significa que no hay nada que republicar.** Es el caso
+	// de un archivo escrito antes de que este campo existiera, y también el del
+	// respaldo de crear: cuando el registro no contestó, el invite ID se generó
+	// acá y él no lo emitió nunca, así que no hay tarjeta suya que restaurar.
+	//
+	// Es presentación cifrada, o sea bytes opacos, y jamás política: lo peor que
+	// consigue un archivo manipulado es publicar basura firmada por la propia
+	// llave de este equipo, que es exactamente lo que este equipo ya puede hacer.
+	Card []byte
+
 	// GameID es el juego que estaba activo. Vacío es válido y es lo normal.
 	GameID string
 
@@ -106,6 +124,7 @@ type persistedRoomJSON struct {
 	NetworkSecret string `json:"network_secret"`
 	Subnet        string `json:"subnet"`
 	CardKey       string `json:"card_key"`
+	Card          string `json:"card"`
 	GameID        string `json:"game_id"`
 	SavedAt       string `json:"saved_at"`
 }
@@ -132,6 +151,7 @@ func (p PersistedRoom) Encode() ([]byte, error) {
 		NetworkSecret: base64.StdEncoding.EncodeToString(p.NetworkSecret[:]),
 		Subnet:        p.Subnet.String(),
 		CardKey:       base64.StdEncoding.EncodeToString(p.CardKey[:]),
+		Card:          base64.StdEncoding.EncodeToString(p.Card),
 		GameID:        p.GameID,
 		SavedAt:       p.SavedAt.UTC().Format(time.RFC3339),
 	}, "", "  ")
@@ -169,6 +189,22 @@ func DecodePersistedRoom(raw []byte) (PersistedRoom, error) {
 	}
 	if err := fixedFromBase64(j.CardKey, out.CardKey[:], "card_key"); err != nil {
 		return PersistedRoom{}, err
+	}
+
+	// La tarjeta es de largo variable y OPCIONAL: un archivo escrito antes de
+	// que este campo existiera carga igual, y sin ella lo único que se pierde es
+	// la republicación al reabrir. El tope es el mismo que aplica el registro del
+	// otro lado, así que un archivo inflado a mano se rechaza acá y no allá.
+	if j.Card != "" {
+		card, err := base64.StdEncoding.DecodeString(j.Card)
+		if err != nil {
+			return PersistedRoom{}, fmt.Errorf("%w: la tarjeta: %v", ErrPersistedShape, err)
+		}
+		if len(card) > MaxCardBytes {
+			return PersistedRoom{}, fmt.Errorf("%w: la tarjeta mide %d bytes y el tope es %d",
+				ErrPersistedShape, len(card), MaxCardBytes)
+		}
+		out.Card = card
 	}
 
 	// La subred se comprueba contra las mismas reglas que la eligen. Una sala

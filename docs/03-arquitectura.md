@@ -1748,12 +1748,13 @@ Program Files\Kanpachi\      binarios (daemon, ui, kanpachi-engine) + Packet.dll
 ProgramData\Kanpachi\
   config.json                nombre visible, sala activa, rol
   api.token                  rotado por arranque del servicio
-  identity.key               llave privada larga de esta instalación (decisión 25)
+  identity.key               llave privada larga de esta instalación (decisión 25).
+                             La crea el primer uso del registro, con ACL propia
   known-hosts.json           libreta de huellas: nick visto, llave con que se lo vio
   room.json                  SOLO EN EL HOST: invite ID con su seed, identidad de la red
-                             real, subred, nombre, nick, clave de la tarjeta e id del
-                             juego activo. Su PRESENCIA al arrancar es la señal de mal
-                             cierre: salir limpio lo borra
+                             real, subred, nombre, nick, la tarjeta sellada con su
+                             clave, e id del juego activo. Su PRESENCIA al arrancar
+                             es la señal de mal cierre: salir limpio lo borra
   last-room.json             SOLO EN INVITADOS: código, seed, nombre de la sala y nick.
                              Jamás la credencial ni la identidad de la red real
   suspended-rules.json       reglas ajenas desactivadas y su estado previo
@@ -1766,6 +1767,12 @@ ACL de ProgramData: escritura solo SYSTEM y Administradores, lectura para usuari
 **El daemon es la única fuente de verdad.** Cerrar la ventana no cierra la sala, así que el estado tiene que sobrevivir a la UI. La UI lo lee por `Status()` y persiste únicamente cosas de presentación, como el tamaño de la ventana. Guardar la sala también del lado de Flutter crearía dos verdades que se desincronizan justo en el caso que el producto promete soportar, que es cerrar la ventana con la partida viva.
 
 **`room.json` lleva la identidad de la red real, o sea que es portador de acceso a la sala.** La ACL de ProgramData da lectura a los usuarios de la máquina, así que cualquier proceso del usuario puede leerlo. Es coherente con el modelo de amenazas, que ya asume que malware corriendo como el usuario puede usar la API igual que el usuario. Vale escribirlo para que nadie lo trate como inocuo: sobrevive a la sesión.
+
+**La tarjeta sellada se guarda junto a su clave, y siempre las dos a la vez.** Es presentación cifrada, o sea bytes opacos y jamás política: lo peor que consigue un archivo manipulado es publicar basura firmada por la propia llave de este equipo, que es exactamente lo que este equipo ya puede hacer. Está ahí para poder volver a subirla al reabrir sin re-sellar nada, lo cual conserva válidos los enlaces ya repartidos, porque la clave que los abre es la que se acaba de cargar del disco.
+
+Que se escriban juntas es la invariante, y separarlas ya costó un fallo: renombrar guardaba a disco ANTES de sellar la tarjeta nueva, y fijaba la clave nueva solo en memoria. Un apagón después de renombrar dejaba en el archivo el nombre nuevo con la clave vieja, así que al reabrir el enlace repartido mostraba la tarjeta genérica sin que nada hubiera fallado en ningún sitio.
+
+**Vacía es válido y significa que no hay nada que republicar**: un archivo escrito antes de que el campo existiera, o el respaldo de crear, donde el invite ID lo generó esta máquina y el registro no lo emitió nunca. Pedirle que republique eso sería pedirle que reabra una sala que no conoce.
 
 `last-room.json` es distinto y a propósito: **no lleva credencial ni identidad de red**, solo el código. Volver pasa otra vez por el vestíbulo, el host reemite y ve llegar a quien llega, y eso es lo que mantiene con sentido a la revocación.
 

@@ -117,6 +117,7 @@ func (s *Session) leaveLocked(ctx context.Context, reason string, exit domain.Ex
 	s.teardown(ctx)
 	s.hostSpec = domain.HostSpec{}
 	s.cardKey = [domain.CardKeyLen]byte{}
+	s.sealedCard = nil
 	s.nick = domain.Nickname{}
 	s.kicked = nil
 	s.announcedGame = ""

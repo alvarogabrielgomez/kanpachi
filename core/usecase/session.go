@@ -155,6 +155,18 @@ type Session struct {
 	// cardKey es la clave con que se cifró la tarjeta de esta sala. Se guarda
 	// para poder rearmar el enlace de invitación sin volver a publicar.
 	cardKey [domain.CardKeyLen]byte
+	// sealedCard es esa misma tarjeta, ya cifrada, tal cual la ACEPTÓ el
+	// registro. Sirve para volver a subirla al reabrir sin re-sellar nada, que
+	// es lo que conserva válidos los enlaces ya repartidos.
+	//
+	// **Se escribe SIEMPRE junto a cardKey**, y esa es su invariante: la clave
+	// tiene que abrir el blob. Separarlos deja en disco un enlace que no
+	// descifra la tarjeta que el registro tiene.
+	//
+	// Vacío cuando el registro no aceptó nada, o sea en el respaldo de crear y
+	// de renovar. Un ID que el registro nunca emitió no tiene tarjeta suya que
+	// restaurar, y republicarla sería pedirle que reabra una sala que no conoce.
+	sealedCard []byte
 	// kicked son los expulsados de hace poco, con cuándo.
 	//
 	// Existe porque revocar tarda alrededor de un segundo y el motor sigue

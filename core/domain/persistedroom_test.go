@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -25,6 +26,7 @@ func salaGuardadaDePrueba(t *testing.T) PersistedRoom {
 		Host:    host,
 		Subnet:  netip.MustParsePrefix("100.87.3.0/24"),
 		GameID:  "project-zomboid",
+		Card:    []byte("una tarjeta sellada de mentira"),
 		SavedAt: time.Date(2026, 8, 2, 20, 0, 0, 0, time.UTC),
 	}
 	for i := range p.NetworkID {
@@ -50,8 +52,53 @@ func TestLaSalaGuardadaVaYVuelveIgual(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tengo != quiero {
+	// DeepEqual y no `!=`: la tarjeta sellada es un slice, así que el struct
+	// dejó de ser comparable. Que lo dijera el compilador es la señal correcta.
+	if !reflect.DeepEqual(tengo, quiero) {
 		t.Fatalf("la vuelta cambió la sala:\n%+v\n%+v", tengo, quiero)
+	}
+}
+
+// Un archivo escrito ANTES de que existiera la tarjeta carga igual.
+//
+// Es lo que hace que agregar el campo no sea una migración: quien venía de una
+// versión anterior reabre su sala como siempre, y lo único que no pasa es la
+// republicación, porque no hay bytes que republicar.
+func TestUnaSalaGuardadaSinTarjetaCargaIgual(t *testing.T) {
+	quiero := salaGuardadaDePrueba(t)
+	quiero.Card = nil
+
+	raw, err := quiero.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tengo, err := DecodePersistedRoom(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tengo.Card) != 0 {
+		t.Errorf("apareció una tarjeta de la nada: %q", tengo.Card)
+	}
+	if !reflect.DeepEqual(tengo, quiero) {
+		t.Fatalf("la vuelta cambió la sala:\n%+v\n%+v", tengo, quiero)
+	}
+}
+
+// Y una tarjeta pasada del tope se rechaza ACÁ, no del otro lado.
+//
+// El registro la rechazaría igual, con un 413, pero para entonces ya se habría
+// hablado con él. El tope del dominio es el mismo número, así que un archivo
+// inflado a mano no llega ni a salir de la máquina.
+func TestUnaTarjetaGuardadaPasadaDelTopeSeRechaza(t *testing.T) {
+	quiero := salaGuardadaDePrueba(t)
+	quiero.Card = make([]byte, MaxCardBytes+1)
+
+	raw, err := quiero.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodePersistedRoom(raw); !errors.Is(err, ErrPersistedShape) {
+		t.Fatalf("una tarjeta de %d bytes se aceptó: %v", MaxCardBytes+1, err)
 	}
 }
 
@@ -213,6 +260,7 @@ func TestNadaQueLleveSecretosSeImprimeEntero(t *testing.T) {
 		Name:    "Los panas",
 		Subnet:  netip.MustParsePrefix("100.87.3.0/24"),
 		GameID:  "project-zomboid",
+		Card:    []byte("una tarjeta sellada de mentira"),
 		SavedAt: time.Now(),
 	}
 	copy(sala.NetworkSecret[:], secreto)

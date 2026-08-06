@@ -354,9 +354,12 @@ type registroFalso struct {
 
 	emitidos  []domain.InviteID
 	publicado []byte
-	siguiente string
-	seed      string
-	err       error
+	// publicaciones cuenta las llamadas a Publish, incluidas las que fallan. Es
+	// lo que distingue "no republicó" de "republicó y le contestaron que no".
+	publicaciones int
+	siguiente     string
+	seed          string
+	err           error
 }
 
 func (r *registroFalso) Open(_ context.Context, sealed []byte) (domain.Room, error) {
@@ -390,6 +393,9 @@ func (r *registroFalso) Lookup(context.Context, domain.InviteID) ([]byte, int, e
 }
 
 func (r *registroFalso) Publish(_ context.Context, _ domain.InviteID, sealed []byte) error {
+	r.mu.Lock()
+	r.publicaciones++
+	r.mu.Unlock()
 	if r.err != nil {
 		return r.err
 	}

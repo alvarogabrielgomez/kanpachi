@@ -931,7 +931,28 @@ estaba escrita, probada y llamada por un solo adaptador. Ahora la llaman los dos
 que hablan con el seed, sobre lo que resolvió el DNS y en **cada** uso, porque un
 nombre impecable puede apuntar a `192.168.1.1`.
 
-Y al escribirla apareció la mitad que casi se escapa: **a un cliente HTTP no
+**Reabrir vuelve a subir la tarjeta, y hasta ahora nadie lo hacía.** El registro
+guarda las tarjetas en memoria y con vencimiento, así que una sala que sobrevive
+a un apagón se encontraba a sí misma en pie y su tarjeta muerta: la página de
+invitación mostraba la genérica sobre una partida corriendo. Se suben los MISMOS
+bytes, que es lo que conserva válidos los enlaces ya repartidos.
+
+Y al escribir eso apareció un desajuste que estaba vivo: **renombrar guardaba la
+clave nueva solo en memoria.** El `saveRoomLocked` corre antes de sellar, así que
+el archivo quedaba con el nombre nuevo y la clave vieja; un apagón después de
+renombrar dejaba el enlace repartido mostrando la tarjeta genérica, sin que nada
+fallara. El test que lo cierra falla de fábrica sobre el código anterior, que es
+la mejor prueba de que el fallo era real.
+
+Lo que NO cubre la republicación al reabrir, y queda escrito con su disparador:
+la tarjeta también muere **en vida de la sala**, por dos caminos. Una sala abierta
+más de seis horas sin renombrar ni renovar vence su `CardTTL`. Y un reinicio del
+registro se lleva el mapa entero, y ahí `Publish` contesta que no conoce la sala,
+porque publicar no crea; que creara reabriría la carrera que el fijado de la llave
+existe para cerrar. Los dos los cerraría una republicación periódica colgada de un
+latido del supervisor, que ya existe.
+
+Y al escribir el cliente apareció la mitad que casi se escapa: **a un cliente HTTP no
 alcanza con comprobar antes de llamar.** Si la URL lleva el nombre, el transporte
 lo resuelve otra vez por su cuenta, y entre las dos consultas el DNS puede
 contestar cualquier cosa. Por eso el dialer recibe la dirección ya aprobada y el
