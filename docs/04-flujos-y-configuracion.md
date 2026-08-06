@@ -60,10 +60,20 @@ Distribución silenciosa para el grupo: `kanpachi-setup.exe /VERYSILENT /NORESTA
 El daemon corre como aplicación de consola, sin reinstalar el servicio. **Exige una consola elevada**, por dos motivos que se comprobaron a mano y no se dedujeron: el nombre del pipe vive bajo `ProtectedPrefix\Administrators`, que Windows no deja crear a un proceso sin elevar, y aceptar una conexión exige crear la instancia siguiente del pipe, cosa que el descriptor solo permite a SYSTEM y a los administradores.
 
 ```
-go run ./daemon/cmd/kanpachid --console -data C:\ruta\a\datos
-go run ./internal/kanpctl -data C:\ruta\a\datos status
-go run ./internal/kanpctl -data C:\ruta\a\datos -no-token status
+.\scripts\preparar-stage.ps1
+C:\kt\stage\kanpachid.exe --console -data C:\ruta\a\datos
+C:\kt\stage\kanpctl.exe -data C:\ruta\a\datos status
+C:\kt\stage\kanpctl.exe -data C:\ruta\a\datos -no-token status
 ```
+
+**`go run` no alcanza para nada que abra una sala**, y conviene saberlo antes de
+perder una tarde: el daemon busca el motor y el catálogo al lado de su propio
+ejecutable, y bajo `go run` ese sitio es un directorio temporal de compilación.
+Arranca igual, avisa de que no hay catálogo, y al levantar la red falla sin
+decir que el motor no estaba donde miró. `preparar-stage.ps1` deja los binarios,
+`builtin.json` y las DLL juntos, que es la única forma de correr en desarrollo
+lo mismo que se instala. El motor viene del otro repositorio y se copia a mano;
+el script avisa cuando falta y no falla por eso.
 
 El daemon imprime el nombre del pipe y el token al arrancar. La segunda llamada tiene que ser rechazada, y al salir con Ctrl+C el archivo `api.token` desaparece: rota una vez por vida del proceso, así que uno que le sobreviva no abre nada y solo sería un secreto muerto en disco.
 
