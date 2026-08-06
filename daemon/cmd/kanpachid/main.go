@@ -18,10 +18,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/usecase"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/canary/opener"
 	catalogstore "github.com/accentiostudios/kanpachi/daemon/adapter/catalog/jsonfile"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/directory"
 	kanpachiengine "github.com/accentiostudios/kanpachi/daemon/adapter/engine/kanpachi"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/identity"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/netcfg"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/probe"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/routes"
@@ -119,6 +122,21 @@ func limpiar(datos string, desinstalar bool) error {
 	if errReset != nil {
 		log.Warn("el reset falló y la desinstalación sigue igual", "error", errReset)
 	}
+
+	// La llave larga de esta instalación, que el reset CONSERVA a propósito.
+	//
+	// Se borra acá y explícitamente, y no se da por hecho que "ya la borrará el
+	// instalador al llevarse el directorio": hoy nada de este repositorio borra
+	// ese directorio, así que darlo por hecho dejaría la llave viva en una
+	// máquina donde Kanpachi ya no está. Es best effort porque desinstalar tiene
+	// que terminar: una llave que no se pudo borrar es una molestia, y una
+	// desinstalación a medias es una máquina con puertos bloqueados que nadie
+	// puede explicar.
+	llave := filepath.Join(datos, identity.IdentityFile)
+	if err := os.Remove(llave); err != nil && !os.IsNotExist(err) {
+		log.Warn("no se pudo borrar la llave de esta instalación", "ruta", llave, "error", err)
+	}
+
 	if err := quitarCuarentenaDeBase(ctx, datos, log); err != nil {
 		return err
 	}
@@ -176,6 +194,22 @@ func correr(consola bool, datos, nombre string) error {
 
 	canal := control.New(control.Deps{Clock: relojReal{}, Log: log})
 
+	// El registro del seed, que es SOLO presentación: si no contesta, la sala se
+	// crea igual y lo que se pierde es la tarjeta de la página de invitación.
+	//
+	// El seed sale del dominio y no de una bandera: hoy es uno solo. El campo
+	// existe para el día que "Avanzado" deje elegir otro, y ese día es esto lo
+	// que cambia, no el caso de uso.
+	directorio, err := directory.New(directory.Deps{
+		DataDir: datos,
+		Seed:    domain.DefaultSeedHost,
+		Log:     log,
+		Protect: protegerFichero,
+	})
+	if err != nil {
+		return err
+	}
+
 	// El motor REAL. Vive al lado de este binario y no se busca en el PATH: un
 	// PATH que alguien pueda escribir es una forma de que este proceso, que
 	// corre como SYSTEM, ejecute otro ejecutable con ese nombre.
@@ -216,7 +250,7 @@ func correr(consola bool, datos, nombre string) error {
 		Store:     catalogstore.New(dirDelBinario(), datos, log),
 		State:     statestore.New(datos),
 		Library:   sinimplementar.Library{},
-		Directory: sinimplementar.Directory{},
+		Directory: directorio,
 		Control:   canal,
 		Audit:     audit,
 		Inspector: sinimplementar.Inspector{},

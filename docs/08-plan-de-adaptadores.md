@@ -350,7 +350,8 @@ canal vive lo que vive el adaptador y la muerte viaja como `EngineDied`.
 - **Job Object** con `KILL_ON_JOB_CLOSE`: el motor muere con el daemon. Sin eso
   quedan huérfanos con la red arriba y el firewall ya purgado.
 - **`--peers` con la dirección ya resuelta**, jamás con el nombre. Pasa por
-  `domain.CheckSeedAddr`, que está escrita, probada, y **no la llama nadie**.
+  `domain.CheckSeedAddr`. Fue el primero de los dos que la llamó; el cliente
+  del registro es el segundo, y con eso la deuda quedó pagada.
 - **El secreto no vuelve a core.** `Restart` reusa la última especificación
   guardada dentro del adaptador.
 - **Entorno explícito**, nunca heredado. Cada bandera tiene gemela `ET_*`, y
@@ -643,7 +644,7 @@ propia herramienta.
 | 2 | **Firewall** | La promesa central | Alto | **HECHO**, y su compuerta sin cablear, ver abajo |
 | 3 | **RoutingTable** | Que se pueda elegir subred, o sea crear una sala | Bajo | **HECHO** |
 | 4 | **netcfg** | Que el túnel sea usable | Medio | **HECHO** |
-| 5 | **RoomDirectory** | Crear y entrar con código | Medio | pendiente |
+| 5 | **RoomDirectory** | Crear y entrar con código | Medio | **HECHO** |
 | 6 | **Auditoría** | Que las alertas digan la verdad | Bajo | **la mitad**, ver abajo |
 | 7 | **SystemEvents** | Que los ajustes sobrevivan a Windows | Medio | pendiente |
 | 8 | **Steam** | Comodidad. Ordena, jamás filtra | Bajo | pendiente |
@@ -925,10 +926,17 @@ sala de dos máquinas, que es cuando se puede medir desde el otro lado.
 así que no es un fallo; lo que importa es que no le aparezca una ruta por
 defecto, y el script lo comprueba aparte porque a `kanpachi1` no lo mira nadie.
 
-**RoomDirectory paga la deuda escrita en `docs/CLAUDE.md`**: `domain.CheckSeedAddr`
-está escrita y probada y **ningún adaptador la llama porque ninguno existe**. Se
-llama sobre lo que resolvió el DNS y en **cada** uso, porque un nombre impecable
-puede apuntar a `192.168.1.1`.
+**RoomDirectory pagó la deuda escrita en `docs/CLAUDE.md`.** `domain.CheckSeedAddr`
+estaba escrita, probada y llamada por un solo adaptador. Ahora la llaman los dos
+que hablan con el seed, sobre lo que resolvió el DNS y en **cada** uso, porque un
+nombre impecable puede apuntar a `192.168.1.1`.
+
+Y al escribirla apareció la mitad que casi se escapa: **a un cliente HTTP no
+alcanza con comprobar antes de llamar.** Si la URL lleva el nombre, el transporte
+lo resuelve otra vez por su cuenta, y entre las dos consultas el DNS puede
+contestar cualquier cosa. Por eso el dialer recibe la dirección ya aprobada y el
+nombre se queda solo en la URL, donde sirve para el TLS y la cabecera `Host`. Es
+el mismo error que el motor tenía escrito como advertencia, en otra forma.
 
 ---
 

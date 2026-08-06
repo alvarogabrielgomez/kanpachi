@@ -104,13 +104,6 @@ func TestElRestoDeProvisionalesFalla(t *testing.T) {
 	exigeFallo(t, "Enforcement", err)
 	_, err = a.RouterMappings(ctx())
 	exigeFallo(t, "RouterMappings", err)
-
-	d := Directory{}
-	_, err = d.Open(ctx(), nil)
-	exigeFallo(t, "Open", err)
-	_, _, err = d.Lookup(ctx(), domain.InviteID{})
-	exigeFallo(t, "Lookup", err)
-	exigeFallo(t, "Publish", d.Publish(ctx(), domain.InviteID{}, nil))
 }
 
 // TestLaAuditoriaProvisionalLevantaLaAlertaDeQueNadieMira.

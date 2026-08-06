@@ -184,19 +184,6 @@ func (Audit) RouterMappings(context.Context) ([]domain.PortMapping, error) {
 	return nil, falla("consultar los mapeos del router")
 }
 
-// Directory no habla con el registro del seed.
-type Directory struct{}
-
-func (Directory) Open(context.Context, []byte) (domain.Room, error) {
-	return domain.Room{}, falla("pedir un invite ID")
-}
-func (Directory) Lookup(context.Context, domain.InviteID) ([]byte, int, error) {
-	return nil, 0, falla("buscar una sala")
-}
-func (Directory) Publish(context.Context, domain.InviteID, []byte) error {
-	return falla("publicar la tarjeta de la sala")
-}
-
 // Events es la excepción: canales que NUNCA emiten.
 //
 // No puede fallar porque su firma no tiene por dónde. Y no hace falta que
@@ -241,6 +228,5 @@ var (
 	_ port.GameLibrary     = Library{}
 	_ port.SocketInspector = Inspector{}
 	_ port.ExposureAudit   = Audit{}
-	_ port.RoomDirectory   = Directory{}
 	_ port.SystemEvents    = (*Events)(nil)
 )

@@ -31,3 +31,9 @@ func quitarCuarentenaDeBase(context.Context, string, port.Logger) error {
 	return fmt.Errorf("la cuarentena de Kanpachi vive en el Firewall de Windows, " +
 		"así que este binario solo la puede quitar en Windows")
 }
+
+// protegerFichero no hace nada fuera de Windows, y no es un provisional que
+// finja: acá el modo 0600 con el que se escribe la llave YA es la protección,
+// porque en Unix el modo es lo que gobierna. Lo que no gobierna es en Windows,
+// que es donde vive el adaptador de verdad.
+func protegerFichero(string) error { return nil }

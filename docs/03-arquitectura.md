@@ -1838,12 +1838,14 @@ Lo que el diseño ya garantizaba: un ID pelado usa siempre el seed por defecto y
 
 **Lo que se arregló:** el seed tiene que ser un NOMBRE. Se exige que su última etiqueta lleve al menos una letra, y eso cierra la familia entera de formas de escribir una dirección, no solo la obvia. El resolver del sistema acepta cosas que un comprobador de IP bien formada deja pasar: `127.1` es loopback, `0x7f.0.0.1` también, y antes de esto las dos entraban, igual que `169.254.169.254`, que es el endpoint de metadatos de las nubes. El costo aceptado es que quien hospede su propio seed necesita un nombre, que es gratis, y a cambio la comprobación cubre al cliente HTTP y al motor de una vez.
 
-**Lo que falta, y es de los adaptadores.** Un nombre impecable puede resolver a `192.168.1.1`, y eso solo se ve al resolver. `domain.CheckSeedAddr` está escrita y probada para eso, con los rangos reservados, el espacio compartido donde viven las salas, y las cuatro familias de meter una IPv4 dentro de una IPv6. **Hoy no la llama nadie**, porque ninguno de los dos adaptadores existe todavía.
+**La segunda capa, y es de los adaptadores.** Un nombre impecable puede resolver a `192.168.1.1`, y eso solo se ve al resolver. `domain.CheckSeedAddr` está escrita y probada para eso, con los rangos reservados, el espacio compartido donde viven las salas, y las cuatro familias de meter una IPv4 dentro de una IPv6.
 
-Cuando se escriban, dos requisitos y el segundo es el que se descubrió revisando:
+**Los dos adaptadores existen y los dos la llaman**, que es lo que la vuelve una política y no una función suelta. Eran dos requisitos, y el segundo se descubrió revisando:
 
-1. El cliente del registro: esquema y puerto fijos, sin seguir redirecciones, topes de respuesta y de tiempo, y `CheckSeedAddr` sobre cada dirección resuelta.
-2. El motor: **resolver el nombre acá, comprobarlo, y pasarle la dirección ya elegida**. Pasarle el nombre en `--peers` deja que lo resuelva él por su cuenta, y entonces la comprobación no gobierna el destino real. Es la diferencia entre validar y decidir.
+1. El cliente del registro, `daemon/adapter/directory`: esquema fijo, sin seguir redirecciones, topes de respuesta y de tiempo, y `CheckSeedAddr` sobre cada dirección resuelta dentro de su propio dialer.
+2. El motor, `daemon/adapter/engine/kanpachi`, en `seedURIs`: **resolver el nombre acá, comprobarlo, y pasarle la dirección ya elegida**. Pasarle el nombre en `--peers` deja que lo resuelva él por su cuenta, y entonces la comprobación no gobierna el destino real. Es la diferencia entre validar y decidir.
+
+**Y el punto 2 vale también para el cliente HTTP, que es donde casi se escapa.** Un cliente al que se le pasa la URL con el nombre resuelve por su cuenta en el transporte, así que comprobar antes no sirve de nada: entre las dos consultas el DNS puede contestar otra cosa. Por eso el dialer recibe la dirección ya aprobada y el nombre se queda solo en la URL, donde sirve para el TLS y para la cabecera `Host`.
 
 Las comprobaciones van en CADA uso, no solo la primera vez: `last-room.json` guarda el código con su seed, así que volver a la última sala vuelve a hablarle y el DNS pudo cambiar entre una vez y la otra.
 
