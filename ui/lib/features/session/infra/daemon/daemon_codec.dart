@@ -25,15 +25,43 @@ class DaemonRequest {
   };
 }
 
-/// Una respuesta. Lleva resultado o error, jamás los dos.
+/// Una respuesta.
+///
+/// # It can carry a result AND an error at the same time
+///
+/// This used to say "one or the other, never both", and that was wrong about
+/// the daemon it describes. `kick_member` answers a partial kick with the new
+/// room state AND the error saying what could not be closed, on purpose: the
+/// member list has to be redrawn without the person who was kicked, and the
+/// user has to be told which port stayed open. Keeping only the error threw the
+/// room away and left the screen showing somebody who is no longer there.
 class DaemonResponse {
   const DaemonResponse({required this.id, this.result, this.error});
 
   final int id;
-  final Map<String, Object?>? result;
+
+  /// Whatever came in `result`, untyped.
+  ///
+  /// It is `Object?` and not a map because five methods answer with a JSON
+  /// ARRAY: `list_games`, `rejected_games`, `foreign_rules_for`,
+  /// `import_catalog` and `observe_game`. Typing this as a map silently
+  /// discarded all five, so the catalog came back empty with nothing anywhere
+  /// saying why.
+  final Object? result;
+
   final DaemonError? error;
 
   bool get isError => error != null;
+
+  Map<String, Object?>? get resultMap {
+    final Object? r = result;
+    return r is Map<String, Object?> ? r : null;
+  }
+
+  List<Object?>? get resultList {
+    final Object? r = result;
+    return r is List<Object?> ? r : null;
+  }
 }
 
 /// El fallo de una operación, con su código cerrado.
@@ -42,7 +70,7 @@ class DaemonResponse {
 /// para el diagnóstico que el usuario copia, no para mostrarlo tal cual. Quien
 /// convierte el código en algo que se lee es el catálogo de mensajes.
 class DaemonError implements Exception {
-  const DaemonError({required this.code, required this.message});
+  const DaemonError({required this.code, required this.message, this.result});
 
   /// El código tal como vino. Se guarda crudo además de resuelto, porque un
   /// daemon más nuevo puede mandar uno que esta app no conoce y perderlo
@@ -50,7 +78,19 @@ class DaemonError implements Exception {
   final String code;
   final String message;
 
+  /// The payload that came alongside the error, when there was one.
+  ///
+  /// Only `kick_partial` uses it today. It rides on the exception instead of
+  /// being returned separately so that the caller who handles the failure is
+  /// the same one holding the state it needs to redraw.
+  final Object? result;
+
   FailureCode? get resolved => FailureCode.fromWire(code);
+
+  Map<String, Object?>? get resultMap {
+    final Object? r = result;
+    return r is Map<String, Object?> ? r : null;
+  }
 
   @override
   String toString() => 'DaemonError($code): $message';
@@ -150,21 +190,21 @@ class DaemonCodec {
       throw const DaemonProtocolError('la respuesta no trae id');
     }
 
-    final Object? error = crudo['error'];
-    if (error is Map<String, Object?>) {
-      return DaemonResponse(
-        id: id,
-        error: DaemonError(
-          code: error['code'] as String? ?? 'internal',
-          message: error['message'] as String? ?? '',
-        ),
-      );
-    }
-
+    // Both halves get read, and neither one cancels the other. A response with
+    // an error AND a result is legal and is the whole point of `kick_partial`.
     final Object? result = crudo['result'];
+    final Object? error = crudo['error'];
+
     return DaemonResponse(
       id: id,
-      result: result is Map<String, Object?> ? result : null,
+      result: result,
+      error: error is Map<String, Object?>
+          ? DaemonError(
+              code: error['code'] as String? ?? 'internal',
+              message: error['message'] as String? ?? '',
+              result: result,
+            )
+          : null,
     );
   }
 }

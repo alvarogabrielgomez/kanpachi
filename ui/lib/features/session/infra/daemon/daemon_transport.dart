@@ -41,6 +41,16 @@ import 'dart:async';
 /// superpuesta. Un cliente que congele la ventana mientras espera al daemon es
 /// peor que no tener cliente.
 abstract interface class DaemonTransport {
+  /// Opens the link. Nothing else on this interface works before it returns.
+  ///
+  /// It exists because [incoming] cannot exist before the handle does, and
+  /// because a connection is a ONE-SHOT object: the greeting, the request ids
+  /// and the closed flag are all per connection and none of them can be reset.
+  /// Reconnecting is throwing this away and building another one, so somebody
+  /// has to own the opening, and hiding it in the constructor would make the
+  /// one operation that can fail invisible.
+  Future<void> connect();
+
   /// Los bytes que llegan del daemon. Un solo suscriptor.
   Stream<List<int>> get incoming;
 
@@ -52,16 +62,52 @@ abstract interface class DaemonTransport {
   Future<void> close();
 }
 
+/// Where a failure happened, which is what decides whether retrying is safe.
+///
+/// This is not a taxonomy for the log. Retrying a request that may already have
+/// executed is how you get two rooms, or a member kicked twice. The line runs
+/// through the write: anything that failed at or before it never reached the
+/// daemon, and anything after it might have.
+enum DaemonUnreachableKind {
+  /// The pipe could not be opened, or a method was called before the greeting.
+  /// Nothing was ever sent, so retrying is free.
+  notConnected,
+
+  /// The write itself threw. The bytes did not leave.
+  writeFailed,
+
+  /// The method's budget expired. The request may still be running on the other
+  /// side: `create_room` takes about a minute of real work, and a retry would
+  /// build a second room while the first one finishes.
+  timedOut,
+
+  /// The stream errored or closed with requests in flight. The request may have
+  /// executed and the answer is what got lost.
+  linkLost,
+}
+
 /// El transporte falló y la conversación no puede seguir.
 ///
 /// Va aparte de un error de la API: aquel es el daemon diciendo que no, este es
 /// no haber podido preguntar. Para el usuario acaban en el mismo sitio, y para
 /// quien lee el log no.
 class DaemonUnreachable implements Exception {
-  const DaemonUnreachable(this.reason);
+  const DaemonUnreachable(
+    this.reason, {
+    this.kind = DaemonUnreachableKind.linkLost,
+  });
 
   final String reason;
 
+  /// Defaults to the kind that does NOT retry. A failure whose origin nobody
+  /// bothered to state is exactly the one that should not be repeated blindly.
+  final DaemonUnreachableKind kind;
+
+  /// Whether a caller may send the same request again on a fresh connection.
+  bool get safeToRetry =>
+      kind == DaemonUnreachableKind.notConnected ||
+      kind == DaemonUnreachableKind.writeFailed;
+
   @override
-  String toString() => 'DaemonUnreachable: $reason';
+  String toString() => 'DaemonUnreachable(${kind.name}): $reason';
 }

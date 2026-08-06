@@ -29,6 +29,12 @@ class _TransporteFalso implements DaemonTransport {
   bool escrituraRota = false;
 
   bool cerrado = false;
+  bool conectado = false;
+
+  @override
+  Future<void> connect() async {
+    conectado = true;
+  }
 
   @override
   Stream<List<int>> get incoming => _entrada.stream;
@@ -195,7 +201,7 @@ void main() {
       final DaemonClient c = DaemonClient(
         transport: t,
         token: 'x',
-        timeout: const Duration(milliseconds: 80),
+        timeoutFor: (_) => const Duration(milliseconds: 80),
       );
       await c.connect();
 
@@ -212,7 +218,7 @@ void main() {
         // Largo a propósito: lo que rompe la espera tiene que ser la muerte del
         // daemon, no el plazo. Sin eso, la app deja las ruedas girando una a
         // una hasta que vencen.
-        timeout: const Duration(seconds: 30),
+        timeoutFor: (_) => const Duration(seconds: 30),
       );
       await c.connect();
 
