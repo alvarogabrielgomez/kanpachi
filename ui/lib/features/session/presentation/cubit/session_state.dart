@@ -123,6 +123,15 @@ class SessionState {
   final bool verbose;
 
   bool get hasRoom => room != null;
+
+  /// Whether a long operation is in flight: creating a room or joining one.
+  ///
+  /// The two together, because everything that reads this treats them the
+  /// same: they are the two waits with a Cancel button, and the two the daemon
+  /// can be asked to cut short.
+  bool get isWaiting =>
+      phase == SessionPhase.creating || phase == SessionPhase.joining;
+
   bool get isBusy => work != RoomWork.none;
   bool get isReapplying => protection == ProtectionWork.reapplying;
   bool get isRefreshing => refreshing;

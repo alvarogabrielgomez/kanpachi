@@ -85,6 +85,13 @@ const (
 	// ocho plazas y la interfaz usa una.
 	MethodProgress Method = "progress"
 
+	// MethodCancel corta la operación larga que esté corriendo.
+	//
+	// **Se pide por una conexión APARTE**, por lo mismo que `progress`: el
+	// bucle de una conexión es secuencial, así que mandarlo por la que está
+	// esperando lo pondría en cola detrás de justo lo que viene a cortar.
+	MethodCancel Method = "cancel"
+
 	// Los tres del PROCESO, no de la sala. Los contesta [Host] y no [API]. Ver
 	// el modelo de procesos en `docs/03`.
 
@@ -137,6 +144,7 @@ var métodos = map[Method]bool{
 	MethodDiscardPendingRoom:  true,
 	MethodLastRoom:            true,
 	MethodProgress:            true,
+	MethodCancel:              true,
 	MethodShowUI:              true,
 	MethodShutdown:            true,
 	MethodAutostart:           true,
@@ -174,6 +182,8 @@ const (
 	CodeProbeSelf   Code = "probe_self"    // el host no puede sondearse a sí mismo
 	CodeProbeNoHost Code = "probe_no_host" // no se sabe dónde está el host
 	CodeNoPending   Code = "no_pending"    // no hay sala del arranque anterior
+	CodeNoSuchRoom  Code = "no_such_room"  // el registro dice que ese código no existe
+	CodeCanceled    Code = "canceled"      // el usuario canceló la operación
 	CodeBadNickname Code = "bad_nickname"  // el nombre no cumple la decisión 21
 	CodeBadCode     Code = "bad_code"      // el invite ID no tiene forma de código
 	CodeBadProfile  Code = "bad_profile"   // el perfil no pasa las invariantes
@@ -247,6 +257,10 @@ func errorFor(err error) *Error {
 		code = CodeProbeNoHost
 	case errors.Is(err, usecase.ErrNoPendingRoom):
 		code = CodeNoPending
+	case errors.Is(err, usecase.ErrNoSuchRoom):
+		code = CodeNoSuchRoom
+	case errors.Is(err, usecase.ErrCanceled):
+		code = CodeCanceled
 	case errors.Is(err, domain.ErrNicknameEmpty), errors.Is(err, domain.ErrNicknameTooLong),
 		errors.Is(err, domain.ErrNicknameSymbol):
 		code = CodeBadNickname

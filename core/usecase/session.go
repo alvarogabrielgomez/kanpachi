@@ -48,6 +48,22 @@ var (
 	// jugarse. Es la puerta de "no se puede marcar a mano".
 	ErrNotPlayed = errors.New("ese juego no estuvo activo en una sala con más gente")
 
+	// ErrNoSuchRoom es que el registro dice que ese código NO EXISTE.
+	//
+	// Es una respuesta y no un fallo: el registro contestó, y contestó que
+	// nunca emitió ese invite ID, o que su fijado venció y se barrió. Merece
+	// centinela propio porque es lo único que permite fallar en el primer
+	// segundo en vez de al final de un minuto de reintentos contra un vestíbulo
+	// donde no espera nadie.
+	ErrNoSuchRoom = errors.New("ese código no existe en el registro")
+
+	// ErrCanceled es que el usuario canceló la operación mientras corría.
+	//
+	// No es un error de nada: es la respuesta a un botón. Va aparte para que la
+	// pantalla pueda distinguirlo y NO pintar un aviso de fallo encima de algo
+	// que la persona acaba de pedir.
+	ErrCanceled = errors.New("la operación se canceló")
+
 	// ErrKickPartial es que la expulsión se aplicó a medias. Envuelve a los dos
 	// de abajo, y NO significa que no haya pasado nada: significa que una de
 	// las dos capas de la decisión 22 quedó sin cerrar y la otra sí cerró.
@@ -156,6 +172,15 @@ type Session struct {
 	// ordena la lista y consultar Steam en cada ListGames sería releer el
 	// disco para pintar una pantalla.
 	installed []domain.GameRef
+
+	// inFlight es la operación larga en curso, y cómo abortarla.
+	//
+	// **Con candado PROPIO, y no es una preferencia de estilo.** Crear una sala
+	// tiene tomado `mu` durante todo el minuto que tarda, que es exactamente el
+	// rato en el que alguien puede pulsar Cancelar. Un cancelador que pidiera
+	// `mu` esperaría a que termine justo lo que viene a cortar. Mismo motivo
+	// por el que el diario de progreso tiene el suyo.
+	inFlight longOp
 
 	// hostSpec es la identidad de la red REAL, y solo la llena el host.
 	//

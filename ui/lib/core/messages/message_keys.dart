@@ -248,6 +248,12 @@ enum FailureCode {
   /// No se sabe dónde está el host para poder marcarle.
   probeNoHost('probe_no_host'),
 
+  /// El registro contestó que ese código no existe.
+  noSuchRoom('no_such_room'),
+
+  /// El usuario canceló la operación mientras corría.
+  canceled('canceled'),
+
   /// El adaptador de abajo falló.
   unavailable('unavailable'),
 

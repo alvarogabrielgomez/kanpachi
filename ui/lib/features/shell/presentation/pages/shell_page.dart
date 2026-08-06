@@ -144,19 +144,27 @@ class _CurrentScreen extends StatelessWidget {
     // Las esperas ganan a la pantalla elegida: mientras se crea o se busca una
     // sala no hay nada que decidir, y dejar la anterior debajo invitaría a
     // tocar botones que ya no aplican.
-    if (session.phase == SessionPhase.creating) {
-      return const ProgressScreen.creating();
-    }
-    if (session.phase == SessionPhase.joining) {
+    // **Cancelar es la MISMA orden en las dos esperas**, y antes no lo era.
+    // Crear no ofrecía salida ninguna, y buscar ofrecía un botón que salía de
+    // una sala en la que todavía no se había entrado y navegaba a la portada:
+    // la pantalla se iba y el daemon seguía, con el motor arriba y las reglas
+    // puestas por una sala que la app ya no creía estar abriendo. Ahora las dos
+    // le piden al daemon que pare, y él deshace lo que alcanzó a hacer.
+    if (session.isWaiting) {
+      void cancelar() {
+        context.read<SessionCubit>().cancelPending();
+        context.read<ShellCubit>().go(AppScreen.home);
+      }
+
+      if (session.phase == SessionPhase.creating) {
+        return ProgressScreen.creating(onCancel: cancelar);
+      }
       return ProgressScreen(
         title: 'Buscando la sala…',
         note:
             'Presentando tu equipo con los demás miembros. El tráfico del '
             'juego nunca pasa por el servidor.',
-        onCancel: () {
-          context.read<SessionCubit>().leave();
-          context.read<ShellCubit>().go(AppScreen.home);
-        },
+        onCancel: cancelar,
       );
     }
 

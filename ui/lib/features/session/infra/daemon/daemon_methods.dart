@@ -61,6 +61,11 @@ abstract final class DaemonMethods {
   /// Read, and optionally change, whether Kanpachi starts with Windows.
   static const String autostart = 'autostart';
 
+  /// Cut short the long operation in flight. Same rule as [progress]: it goes
+  /// down a connection of its own, because the one carrying the operation is
+  /// busy carrying it.
+  static const String cancel = 'cancel';
+
   /// Show the window. The app never calls this one — the DAEMON does, when the
   /// shortcut is double-clicked with Kanpachi already running. It is listed
   /// here because the wire name has to live in one place.

@@ -570,6 +570,7 @@ func (a *apiFalsa) ResumeRoom(context.Context) (domain.RoomState, error) { retur
 func (a *apiFalsa) DiscardPendingRoom(context.Context) error             { return nil }
 func (a *apiFalsa) LastRoom() (domain.LastRoom, bool)                    { return domain.LastRoom{}, false }
 func (a *apiFalsa) Progress() domain.Progress                            { return domain.Progress{} }
+func (a *apiFalsa) Cancel() bool                                         { return false }
 
 // TestLaSesiónDeVerdadSatisfaceLaAPI.
 //

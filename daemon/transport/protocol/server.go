@@ -82,6 +82,14 @@ type API interface {
 	// Sin error: no hay nada que pueda fallar, y un diario vacío es una
 	// respuesta legítima que significa que no ha pasado nada todavía.
 	Progress() domain.Progress
+
+	// Cancel corta la operación larga en curso. Devuelve si había alguna.
+	//
+	// Sin error por el mismo motivo que [Progress]: no hay nada que pueda
+	// fallar. "No había ninguna" es una respuesta legítima, y la más común de
+	// las dos: pasa cada vez que se pulsa Cancelar en el instante en que la
+	// operación estaba terminando sola.
+	Cancel() bool
 }
 
 // Host es lo que el protocolo puede pedirle al PROCESO del daemon, en vez de a
@@ -520,6 +528,14 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 
 	case MethodProgress:
 		return result(progressView(s.api.Progress()))
+
+	case MethodCancel:
+		// Se contesta qué pasó y no un acuse a secas: la pantalla que lo pide
+		// necesita saber si llegó a tiempo, porque si no llegó lo que viene
+		// enseguida es el resultado de la operación que terminó sola.
+		return result(struct {
+			Canceled bool `json:"canceled"`
+		}{s.api.Cancel()})
 	}
 	// Inalcanzable: Known() ya filtró. Se contesta igual en vez de caerse,
 	// porque el día que alguien agregue un método a la tabla y olvide el caso,

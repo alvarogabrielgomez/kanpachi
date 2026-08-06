@@ -33,6 +33,11 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 		return domain.RoomState{}, domain.ErrNicknameEmpty
 	}
 
+	// A partir de acá la operación se puede cancelar desde la pantalla. Ver
+	// [Session.begin]: el contexto de aquí abajo es el que corta el botón.
+	ctx, soltar := s.begin(ctx)
+	defer soltar()
+
 	// El diario se abre ANTES de la primera transición, porque el primer paso
 	// que puede fallar ya está dentro. Ver [Journal].
 	s.deps.Progress.Begin("crear la sala")
@@ -49,11 +54,25 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 	// dentro de una red que la app cree que no existe.
 	ok := false
 	defer func() {
+		// Cancelar es una respuesta y no un fallo, y la pantalla necesita
+		// distinguirlas para no pintar un aviso de error encima de un botón que
+		// la persona acaba de pulsar. Se traduce acá, en el único sitio por el
+		// que salen los catorce `return` de abajo.
+		if !ok && ctx.Err() != nil {
+			err = fmt.Errorf("%w mientras se creaba la sala", ErrCanceled)
+		}
 		// El diario se cierra SIEMPRE, y con el error si lo hubo: lo que la
 		// pantalla enseña dentro de "ver detalles" son justo estos pasos.
 		s.deps.Progress.End(err)
 		if !ok {
-			s.teardown(ctx)
+			// **Con un contexto propio, VIVO.** Si esto salió por una
+			// cancelación, el de arriba está cancelado y cada paso de la
+			// limpieza devolvería "context canceled" sin llegar a tocar
+			// Windows: cancelar dejaría abierto justo lo que promete cerrar.
+			// Ver [cleanupContext].
+			limpio, fin := cleanupContext(ctx)
+			s.teardown(limpio)
+			fin()
 			_ = s.state.TransitionWithExit(domain.StateIdle, "falló la creación de la sala", domain.ExitFailed)
 			// Se republica por lo mismo que en JoinRoom: quien llama descarta
 			// el estado al recibir un error, así que si no se publica acá la

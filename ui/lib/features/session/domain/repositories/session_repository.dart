@@ -140,6 +140,15 @@ abstract interface class SessionRepository {
   /// pudo rechazar.
   Future<bool> autostart({bool? enabled});
 
+  /// Cuts short the long operation the daemon has in flight.
+  ///
+  /// Returns whether there was one to cut. False is not an error: it is what
+  /// pressing Cancel in the instant the operation was finishing on its own
+  /// looks like, and the screen finds out from the operation's own result.
+  ///
+  /// Asked down a connection of its own, for the same reason as [progress].
+  Future<bool> cancel();
+
   /// Steps of the long operation the daemon has in flight, or the last one.
   ///
   /// # Why it is PULLED

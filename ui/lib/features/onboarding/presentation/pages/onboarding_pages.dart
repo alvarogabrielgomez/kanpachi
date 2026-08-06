@@ -204,15 +204,21 @@ class ProgressScreen extends StatelessWidget {
     super.key,
   });
 
-  const ProgressScreen.creating({super.key})
+  const ProgressScreen.creating({this.onCancel, super.key})
     : title = 'Creando la sala…',
       note =
           'Levantando la red de la sala y generando el código. Todavía no '
-          'hay ningún puerto abierto.',
-      onCancel = null;
+          'hay ningún puerto abierto.';
 
   final String title;
   final String note;
+
+  /// Cortar la operación. **Las dos esperas lo llevan.**
+  ///
+  /// Crear no lo tenía, y esa era la peor de las dos: es la que levanta un
+  /// motor, toma dirección en dos adaptadores y escribe reglas, o sea la que
+  /// más deja puesto mientras corre. Sin botón, la única salida de un minuto de
+  /// espera era esperar el minuto.
   final VoidCallback? onCancel;
 
   @override

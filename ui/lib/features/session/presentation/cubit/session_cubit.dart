@@ -105,6 +105,14 @@ class SessionCubit extends Cubit<SessionState> {
     String? code,
     SessionPhase? onFail,
   }) async {
+    // The failure the user asked for. Cancelling makes the daemon abort the
+    // operation, and aborting it produces an error, correctly — a red notice
+    // over a button somebody just pressed is noise, so it is swallowed here
+    // and nowhere else.
+    if (_canceling) {
+      _canceling = false;
+      return;
+    }
     // The steps of what just failed, so "ver detalles" has something to show.
     // Only when narrating, and best effort: if the daemon cannot be reached to
     // ask, the failure is still reported, just without its breadcrumbs.
@@ -133,6 +141,64 @@ class SessionCubit extends Cubit<SessionState> {
 
   /// Dismisses the failure notice.
   void clearFailure() => emit(state.copyWith(clearFailure: true));
+
+  /// Cuts short the room being created or joined.
+  ///
+  /// # Why it does not just navigate away
+  ///
+  /// Because the daemon would keep going. Creating a room lifts an engine,
+  /// takes an address on two adapters and writes firewall rules; walking off
+  /// the screen would leave all of that up, owned by a room the app no longer
+  /// thinks it is opening. So this asks the daemon to stop, and the daemon
+  /// undoes what it got as far as — the same teardown a failure runs.
+  ///
+  /// The phase drops to idle HERE and not when the daemon answers. What the
+  /// person asked for is to stop waiting, and the operation may take a couple
+  /// of seconds to notice: leaving the spinner up meanwhile makes the button
+  /// look broken and invites a second press.
+  Future<void> cancelPending() async {
+    if (!state.isWaiting) return;
+    // Remembered so the failure this produces can be swallowed. The daemon
+    // answers a cancelled operation with an error, correctly, and putting a
+    // red notice on screen over a button the person just pressed is noise.
+    _canceling = true;
+    emit(state.copyWith(phase: SessionPhase.idle, clearFailure: true));
+    _stopWatching();
+    try {
+      await _repository.cancel();
+    } on Object {
+      // Nothing to show, and swallowing it is the right call here rather than
+      // laziness: the window is already back home by the line above, and the
+      // worst case of a cancel that did not arrive is a daemon that finishes
+      // what it was doing, which [_afterWait] then undoes. Reporting it would
+      // put a failure notice on screen about the failure of an undo.
+    }
+  }
+
+  /// Whether the user pressed Cancel during the operation in flight.
+  bool _canceling = false;
+
+  /// What happens after a wait ends, whichever way it ended.
+  ///
+  /// # The race this exists for
+  ///
+  /// Cancel can arrive too late. The daemon answers `canceled: false`, the
+  /// operation finishes, and a room opens that the person explicitly asked not
+  /// to have — with the app already back on the home screen. Two things are
+  /// wrong with leaving that: the room is real, with an engine and firewall
+  /// rules behind it, and the app would be showing no room while the daemon
+  /// holds one. So it is left, which is the only answer that keeps the two
+  /// sides agreeing.
+  ///
+  /// It also clears the flag, and that half matters on its own: without it a
+  /// cancel that missed would leave the flag up and swallow the NEXT genuine
+  /// failure.
+  Future<void> _afterWait() async {
+    if (!_canceling) return;
+    _canceling = false;
+    if (isClosed || state.room == null) return;
+    await leave();
+  }
 
   /// Turns the step-by-step narration on or off, and remembers it.
   ///
@@ -241,6 +307,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(state.copyWith(phase: SessionPhase.inRoom, room: room));
     });
     _stopWatching();
+    await _afterWait();
     return !isClosed && state.room != null;
   }
 
@@ -256,6 +323,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(state.copyWith(phase: SessionPhase.inRoom, room: room));
     });
     _stopWatching();
+    await _afterWait();
     return !isClosed && state.room != null;
   }
 

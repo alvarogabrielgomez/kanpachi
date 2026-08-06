@@ -2,10 +2,12 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/port"
 )
 
 // JoinRoom entra a una sala ajena.
@@ -34,6 +36,11 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 		return domain.RoomState{}, domain.ErrNicknameEmpty
 	}
 
+	// A partir de acá la operación se puede cancelar desde la pantalla. Ver
+	// [Session.begin].
+	ctx, soltar := s.begin(ctx)
+	defer soltar()
+
 	// El parseo es la frontera de entrada hostil del producto: acepta las seis
 	// formas documentadas y rechaza entero cualquier otra cosa. Que ocurra
 	// ANTES de la transición importa, porque un código mal pegado no tiene por
@@ -51,9 +58,16 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 	}
 	ok := false
 	defer func() {
+		// Igual que al crear: cancelar es una respuesta, no un fallo.
+		if !ok && ctx.Err() != nil {
+			err = fmt.Errorf("%w mientras se entraba a la sala", ErrCanceled)
+		}
 		s.deps.Progress.End(err)
 		if !ok {
-			s.teardown(ctx)
+			// Contexto propio y vivo para deshacer. Ver [cleanupContext].
+			limpio, fin := cleanupContext(ctx)
+			s.teardown(limpio)
+			fin()
 			_ = s.state.TransitionWithExit(domain.StateIdle, "falló el ingreso a la sala", domain.ExitFailed)
 			// Republicar no es opcional. Quien llama recibe un error y descarta
 			// el estado, así que sin esto la copia que lee Status se quedaría
@@ -62,6 +76,19 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 			s.snapshot()
 		}
 	}()
+
+	// **El fallo temprano: preguntar si ese código existe antes de levantar
+	// nada.**
+	//
+	// Sin esto, un código inventado o vencido se descubre al final: se levanta
+	// el motor, se entra a un vestíbulo donde no espera nadie, y se agotan los
+	// reintentos del canal de control. Es alrededor de un minuto de ruedita
+	// para llegar a "no se pudo", cuando la respuesta se sabía en el primer
+	// segundo. Y no es gratis: durante ese minuto hay una red virtual arriba y
+	// reglas escritas por una sala que no existe.
+	if err := s.checkRoomExists(ctx, room); err != nil {
+		return domain.RoomState{}, err
+	}
 
 	// Se deriva en el cliente y no se le pregunta al seed. El seed podría
 	// decir cuál es la red de encuentro, derivarla acá hace que llegar al
@@ -174,6 +201,57 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 	s.deps.Log.Info("dentro de la sala",
 		"código", room.InviteID.String(), "seed", room.Seed, "ip", cred.VirtualIP.String())
 	return s.snapshot(), nil
+}
+
+// checkRoomExists le pregunta al registro si ese código existe, y solo se cree
+// un "no".
+//
+// # La asimetría es toda la función
+//
+// El registro es SOLO PRESENTACIÓN: que no conteste jamás puede impedir entrar
+// a una sala, porque la sala vive en las máquinas de sus miembros y no en él.
+// Así que de todo lo que puede pasar acá, una única respuesta detiene el
+// ingreso, y es el registro diciendo que ese invite ID no existe. Sin red, con
+// un 500, con un plazo vencido, se sigue adelante y se intenta como siempre.
+//
+// Confundir las dos mitades rompería la promesa en la dirección cara: un seed
+// caído dejaría a la gente sin poder entrar a salas que están abiertas.
+//
+// # Por qué se comprueba el seed antes de creerle
+//
+// Porque **un invite ID solo significa algo en el registro que lo emitió.** El
+// cliente del registro habla con uno fijo, y el código pegado trae el suyo
+// dentro. Si no son el mismo, este registro contestaría "no existe" sobre una
+// sala que existe perfectamente en otro, y el fallo temprano se convertiría en
+// un muro. Ahí se salta la comprobación y se entra como siempre.
+func (s *Session) checkRoomExists(ctx context.Context, room domain.Room) error {
+	if room.Seed != s.deps.Directory.Seed() {
+		s.deps.Progress.Stepf(domain.ScopeSeed,
+			"el código lo sirve %s y no el registro de esta app, así que no se comprueba antes", room.Seed)
+		return nil
+	}
+
+	s.deps.Progress.Stepf(domain.ScopeSeed, "preguntándole a %s si ese código existe", room.Seed)
+	_, _, err := s.deps.Directory.Lookup(ctx, room.InviteID)
+	switch {
+	case err == nil:
+		s.deps.Progress.Step(domain.ScopeSeed, "el código existe, se sigue")
+		return nil
+
+	case errors.Is(err, port.ErrUnknownRoom):
+		// La respuesta. Se para acá, con el motor todavía sin arrancar y sin
+		// una sola regla escrita.
+		s.deps.Progress.Step(domain.ScopeSeed, "el registro dice que ese código no existe")
+		return fmt.Errorf("%w: %s", ErrNoSuchRoom, room.InviteID)
+
+	default:
+		// Ausencia de información. Se anota y se sigue: el camino de siempre
+		// tiene sus propios plazos y sus propios errores.
+		s.deps.Log.Warn("no se pudo comprobar el código contra el registro, se intenta igual",
+			"código", room.InviteID.String(), "error", err)
+		s.deps.Progress.Step(domain.ScopeSeed, "el registro no contestó, se intenta igual")
+		return nil
+	}
 }
 
 // exchangeForCredential es el canje del paso 5 y 6 del flujo de conexión.

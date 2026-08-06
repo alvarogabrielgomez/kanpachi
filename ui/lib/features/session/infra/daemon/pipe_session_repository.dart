@@ -112,6 +112,23 @@ class PipeSessionRepository implements SessionRepository {
   }
 
   @override
+  Future<bool> cancel() async {
+    // Over a SPARE connection, and here it is not an optimisation, it is the
+    // only way it can work: the connection this repository normally uses is
+    // parked inside the very `create_room` this is trying to cut short, and a
+    // connection's server loop is sequential.
+    final DaemonClient c = await _connector.spare();
+    try {
+      final Map<String, Object?> r =
+          await c.call(DaemonMethods.cancel) as Map<String, Object?>? ??
+          <String, Object?>{};
+      return r['canceled'] == true;
+    } finally {
+      await c.close();
+    }
+  }
+
+  @override
   Future<Progress> progress() async {
     // Over a SPARE connection, and that is the whole point: the one this
     // repository normally uses is parked inside `create_room`, and a

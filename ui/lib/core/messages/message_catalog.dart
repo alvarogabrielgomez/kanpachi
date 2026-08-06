@@ -316,6 +316,20 @@ abstract final class AppMessages {
       severity: MessageSeverity.neutral,
       body: 'No quedó ninguna sala a medio cerrar del arranque anterior.',
     ),
+    // Es lo primero que se comprueba al pegar un código, antes de levantar
+    // nada, así que llega en el primer segundo. El texto tiene que servir para
+    // las dos causas que producen la misma respuesta.
+    FailureCode.noSuchRoom => const AppMessage(
+      severity: MessageSeverity.warn,
+      body:
+          'Ese código no existe. Puede estar mal copiado, o la sala se cerró '
+          'y el host tiene que pasarte uno nuevo.',
+    ),
+    // Neutral y no advertencia: no falló nada, se pulsó un botón.
+    FailureCode.canceled => const AppMessage(
+      severity: MessageSeverity.neutral,
+      body: 'Se canceló. Todo lo que se había abierto quedó cerrado.',
+    ),
 
     // Los cuatro que el usuario no puede accionar. Ver el doc de arriba.
     FailureCode.badRequest ||
