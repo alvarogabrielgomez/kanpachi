@@ -16,7 +16,9 @@ abstract final class IocManager {
   static void register({Injector? injector, AppPreferences? preferences}) {
     Injector.instance = injector ?? GetItInjector();
     if (preferences != null) {
-      Injector.instance.registerLazySingleton<AppPreferences>(() => preferences);
+      Injector.instance.registerLazySingleton<AppPreferences>(
+        () => preferences,
+      );
     }
     _registerSession(preferences);
     _registerShell();
@@ -43,6 +45,10 @@ abstract final class IocManager {
         i.get<SessionRepository>(),
         preferences: preferences,
         nickname: preferences?.nickname ?? '',
+        // Off when there is nowhere to have stored it, which is the tests.
+        // The stored default already leans on the build kind; see
+        // [AppPreferences.verbose].
+        verbose: preferences?.verbose ?? false,
       ),
     );
   }

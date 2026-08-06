@@ -15,6 +15,7 @@ import 'package:kanpachi_ui/features/room/presentation/widgets/room_dialogs.dart
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
+import 'package:kanpachi_ui/features/settings/presentation/pages/settings_page.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/shell_bars.dart';
 
@@ -105,7 +106,8 @@ class _FailureLayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ActionFailure? failure = context.watch<SessionCubit>().state.failure;
+    final SessionState session = context.watch<SessionCubit>().state;
+    final ActionFailure? failure = session.failure;
     if (failure == null) return const SizedBox.shrink();
 
     return Positioned(
@@ -116,6 +118,7 @@ class _FailureLayer extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 720),
         child: FailureNotice(
           failure: failure,
+          verbose: session.verbose,
           onDismiss: () => context.read<SessionCubit>().clearFailure(),
         ),
       ),
@@ -192,6 +195,7 @@ class _CurrentScreen extends StatelessWidget {
         code: session.room?.code ?? 'A7K2-M9QX',
         roomName: session.room?.name ?? 'La Guarida',
       ),
+      AppScreen.settings => const SettingsScreen(),
     };
   }
 }

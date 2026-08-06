@@ -51,11 +51,15 @@ class ShellTitleBar extends StatelessWidget {
   }
 }
 
-/// El nombre con el que te ven, y la única forma de cambiarlo.
+/// El nombre con el que te ven, cómo cambiarlo, y el engranaje.
 ///
-/// No es una cuenta: no hay sesión que cerrar ni perfil que ver. Por eso el
-/// menú tiene una sola entrada, y decirlo en el encabezado ("ENTRAS COMO") es
-/// más honesto que un avatar que insinúa que hay algo detrás.
+/// No es una cuenta: no hay sesión que cerrar ni perfil que ver. Decirlo en el
+/// encabezado ("ENTRAS COMO") es más honesto que un avatar que insinúa que hay
+/// algo detrás.
+///
+/// La configuración cuelga de acá y no de la portada a propósito: nada de lo
+/// que hay dentro hace falta para jugar, y un botón de ajustes en la primera
+/// pantalla dice lo contrario. Ver [SettingsScreen].
 class _AccountButton extends StatefulWidget {
   const _AccountButton({required this.nickname});
 
@@ -209,7 +213,25 @@ class _AccountMenu extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const AppKicker('Entras como', small: true),
+            Row(
+              children: <Widget>[
+                const Expanded(child: AppKicker('Entras como', small: true)),
+                // El engranaje va acá arriba y no como segundo botón: lo de
+                // abajo es lo que se viene a hacer, y una lista de dos botones
+                // del mismo tamaño los pone a competir. Un icono al lado del
+                // encabezado se encuentra cuando se busca y no estorba cuando
+                // no.
+                AppIconButton(
+                  tooltip: 'Configuración',
+                  icon: Icons.settings_outlined,
+                  width: 26,
+                  height: 22,
+                  iconSize: 15,
+                  onPressed: () =>
+                      context.read<ShellCubit>().go(AppScreen.settings),
+                ),
+              ],
+            ),
             const SizedBox(height: 7),
             Text(
               nickname.isEmpty ? 'sin nombre' : nickname,

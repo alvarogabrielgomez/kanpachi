@@ -24,6 +24,10 @@ enum AppScreen {
   /// sigue siendo cierta sin sala abierta.
   exposure,
   invite,
+
+  /// Los dos ajustes que hay. Se llega por el engranaje del menú de cuenta, y
+  /// desde ningún otro sitio: nada de acá hace falta para jugar.
+  settings,
 }
 
 /// Los diálogos, que se dibujan por encima de la pantalla actual.

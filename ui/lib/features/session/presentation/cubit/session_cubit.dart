@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:kanpachi_ui/core/platform/app_preferences.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
@@ -26,26 +25,32 @@ import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.da
 class SessionCubit extends Cubit<SessionState> {
   SessionCubit(
     this._repository, {
+
     /// Where the nickname is remembered between runs.
     ///
     /// Null in tests, which build this cubit directly and have nothing to
     /// persist. The name still works in memory; only the remembering is gone.
     AppPreferences? preferences,
     String nickname = '',
+
+    /// Whether to narrate what the daemon is doing. Seeded from the stored
+    /// preference, which defaults to on while developing.
+    bool verbose = false,
     // The lint asks for `this._preferences`, which Dart does not allow: a
     // named parameter cannot start with an underscore. The field stays
     // private and the parameter stays nameable.
     // ignore: prefer_initializing_formals
   }) : _preferences = preferences,
-       super(SessionState(nickname: nickname));
+       super(SessionState(nickname: nickname, verbose: verbose));
 
   final SessionRepository _repository;
   final AppPreferences? _preferences;
 
   /// Poll of the daemon's step diary while a long operation runs.
   ///
-  /// **Debug builds only.** In release nothing starts it, so the field stays
-  /// null and the daemon never sees the extra connection.
+  /// Only exists while [SessionState.verbose] is on. With it off nothing
+  /// starts it, so the field stays null and the daemon never sees the extra
+  /// connection.
   Timer? _pollingProgreso;
 
   /// How often the steps are asked for.
@@ -101,10 +106,10 @@ class SessionCubit extends Cubit<SessionState> {
     SessionPhase? onFail,
   }) async {
     // The steps of what just failed, so "ver detalles" has something to show.
-    // Debug only, and best effort: if the daemon cannot be reached to ask, the
-    // failure is still reported, just without its breadcrumbs.
+    // Only when narrating, and best effort: if the daemon cannot be reached to
+    // ask, the failure is still reported, just without its breadcrumbs.
     Progress? pasos = state.progress;
-    if (kDebugMode) {
+    if (state.verbose) {
       try {
         pasos = await _repository.progress();
       } on Object {
@@ -129,9 +134,20 @@ class SessionCubit extends Cubit<SessionState> {
   /// Dismisses the failure notice.
   void clearFailure() => emit(state.copyWith(clearFailure: true));
 
-  /// Starts polling the daemon's step diary. Does nothing in release.
+  /// Turns the step-by-step narration on or off, and remembers it.
+  ///
+  /// Turning it OFF stops the poll on the spot rather than at the end of the
+  /// operation. Somebody who switches this off mid-creation is asking for the
+  /// traffic to stop, not to stop in a while.
+  void setVerbose({required bool enabled}) {
+    emit(state.copyWith(verbose: enabled));
+    if (!enabled) _stopWatching();
+    unawaited(_preferences?.setVerbose(enabled: enabled));
+  }
+
+  /// Starts polling the daemon's step diary. Does nothing when not narrating.
   void _watchProgress() {
-    if (!kDebugMode) return;
+    if (!state.verbose) return;
     _pollingProgreso?.cancel();
     _pollingProgreso = Timer.periodic(_cadenciaProgreso, (_) async {
       try {
@@ -214,7 +230,7 @@ class SessionCubit extends Cubit<SessionState> {
         clearRoom: true,
       ),
     );
-    // The steps panel only exists in debug, so only debug pays for the poll.
+    // Only whoever asked to be narrated to pays for the poll.
     _watchProgress();
     await _try(FailedAction.createRoom, onFail: SessionPhase.idle, () async {
       final Room room = await _repository.createRoom(

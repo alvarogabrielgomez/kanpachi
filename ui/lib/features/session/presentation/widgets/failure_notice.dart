@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
@@ -16,16 +15,27 @@ import 'package:kanpachi_ui/features/session/presentation/widgets/progress_steps
 /// noticed on its own, this one about an order that failed, and only here is
 /// somebody waiting with something to retry.
 ///
-/// # The details button is DEBUG only
+/// # The details button appears only when narrating
 ///
 /// Not for secrecy. The details name subnets, adapters, seeds and Go error
-/// strings: useful to whoever builds Kanpachi, noise to whoever plays it. In a
-/// release build the button is not there at all, so there is nothing to press
-/// and no half-open drawer to explain.
+/// strings: useful to whoever builds Kanpachi, noise to whoever plays it. With
+/// the narration off the button is not drawn, so there is nothing to press and
+/// no half-open drawer to explain — and it would open on nothing anyway,
+/// because with narration off nobody collected the steps. It is a setting and
+/// not a build flag: see [AppPreferences.verbose] for why that changed.
 class FailureNotice extends StatefulWidget {
-  const FailureNotice({required this.failure, this.onDismiss, super.key});
+  const FailureNotice({
+    required this.failure,
+    required this.verbose,
+    this.onDismiss,
+    super.key,
+  });
 
   final ActionFailure failure;
+
+  /// Whether this window narrates. Passed in rather than read from the cubit
+  /// so the notice stays paintable on its own.
+  final bool verbose;
 
   /// Dismisses the notice. Null hides the button, for screens where the notice
   /// goes away on its own with the next action.
@@ -49,7 +59,7 @@ class _FailureNoticeState extends State<FailureNotice> {
 
   @override
   Widget build(BuildContext context) {
-    final bool puedeDetallar = kDebugMode && widget.failure.hasDetails;
+    final bool puedeDetallar = widget.verbose && widget.failure.hasDetails;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

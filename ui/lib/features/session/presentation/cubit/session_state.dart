@@ -51,6 +51,7 @@ class SessionState {
     this.daemonDown = false,
     this.failure,
     this.progress,
+    this.verbose = false,
   });
 
   final SessionPhase phase;
@@ -106,13 +107,20 @@ class SessionState {
   /// Cleared when the next action starts, or when the user dismisses it.
   final ActionFailure? failure;
 
-  /// Steps of the long operation in flight. **Debug builds only.**
+  /// Steps of the long operation in flight, or null when nobody asked.
   ///
-  /// Nothing polls for this in a release build, so it stays null there and the
-  /// panel that reads it never paints. The reason is not secrecy: the steps
-  /// name subnets, adapters and seeds, which help whoever builds Kanpachi and
-  /// mean nothing to whoever plays it.
+  /// Only filled while [verbose] is on: with it off nothing polls, so this
+  /// stays null and the panel that reads it never paints.
   final Progress? progress;
+
+  /// Whether this window narrates what the daemon is doing.
+  ///
+  /// Seeded from [AppPreferences.verbose], which defaults to on while
+  /// developing and off in the product. It gates three things that belong
+  /// together: the step panel on the wait screen, the poll that fills it, and
+  /// the "ver detalles" button on a failure. Gating them separately is how you
+  /// end up with a details button that opens on nothing.
+  final bool verbose;
 
   bool get hasRoom => room != null;
   bool get isBusy => work != RoomWork.none;
@@ -137,6 +145,7 @@ class SessionState {
     bool clearFailure = false,
     Progress? progress,
     bool clearProgress = false,
+    bool? verbose,
   }) => SessionState(
     phase: phase ?? this.phase,
     room: clearRoom ? null : (room ?? this.room),
@@ -151,5 +160,6 @@ class SessionState {
     daemonDown: daemonDown ?? this.daemonDown,
     failure: clearFailure ? null : (failure ?? this.failure),
     progress: clearProgress ? null : (progress ?? this.progress),
+    verbose: verbose ?? this.verbose,
   );
 }
