@@ -70,6 +70,12 @@ const (
 	// vivió más que esto y se cerró es un caso normal, así que el contador se
 	// reinicia y se vuelve a tener las tres oportunidades.
 	quickDeath = 60 * time.Second
+	// relaunchGrace es lo que se espera antes de volver a lanzarla.
+	//
+	// Corto: quien mira la bandeja la quiere de vuelta. Suficiente para que la
+	// que acaba de morir suelte lo suyo, empezando por el evento con nombre de
+	// la instancia única, que es lo que la nueva se toparía consigo misma.
+	relaunchGrace = 1500 * time.Millisecond
 )
 
 // Host lanza la interfaz y la mantiene viva mientras el daemon lo esté.

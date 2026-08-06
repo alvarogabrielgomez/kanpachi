@@ -10,6 +10,29 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// enAlgúnJob dice si un proceso ya pertenece a algún job.
+//
+// Es para el diagnóstico de `AssignProcessToJobObject`, que devuelve el mismo
+// `Access is denied` cuando el proceso ya está en un job que no admite anidar y
+// cuando el problema es otro. `IsProcessInJob` no está en `x/sys/windows`, así
+// que se llama a mano.
+func enAlgúnJob(proc windows.Handle) string {
+	var dentro int32
+	r, _, err := procIsProcessInJob.Call(uintptr(proc), 0, uintptr(unsafe.Pointer(&dentro)))
+	if r == 0 {
+		return "no se pudo preguntar: " + err.Error()
+	}
+	if dentro != 0 {
+		return "sí"
+	}
+	return "no"
+}
+
+var (
+	kernel32           = windows.NewLazySystemDLL("kernel32.dll")
+	procIsProcessInJob = kernel32.NewProc("IsProcessInJob")
+)
+
 // openJob abre el Job Object que sujeta a la interfaz.
 //
 // `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` es lo ÚNICO que garantiza que la
@@ -146,39 +169,102 @@ func (h *Host) launch(show, persistent bool) error {
 	si.Cb = uint32(unsafe.Sizeof(si))
 	var pi windows.ProcessInformation
 
-	const banderas = windows.CREATE_UNICODE_ENVIRONMENT | windows.CREATE_NEW_CONSOLE
+	// **SUSPENDIDO, y eso arregla una carrera medida.**
+	//
+	// Sin esto el proceso arranca corriendo, y la interfaz hace lo primero de
+	// todo su comprobación de instancia única: si ya hay una, le avisa y se
+	// mata. Un proceso que ya terminó no se puede meter en un job, y lo que
+	// Windows devuelve entonces es `Access is denied`. Pasó al relanzar la
+	// interfaz un instante después de matarla: `metiendo la interfaz en su job:
+	// Access is denied.`, y con la lógica de entonces eso apagaba Kanpachi
+	// entero.
+	//
+	// Suspendido, además, es lo que hace CIERTO el comentario de abajo: el job
+	// queda puesto antes de que el proceso ejecute una sola instrucción, así
+	// que no existe ventana en la que una interfaz corra fuera de él.
+	//
+	// **Y con BREAKAWAY, que arregla lo de arriba en su raíz.** Un proceso hijo
+	// nace dentro del job de su padre, y a un proceso que YA está en un job no
+	// se le puede meter en el nuestro: `AssignProcessToJobObject` contesta
+	// `Access is denied`. Medido, con `IsProcessInJob` diciendo que sí antes de
+	// intentarlo. Pasa cuando al daemon lo levanta algo que vive en un job, que
+	// es el caso de la carpeta portable: lo arranca una consola.
+	//
+	// La bandera es una PETICIÓN: si el job del padre no permite salirse,
+	// `CreateProcess` falla, y entonces se reintenta sin ella. Ver [crear].
+	const banderas = windows.CREATE_UNICODE_ENVIRONMENT |
+		windows.CREATE_NEW_CONSOLE |
+		windows.CREATE_SUSPENDED
 
 	// Dos APIs para lo mismo, y la elección es de PRIVILEGIOS, no de gusto. Ver
 	// [entrega.conToken]: SYSTEM tiene `SE_ASSIGNPRIMARYTOKEN` y un
 	// administrador elevado no; lo que este último tiene es `SE_IMPERSONATE`.
-	if quién.conToken {
-		err = crearProcesoConToken(primario, exe, cmd, banderas, entorno, &si, &pi)
-	} else {
-		err = windows.CreateProcessAsUser(
+	crear := func(f uint32) error {
+		if quién.conToken {
+			return crearProcesoConToken(primario, exe, cmd, f, entorno, &si, &pi)
+		}
+		return windows.CreateProcessAsUser(
 			primario,
 			exe,
 			cmd,
 			nil, nil,
 			false, // sin heredar handles: no se pueden heredar entre sesiones
-			banderas,
+			f,
 			entorno,
 			nil,
 			&si,
 			&pi,
 		)
 	}
-	if err != nil {
-		return fmt.Errorf("lanzando la interfaz en la sesión %d: %w", sesión, err)
+
+	if err = crear(banderas | windows.CREATE_BREAKAWAY_FROM_JOB); err != nil {
+		// El job del padre no deja salirse. Se va sin la bandera: el proceso
+		// nace dentro de ese job, y eso NO rompe la invariante —muere con el
+		// daemon igual, porque el job del padre se lo lleva—, solo impide
+		// meterlo además en el nuestro. Lo de abajo lo tolera.
+		h.deps.Log.Info("el job del padre no deja salirse, la interfaz nace dentro de él",
+			"error", err)
+		if err = crear(banderas); err != nil {
+			return fmt.Errorf("lanzando la interfaz en la sesión %d: %w", sesión, err)
+		}
+	}
+
+	// Al job ANTES de cualquier otra cosa, y con el proceso todavía sin
+	// ejecutar nada. Si el daemon muriera entre el arranque y esta línea,
+	// quedaría una interfaz suelta.
+	if err := windows.AssignProcessToJobObject(windows.Handle(h.job), pi.Process); err != nil {
+		// **No se mata la interfaz por esto.** Antes sí, y el precio era
+		// absurdo: la ventana no arrancaba, el vigilante lo contaba como caída,
+		// y a la tercera Kanpachi se apagaba entero, con la sala dentro. Todo
+		// por no poder meter en un job un proceso que YA está en uno.
+		//
+		// Y estando en el job del padre, la invariante se sostiene igual: ese
+		// job es el de este daemon, así que la interfaz muere con él lo mismo.
+		// Lo que se pierde es poder matarla cerrando ESTE job, que es una vía
+		// de las dos.
+		//
+		// El diagnóstico va dentro del aviso porque hace falta: `Access is
+		// denied` a secas tiene tres causas con arreglos distintos —el proceso
+		// ya murió, ya está en otro job, o al job le falta el permiso— y sin
+		// estos datos no se distinguen. Costó una sesión mirando el sitio
+		// equivocado.
+		var salida uint32 = 0xFFFFFFFF
+		_ = windows.GetExitCodeProcess(pi.Process, &salida)
+		h.deps.Log.Warn("la interfaz no entró en el job propio, sigue igual",
+			"error", err, "pid", pi.ProcessId,
+			"ya estaba en un job", enAlgúnJob(pi.Process),
+			"código de salida", fmt.Sprintf("0x%X", salida))
+	}
+
+	// Y ahora sí, a correr. El hilo se suelta y su handle se cierra: lo que se
+	// vigila es el PROCESO.
+	if _, err := windows.ResumeThread(pi.Thread); err != nil {
+		_ = windows.TerminateProcess(pi.Process, 1)
+		_ = windows.CloseHandle(pi.Thread)
+		_ = windows.CloseHandle(pi.Process)
+		return fmt.Errorf("soltando el hilo de la interfaz: %w", err)
 	}
 	_ = windows.CloseHandle(pi.Thread)
-
-	// Al job ANTES de cualquier otra cosa. Si el daemon muriera entre el
-	// arranque y esta línea, quedaría una interfaz suelta.
-	if err := windows.AssignProcessToJobObject(windows.Handle(h.job), pi.Process); err != nil {
-		_ = windows.TerminateProcess(pi.Process, 1)
-		_ = windows.CloseHandle(pi.Process)
-		return fmt.Errorf("metiendo la interfaz en su job: %w", err)
-	}
 
 	if !persistent {
 		// La transitoria solo tenía que avisarle a la que ya está. Su handle no
@@ -249,15 +335,32 @@ func (h *Host) watch() {
 		}
 
 		h.deps.Log.Warn("la interfaz se cerró sin avisar, se relanza en silencio", "intento", caídas)
+
+		// Un respiro antes de relanzar. La interfaz que acaba de morir puede
+		// tener cosas suyas todavía sin soltar —el evento de instancia única
+		// entre ellas—, y volver a arrancar en el mismo instante es pedirle a
+		// la nueva que se tope consigo misma.
+		select {
+		case <-h.stop:
+			return
+		case <-time.After(relaunchGrace):
+		}
+
 		// En silencio: la ventana la abrió el usuario o no, y relanzarla con
 		// ventana pondría una encima de lo que estuviera haciendo. Lo que no
 		// puede faltar es el icono.
 		if err := h.launch(false, true); err != nil {
-			h.deps.Log.Error("no se pudo relanzar la interfaz", "error", err)
-			if h.deps.OnGiveUp != nil {
-				h.deps.OnGiveUp()
-			}
-			return
+			// **Se vuelve a intentar, no se tira todo.**
+			//
+			// Esto rendía en el primer fallo, y lo que rendía era el daemon
+			// ENTERO: `OnGiveUp` apaga Kanpachi, o sea cierra la sala, baja la
+			// red virtual y suelta el firewall. Un tropiezo al relanzar una
+			// ventana no puede costar la partida de cuatro personas. El único
+			// motivo legítimo para rendirse es el mismo que para una caída: que
+			// pase una y otra vez, y de eso ya se ocupa el contador de arriba.
+			h.deps.Log.Error("no se pudo relanzar la interfaz, se reintenta",
+				"error", err, "intento", caídas)
+			continue
 		}
 	}
 }

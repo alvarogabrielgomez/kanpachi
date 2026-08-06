@@ -102,6 +102,17 @@ Tres cosas que hay que respetar, y las tres vienen de la documentación de Micro
 
 **La ruta que se lanza sale de `os.Executable()` y del directorio propio, jamás del estado ni de la configuración ni del pipe.** Un SYSTEM que lanza una ruta que alguien puede influir es escalada de privilegios directa.
 
+#### El proceso nace suspendido, y pide salirse del job del padre
+
+Dos banderas que no estaban, y las dos vienen de un fallo medido en la carpeta portable: `AssignProcessToJobObject` contestaba `Access is denied`, la interfaz no arrancaba, el vigilante lo contaba como caída, y a la tercera **Kanpachi se apagaba entero, con la sala dentro**.
+
+- **`CREATE_SUSPENDED`.** Sin ella el proceso arranca corriendo y hace lo primero de todo su comprobación de instancia única: si ya hay una, avisa y se mata. A un proceso que ya terminó no se le puede meter en un job. De paso, suspendido es lo que hace cierta la promesa de que el job queda puesto antes de que la interfaz ejecute una sola instrucción.
+- **`CREATE_BREAKAWAY_FROM_JOB`.** Un hijo nace dentro del job de su padre, y a un proceso que YA está en un job no se le puede meter en otro. Medido con `IsProcessInJob`, que contestaba que sí antes de intentarlo. Pasa cuando al daemon lo levanta algo que vive en un job, o sea la consola de una carpeta portable. La bandera es una PETICIÓN: si el job del padre no deja salirse, `CreateProcess` falla y se reintenta sin ella.
+
+**Y si aun así no entra en el job propio, se sigue igual, con un aviso.** Antes se mataba la interfaz recién creada, que es cómo un tropiezo al abrir una ventana acababa costando la partida de cuatro personas. La invariante se sostiene sin el job propio: el proceso nació dentro del job del daemon, así que muere con él lo mismo. Lo que se pierde es una de las dos vías para matarlo, no la garantía.
+
+El aviso lleva el PID, si el proceso ya estaba en un job, y su código de salida. Hace falta: `Access is denied` a secas tiene tres causas con arreglos distintos, y sin esos datos no se distinguen.
+
 ### Un solo ejecutable, cuatro papeles, y el papel lo dice el parámetro
 
 `kanpachid.exe` es el daemon. También es lo que arranca el daemon, y también es el modo desarrollo. No hay un binario auxiliar, y ese es el punto: un segundo ejecutable habría que mantenerlo sincronizado con este, y la sincronización entre dos binarios que se acompañan es exactamente la clase de contrato que se rompe sin dar error. Es el patrón de un motor de juego que corre dos juegos según con qué lo llamen.
