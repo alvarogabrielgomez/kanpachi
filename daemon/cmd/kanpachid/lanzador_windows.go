@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Microsoft/go-winio"
@@ -82,6 +85,70 @@ func ArrancarServicio(args []string) (yaEstaba bool, err error) {
 		return false, fmt.Errorf("arrancando el servicio %s: %w", ServiceName, err)
 	}
 	return false, nil
+}
+
+// ArrancarSuelto relanza este mismo binario, elevado, como daemon portable.
+//
+// # Por qué ShellExecute y no CreateProcess
+//
+// Porque el verbo `runas` es la única forma documentada de pedir elevación
+// desde un proceso que no la tiene: `CreateProcess` no eleva, devuelve
+// ERROR_ELEVATION_REQUIRED y ya. Con `runas`, Windows enseña el diálogo de
+// Control de cuentas de usuario y arranca el proceso nuevo con el token de
+// administrador.
+//
+// El proceso hijo es INDEPENDIENTE: este lanzador se muere enseguida y el
+// daemon se queda. Es lo mismo que pasa por el camino del servicio, donde quien
+// sobrevive es el Administrador de servicios.
+//
+// # El caso que hay que nombrar
+//
+// Que el usuario diga que no al diálogo. Windows devuelve ERROR_CANCELLED, y
+// eso no es un fallo del programa: es una respuesta. Se dice con esas palabras,
+// porque "acceso denegado" delante de alguien que acaba de pulsar «No» es
+// hablarle de otra cosa.
+func ArrancarSuelto(args []string) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("averiguando la ruta de este ejecutable: %w", err)
+	}
+
+	// La bandera del papel va SIEMPRE, y las que pidieran detrás. Es lo que
+	// hace que el proceso nuevo sea el daemon en vez de otro lanzador, que
+	// volvería a sondear el pipe y a relanzarse.
+	línea := strings.Join(append([]string{ArgDaemon}, args...), " ")
+
+	verbo, err := windows.UTF16PtrFromString("runas")
+	if err != nil {
+		return err
+	}
+	ruta, err := windows.UTF16PtrFromString(exe)
+	if err != nil {
+		return err
+	}
+	params, err := windows.UTF16PtrFromString(línea)
+	if err != nil {
+		return err
+	}
+	// El directorio de trabajo es el de la carpeta portable. No lo usa nadie
+	// —todo se resuelve contra `os.Executable()`— y se pone igual para que un
+	// volcado no aparezca en system32.
+	cwd, err := windows.UTF16PtrFromString(filepath.Dir(exe))
+	if err != nil {
+		return err
+	}
+
+	// SW_HIDE: el daemon no tiene ventana, y el binario va con `-H windowsgui`.
+	// Pedir una la dejaría parpadear.
+	if err := windows.ShellExecute(0, verbo, ruta, params, cwd, windows.SW_HIDE); err != nil {
+		if errors.Is(err, windows.ERROR_CANCELLED) {
+			return fmt.Errorf("hace falta permiso de administrador para arrancar Kanpachi desde esta carpeta.\n" +
+				"  Es lo que pedía la ventana de Control de cuentas de usuario.\n" +
+				"  Solo lo pide esta versión portable: la instalada lo pide una vez, al instalar")
+		}
+		return fmt.Errorf("relanzando Kanpachi con permisos de administrador: %w", err)
+	}
+	return nil
 }
 
 // avisar enseña el error en una ventana.

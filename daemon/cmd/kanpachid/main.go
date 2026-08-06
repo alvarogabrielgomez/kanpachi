@@ -51,9 +51,14 @@ func main() {
 	reengancharConsola()
 
 	consola := flag.Bool("console", false, "correr como aplicación de consola en vez de servicio")
-	// **La bandera del acceso directo.** Ver [abrir] para los tres papeles de
-	// este binario y por qué son uno y no tres ejecutables.
+	// **La bandera del acceso directo.** Ver [abrir] para los papeles de este
+	// binario y por qué son uno y no varios ejecutables.
 	mostrar := flag.Bool("show", false, "arrancar Kanpachi y enseñar la ventana")
+	// El daemon de una carpeta portable: este proceso ES el daemon, sin
+	// Administrador de servicios detrás. Solo vale en una carpeta portable, y
+	// eso se comprueba. Ver [portable.go].
+	suelto := flag.Bool("daemon", false,
+		"correr el daemon en este proceso, sin servicio. Solo en una carpeta portable")
 	datos := flag.String("data", "", "directorio de datos. Vacío usa ProgramData\\Kanpachi")
 	// El nombre del pipe se puede cambiar SOLO en modo consola, y existe por una
 	// razón concreta: el de producción vive bajo ProtectedPrefix\Administrators,
@@ -79,7 +84,7 @@ func main() {
 		return
 	}
 
-	if err := correr(*consola, *mostrar, *datos, *nombre); err != nil {
+	if err := correr(*consola, *suelto, *mostrar, *datos, *nombre); err != nil {
 		fmt.Fprintln(os.Stderr, "kanpachid:", err)
 		// Y en una ventana si no hay consola, que es el caso del doble clic.
 		// Sin esto, un acceso directo que falla no hace nada visible. Ver
@@ -180,14 +185,6 @@ const (
 	uiShowFlag = "--show"
 )
 
-// dirDeDatos resuelve el directorio de datos, vacío incluido.
-func dirDeDatos(datos string) string {
-	if datos != "" {
-		return datos
-	}
-	return filepath.Join(os.Getenv("ProgramData"), "Kanpachi")
-}
-
 // watchers son los cuatro adaptadores que MIRAN la máquina sin cambiarla: los
 // avisos del sistema, la biblioteca de Steam, la tabla de sockets y los mapeos
 // del router.
@@ -238,15 +235,29 @@ type booted struct {
 	shutdown func()
 }
 
-func correr(consola, mostrar bool, datos, nombre string) error {
-	if datos == "" {
-		datos = filepath.Join(os.Getenv("ProgramData"), "Kanpachi")
-	}
-	// El directorio lo crea el INSTALADOR con una ACL propia, y esa ACL es la
-	// mitad de la protección del token. Crearlo acá la perdería en silencio.
+func correr(consola, suelto, mostrar bool, datos, nombre string) error {
+	portable := esPortable()
+	datos = dirDeDatos(datos)
+
 	if _, err := os.Stat(datos); err != nil {
-		return fmt.Errorf("el directorio de datos %s no está.\n"+
-			"  Lo crea el instalador con su ACL. Para probar, créalo a mano o pasa --data", datos)
+		// **En una carpeta portable se crea, y en el producto instalado no.**
+		//
+		// No es una excepción por comodidad: son dos dueños distintos. El
+		// directorio de ProgramData lo crea el INSTALADOR con una ACL propia, y
+		// esa ACL es la mitad de la protección del token; crearlo acá la
+		// perdería en silencio. En portable no hay instalador que lo cree, así
+		// que la alternativa a crearlo es que la carpeta no arranque nunca.
+		//
+		// Lo que se pierde con eso queda dicho en `docs/03`: los datos de un
+		// Kanpachi portable heredan los permisos de donde alguien dejó la
+		// carpeta.
+		if !portable {
+			return fmt.Errorf("el directorio de datos %s no está.\n"+
+				"  Lo crea el instalador con su ACL. Para probar, créalo a mano o pasa --data", datos)
+		}
+		if err := os.MkdirAll(datos, 0o700); err != nil {
+			return fmt.Errorf("creando el directorio de datos %s de la carpeta portable: %w", datos, err)
+		}
 	}
 
 	// **La pregunta se la hace a Windows, no a la bandera.** Arrancar como
@@ -280,6 +291,33 @@ func correr(consola, mostrar bool, datos, nombre string) error {
 			}
 			return b.wait, b.shutdown, nil
 		})
+	}
+
+	// **El daemon de una carpeta portable.** Mismo cableado que el servicio y
+	// mismo pipe de producción; lo único que cambia es quién sostiene el
+	// proceso, que acá es nadie: vive hasta que lo apaguen.
+	//
+	// Se exige el marcador y no basta con la bandera. Sin esa comprobación,
+	// `kanpachid.exe --daemon` en una máquina con Kanpachi instalado sería un
+	// segundo daemon peleándose por el mismo nombre de pipe con el servicio.
+	if suelto {
+		if !portable {
+			return fmt.Errorf("--daemon solo vale en una carpeta portable, " +
+				"y acá no está el fichero " + PortableMarker + ".\n" +
+				"  Instalado, al daemon lo arranca el Administrador de servicios")
+		}
+		ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer parar()
+
+		b, err := arrancar(ctx, datos, pipe.Name, false, mostrar)
+		if err != nil {
+			return err
+		}
+		go func() {
+			<-ctx.Done()
+			b.shutdown()
+		}()
+		return b.wait()
 	}
 
 	// **Ni servicio ni consola: entonces esto es el LANZADOR.**

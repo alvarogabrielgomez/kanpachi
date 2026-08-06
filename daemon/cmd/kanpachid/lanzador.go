@@ -24,6 +24,7 @@ import (
 //	kanpachid.exe             lo arranca el SCM. ES el daemon
 //	kanpachid.exe --show      lanzador, y además abre la ventana
 //	kanpachid.exe --console   daemon de consola, para desarrollar
+//	kanpachid.exe --daemon    el daemon de una carpeta portable, sin SCM
 //
 // # Nunca un segundo daemon
 //
@@ -72,7 +73,30 @@ func abrir(datos string, mostrar bool) error {
 		return decirShow(conn, datos)
 	}
 
-	// 2. No hay. Que lo arranque el Administrador de servicios.
+	// 2. No hay, y esto es una carpeta portable: no hay SCM a quien pedírselo,
+	// así que el daemon lo levanta este mismo binario en otro proceso.
+	//
+	// **Otro proceso y no este, porque hace falta elevar.** Crear el pipe bajo
+	// `ProtectedPrefix\Administrators` y escribir en el firewall exigen
+	// administrador, y a este proceso lo arrancó un doble clic sin elevar. La
+	// única forma de subir es relanzarse, que es lo que hace [ArrancarSuelto].
+	//
+	// Aquí SÍ hay un UAC, y es la diferencia honesta entre portable e
+	// instalado: el instalador pide uno solo, al instalar, y a cambio concede
+	// el permiso de arranque; una carpeta que se copió no concedió nada, así
+	// que paga un UAC por arranque de Kanpachi.
+	if esPortable() {
+		var args []string
+		if mostrar {
+			args = append(args, ArgShow)
+		}
+		// No se le insiste por el pipe después: el daemon que acaba de nacer
+		// abre la ventana él mismo si se lo pidieron, igual que en el camino
+		// del servicio.
+		return ArrancarSuelto(args)
+	}
+
+	// 3. No hay. Que lo arranque el Administrador de servicios.
 	//
 	// El argumento viaja por `StartService` y no por la línea de comandos de
 	// este proceso: el daemon lo va a recibir como argumento del SERVICIO, que
@@ -91,7 +115,7 @@ func abrir(datos string, mostrar bool) error {
 		return nil
 	}
 
-	// 3. Estaba arrancando cuando llegamos. Se espera al pipe y se pide.
+	// 4. Estaba arrancando cuando llegamos. Se espera al pipe y se pide.
 	if !mostrar {
 		return nil
 	}

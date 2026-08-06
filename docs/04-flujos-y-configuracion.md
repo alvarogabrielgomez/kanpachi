@@ -70,6 +70,32 @@ Son dos piezas y su estado es distinto:
 
 Nada de `-ldflags "-s -w"`: quitar los símbolos dispara falsos positivos de Defender sobre binarios de Go, y el binario que se firma tiene que ser el que se probó. Mismo criterio que `release-seed.yml`.
 
+## La carpeta portable, y el script que la arma
+
+Hay una segunda forma de repartir Kanpachi además del instalador: una carpeta que se copia y funciona, sin nada que registrar. Es lo que cabe en un ZIP y lo que se lleva una llave USB. Qué la define y qué cuesta está en `03-arquitectura.md`; acá está cómo se produce.
+
+```
+.\scripts\kanpachi-portable.ps1                     arma .\Kanpachi y lo arranca
+.\scripts\kanpachi-portable.ps1 debug               daemon de consola a la vista, interfaz en debug
+.\scripts\kanpachi-portable.ps1 -Salida D:\x -NoArrancar   solo armar, para comprimir
+```
+
+Una sola orden hace lo que antes eran seis pasos a mano: compilar el daemon, compilar la interfaz, copiar el catálogo y las DLL, traer el motor del otro repositorio, escribir el marcador y arrancarlo todo con los permisos que necesita. El modo por omisión es producción.
+
+| | `prod` | `debug` |
+|---|---|---|
+| Interfaz | release | debug, compilada contra el pipe de consola |
+| Daemon | daemon portable, sin consola, log a fichero | `--console` en una terminal elevada, log a la vista |
+| Quién abre la interfaz | el daemon | el script |
+
+**En `debug` el daemon va por `cmd.exe /k` y no directo**, y hace falta: el binario está enlazado con `-H windowsgui`, así que no crea consola propia y lo que hace es engancharse a la del padre. Arrancado con elevación no hay padre con consola, y todo el log iría a ningún sitio, que es justo lo que ese modo existe para evitar.
+
+**En `debug` la interfaz la arranca el script y no el daemon**, porque el modo consola no hospeda la interfaz a propósito. Quien usa `--console` tiene una terminal delante; levantarle una ventana en cada arranque taparía el caso que el producto de verdad tiene que resolver, que es el daemon lanzándola él.
+
+Lo que el script hace antes de compilar y conviene saber: **detiene lo que estuviera corriendo de ESA carpeta**, filtrando por ruta y no por nombre, para no tumbar un Kanpachi instalado que no tiene nada que ver. Sin eso, Windows tiene el `.exe` bloqueado y `go build` falla con un acceso denegado que no menciona nada de esto. Un daemon portable corre elevado, así que detenerlo desde una terminal sin elevar no se puede: el script lo dice con esas palabras en vez de dejar el fallo de compilación a secas.
+
+Y **conserva `kanpachi-data\`** entre compilaciones, salvo con `-Limpio`. Ahí dentro está la llave de esta instalación, y tirarla en cada build convertiría cada compilación en un equipo nuevo para quien ya jugó contigo.
+
 ## Modo desarrollo
 
 El daemon corre como aplicación de consola, sin reinstalar el servicio. **Exige una consola elevada**, por dos motivos que se comprobaron a mano y no se dedujeron: el nombre del pipe vive bajo `ProtectedPrefix\Administrators`, que Windows no deja crear a un proceso sin elevar, y aceptar una conexión exige crear la instancia siguiente del pipe, cosa que el descriptor solo permite a SYSTEM y a los administradores.
@@ -80,6 +106,8 @@ C:\kt\stage\kanpachid.exe --console -data C:\ruta\a\datos
 C:\kt\stage\kanpctl.exe -data C:\ruta\a\datos status
 C:\kt\stage\kanpctl.exe -data C:\ruta\a\datos -no-token status
 ```
+
+`preparar-stage.ps1` sigue siendo el banco de pruebas con las sondas dentro, y `kanpachi-portable.ps1 debug` es lo otro: la carpeta que se reparte, compilada en depuración. Para medir un adaptador suelto sirve el stage; para ver el producto entero funcionando, la carpeta portable.
 
 **`go run` no alcanza para nada que abra una sala**, y conviene saberlo antes de
 perder una tarde: el daemon busca el motor y el catálogo al lado de su propio
@@ -94,7 +122,7 @@ El daemon imprime el nombre del pipe y el token al arrancar. La segunda llamada 
 
 **El modo consola usa otro nombre de pipe**, y eso no es cosmético: con el mismo, un proceso sin privilegios ocuparía el nombre de producción arrancando nuestro propio binario con `--console`, que es el squatting sin escribir un okupa. La bandera `--pipe` permite un nombre cualquiera y solo se lee en modo consola, para poder ejercer el saludo y los topes sin un UAC por cada prueba.
 
-**El directorio de datos no lo crea el daemon.** Lo crea el instalador con su ACL, y esa ACL es la mitad de la protección del token; crearlo por accidente desde el daemon la perdería en silencio. Para probar a mano hay que crearlo antes o pasar `-data`.
+**El directorio de datos no lo crea el daemon.** Lo crea el instalador con su ACL, y esa ACL es la mitad de la protección del token; crearlo por accidente desde el daemon la perdería en silencio. Para probar a mano hay que crearlo antes o pasar `-data`. La única excepción es la carpeta portable, donde no hay instalador que lo cree y la alternativa sería que no arrancara nunca; queda dicho en `03-arquitectura.md` con lo que eso cuesta.
 
 **Lo que el instalador jamás hace:** agregar exclusiones de Windows Defender, ni habilitar los grupos de reglas de Detección de redes o Compartir archivos e impresoras. Lo primero es lo que hace el malware, y si el binario necesitara una exclusión el problema sería el binario. Lo segundo abriría SMB en la LAN doméstica del usuario, porque esos grupos se habilitan por perfil de firewall y no por adaptador.
 

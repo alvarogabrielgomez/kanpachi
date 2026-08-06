@@ -1338,3 +1338,35 @@ Quitar la cuarentena es de `--uninstall-cleanup`, y esa capacidad vive en **una 
 No hay un segundo intento. Quien pide un reset lo pide porque nada más funciona, así que abortar en el primer paso que falla dejaría el resto puesto justo entonces. Se registran todos los fallos y se devuelven juntos.
 
 El orden sí decide, y cada par tiene una dirección correcta: los motores huérfanos primero, porque mientras uno siga vivo la red virtual sigue arriba y purgar antes dejaría un adaptador con tráfico y sin nada conteniéndolo; la cuarentena antes de la purga, porque la purga es el instante de menos protección; la compuerta se suelta después de los permisos, igual que al salir de la sala.
+
+---
+
+## 30. Una carpeta portable, decidida por un fichero y no por una bandera
+
+**Alternativas:** solo el instalador. Un segundo ejecutable "portable". Una bandera de línea de comandos que active el modo. Un fichero marcador junto al binario.
+
+**Elección:** **el fichero marcador**, `kanpachi.portable`. Con él presente, el daemon guarda sus datos en `kanpachi-data\` al lado del ejecutable y corre en su propio proceso; sin él, todo sigue exactamente como estaba.
+
+Solo el instalador no alcanzaba para el caso que motivó esto, que es mandarle Kanpachi a alguien en un ZIP para probar. Un segundo ejecutable repite el problema que ya resolvió el patrón de un binario con parámetros: dos ficheros que hay que mantener sincronizados y que se rompen sin dar error.
+
+**La bandera es la que estuvo cerca, y falla por un motivo mecánico.** La pregunta "esto es portable" la tienen que contestar igual tres procesos que no comparten línea de comandos: el lanzador, que arranca de un doble clic sin argumentos; el daemon, que nace después; y la interfaz de Flutter, que es otro ejecutable. Con una bandera habría que acordarse de pasarla en los tres, y olvidarla en uno es silencioso: el daemon escribiría su token junto al binario y la interfaz lo buscaría en ProgramData, con el síntoma de "no hay servicio" delante de un servicio corriendo. Ese fallo exacto ya ocurrió cuatro veces en este repositorio con el nombre del pipe. Con un fichero, ser portable es una propiedad de la CARPETA y los tres la deducen sin hablar entre ellos.
+
+### Lo que cuesta, y por qué se acepta
+
+| | Instalado | Portable |
+|---|---|---|
+| UAC | uno, al instalar | uno por arranque |
+| Datos | ProgramData con ACL del instalador | junto al binario, con los permisos de donde esté la carpeta |
+| Arranque con Windows | sí | no |
+
+El UAC por arranque es consecuencia directa de no haber instalado nada: el permiso de arrancar el servicio se lo concede el instalador al usuario con `sc sdset`, y una carpeta copiada no concedió nada. Se acepta porque el portable no reemplaza al instalador, lo acompaña: es para probar y para repartir, no para el amigo que va a jugar todas las semanas.
+
+### El daemon portable no es SYSTEM, y eso rompió lo que nadie esperaba
+
+Salió corriéndolo, no leyéndolo, y es lo más caro que tuvo esta decisión. El daemon instalado es un servicio como SYSTEM en la sesión 0, y lanza la interfaz cruzando a la sesión de quien usa la máquina con `WTSQueryUserToken`. **Esa llamada exige `SE_TCB_NAME`, que solo tiene LocalSystem.** El daemon portable es el usuario elevado, ya dentro de su sesión, así que falla, y falla de la peor forma: arranca, escucha en su pipe, y se queda corriendo sin nada en pantalla, que es la forma exacta que la invariante de la bandeja prohíbe.
+
+La vía obvia tampoco sirve, y también hizo falta medirlo: pedir el token enlazado del propio proceso elevado devuelve un token de suplantación de nivel identificación, porque la documentación reserva el primario para quien tenga `SeTcbPrivilege`. Duplicarlo a primario falla con `ERROR_BAD_IMPERSONATION_LEVEL`.
+
+Lo que funciona es tomar prestado el token del Explorador de esta sesión, que es el proceso que ya está corriendo con el token que se quiere: mismo usuario, sin elevar, y primario. Se lanza con `CreateProcessWithTokenW`, que pide `SeImpersonatePrivilege` en vez de `SE_ASSIGNPRIMARYTOKEN`; el primero lo tiene un administrador elevado y el segundo no. Dos detalles más que costaron un intento cada uno: el privilegio hay que ENCENDERLO, tenerlo no basta, y el duplicado hay que pedirlo con sus derechos explícitos, porque heredar "los mismos que el original" lo dejaba sin `TOKEN_ASSIGN_PRIMARY`.
+
+**El resultado se comprobó:** la interfaz de una carpeta portable corre SIN elevar, igual que la instalada, y muere con el daemon por el mismo job.

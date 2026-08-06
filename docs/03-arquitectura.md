@@ -102,7 +102,7 @@ Tres cosas que hay que respetar, y las tres vienen de la documentación de Micro
 
 **La ruta que se lanza sale de `os.Executable()` y del directorio propio, jamás del estado ni de la configuración ni del pipe.** Un SYSTEM que lanza una ruta que alguien puede influir es escalada de privilegios directa.
 
-### Un solo ejecutable, tres papeles, y el papel lo dice el parámetro
+### Un solo ejecutable, cuatro papeles, y el papel lo dice el parámetro
 
 `kanpachid.exe` es el daemon. También es lo que arranca el daemon, y también es el modo desarrollo. No hay un binario auxiliar, y ese es el punto: un segundo ejecutable habría que mantenerlo sincronizado con este, y la sincronización entre dos binarios que se acompañan es exactamente la clase de contrato que se rompe sin dar error. Es el patrón de un motor de juego que corre dos juegos según con qué lo llamen.
 
@@ -111,8 +111,11 @@ Tres cosas que hay que respetar, y las tres vienen de la documentación de Micro
 | `kanpachid.exe` | el Administrador de servicios | **es** el daemon |
 | `kanpachid.exe --show` | el acceso directo, el enlace `kanpachi://` | **lanzador**: deja el daemon corriendo y la ventana a la vista |
 | `kanpachid.exe --console` | quien programa | daemon de consola, con otro nombre de pipe |
+| `kanpachid.exe --daemon` | el propio lanzador, en una carpeta portable | **es** el daemon, sin Administrador de servicios detrás |
 
-El lanzador es el **default** cuando el proceso no lo arrancó el Administrador de servicios: quien encuentre este binario en Program Files y lo ejecute obtiene un Kanpachi corriendo, jamás un segundo daemon compitiendo con el que ya hay. Correr el daemon a mano hay que pedirlo con `--console`.
+El lanzador es el **default** cuando el proceso no lo arrancó el Administrador de servicios: quien encuentre este binario en Program Files y lo ejecute obtiene un Kanpachi corriendo, jamás un segundo daemon compitiendo con el que ya hay. Correr el daemon a mano hay que pedirlo con `--console` o con `--daemon`.
+
+`--daemon` solo vale dentro de una carpeta portable y eso se comprueba antes de montar nada. Sin esa comprobación, esa bandera en una máquina con Kanpachi instalado sería un segundo daemon peleándose con el servicio por el mismo nombre de pipe.
 
 **Lo primero que hace el lanzador es preguntar si ya hay daemon, y lo pregunta por el pipe.** Podría preguntárselo al Administrador de servicios, que es más directo, y sería un mecanismo más que mantener: el pipe es a la vez la detección y la entrega. Si contesta, ya hay por dónde mandarle la orden de mostrarse; si no hay nadie, `CreateFile` falla al instante, que es justo el caso que tiene que ser rápido. Y se corrige solo: si la sonda falla porque el daemon está a mitad de arrancar, el arranque siguiente devuelve `ERROR_SERVICE_ALREADY_RUNNING` y se vuelve al pipe. Ninguna rama termina en dos daemons.
 
@@ -146,11 +149,41 @@ Ninguna de las tres pide UAC. Arrancar el servicio no lo pide porque el instalad
 
 **El daemon se compila con `-H windowsgui`.** Con el subsistema de consola, que es lo que Go hace por defecto, el doble clic haría parpadear una ventana negra. Para no perder la salida de `--console` y `--reset`, se reengancha a la consola del padre con `AttachConsole(ATTACH_PARENT_PROCESS)` cuando la hay: lanzado desde una terminal imprime, lanzado desde el acceso directo no muestra nada. Cuando el lanzador falla y no hay consola a la que escribir, el error sale en una ventana de mensaje: sin eso, un acceso directo roto no haría nada visible.
 
+### La carpeta portable
+
+Hay una segunda forma de repartir Kanpachi, y no reemplaza al instalador: una carpeta que se copia y funciona. Es lo que se le manda a alguien en un ZIP, y lo que cabe en una llave USB.
+
+Lo que la define es un fichero vacío junto al binario, `kanpachi.portable`. Con él presente cambian dos cosas y ninguna más:
+
+- El daemon guarda sus datos en `kanpachi-data\`, ahí mismo, en vez de en `ProgramData\Kanpachi`.
+- El daemon corre en su propio proceso con `--daemon`, en vez de como servicio.
+
+**Se llama `kanpachi-data` y no `data` por una colisión medida.** El bundle de Windows de Flutter trae su propio `data\` con `icudtl.dat`, `app.so` y `flutter_assets\`, y en una carpeta portable los dos ejecutables comparten directorio: el daemon habría escrito su token y su `identity.key` entre los recursos de la interfaz, y limpiar los datos se habría llevado los assets por delante. Salió corriendo el script la primera vez, no leyendo el código.
+
+**Es un fichero y no una bandera porque la pregunta la tienen que contestar igual tres procesos que no comparten línea de comandos**: el lanzador, que arranca de un doble clic sin argumentos; el daemon, que nace después; y la interfaz de Flutter, que es otro ejecutable entero. Una bandera habría que acordarse de pasarla en los tres, y el olvido es silencioso: el daemon escribiría su token al lado del binario y la interfaz lo buscaría en ProgramData, con el síntoma de "no hay servicio" delante de un servicio corriendo. Ese fallo exacto ya ocurrió cuatro veces en este repositorio con el nombre del pipe. Con un fichero, ser portable es una propiedad de la CARPETA, y quien la copia se la lleva.
+
+Todo lo demás es idéntico: el mismo pipe de producción bajo el prefijo protegido, el mismo saludo con token, la misma cuarentena de base, el mismo motor, el mismo job que se lleva la interfaz por delante. Portable no es un modo degradado.
+
+Lo que cuesta, y se dice entero:
+
+| | Instalado | Portable |
+|---|---|---|
+| UAC | uno solo, al instalar | uno por arranque de Kanpachi |
+| Datos | `ProgramData\Kanpachi` con ACL propia del instalador | `data\` junto al binario, con los permisos de donde esté la carpeta |
+| Arranque con Windows | sí, servicio con arranque retrasado | no, no hay servicio que Windows pueda levantar |
+| Desinstalar | el desinstalador, con sus 11 pasos | borrar la carpeta |
+
+El UAC por arranque es la consecuencia directa de no haber instalado nada: el permiso de arrancar el servicio se lo concede el instalador al usuario interactivo con `sc sdset`, y una carpeta que se copió no concedió nada. Así que el lanzador se relanza a sí mismo elevado con `ShellExecute` y el verbo `runas`, que es la única forma documentada de pedir elevación desde un proceso que no la tiene. Que el usuario diga que no es una respuesta y no un fallo: Windows devuelve `ERROR_CANCELLED` y el mensaje lo nombra como lo que es.
+
+**El directorio de datos lo crea el daemon, y solo en portable.** En el producto instalado lo crea el instalador con su ACL, y crearlo desde el daemon perdería esa ACL en silencio. En portable no hay instalador, así que la alternativa a crearlo es que la carpeta no arranque nunca. Lo que se pierde queda escrito en la tabla de arriba.
+
+La carpeta la arma `scripts\kanpachi-portable.ps1`, que compila las dos mitades, copia el catálogo y las DLL, escribe el marcador y arranca. Ver `04-flujos-y-configuracion.md`.
+
 ### Dónde queda escrito lo que el daemon dice
 
 **Un servicio no tiene salida estándar**, y este binario es gráfico, así que tampoco tiene consola a la que reengancharse. Corriendo como servicio, todo lo que el daemon imprimiera se perdería, y un arranque fallido quedaría como un servicio que se detuvo solo, sin una línea que diga por qué, ni en pantalla ni en disco.
 
-Por eso en modo servicio el log va a `ProgramData\Kanpachi\kanpachid.log`, con rotación por tamaño a los 2 MB y una sola copia anterior. En modo consola sigue yendo a la salida estándar, que es donde está mirando quien programa.
+Por eso todo modo que no sea consola manda el log a `logs\kanpachid.log` dentro del directorio de datos, con rotación por tamaño a los 2 MB y una sola copia anterior. Eso cubre al servicio y también al daemon de una carpeta portable, que tampoco tiene consola. En modo consola sigue yendo a la salida estándar, que es donde está mirando quien programa.
 
 No va al Visor de eventos, que sería lo idiomático: exigiría registrar una fuente en el instalador, y si esa fuente falta cada línea se convierte en "no se encuentra la descripción del ID de evento". Un archivo de texto al lado de los otros datos lo abre cualquiera, se pega en un reporte de fallo, y ya está protegido por la ACL que el instalador le puso al directorio.
 
@@ -1901,11 +1934,13 @@ ProgramData\Kanpachi\
                              Jamás la credencial ni la identidad de la red real
   suspended-rules.json       reglas ajenas desactivadas y su estado previo
   easytier-credentials.json  el --credential-file del motor
-  logs\kanpachid.log         lo que el daemon dice. Solo en modo servicio: en modo
-                             consola va a la salida estándar, que es donde mira
-                             quien programa. Rotación por tamaño a los 2 MB, con
-                             UNA copia anterior en kanpachid.log.1
+  logs\kanpachid.log         lo que el daemon dice. En todo modo salvo consola, que
+                             va a la salida estándar, que es donde mira quien
+                             programa. Rotación por tamaño a los 2 MB, con UNA copia
+                             anterior en kanpachid.log.1
 ```
+
+En una carpeta portable el árbol de la derecha es el mismo, colgando de `kanpachi-data\` junto al binario en vez de `ProgramData\Kanpachi`. Lo decide un fichero, `kanpachi.portable`; ver el modelo de procesos.
 
 ACL de ProgramData: escritura solo SYSTEM y Administradores, lectura para usuarios de la máquina.
 

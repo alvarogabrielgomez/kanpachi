@@ -78,20 +78,19 @@ func (h *Host) openJob() error {
 //     para que el proceso sea interactivo. Por omisión nacería en una estación
 //     de ventanas no interactiva, o sea invisible y sorda.
 func (h *Host) launch(show, persistent bool) error {
-	sesión := windows.WTSGetActiveConsoleSessionId()
-	// 0xFFFFFFFF es "no hay ninguna", que pasa entre cerrar sesión y abrir otra.
-	if sesión == 0xFFFFFFFF {
-		return fmt.Errorf("no hay ninguna sesión de usuario abierta donde mostrar la interfaz")
+	quién, err := tokenDelUsuario(h.deps.Log)
+	if err != nil {
+		return err
 	}
-
-	var tok windows.Token
-	if err := windows.WTSQueryUserToken(sesión, &tok); err != nil {
-		return fmt.Errorf("pidiendo el token del usuario de la sesión %d: %w", sesión, err)
-	}
+	tok, sesión := quién.tok, quién.sesión
 	defer func() { _ = tok.Close() }()
 
 	// El paso 3. `GetLinkedToken` falla cuando no hay gemelo, que es
 	// exactamente el caso de UAC apagado, y ahí se sigue con el que hay.
+	//
+	// Es también el paso que hace todo el trabajo por el camino portable: ahí
+	// el token de partida es el de ESTE proceso, que está elevado, y bajar al
+	// gemelo limitado es justo lo que hay que hacer.
 	if tok.IsElevated() {
 		if limitado, err := tok.GetLinkedToken(); err == nil {
 			_ = tok.Close()
@@ -106,7 +105,7 @@ func (h *Host) launch(show, persistent bool) error {
 	var primario windows.Token
 	if err := windows.DuplicateTokenEx(
 		tok,
-		0, // TOKEN_ALL_ACCESS lo da el 0 con MAXIMUM_ALLOWED implícito del duplicado
+		accesoQueHaceFalta,
 		nil,
 		windows.SecurityImpersonation,
 		windows.TokenPrimary,
@@ -147,18 +146,28 @@ func (h *Host) launch(show, persistent bool) error {
 	si.Cb = uint32(unsafe.Sizeof(si))
 	var pi windows.ProcessInformation
 
-	if err := windows.CreateProcessAsUser(
-		primario,
-		exe,
-		cmd,
-		nil, nil,
-		false, // sin heredar handles: no se pueden heredar entre sesiones
-		windows.CREATE_UNICODE_ENVIRONMENT|windows.CREATE_NEW_CONSOLE,
-		entorno,
-		nil,
-		&si,
-		&pi,
-	); err != nil {
+	const banderas = windows.CREATE_UNICODE_ENVIRONMENT | windows.CREATE_NEW_CONSOLE
+
+	// Dos APIs para lo mismo, y la elección es de PRIVILEGIOS, no de gusto. Ver
+	// [entrega.conToken]: SYSTEM tiene `SE_ASSIGNPRIMARYTOKEN` y un
+	// administrador elevado no; lo que este último tiene es `SE_IMPERSONATE`.
+	if quién.conToken {
+		err = crearProcesoConToken(primario, exe, cmd, banderas, entorno, &si, &pi)
+	} else {
+		err = windows.CreateProcessAsUser(
+			primario,
+			exe,
+			cmd,
+			nil, nil,
+			false, // sin heredar handles: no se pueden heredar entre sesiones
+			banderas,
+			entorno,
+			nil,
+			&si,
+			&pi,
+		)
+	}
+	if err != nil {
 		return fmt.Errorf("lanzando la interfaz en la sesión %d: %w", sesión, err)
 	}
 	_ = windows.CloseHandle(pi.Thread)

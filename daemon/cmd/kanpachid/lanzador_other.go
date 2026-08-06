@@ -22,6 +22,10 @@ func ArrancarServicio([]string) (bool, error) {
 	return false, fmt.Errorf("kanpachid: el modo servicio es del Administrador de servicios de Windows")
 }
 
+func ArrancarSuelto([]string) error {
+	return fmt.Errorf("kanpachid: relanzarse elevado es de Windows, y de su Control de cuentas de usuario")
+}
+
 // avisar imprime. Acá siempre hay a dónde, así que no hace falta ninguna
 // ventana.
 func avisar(msg string) { fmt.Fprintln(os.Stderr, msg) }
