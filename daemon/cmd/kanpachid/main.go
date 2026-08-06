@@ -306,6 +306,13 @@ func correr(consola, mostrar bool, datos, nombre string) error {
 	}
 	go func() {
 		<-ctx.Done()
+		// Says WHICH way out this was. Without it, an interrupt and an order
+		// over the pipe both showed up as one line saying the daemon was
+		// shutting down, with no way to tell a Ctrl+C from a console nobody
+		// was looking at apart from the interface asking to quit. Measured:
+		// the console daemon died twice with no explanation, and the absence
+		// of the interface's own line was the only clue.
+		fmt.Fprintln(os.Stderr, "kanpachid: llegó una interrupción, se apaga")
 		b.shutdown()
 	}()
 	return b.wait()

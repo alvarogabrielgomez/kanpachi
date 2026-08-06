@@ -73,13 +73,28 @@ class WelcomeScreen extends StatelessWidget {
   }
 }
 
-/// Paso 2 de 2: el nombre con el que te ven.
+/// El nombre con el que te ven. Paso 2 de 2 del alta, y también la pantalla de
+/// cambiarlo más tarde.
 class NicknameScreen extends StatefulWidget {
-  const NicknameScreen({super.key});
+  const NicknameScreen({this.fromOnboarding = true, super.key});
+
+  /// Whether this is the second step of signing up.
+  ///
+  /// It only changes the copy, and the copy was wrong: the "step 2 of 2" line
+  /// was fixed, so somebody changing their name from the account menu was told
+  /// they were halfway through a sign-up they finished months ago.
+  final bool fromOnboarding;
 
   @override
   State<NicknameScreen> createState() => _NicknameScreenState();
 }
+
+/// Minimum length of a nickname.
+///
+/// The daemon enforces 2 to 20 (decision 21) and rejects anything else, so
+/// letting the button through with one character only moves the refusal
+/// somewhere the user cannot connect to what they typed.
+const int _minNickname = 2;
 
 class _NicknameScreenState extends State<NicknameScreen> {
   late final TextEditingController _controller = TextEditingController(
@@ -87,12 +102,30 @@ class _NicknameScreenState extends State<NicknameScreen> {
   );
 
   @override
+  void initState() {
+    super.initState();
+    // Redraws the button as they type. Without it the button stays disabled
+    // until something else rebuilds the screen.
+    _controller.addListener(_onTyped);
+  }
+
+  void _onTyped() => setState(() {});
+
+  bool get _valid => _controller.text.trim().length >= _minNickname;
+
+  @override
   void dispose() {
+    _controller.removeListener(_onTyped);
     _controller.dispose();
     super.dispose();
   }
 
+  /// **A name is mandatory, and it is not a formality.** The daemon refuses
+  /// `create_room` and `join_room` without one, so continuing with an empty
+  /// field produces an app that opens and cannot do the only two things it is
+  /// for.
   void _continue() {
+    if (!_valid) return;
     context.read<SessionCubit>().setNickname(_controller.text);
     context.read<ShellCubit>().go(AppScreen.home);
   }
@@ -104,7 +137,9 @@ class _NicknameScreenState extends State<NicknameScreen> {
       child: Column(
         children: <Widget>[
           Text(
-            '¿Cómo te ven tus panas?',
+            widget.fromOnboarding
+                ? '¿Cómo te ven tus panas?'
+                : 'Cambia tu nombre',
             textAlign: TextAlign.center,
             style: context.type.display.copyWith(color: colors.text),
           ),
@@ -134,12 +169,21 @@ class _NicknameScreenState extends State<NicknameScreen> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: AppSpacing.x8l),
-          AppButton(label: 'Continuar', width: 220, onPressed: _continue),
-          const SizedBox(height: AppSpacing.x4l),
-          Text(
-            'Paso 2 de 2 · solo la primera vez',
-            style: context.type.bodySm.copyWith(color: colors.textMuted),
+          AppButton(
+            label: widget.fromOnboarding ? 'Continuar' : 'Guardar',
+            width: 220,
+            // Disabled until the name is usable. The daemon would refuse it
+            // anyway; refusing here is what lets the refusal be about what
+            // they typed.
+            onPressed: _valid ? _continue : null,
           ),
+          if (widget.fromOnboarding) ...<Widget>[
+            const SizedBox(height: AppSpacing.x4l),
+            Text(
+              'Paso 2 de 2 · solo la primera vez',
+              style: context.type.bodySm.copyWith(color: colors.textMuted),
+            ),
+          ],
         ],
       ),
     );

@@ -32,6 +32,7 @@ dependencies:
   # nadie. Subirla es un commit a propósito.
   ffi: 2.1.4
   win32: 6.3.0
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:kanpachi_ui/core/platform/app_preferences.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/daemon_failure.dart';
@@ -23,9 +24,23 @@ import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.da
 /// mano. Cuando exista el daemon, este cubit pasa a ser lo que escucha su
 /// stream de eventos, que sigue siendo uno solo por definición.
 class SessionCubit extends Cubit<SessionState> {
-  SessionCubit(this._repository) : super(const SessionState());
+  SessionCubit(
+    this._repository, {
+    /// Where the nickname is remembered between runs.
+    ///
+    /// Null in tests, which build this cubit directly and have nothing to
+    /// persist. The name still works in memory; only the remembering is gone.
+    AppPreferences? preferences,
+    String nickname = '',
+    // The lint asks for `this._preferences`, which Dart does not allow: a
+    // named parameter cannot start with an underscore. The field stays
+    // private and the parameter stays nameable.
+    // ignore: prefer_initializing_formals
+  }) : _preferences = preferences,
+       super(SessionState(nickname: nickname));
 
   final SessionRepository _repository;
+  final AppPreferences? _preferences;
 
   /// Poll of the daemon's step diary while a long operation runs.
   ///
@@ -166,8 +181,17 @@ class SessionCubit extends Cubit<SessionState> {
     }
   }
 
-  void setNickname(String value) =>
-      emit(state.copyWith(nickname: value.trim()));
+  /// Sets the name you are seen by, and remembers it.
+  ///
+  /// Remembering matters more than it looks: without it, onboarding came back
+  /// on every start, and the daemon rejects `create_room` without a name — so
+  /// a forgotten nickname is not a cosmetic annoyance, it is an app that
+  /// cannot open a room.
+  void setNickname(String value) {
+    final String clean = value.trim();
+    emit(state.copyWith(nickname: clean));
+    unawaited(_preferences?.setNickname(clean));
+  }
 
   /// Guarda qué juego se está confirmando. El diálogo lo lee de acá.
   void proposeGame(Game game) => emit(state.copyWith(pendingGame: game));

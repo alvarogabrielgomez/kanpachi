@@ -1,3 +1,4 @@
+import 'package:kanpachi_ui/core/platform/app_preferences.dart';
 import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_connector.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/pipe_session_repository.dart';
@@ -12,13 +13,16 @@ import 'package:kanpachi_ui/ioc/injector.dart';
 /// Corre una vez en `main()`. El orden importa: lo que depende de otro va
 /// después.
 abstract final class IocManager {
-  static void register({Injector? injector}) {
+  static void register({Injector? injector, AppPreferences? preferences}) {
     Injector.instance = injector ?? GetItInjector();
-    _registerSession();
+    if (preferences != null) {
+      Injector.instance.registerLazySingleton<AppPreferences>(() => preferences);
+    }
+    _registerSession(preferences);
     _registerShell();
   }
 
-  static void _registerSession() {
+  static void _registerSession(AppPreferences? preferences) {
     final Injector i = Injector.instance;
 
     // El daemon de verdad, y no hay otra opción a propósito.
@@ -35,7 +39,11 @@ abstract final class IocManager {
     // seis pantallas leen y escriben la misma sala, y una instancia por
     // pantalla serían seis copias divergentes de un estado que es uno solo.
     i.registerLazySingleton<SessionCubit>(
-      () => SessionCubit(i.get<SessionRepository>()),
+      () => SessionCubit(
+        i.get<SessionRepository>(),
+        preferences: preferences,
+        nickname: preferences?.nickname ?? '',
+      ),
     );
   }
 

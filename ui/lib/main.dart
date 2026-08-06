@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/theme/app_theme.dart';
+import 'package:kanpachi_ui/core/platform/app_preferences.dart';
 import 'package:kanpachi_ui/core/platform/single_instance.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/density_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
@@ -43,9 +44,16 @@ Future<void> main(List<String> args) async {
     exit(0);
   }
 
-  IocManager.register();
+  // What this window remembers between runs, read BEFORE the first frame.
+  //
+  // It has to be read here and not later: it decides which screen opens. Read
+  // after the first frame, onboarding would flash and then disappear, which is
+  // worse than showing it.
+  final AppPreferences preferences = await AppPreferences.open();
+
+  IocManager.register(preferences: preferences);
   await _prepareWindow(silent: await _shouldStayQuiet(args));
-  runApp(const KanpachiApp());
+  runApp(KanpachiApp(onboarded: preferences.onboarded));
 }
 
 /// Whether this run should stay in the tray with no window.
@@ -174,14 +182,26 @@ Future<void> _traerAlFrente() async {
 }
 
 class KanpachiApp extends StatelessWidget {
-  const KanpachiApp({super.key});
+  const KanpachiApp({this.onboarded = false, super.key});
+
+  /// Whether this machine already went through onboarding.
+  ///
+  /// Which is the same question as having a nickname: onboarding is two
+  /// screens and the second one asks for it. See [AppPreferences].
+  final bool onboarded;
 
   @override
   Widget build(BuildContext context) {
     return MultiBlocProvider(
       providers: <BlocProvider<dynamic>>[
         BlocProvider<ShellCubit>(
-          create: (_) => Injector.instance.get<ShellCubit>(),
+          // Straight to the home screen when there is already a name. Asking
+          // again on every start was not just noise: the answer was thrown
+          // away each time, so the name never survived a restart and the
+          // daemon rejects opening a room without one.
+          create: (_) =>
+              Injector.instance.get<ShellCubit>()
+                ..go(onboarded ? AppScreen.home : AppScreen.welcome),
         ),
         BlocProvider<SessionCubit>(
           // La salud se pide en el arranque y no cuando el usuario abre una

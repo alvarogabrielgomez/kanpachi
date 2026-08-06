@@ -176,7 +176,12 @@ class _CurrentScreen extends StatelessWidget {
 
     return switch (shell.screen) {
       AppScreen.welcome => WelcomeScreen(ambient: shell.ambient),
-      AppScreen.nickname => const NicknameScreen(),
+      // Coming from the account menu is not onboarding: the copy about being
+      // halfway through signing up only belongs to the sign-up. Whether it is
+      // onboarding is decided by whether there is a name yet.
+      AppScreen.nickname => NicknameScreen(
+        fromOnboarding: session.nickname.isEmpty,
+      ),
       AppScreen.home => const HomeScreen(),
       AppScreen.gamePicker => const GamePickerScreen(),
       AppScreen.catalog => const CatalogScreen(),
