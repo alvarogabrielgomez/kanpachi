@@ -9,3 +9,7 @@ package main
 // abra una ventana negra al lanzar un programa de consola. Nada de eso existe
 // acá, donde un proceso hereda los descriptores de su padre y punto.
 func reengancharConsola() {}
+
+// hayConsola dice que sí: acá un proceso hereda los descriptores de su padre y
+// lo que imprima se lee.
+func hayConsola() bool { return true }

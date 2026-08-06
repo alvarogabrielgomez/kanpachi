@@ -16,7 +16,10 @@
 #define AppPublisher   "Accentio Studios"
 #define ServiceName    "kanpachi-daemon"
 #define DaemonExe      "kanpachid.exe"
-#define UiExe          "Kanpachi.exe"
+#define UiExe          "kanpachiui.exe"
+; El parametro que convierte al daemon en LANZADOR y ademas abre la ventana.
+; Mismo binario, papel distinto: ver el modelo de procesos en docs/03.
+#define ArgShow        "--show"
 #define Carga          "C:\kt\carga"
 
 [Setup]
@@ -51,29 +54,39 @@ Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
 Source: "{#Carga}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-; **Los accesos directos apuntan al DAEMON, no a la interfaz.**
+; **Los accesos directos apuntan al DAEMON, con parametro.**
 ;
 ; El daemon es lo que Kanpachi ES; la interfaz son sus mandos. Quien lanza la
 ; interfaz es siempre el daemon, asi que un acceso directo a la interfaz podria
 ; dejar mandos abiertos sin nada detras. Ver el modelo de procesos en docs/03.
 ;
+; El parametro NO es decoracion: kanpachid.exe a secas es lo que arranca el
+; Administrador de servicios, y --show es lo que le pide a ESE servicio que
+; arranque y ademas ensene la ventana. Es el mismo binario con dos papeles, como
+; un motor de juego que corre dos juegos segun con que lo llamen.
+;
 ; El icono se toma del ejecutable de la interfaz, que es el que lo tiene.
-Name: "{group}\{#AppName}"; Filename: "{app}\{#DaemonExe}"; IconFilename: "{app}\{#UiExe}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#DaemonExe}"; IconFilename: "{app}\{#UiExe}"
+Name: "{group}\{#AppName}"; Filename: "{app}\{#DaemonExe}"; Parameters: "{#ArgShow}"; IconFilename: "{app}\{#UiExe}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#DaemonExe}"; Parameters: "{#ArgShow}"; IconFilename: "{app}\{#UiExe}"
 
 [Registry]
 ; El manejador de kanpachi://, que es como entra un enlace de invitacion.
 ;
-; Abre la INTERFAZ y no el daemon: quien sabe leer un codigo de sala es la
-; interfaz, y si Kanpachi ya esta corriendo se topa con la instancia unica, le
-; pasa el enlace a la ventana que ya hay, y se muere.
+; Va al DAEMON con --show y no a la interfaz, por lo mismo que el acceso
+; directo: la interfaz sin daemon son mandos sin nada detras, y ahora ademas
+; arranca callada por defecto, asi que abrirla sola no ensenaria ni una ventana.
+;
+; ESTADO: el enlace TODAVIA NO SE PASA. La interfaz no sabe leer un kanpachi://
+; y escribir un "%1" que nadie interpreta seria prometer algo que no pasa. Hoy
+; el enlace abre Kanpachi y ya; el codigo hay que pegarlo. Cuando la interfaz
+; aprenda a leerlo, el %1 entra aca y el lanzador lo reenvia.
 Root: HKLM; Subkey: "SOFTWARE\Classes\kanpachi"; ValueType: string; ValueName: ""; ValueData: "URL:Kanpachi"; Flags: uninsdeletekey
 Root: HKLM; Subkey: "SOFTWARE\Classes\kanpachi"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
 Root: HKLM; Subkey: "SOFTWARE\Classes\kanpachi\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#UiExe}"",0"
-Root: HKLM; Subkey: "SOFTWARE\Classes\kanpachi\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#UiExe}"" ""%1"""
+Root: HKLM; Subkey: "SOFTWARE\Classes\kanpachi\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#DaemonExe}"" {#ArgShow}"
 
 [Run]
-Filename: "{app}\{#DaemonExe}"; Description: "Abrir Kanpachi"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#DaemonExe}"; Parameters: "{#ArgShow}"; Description: "Abrir Kanpachi"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 ; **El orden importa y es lo contrario de lo intuitivo.**

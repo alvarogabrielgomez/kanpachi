@@ -77,7 +77,7 @@ func (h *Host) openJob() error {
 //  6. `lpDesktop` en `winsta0\default`, que es lo que la documentación exige
 //     para que el proceso sea interactivo. Por omisión nacería en una estación
 //     de ventanas no interactiva, o sea invisible y sorda.
-func (h *Host) launch(silent, persistent bool) error {
+func (h *Host) launch(show, persistent bool) error {
 	sesión := windows.WTSGetActiveConsoleSessionId()
 	// 0xFFFFFFFF es "no hay ninguna", que pasa entre cerrar sesión y abrir otra.
 	if sesión == 0xFFFFFFFF {
@@ -126,8 +126,8 @@ func (h *Host) launch(silent, persistent bool) error {
 	// pase por separado: la documentación avisa de que un `C:\Program
 	// Files\...` sin comillas puede acabar ejecutando `C:\Program.exe`.
 	línea := `"` + h.deps.Exe + `"`
-	if silent {
-		línea += " " + h.deps.SilentFlag
+	if show {
+		línea += " " + h.deps.ShowFlag
 	}
 
 	exe, err := windows.UTF16PtrFromString(h.deps.Exe)
@@ -186,7 +186,7 @@ func (h *Host) launch(silent, persistent bool) error {
 		_ = windows.CloseHandle(windows.Handle(anterior))
 	}
 
-	h.deps.Log.Info("interfaz lanzada", "pid", pi.ProcessId, "sesión", sesión, "silenciosa", silent)
+	h.deps.Log.Info("interfaz lanzada", "pid", pi.ProcessId, "sesión", sesión, "con ventana", show)
 	return nil
 }
 
@@ -238,7 +238,7 @@ func (h *Host) watch() {
 		// En silencio: la ventana la abrió el usuario o no, y relanzarla con
 		// ventana pondría una encima de lo que estuviera haciendo. Lo que no
 		// puede faltar es el icono.
-		if err := h.launch(true, true); err != nil {
+		if err := h.launch(false, true); err != nil {
 			h.deps.Log.Error("no se pudo relanzar la interfaz", "error", err)
 			if h.deps.OnGiveUp != nil {
 				h.deps.OnGiveUp()

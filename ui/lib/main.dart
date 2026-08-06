@@ -6,6 +6,7 @@ import 'package:kanpachi_ui/core/design_system/theme/app_theme.dart';
 import 'package:kanpachi_ui/core/platform/single_instance.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/density_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/pages/shell_page.dart';
@@ -14,13 +15,17 @@ import 'package:kanpachi_ui/ioc/injector.dart';
 import 'package:kanpachi_ui/ioc/ioc_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
-/// La bandera con la que el daemon pide arrancar sin abrir ventana.
+/// La bandera con la que el daemon pide abrir la ventana.
+///
+/// **Sin ella, Kanpachi arranca callado: bandeja y nada más.** El silencio es
+/// el default a propósito. Una bandera que se pierda por el camino tiene que
+/// fallar hacia el lado callado; al revés, el fallo es una ventana abriéndose
+/// sola encima de lo que estuvieras haciendo al encender la PC.
 ///
 /// Es un CONTRATO con `daemon/cmd/kanpachid`, que la escribe en su propia
-/// constante `uiSilentFlag`. De los que no dan error al romperse: cambiar una
-/// sin la otra produce una ventana que se abre al encender la PC, o que no se
-/// abre nunca.
-const String kSilentFlag = '--silent';
+/// constante `uiShowFlag`. De los que no dan error al romperse: cambiar una sin
+/// la otra produce una interfaz que no se abre nunca.
+const String kShowFlag = '--show';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,9 +42,43 @@ Future<void> main(List<String> args) async {
     exit(0);
   }
 
-  await _prepareWindow(silent: args.contains(kSilentFlag));
   IocManager.register();
+  await _prepareWindow(silent: !args.contains(kShowFlag) && await _hayDaemon());
   runApp(const KanpachiApp());
+}
+
+/// Si hay un daemon del otro lado del pipe, ahora mismo.
+///
+/// # Por qué el arranque silencioso lo pregunta
+///
+/// Porque **el silencio significa "mi cara es el icono de la bandeja"**, y ese
+/// icono solo existe si hay daemon: es la invariante de `docs/03`. Sin daemon
+/// no hay bandeja, así que una ventana escondida sería un proceso sin ventana,
+/// sin icono y sin forma de cerrarlo que no sea el Administrador de tareas.
+///
+/// Pasa por una puerta concreta: alguien entra a la carpeta de Kanpachi y abre
+/// este ejecutable a mano. Es legítimo, y lo que tiene que ver entonces es el
+/// aviso de que el servicio no está corriendo, o sea los mandos diciendo que no
+/// hay nada que mandar.
+///
+/// No cuesta esperar: sin daemon, abrir el named pipe falla en el acto con
+/// ERROR_FILE_NOT_FOUND, que es justo el caso que decide esto.
+///
+/// **Pregunta por el catálogo y NO por la salud, y eso importa.** `health()` se
+/// traga cualquier fallo y devuelve un informe desconocido, que es lo correcto
+/// para una pantalla y lo inservible para esto: contestaría que sí siempre.
+/// Medido — la primera versión preguntaba por la salud y la ventana no se abría
+/// nunca. `catalog()` deja pasar el error, y de paso lo que traiga queda
+/// cacheado para la pantalla que lo va a pedir enseguida.
+Future<bool> _hayDaemon() async {
+  try {
+    await Injector.instance.get<SessionRepository>().catalog();
+    return true;
+  } on Object {
+    // Cualquier fallo cuenta como que no hay: el daemon que no contesta y el
+    // que no está son lo mismo para quien está mirando la pantalla.
+    return false;
+  }
 }
 
 /// Kanpachi dibuja su propia barra de título, así que la del sistema se
@@ -88,7 +127,7 @@ Future<void> _prepareWindow({required bool silent}) async {
   // que la enseña es el propio `window_manager` al aplicar las opciones, porque
   // quitar la barra de título rehace el marco y eso la levanta.
   //
-  // Medido: con `--silent` y solo omitiendo `show()`, `IsWindowVisible`
+  // Medido: en silencio y solo omitiendo `show()`, `IsWindowVisible`
   // contestaba `true`. Un test no lo habría visto — hay que arrancar el
   // ejecutable y preguntarle a Windows si la ventana está en pantalla.
   if (silent) {

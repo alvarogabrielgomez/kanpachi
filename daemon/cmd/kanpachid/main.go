@@ -51,6 +51,9 @@ func main() {
 	reengancharConsola()
 
 	consola := flag.Bool("console", false, "correr como aplicación de consola en vez de servicio")
+	// **La bandera del acceso directo.** Ver [abrir] para los tres papeles de
+	// este binario y por qué son uno y no tres ejecutables.
+	mostrar := flag.Bool("show", false, "arrancar Kanpachi y enseñar la ventana")
 	datos := flag.String("data", "", "directorio de datos. Vacío usa ProgramData\\Kanpachi")
 	// El nombre del pipe se puede cambiar SOLO en modo consola, y existe por una
 	// razón concreta: el de producción vive bajo ProtectedPrefix\Administrators,
@@ -76,8 +79,12 @@ func main() {
 		return
 	}
 
-	if err := correr(*consola, *datos, *nombre); err != nil {
+	if err := correr(*consola, *mostrar, *datos, *nombre); err != nil {
 		fmt.Fprintln(os.Stderr, "kanpachid:", err)
+		// Y en una ventana si no hay consola, que es el caso del doble clic.
+		// Sin esto, un acceso directo que falla no hace nada visible. Ver
+		// [avisar].
+		avisar("Kanpachi no pudo arrancar.\n\n" + err.Error())
 		os.Exit(1)
 	}
 }
@@ -165,9 +172,12 @@ func limpiar(datos string, desinstalar bool) error {
 // sin el otro produce un daemon que no encuentra su interfaz, o una interfaz
 // que abre ventana cuando le pidieron que no. Escritos acá para que se vean
 // juntos.
+// La bandera pide MOSTRAR, no callar, y esa vuelta es deliberada: el silencio
+// es el default de los dos ejecutables. Una bandera que se pierda por el camino
+// deja la interfaz callada en vez de abriendo una ventana sola.
 const (
-	uiExeName    = "Kanpachi.exe"
-	uiSilentFlag = "--silent"
+	uiExeName  = "kanpachiui.exe"
+	uiShowFlag = "--show"
 )
 
 // dirDeDatos resuelve el directorio de datos, vacío incluido.
@@ -228,7 +238,7 @@ type booted struct {
 	shutdown func()
 }
 
-func correr(consola bool, datos, nombre string) error {
+func correr(consola, mostrar bool, datos, nombre string) error {
 	if datos == "" {
 		datos = filepath.Join(os.Getenv("ProgramData"), "Kanpachi")
 	}
@@ -261,15 +271,26 @@ func correr(consola bool, datos, nombre string) error {
 		return CorrerComoServicio(func(ctx context.Context, args []string) (func() error, func(), error) {
 			// Los argumentos con los que ALGUIEN arrancó el servicio, que no son
 			// los de la línea de comandos de este proceso. Windows los pasa por
-			// `StartService`, y es como el acceso directo dice "ábrela con
-			// ventana": el arranque automático de Windows no manda ninguno, así
-			// que la interfaz sale en silencio.
-			b, err := arrancar(ctx, datos, pipe.Name, false, tiene(args, ArgShowUI))
+			// `StartService`, y es como el lanzador dice "ábrela con ventana":
+			// el arranque automático de Windows no manda ninguno, así que la
+			// interfaz sale en silencio.
+			b, err := arrancar(ctx, datos, pipe.Name, false, tiene(args, ArgShow))
 			if err != nil {
 				return nil, nil, err
 			}
 			return b.wait, b.shutdown, nil
 		})
+	}
+
+	// **Ni servicio ni consola: entonces esto es el LANZADOR.**
+	//
+	// Es el camino del doble clic, y el default a propósito: quien encuentre
+	// este binario en Program Files y lo ejecute obtiene un Kanpachi corriendo,
+	// nunca un segundo daemon compitiendo con el que ya hay. Correr el daemon a
+	// mano hay que PEDIRLO con `--console`, y ese pide un nombre de pipe
+	// distinto justamente para no poder ocupar el de producción. Ver [abrir].
+	if !consola {
+		return abrir(datos, mostrar)
 	}
 
 	if nombre == "" {
@@ -299,19 +320,36 @@ func correr(consola bool, datos, nombre string) error {
 // apuntan en orden y se corren al revés a mano, en dos sitios: si el arranque
 // falla a mitad, y dentro de `shutdown`.
 func arrancar(ctx context.Context, datos, nombre string, consola, mostrarUI bool) (*booted, error) {
-	log := logConsola{}
+	// **Un servicio no tiene salida estándar.** En consola quien mira es una
+	// persona con una terminal delante; como servicio, todo lo que se imprima se
+	// pierde y un arranque fallido queda sin una sola línea que lo explique. Ver
+	// [logArchivo].
+	var log port.Logger = logConsola{}
+	var cierres []func()
+	if !consola {
+		archivo := nuevoLogArchivo(datos)
+		log = archivo
+		// El último en cerrarse, o sea el primero de la lista: los cierres
+		// corren al revés, y lo que se apaga por el camino tiene que poder
+		// dejarlo escrito.
+		cierres = append(cierres, func() { _ = archivo.Close() })
+	}
 
 	// Los cierres, en orden de creación. Se corren al revés, que es lo que
 	// hacía el `defer` y por los mismos motivos: el motor se va antes que el
 	// firewall, para que la red virtual desaparezca antes que las reglas que la
 	// contenían.
-	var cierres []func()
 	cerrarTodo := func() {
 		for i := len(cierres) - 1; i >= 0; i-- {
 			cierres[i]()
 		}
 	}
 	abortar := func(err error) (*booted, error) {
+		// Se deja escrito ANTES de cerrar, que es cuando el log todavía existe.
+		// Como servicio esta línea es lo único que va a quedar: quien devuelve
+		// este error es el manejador del SCM, y lo que Windows enseña entonces
+		// es "el servicio se detuvo", sin motivo.
+		log.Error("el arranque falló", "error", err)
 		cerrarTodo()
 		return nil, err
 	}
@@ -361,8 +399,8 @@ func arrancar(ctx context.Context, datos, nombre string, consola, mostrarUI bool
 			// Junto a este binario, y de `os.Executable()`. **Nunca del estado,
 			// de la configuración ni del pipe**: esto corre como SYSTEM, y una
 			// ruta que alguien pueda influir es escalada de privilegios.
-			Exe:        filepath.Join(dirDelBinario(), uiExeName),
-			SilentFlag: uiSilentFlag,
+			Exe:      filepath.Join(dirDelBinario(), uiExeName),
+			ShowFlag: uiShowFlag,
 			// Si la interfaz no arranca ni a la tercera, se apaga todo. Un
 			// daemon vivo sin forma de mostrarse es justo lo que la invariante
 			// de `docs/03` prohíbe.
@@ -546,7 +584,7 @@ func arrancar(ctx context.Context, datos, nombre string, consola, mostrarUI bool
 	// para atenderla, y una interfaz que arranque contra un pipe que todavía no
 	// escucha enseñaría el cartel de "no hay servicio" justo al encender.
 	if ui != nil {
-		if err := ui.Start(!mostrarUI); err != nil {
+		if err := ui.Start(mostrarUI); err != nil {
 			// No aborta el arranque. Un daemon sin interfaz es un producto a
 			// medias y sigue siendo mejor que ninguno: la sala que estuviera
 			// abierta sigue en pie, y el usuario tiene un error que leer.
@@ -577,9 +615,3 @@ func dirDelBinario() string {
 type relojReal struct{}
 
 func (relojReal) Now() time.Time { return time.Now() }
-
-type logConsola struct{}
-
-func (logConsola) Info(msg string, kv ...any)  { fmt.Println("info ", msg, kv) }
-func (logConsola) Warn(msg string, kv ...any)  { fmt.Println("aviso", msg, kv) }
-func (logConsola) Error(msg string, kv ...any) { fmt.Println("error", msg, kv) }

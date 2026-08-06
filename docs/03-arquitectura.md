@@ -54,7 +54,7 @@ sesión 0  (aislada, sin escritorio, sin área de notificación)
      │
 sesión del usuario
      │
-     └──[job]──> Kanpachi.exe          Flutter, SIN elevar
+     └──[job]──> kanpachiui.exe        Flutter, SIN elevar
                    el icono de la bandeja vive acá
                    habla con el daemon por el named pipe
 ```
@@ -102,29 +102,57 @@ Tres cosas que hay que respetar, y las tres vienen de la documentación de Micro
 
 **La ruta que se lanza sale de `os.Executable()` y del directorio propio, jamás del estado ni de la configuración ni del pipe.** Un SYSTEM que lanza una ruta que alguien puede influir es escalada de privilegios directa.
 
-### Los dos modos de la UI
+### Un solo ejecutable, tres papeles, y el papel lo dice el parámetro
 
-| Cómo entra | Ventana | Bandeja |
+`kanpachid.exe` es el daemon. También es lo que arranca el daemon, y también es el modo desarrollo. No hay un binario auxiliar, y ese es el punto: un segundo ejecutable habría que mantenerlo sincronizado con este, y la sincronización entre dos binarios que se acompañan es exactamente la clase de contrato que se rompe sin dar error. Es el patrón de un motor de juego que corre dos juegos según con qué lo llamen.
+
+| Línea de comandos | Quién lo invoca | Qué hace |
 |---|---|---|
-| El daemon la lanza con `--silent` | no | sí |
-| El daemon la lanza normal | sí | sí |
-| El usuario la abre a mano, sin daemon | sí, con el aviso de servicio ausente | **no** |
+| `kanpachid.exe` | el Administrador de servicios | **es** el daemon |
+| `kanpachid.exe --show` | el acceso directo, el enlace `kanpachi://` | **lanzador**: deja el daemon corriendo y la ventana a la vista |
+| `kanpachid.exe --console` | quien programa | daemon de consola, con otro nombre de pipe |
 
-La tercera fila es la que protege la invariante. Una UI suelta son mandos sin nada que mandar, y está bien que se pueda abrir así. Si además pusiera icono, habría bandeja sin daemon detrás, que es justo lo contrario de lo que la bandeja significa.
+El lanzador es el **default** cuando el proceso no lo arrancó el Administrador de servicios: quien encuentre este binario en Program Files y lo ejecute obtiene un Kanpachi corriendo, jamás un segundo daemon compitiendo con el que ya hay. Correr el daemon a mano hay que pedirlo con `--console`.
+
+**Lo primero que hace el lanzador es preguntar si ya hay daemon, y lo pregunta por el pipe.** Podría preguntárselo al Administrador de servicios, que es más directo, y sería un mecanismo más que mantener: el pipe es a la vez la detección y la entrega. Si contesta, ya hay por dónde mandarle la orden de mostrarse; si no hay nadie, `CreateFile` falla al instante, que es justo el caso que tiene que ser rápido. Y se corrige solo: si la sonda falla porque el daemon está a mitad de arrancar, el arranque siguiente devuelve `ERROR_SERVICE_ALREADY_RUNNING` y se vuelve al pipe. Ninguna rama termina en dos daemons.
+
+**Lo único que ese camino le pide al daemon es `show_ui`.** Un proceso que llega de fuera puede pedir que se enseñe una ventana y nada más, y lo que lo acota no es el lanzador, es la lista cerrada de métodos del protocolo más el saludo con token.
+
+### Silencioso es el default de los dos ejecutables
+
+| Cómo entra la UI | Ventana | Bandeja |
+|---|---|---|
+| El daemon la lanza sin bandera | no | sí |
+| El daemon la lanza con `--show` | sí | sí |
+| El usuario la abre a mano, sin daemon | **sí**, con el aviso de servicio ausente | **no** |
+
+**La bandera pide MOSTRAR, no callar, y esa vuelta es deliberada.** Una bandera que se pierda por el camino —un argumento mal pasado, un lanzamiento nuevo que se olvida de ponerla— tiene que fallar hacia el lado callado. Al revés, el fallo es una ventana abriéndose sola encima de lo que estuvieras haciendo al encender la PC.
+
+**Y el silencio tiene una condición: que haya bandeja.** Callarse significa "mi cara es el icono", y ese icono solo existe si hay daemon. Por eso el arranque silencioso pregunta primero, con una llamada al pipe que sin daemon falla en el acto. Sin daemon se enseña la ventana igual: lo contrario sería un proceso sin ventana, sin icono y sin forma de cerrarlo que no fuera el Administrador de tareas.
+
+La tercera fila es la que protege la invariante por el otro lado. Una UI suelta son mandos sin nada que mandar, y está bien que se pueda abrir así. Lo que no puede hacer es poner un icono que promete algo que no está.
 
 ### Qué pasa al hacer doble clic
 
-El acceso directo apunta al **daemon**, que es lo que Kanpachi es.
+El acceso directo apunta al **daemon**, con `--show`.
 
 | Estado | Qué ocurre |
 |---|---|
-| Windows arranca | el SCM levanta el servicio, que lanza la UI con `--silent`: bandeja, sin ventana |
-| Doble clic, daemon parado | arranca el servicio, que lanza la UI normal |
-| Doble clic, daemon vivo | el daemon ya está: solo abre la ventana de la UI que ya corre |
+| Windows arranca | el SCM levanta el servicio sin argumentos, y lanza la UI callada: bandeja, sin ventana |
+| Doble clic, daemon parado | el lanzador arranca el servicio con `--show`, y el daemon lanza la UI con ventana |
+| Doble clic, daemon vivo | el lanzador lo detecta por el pipe, le manda `show_ui`, y se muere |
 
-Ninguna de las tres pide UAC. Arrancar el servicio no lo pide porque el instalador le concede al usuario interactivo `SERVICE_START`, `SERVICE_STOP` y `SERVICE_QUERY_STATUS` **sobre este servicio y ninguno más**, con `sc sdset`. Es una concesión mínima, hecha una vez, con el único UAC de la vida del producto.
+Ninguna de las tres pide UAC. Arrancar el servicio no lo pide porque el instalador le concede al usuario interactivo `SERVICE_START`, `SERVICE_STOP` y `SERVICE_QUERY_STATUS` **sobre este servicio y ninguno más**, con `sc sdset`. Es una concesión mínima, hecha una vez, con el único UAC de la vida del producto. El gestor de servicios se abre con `SC_MANAGER_CONNECT` y el servicio con los dos permisos que hacen falta: pedir `SC_MANAGER_ALL_ACCESS`, que es lo que hace el ayudante habitual de la librería estándar de Go, falla sin elevar.
 
-**El daemon se compila con `-H windowsgui`.** Con el subsistema de consola, que es lo que Go hace por defecto, el doble clic haría parpadear una ventana negra. Para no perder la salida de `--console` y `--reset`, se reengancha a la consola del padre con `AttachConsole(ATTACH_PARENT_PROCESS)` cuando la hay: lanzado desde una terminal imprime, lanzado desde el acceso directo no muestra nada.
+**El daemon se compila con `-H windowsgui`.** Con el subsistema de consola, que es lo que Go hace por defecto, el doble clic haría parpadear una ventana negra. Para no perder la salida de `--console` y `--reset`, se reengancha a la consola del padre con `AttachConsole(ATTACH_PARENT_PROCESS)` cuando la hay: lanzado desde una terminal imprime, lanzado desde el acceso directo no muestra nada. Cuando el lanzador falla y no hay consola a la que escribir, el error sale en una ventana de mensaje: sin eso, un acceso directo roto no haría nada visible.
+
+### Dónde queda escrito lo que el daemon dice
+
+**Un servicio no tiene salida estándar**, y este binario es gráfico, así que tampoco tiene consola a la que reengancharse. Corriendo como servicio, todo lo que el daemon imprimiera se perdería, y un arranque fallido quedaría como un servicio que se detuvo solo, sin una línea que diga por qué, ni en pantalla ni en disco.
+
+Por eso en modo servicio el log va a `ProgramData\Kanpachi\kanpachid.log`, con rotación por tamaño a los 2 MB y una sola copia anterior. En modo consola sigue yendo a la salida estándar, que es donde está mirando quien programa.
+
+No va al Visor de eventos, que sería lo idiomático: exigiría registrar una fuente en el instalador, y si esa fuente falta cada línea se convierte en "no se encuentra la descripción del ID de evento". Un archivo de texto al lado de los otros datos lo abre cualquiera, se pega en un reporte de fallo, y ya está protegido por la ACL que el instalador le puso al directorio.
 
 ### Salir de Kanpachi
 
@@ -1857,7 +1885,10 @@ ProgramData\Kanpachi\
                              Jamás la credencial ni la identidad de la red real
   suspended-rules.json       reglas ajenas desactivadas y su estado previo
   easytier-credentials.json  el --credential-file del motor
-  logs\                      texto plano, rotación por tamaño
+  logs\kanpachid.log         lo que el daemon dice. Solo en modo servicio: en modo
+                             consola va a la salida estándar, que es donde mira
+                             quien programa. Rotación por tamaño a los 2 MB, con
+                             UNA copia anterior en kanpachid.log.1
 ```
 
 ACL de ProgramData: escritura solo SYSTEM y Administradores, lectura para usuarios de la máquina.

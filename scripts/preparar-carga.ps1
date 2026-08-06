@@ -77,8 +77,8 @@ try {
     }
     else {
         $bundle = Join-Path $repo 'ui\build\windows\x64\runner\Release'
-        if (-not (Test-Path (Join-Path $bundle 'Kanpachi.exe'))) {
-            Mal "el build no dejo Kanpachi.exe donde se esperaba"
+        if (-not (Test-Path (Join-Path $bundle 'kanpachiui.exe'))) {
+            Mal "el build no dejo kanpachiui.exe donde se esperaba"
             $fallos++
         }
         else {
@@ -86,8 +86,8 @@ try {
             # sin data\ y sin los plugins. Copiar solo el .exe da un binario que
             # muere en el arranque sin decir por que.
             Copy-Item -Path (Join-Path $bundle '*') -Destination $Salida -Recurse -Force
-            $kb = [math]::Round((Get-Item (Join-Path $Salida 'Kanpachi.exe')).Length / 1KB)
-            Bien ("Kanpachi.exe     {0} KB, con su bundle" -f $kb)
+            $kb = [math]::Round((Get-Item (Join-Path $Salida 'kanpachiui.exe')).Length / 1KB)
+            Bien ("kanpachiui.exe   {0} KB, con su bundle" -f $kb)
         }
     }
 }

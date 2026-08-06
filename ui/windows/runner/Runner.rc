@@ -89,12 +89,12 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
+            VALUE "CompanyName", "Accentio Studios" "\0"
             VALUE "FileDescription", "Kanpachi" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "Kanpachi" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "Kanpachi.exe" "\0"
+            VALUE "InternalName", "kanpachiui" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Accentio Studios. All rights reserved." "\0"
+            VALUE "OriginalFilename", "kanpachiui.exe" "\0"
             VALUE "ProductName", "Kanpachi" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END

@@ -19,18 +19,22 @@ const ServiceName = "kanpachi-daemon"
 // escribió en la línea de comandos.
 func EnServicio() (bool, error) { return svc.IsWindowsService() }
 
-// ArgShowUI es el argumento con el que se pide arrancar el servicio Y abrir la
+// ArgShow es el argumento con el que se pide arrancar el servicio Y abrir la
 // ventana de la interfaz.
 //
-// Lo manda quien arranca el servicio a mano —el acceso directo, vía
-// `StartService`— y NO lo manda el arranque automático de Windows. Esa es toda
-// la diferencia entre encender la PC, que deja solo el icono en la bandeja, y
-// hacer doble clic, que abre Kanpachi.
+// Lo manda quien arranca el servicio a mano —el lanzador, vía `StartService`— y
+// NO lo manda el arranque automático de Windows. Esa es toda la diferencia
+// entre encender la PC, que deja solo el icono en la bandeja, y hacer doble
+// clic, que abre Kanpachi.
 //
 // Es un argumento del SERVICIO y no una bandera de la línea de comandos de este
 // proceso: quien lo arranca no es una consola, es el Administrador de
 // servicios, y esta es la única vía que tiene para pasarle algo.
-const ArgShowUI = "--show-ui"
+//
+// Se escribe igual que la bandera del lanzador y que la de la interfaz, y eso
+// es a propósito: `--show` significa lo mismo en los tres sitios, o sea enseña
+// la ventana. El silencio es el default en todos.
+const ArgShow = "--show"
 
 // tiene dice si el argumento está en la lista.
 func tiene(args []string, quéBusco string) bool {

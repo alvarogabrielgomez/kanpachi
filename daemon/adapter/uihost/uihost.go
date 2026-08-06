@@ -42,8 +42,14 @@ type Deps struct {
 	// directa.
 	Exe string
 
-	// SilentFlag es la bandera con la que se pide arrancar sin ventana.
-	SilentFlag string
+	// ShowFlag es la bandera con la que se pide arrancar CON ventana.
+	//
+	// La bandera pide mostrar y no callar, y esa vuelta importa: sin ella, la
+	// interfaz abre ventana. Una bandera que se pierde por el camino —un
+	// argumento mal pasado, un lanzamiento nuevo que se olvida de ponerla— tiene
+	// que fallar hacia el lado callado. Al revés, el fallo es una ventana
+	// abriéndose sola encima de lo que estuvieras haciendo al encender la PC.
+	ShowFlag string
 
 	// OnGiveUp se llama cuando la interfaz se cae una y otra vez y ya no se
 	// intenta más. Lo correcto entonces es apagar todo, porque un daemon vivo
@@ -101,11 +107,11 @@ func New(deps Deps) (*Host, error) {
 
 // Start lanza la interfaz y se queda vigilándola.
 //
-// `silent` decide si abre ventana. Va en `false` cuando al daemon lo levantó
-// alguien haciendo doble clic, y en `true` cuando lo levantó Windows al
+// `show` decide si abre ventana. Va en `true` cuando al daemon lo levantó
+// alguien haciendo doble clic, y en `false` cuando lo levantó Windows al
 // encender la máquina: ahí la bandeja aparece y la ventana no.
-func (h *Host) Start(silent bool) error {
-	if err := h.launch(silent, true); err != nil {
+func (h *Host) Start(show bool) error {
+	if err := h.launch(show, true); err != nil {
 		return err
 	}
 	h.watching.Add(1)
@@ -129,9 +135,9 @@ func (h *Host) Show() error {
 	if hayViva {
 		// Transitoria: no se guarda su handle ni entra en la vigilancia. Vive
 		// lo que tarda en avisarle a la otra.
-		return h.launch(false, false)
+		return h.launch(true, false)
 	}
-	return h.launch(false, true)
+	return h.launch(true, true)
 }
 
 // Close cierra el job, y con él se va la interfaz.

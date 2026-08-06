@@ -52,8 +52,10 @@ Nota de rol: "host" es quien corre el servidor del juego. Cualquier miembro pued
 
    **El puerto de las reglas es siempre el LOCAL, en las dos direcciones**, y de eso depende que la cuarentena no rompa la máquina. Entrante con puerto local 445 es "nadie llega a MI compartir archivos", que es la protección. Saliente con puerto local 445 cierra ese mismo servicio por el otro lado. Lo que NO hace: **impedir que esta PC sea CLIENTE**. Montar un disco de red, entrar por Escritorio remoto a otra máquina o usar git por SSH salen de un puerto local efímero hacia el 445, el 3389 o el 22 del OTRO, así que ninguna de estas reglas los toca. Bloquear por puerto remoto sí los rompería, y para siempre, porque la cuarentena sigue puesta con Kanpachi apagado.
 9. Genera el token de la API local en ProgramData.
-10. Accesos directos en Menú Inicio y escritorio, **apuntando al daemon y no a la UI**. El daemon es lo que Kanpachi es; la UI son sus mandos. Ver el modelo de procesos en `03`: quien lanza la UI es siempre el daemon, así que un acceso directo a la UI podría dejar mandos abiertos sin nada detrás.
-11. Arranca el servicio. El servicio lanza la UI, y con ella aparece el icono de la bandeja.
+10. Accesos directos en Menú Inicio y escritorio, **apuntando al daemon con el parámetro `--show`, y no a la UI**. El daemon es lo que Kanpachi es; la UI son sus mandos. Ver el modelo de procesos en `03`: quien lanza la UI es siempre el daemon, así que un acceso directo a la UI podría dejar mandos abiertos sin nada detrás.
+
+    El parámetro no es adorno. `kanpachid.exe` a secas es lo que arranca el Administrador de servicios; `--show` es lo que le pide a ese servicio que arranque y además enseñe la ventana. Mismo binario, papeles distintos.
+11. Arranca el servicio con `--show`, por el paso del acceso directo y no a mano. El servicio lanza la UI con ventana, y con ella aparece el icono de la bandeja. Arrancarlo por las dos vías dejaría un daemon corriendo en silencio y un segundo intento de arranque que no hace nada.
 
 **Ninguno de los pasos 6 a 8 es definitivo.** Windows revierte la métrica, la categoría y las rutas en cada evento de identificación de red, que se dispara al cambiar una IP, conectar o desconectar un adaptador, o en eventos de DHCP. Por eso el servicio se suscribe al Event ID 10000 de `Microsoft-Windows-NetworkProfile/Operational` y reaplica todo cada vez. El instalador solo deja el estado inicial correcto para que la primera sesión funcione sin esperar un evento.
 

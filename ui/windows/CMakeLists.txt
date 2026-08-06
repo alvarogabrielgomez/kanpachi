@@ -6,9 +6,12 @@ project(kanpachi_ui LANGUAGES CXX)
 # the on-disk name of your application.
 # El nombre del EJECUTABLE, y es un contrato con el daemon: `uiExeName` en
 # daemon/cmd/kanpachid lo busca por este nombre al lado de su propio binario.
-# Tambien es lo que el acceso directo del instalador y el registro de
-# `kanpachi://` van a nombrar, asi que es lo que el usuario ve.
-set(BINARY_NAME "Kanpachi")
+#
+# Se llama kanpachiui y no Kanpachi para que se lea junto a kanpachid: en
+# Program Files quedan los dos al lado, y quien mire tiene que poder decir cual
+# es el daemon y cual la interfaz sin abrir ninguno. El acceso directo apunta al
+# DAEMON, asi que este nombre no es el que el usuario ve.
+set(BINARY_NAME "kanpachiui")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.

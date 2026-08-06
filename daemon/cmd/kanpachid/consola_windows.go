@@ -17,6 +17,18 @@ var (
 // signo.
 const attachParentProcess = ^uintptr(0)
 
+// salidaVisible dice si lo que este proceso imprima lo va a leer alguien.
+//
+// Lo escribe [reengancharConsola] y lo lee [hayConsola]. Existe porque el
+// binario es gráfico: un doble clic desde el Explorador no tiene consola de
+// padre, así que un error impreso ahí no lo ve nadie y hay que enseñarlo en una
+// ventana. Preguntarle a `GetStdHandle` después no sirve: reenganchar cambia
+// `os.Stdout` y no el descriptor estándar del proceso.
+var salidaVisible bool
+
+// hayConsola dice si hay a dónde imprimir.
+func hayConsola() bool { return salidaVisible }
+
 // reengancharConsola devuelve la salida estándar a la consola de quien lanzó
 // este proceso, si es que había una.
 //
@@ -62,9 +74,13 @@ func reengancharConsola() {
 	faltaError := !handleVálido(windows.STD_ERROR_HANDLE)
 	faltaEntrada := !handleVálido(windows.STD_INPUT_HANDLE)
 
+	if !faltaSalida && !faltaError {
+		// Heredadas: tubería, redirección a fichero, o consola propia. Hay a
+		// dónde escribir aunque falte la entrada.
+		salidaVisible = true
+	}
 	if !faltaSalida && !faltaError && !faltaEntrada {
-		// Todo heredado: tubería, redirección a fichero, o consola propia. No
-		// hay nada roto que arreglar.
+		// Todo heredado. No hay nada roto que arreglar.
 		return
 	}
 
@@ -74,6 +90,7 @@ func reengancharConsola() {
 		// o ya teníamos la nuestra. Los dos se tratan igual: no tocar nada.
 		return
 	}
+	salidaVisible = true
 
 	// Enganchada. Ahora hay que APUNTAR ahí SOLO lo que faltaba, porque con
 	// `-H windowsgui` los descriptores que nadie heredó nacen inválidos y
