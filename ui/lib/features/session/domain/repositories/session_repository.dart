@@ -2,6 +2,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/pending_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
@@ -82,6 +83,25 @@ abstract interface class SessionRepository {
   /// parsea el enlace: eso vive en el dominio del daemon, que es donde está
   /// escrita y probada la frontera de entrada hostil.
   Future<PendingInvite?> pendingInvite();
+
+  /// La sala que quedó abierta cuando el daemon murió sucio, o null si no hay.
+  ///
+  /// **A diferencia de [pendingInvite], preguntarlo NO lo consume.** Son dos
+  /// cosas distintas: un enlace es un evento que ocurrió una vez y se atiende
+  /// una vez, y esto es un archivo en disco que sigue ahí hasta que alguien
+  /// decide qué hacer con él. Consumirlo al preguntar haría que cerrar la
+  /// ventana perdiera la sala sin que nadie lo pidiera.
+  Future<PendingRoom?> pendingRoom();
+
+  /// Reabre esa sala: la misma red, el mismo código y el mismo enlace.
+  ///
+  /// Puede tardar, porque levanta el motor de verdad. No es un "restaurar
+  /// pantalla": vuelve a crear la red real con la identidad guardada, así que
+  /// quien siguiera dentro reconecta sin pedir credencial nueva.
+  Future<Room> resumePendingRoom();
+
+  /// Descarta esa sala. Borra el archivo y no vuelve a preguntar.
+  Future<void> discardPendingRoom();
 
   /// Lo que la máquina tiene abierto AHORA, medido.
   ///

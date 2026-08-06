@@ -166,6 +166,7 @@ class Room {
     this.foreignRule = ForeignRuleState.none,
     this.foreignRuleClass = RuleClass.game,
     this.foreignRuleProgram,
+    this.codeLost = false,
   });
 
   /// Builds a room out of a `RoomView`.
@@ -205,6 +206,7 @@ class Room {
       // Unknown state counts as idle, which is the only safe reading: it
       // promises nothing about there being a room.
       network: ConnState.fromWire(json['conn'] as String?) ?? ConnState.idle,
+      codeLost: json['code_lost'] as bool? ?? false,
     );
   }
 
@@ -287,6 +289,19 @@ class Room {
   /// nombre, el aviso se muestra igual y sin el detalle.
   final String? foreignRuleProgram;
 
+  /// El registro AFIRMÓ que ya no conoce este código.
+  ///
+  /// Distinto de que no contestara, igual que en [PendingInvite.unknown]: que
+  /// esté caído se arregla solo en el siguiente latido, y que haya perdido la
+  /// entrada no se arregla nunca, porque publicar no crea. Lo produce un
+  /// reinicio del registro o un fijado vencido.
+  ///
+  /// La sala sigue funcionando para los que están dentro. Lo que se rompió es
+  /// que entre alguien nuevo, y por eso hay que decirlo: sin este dato, el host
+  /// ve su sala perfecta y todo el que intente entrar recibe «ese código no
+  /// existe». Lo cierra renovar el código.
+  final bool codeLost;
+
   /// Si la regla ajena impide abrir la sala.
   ///
   /// Se deriva de la clase acá y no viene aparte porque el que decide es el
@@ -337,5 +352,6 @@ class Room {
     foreignRule: foreignRule ?? this.foreignRule,
     foreignRuleClass: foreignRuleClass ?? this.foreignRuleClass,
     foreignRuleProgram: foreignRuleProgram ?? this.foreignRuleProgram,
+    codeLost: codeLost,
   );
 }

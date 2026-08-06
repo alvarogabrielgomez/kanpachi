@@ -4,6 +4,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/pending_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 
 /// En qué anda la sesión ahora mismo.
@@ -67,6 +68,7 @@ class SessionState {
     this.progress,
     this.verbose = false,
     this.invite,
+    this.pendingRoom,
   });
 
   final SessionPhase phase;
@@ -144,6 +146,13 @@ class SessionState {
   /// ventana escondida, con otra pantalla abierta o con una sala en marcha.
   final PendingInvite? invite;
 
+  /// La sala del arranque anterior, esperando que alguien diga qué hacer.
+  ///
+  /// Vive en el estado por lo mismo que [invite]: quien la descubre es el
+  /// latido y no una navegación. La diferencia es que preguntar por ella NO la
+  /// consume, así que sigue ofreciéndose hasta que se reabre o se descarta.
+  final PendingRoom? pendingRoom;
+
   bool get hasRoom => room != null;
 
   /// Whether a long operation is in flight: creating a room or joining one.
@@ -179,6 +188,8 @@ class SessionState {
     bool? verbose,
     PendingInvite? invite,
     bool clearInvite = false,
+    PendingRoom? pendingRoom,
+    bool clearPendingRoom = false,
   }) => SessionState(
     phase: phase ?? this.phase,
     room: clearRoom ? null : (room ?? this.room),
@@ -195,5 +206,6 @@ class SessionState {
     progress: clearProgress ? null : (progress ?? this.progress),
     verbose: verbose ?? this.verbose,
     invite: clearInvite ? null : (invite ?? this.invite),
+    pendingRoom: clearPendingRoom ? null : (pendingRoom ?? this.pendingRoom),
   );
 }

@@ -1,11 +1,16 @@
 #!/bin/sh
-# Instalador de kanpachi-seed.
+# Instalador de kanpachi-seed. Sirve igual para instalar y para actualizar.
 #
 #   curl -fsSL https://raw.githubusercontent.com/alvarogabrielgomez/kanpachi/main/seed/install.sh | sudo sh
 #
 # Baja el binario, comprueba su firma de contenido, y le cede el trabajo a
 # `kanpseed init`, que es quien elige puertos, coloca EasyTier, escribe los
 # servicios de systemd y dice qué hay que poner en el proxy inverso.
+#
+# **Actualizar por acá también funciona**, porque `init` conserva los puertos de
+# una instalación previa en vez de volver a elegirlos. Sobre una máquina que ya
+# tiene seed, lo cómodo es `sudo kanpseed upgrade`: no hace falta ni curl ni
+# saber esta URL, y hace lo mismo.
 #
 # Este script es a propósito lo más tonto posible. Toda la lógica que puede
 # equivocarse vive en Go, donde se puede probar; aquí solo hay lo que
@@ -59,8 +64,11 @@ $BAJAR "$TMP/kanpseed" "$BASE/kanpseed-linux-$ARCO" \
 # sin recompilar, y el binario no crece con un HTML incrustado.
 $BAJAR "$TMP/index.html" "$BASE/index.html" \
   || morir "no se pudo bajar la página de invitación"
-$BAJAR "$TMP/SHA256SUMS" "$BASE/SHA256SUMS" \
-  || morir "no se pudo bajar SHA256SUMS: sin él no se verifica nada y no se instala nada"
+# `-linux` y no `SHA256SUMS` a secas: el release trae también la carga de
+# Windows, con su propio manifiesto. Un solo nombre para las dos significaba que
+# el último workflow en terminar pisaba el archivo del otro.
+$BAJAR "$TMP/SHA256SUMS-linux" "$BASE/SHA256SUMS-linux" \
+  || morir "no se pudo bajar SHA256SUMS-linux: sin él no se verifica nada y no se instala nada"
 
 # Se verifica ANTES de darle permiso de ejecución. Esto termina corriendo como
 # servicio en un servidor con IP pública, así que la comprobación no es un
@@ -68,8 +76,8 @@ $BAJAR "$TMP/SHA256SUMS" "$BASE/SHA256SUMS" \
 # sirve a desconocidos y es igual de sustituible en tránsito.
 verificar() {
   archivo="$1"
-  quiero="$(grep " $archivo\$" "$TMP/SHA256SUMS" | cut -d' ' -f1)"
-  [ -n "$quiero" ] || morir "SHA256SUMS no menciona $archivo"
+  quiero="$(grep " $archivo\$" "$TMP/SHA256SUMS-linux" | cut -d' ' -f1)"
+  [ -n "$quiero" ] || morir "SHA256SUMS-linux no menciona $archivo"
   tengo="$(cd "$TMP" && sha256sum "$2" | cut -d' ' -f1)"
   [ "$tengo" = "$quiero" ] || morir "el SHA256 de $archivo no coincide
   esperado $quiero

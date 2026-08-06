@@ -30,6 +30,8 @@ func Ejecutar(args []string) int {
 		err = cmdConfig(args[1:])
 	case "nginx", "proxy":
 		err = cmdNginx(args[1:])
+	case "upgrade":
+		err = cmdUpgrade(args[1:])
 	case "uninstall":
 		err = cmdUninstall(args[1:])
 	case "version", "--version", "-v":
@@ -61,6 +63,8 @@ func ayuda() {
 Comandos que ejecuta una persona:
 
   init        instala y configura todo. Una sola ejecución
+  upgrade     se actualiza a la última versión publicada
+              --check muestra si hay una nueva sin instalar nada
   doctor      revisa que todo esté como debe, y dice qué falta
   config      muestra o cambia los puertos, y reescribe los servicios
   nginx       repite el bloque que hay que pegar en el proxy inverso

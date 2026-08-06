@@ -208,6 +208,20 @@ type RoomState struct {
 	// un botón para descubrir que su protección se cayó.
 	Canary CanaryCheck
 
+	// CodeLost dice que el registro ya no conoce este invite ID.
+	//
+	// No es "el registro no contesta", que es transitorio y se arregla solo en
+	// el siguiente latido. Es la respuesta explícita de que esa sala no existe
+	// para él, y la produce un reinicio del registro o un fijado vencido: en
+	// los dos casos la entrada se fue, y publicar NO crea, así que el código
+	// repartido queda muerto para siempre por más que la sala siga en pie.
+	//
+	// Va en el estado porque es lo único que el usuario puede accionar: sin
+	// esto, su sala funciona para los que ya están dentro y le dice "ese código
+	// no existe" a todo el que intente entrar, sin una sola pista de por qué.
+	// Lo cierra renovar el código, que saca una entrada nueva.
+	CodeLost bool
+
 	// Gen sube en CADA vaciado de la sala, e identifica a la sala viva.
 	//
 	// Existe por la ronda del canario, que suelta el candado hasta diez segundos
@@ -313,6 +327,7 @@ func (r *RoomState) clearRoom() {
 	r.LocalIP = netip.Addr{}
 	r.Alerts = nil
 	r.Canary = CanaryCheck{}
+	r.CodeLost = false
 
 	// Y se sube la generación, que es lo que le deja a una ronda en vuelo saber
 	// que la sala que estaba midiendo ya no existe. Va acá, en el único sitio que

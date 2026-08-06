@@ -105,10 +105,16 @@ Lo que el fork NO reemplaza es la compuerta. Su enemigo nunca fue EasyTier: son 
 
 En el droplet sigue corriendo `easytier-core` oficial sin modificar, y está bien que así sea: es una máquina nuestra, sin usuarios, donde el portal local no es una superficie que le importe a nadie más. La razón de todo lo anterior es la máquina **del usuario**.
 
+**Y poner el fork ahí no cambiaría nada, medido el 2026-08-06.** El diff entero vive en `virtual_nic.rs`, y las dos llamadas que borra son `crate::arch::windows::add_self_to_firewall_allowlist()` y `add_interface_to_firewall_allowlist()`, las dos tras `#[cfg(target_os = "windows")]`. En un binario de Linux ese código **no se compila**, y además el seed arranca con `--no-tun true`, así que jamás construye la `VirtualNic` donde viven. Un `easytier-core` de Linux del fork se comporta igual que el oficial. La consistencia sería de tag, no de máquina.
+
+Lo que sí costaría: el fork **no publica releases ni tiene workflows** (comprobado contra su API). Usarlo obligaría a compilar Rust para linux/amd64 y linux/arm64 por nuestra cuenta, hostear esos binarios y fijar SHA256 nuevos a mano, contra los 60 segundos que hoy cuesta bajar el zip oficial con su hash ya fijado. Se decidió no hacerlo.
+
 **PENDIENTE de revisar, y conviene mirarlo con calma.** Que el seed levante el portal quedó como herencia del arranque oficial, no como una decisión que alguien tomara mirando el droplet. Las tres preguntas a contestar cuando toque:
 
 1. **¿Lo usa alguien?** `registry/counter.go` habla con `easytier-cli` contra el portal para contar miembros. Si esa es la única razón, hay que ver si el conteo puede salir de otro lado.
-2. **¿Está de verdad acotado?** El arranque pasa `--rpc-portal 127.0.0.1:15888` más `--rpc-portal-whitelist 127.0.0.1`, y eso se comprueba en `registry/setup/setup_test.go`. Falta medirlo **en el droplet corriendo**, con `ss -lntp`, que es lo único que descarta que el par completo se esté perdiendo por el camino.
+2. **¿Está de verdad acotado?** **Sí. Medido en el droplet el 2026-08-06**, que es lo que faltaba: `ss -lnt` lo enseña como `LISTEN 127.0.0.1:15889` y en ninguna otra dirección, con el `ExecStart` real llevando `--rpc-portal 127.0.0.1:15889 --rpc-portal-whitelist 127.0.0.1`. El par llega entero y el portal no sale de loopback.
+
+   **Ojo con el número: es 15889 y no 15888.** El puerto NO es fijo, lo elige `PuertoLibre` desde 15888 y en esta máquina el 15888 ya estaba tomado. Este documento decía "15888" como si fuera una constante, y quien fuera a comprobarlo con ese número no habría encontrado nada y habría concluido lo contrario de lo que pasa. El dato de verdad vive en `/etc/kanpachi/seed.json`, campo `puerto_rpc`.
 3. **¿Cambia el modelo de amenazas ahora?** "Máquina nuestra sin usuarios" es cierto hoy. La lista de puertos del droplet abiertos a internet ya tiene sus propios pendientes, y un portal sin autenticación en loopback deja de ser inocuo el día que alguien consiga ejecutar cualquier cosa en esa máquina.
 
 Lo natural es que el seed también termine sobre el motor propio, con lo cual el portal desaparece de los dos lados. Eso es trabajo aparte y va después del motor del cliente.

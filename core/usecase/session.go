@@ -237,6 +237,24 @@ type Session struct {
 	// el borde de la conexión es una señal que puede no llegar nunca.
 	lastAnnounce time.Time
 
+	// lastPublish es cuándo el registro aceptó por última vez la tarjeta de
+	// esta sala.
+	//
+	// Es lo que hace medible el CardTTL desde este lado. El registro deja de
+	// resolver una sala a las seis horas de la última publicación, y hasta que
+	// esto existió nada la refrescaba en vida de la sala: una partida abierta
+	// desde la tarde dejaba de aceptar gente nueva a la noche, sin un solo
+	// error de este lado y con un "ese código no existe" del otro.
+	lastPublish time.Time
+
+	// cardPublishFailing dice si la última republicación falló.
+	//
+	// Existe solo para no repetir el mismo aviso en cada latido. Se avisa en el
+	// flanco, igual que la ausencia del host: una vez al empezar a fallar y una
+	// vez al recuperarse. Sin esto, un seed caído deja una advertencia por hora
+	// en el diario para siempre.
+	cardPublishFailing bool
+
 	// tamperRepairs son las veces que se repusieron las reglas propias en esta
 	// sala.
 	//

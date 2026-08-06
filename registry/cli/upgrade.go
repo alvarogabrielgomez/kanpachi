@@ -1,0 +1,217 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/accentiostudios/kanpachi/registry/selfupdate"
+	"github.com/accentiostudios/kanpachi/registry/setup"
+)
+
+// cmdUpgrade actualiza el seed a la última versión publicada.
+//
+// **Actualizar NO es reemplazar el binario.** El seed son cinco cosas que
+// tienen que estar de acuerdo entre sí: el binario, la página que sirve, los
+// binarios de EasyTier, las units de systemd y los procesos que están
+// corriendo ahora mismo. Cambiar solo la primera deja una máquina que anuncia
+// una versión y se comporta como otra, y ese desajuste no da ningún error: da
+// un droplet que "va raro". Por eso este comando hace las cinco.
+//
+// Es re-ejecutable: si ya está al día, no toca nada y lo dice.
+func cmdUpgrade(args []string) error {
+	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
+	check := fs.Bool("check", false, "solo mira si hay versión nueva, sin instalar nada")
+	target := fs.String("version", "", "versión concreta a instalar, por ejemplo v0.1.0")
+	assumeYes := fs.Bool("yes", false, "no preguntar antes de actualizar")
+	noRestart := fs.Bool("no-restart", false, "no reiniciar los servicios al terminar")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), selfupdate.Timeout)
+	defer cancel()
+
+	tag := *target
+	if tag == "" {
+		ultima, err := selfupdate.Latest(ctx)
+		if err != nil {
+			return fmt.Errorf("no se pudo consultar la última versión: %w", err)
+		}
+		tag = ultima
+	}
+
+	// El atajo silencioso solo vale comparando contra la última. Con --version
+	// se instala lo que se pidió aunque sea la misma o anterior, que es lo que
+	// hace de este comando una forma de volver atrás.
+	if *target == "" && selfupdate.IsVersion(Version) && !selfupdate.Outdated(Version, tag) {
+		ok("el seed ya está al día (%s)", Version)
+		return nil
+	}
+
+	banner("Kanpachi seed · upgrade", "instalada "+Version+"  →  disponible "+tag)
+
+	if *check {
+		if selfupdate.Outdated(Version, tag) {
+			aviso("hay una versión nueva: %s → %s", Version, tag)
+			codigo("sudo kanpseed upgrade")
+		} else if !selfupdate.IsVersion(Version) {
+			// Un binario compilado a mano. Decir "actualizado" sería mentira y
+			// decir "desactualizado" también, así que se dice lo que se sabe.
+			aviso("este binario es %s, así que no hay con qué compararlo", Version)
+			tenue("  la última publicada es %s", tag)
+		} else {
+			ok("estás al día")
+		}
+		return nil
+	}
+
+	if err := requiereLinux(); err != nil {
+		return err
+	}
+	if err := requiereRoot("upgrade"); err != nil {
+		return err
+	}
+
+	// Se actualiza una instalación, no se hace una. Sin config no se sabe en qué
+	// puerto vive el registro, y adivinarlo movería el servicio por debajo del
+	// proxy inverso de la máquina.
+	cfg, err := setup.Cargar()
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("no hay ningún seed instalado en esta máquina (falta %s).\n"+
+			"  Para instalarlo por primera vez:\n"+
+			"  curl -fsSL https://raw.githubusercontent.com/%s/main/seed/install.sh | sudo sh",
+			setup.RutaConfig(), selfupdate.Repo)
+	}
+	if err != nil {
+		return err
+	}
+
+	if !*assumeYes && interactivo() && !confirmar(fmt.Sprintf("¿Actualizar el seed a %s?", tag), true) {
+		tenue("  cancelado")
+		return nil
+	}
+
+	seccion("Bajando")
+	carga, err := selfupdate.Download(ctx, tag, func(f string, a ...any) { tenue("  "+f, a...) })
+	if err != nil {
+		return err
+	}
+
+	seccion("Instalando")
+
+	// El binario que se reemplaza es el que ejecuta systemd, no el que está
+	// corriendo este comando. Suelen ser el mismo; cuando no lo son, actualizar
+	// la copia desde la que alguien lanzó el comando dejaría el servicio con la
+	// versión vieja, que es exactamente lo contrario de lo que se pidió.
+	destino := filepath.Join(setup.DirBin, setup.Binario)
+	if err := escribirAtomico(destino, carga.Binary, 0o755); err != nil {
+		return fmt.Errorf("no se pudo reemplazar %s: %w", destino, err)
+	}
+	ok("binario %s en %s", tag, destino)
+	if propio, err := os.Executable(); err == nil {
+		if resuelto, err := filepath.EvalSymlinks(propio); err == nil {
+			propio = resuelto
+		}
+		if propio != destino {
+			aviso("esta copia (%s) sigue en %s", propio, Version)
+			tenue("  la que corre el servicio es %s, y esa ya está actualizada", destino)
+		}
+	}
+
+	pagina := filepath.Join(setup.DirLib, selfupdate.PageFile)
+	if err := escribirAtomico(pagina, carga.Page, 0o644); err != nil {
+		return err
+	}
+	ok("página de invitación en %s", pagina)
+
+	// El pin de EasyTier viaja dentro del binario nuevo, así que esto puede
+	// descubrir que la versión fijada cambió y traerse el motor nuevo.
+	descargado, err := setup.InstalarEasyTier(setup.DirLib, func(m string) { tenue("  %s", m) })
+	if err != nil {
+		return err
+	}
+	if descargado {
+		ok("EasyTier %s instalado", setup.VersionEasyTier)
+	} else {
+		ok("EasyTier %s ya estaba", setup.VersionEasyTier)
+	}
+
+	// Reescribir las units importa tanto como el binario: un arreglo que vive
+	// en la unit (un límite, una directiva de aislamiento) no llega por
+	// intercambiar el ejecutable, y sin esto la máquina se quedaría con el
+	// fallo arreglado en el código y presente en la configuración.
+	cambiadas, err := setup.EscribirUnits(cfg)
+	if err != nil {
+		return err
+	}
+	if cambiadas {
+		ok("servicios reescritos en %s", setup.DirUnits)
+	} else {
+		ok("los servicios ya estaban al día")
+	}
+
+	if *noRestart {
+		seccion("Falta reiniciar")
+		aviso("los procesos siguen con la versión anterior hasta que se reinicien")
+		codigo("sudo systemctl restart " + setup.UnitMotor + " " + setup.UnitReg)
+		fmt.Println()
+		return nil
+	}
+
+	seccion("Reiniciando")
+	for _, u := range []string{setup.UnitMotor, setup.UnitReg} {
+		if err := setup.Systemctl("restart", u); err != nil {
+			return fmt.Errorf("%w\n\nÚltimas líneas del diario:\n%s", err, setup.LogsDeUnit(u, 15))
+		}
+	}
+	if err := esperarSalud(cfg, 20*time.Second); err != nil {
+		return fmt.Errorf("%w\n\nÚltimas líneas del diario:\n%s", err, setup.LogsDeUnit(setup.UnitReg, 15))
+	}
+	ok("el registro responde en 127.0.0.1:%d", cfg.PuertoRegistro)
+	ok("el motor escucha en el %d, TCP y UDP", cfg.PuertoMotor)
+
+	seccion("Listo")
+	tenue("  el seed corre %s", tag)
+	codigo("kanpseed doctor")
+	fmt.Println()
+	return nil
+}
+
+// escribirAtomico deja el contenido en su sitio de una sola vez.
+//
+// Temporal en el MISMO directorio y rename encima: es atómico en POSIX y
+// funciona incluso sobre un binario que se está ejecutando, que es justo el
+// caso de este comando. Un temporal en /tmp no serviría, porque cruzar sistemas
+// de archivos convierte el rename en copia y deja de ser atómico.
+func escribirAtomico(destino string, datos []byte, modo os.FileMode) error {
+	dir := filepath.Dir(destino)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(destino)+"-*.tmp")
+	if err != nil {
+		return err
+	}
+	nombre := tmp.Name()
+	defer os.Remove(nombre)
+
+	if _, err := tmp.Write(datos); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	// CreateTemp crea con 0600. El modo se pone aparte porque un binario sin
+	// permiso de ejecución no lo arranca systemd, y una página sin lectura no
+	// la sirve nadie.
+	if err := os.Chmod(nombre, modo); err != nil {
+		return err
+	}
+	return os.Rename(nombre, destino)
+}

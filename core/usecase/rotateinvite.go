@@ -79,6 +79,15 @@ func (s *Session) RotateInviteCode(ctx context.Context) (domain.RoomState, error
 	s.state.Room = room
 	s.cardKey = key
 	s.sealedCard = publicada
+	// Renovar es la salida del código muerto: el registro acaba de emitir una
+	// entrada nueva, con sus dos relojes en cero. Con el respaldo `publicada`
+	// viene vacía y no hay nada que el registro conozca, así que la bandera se
+	// apaga igual: lo que la enciende es que RECHACE una sala, no que falte.
+	if len(publicada) > 0 {
+		s.lastPublish = s.deps.Clock.Now()
+	}
+	s.state.CodeLost = false
+	s.cardPublishFailing = false
 	s.saveRoomLocked()
 
 	// El código nuevo se le reparte a los que están DENTRO.
@@ -190,6 +199,9 @@ func (s *Session) RenameRoom(ctx context.Context, name string) (domain.RoomState
 	// en el caso que SÍ ocurre.
 	s.cardKey = key
 	s.sealedCard = sealed
+	s.lastPublish = s.deps.Clock.Now()
+	s.state.CodeLost = false
+	s.cardPublishFailing = false
 	s.saveRoomLocked()
 	return s.snapshot(), nil
 }

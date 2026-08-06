@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/port"
 )
 
 // ErrNoPendingRoom es reanudar sin nada que reanudar.
@@ -223,18 +224,50 @@ func (s *Session) restoreGameLocked(ctx context.Context, gameID string) {
 //
 // Sin tarjeta guardada no se llama a nadie: es el caso de un `room.json` escrito
 // antes de que el campo existiera, y el del respaldo de crear, donde el invite ID
-// lo generó esta máquina y el registro no lo emitió nunca.
+// lo generó esta máquina y el registro no lo emitió nunca. Esa guarda es además
+// lo que hace que esto sea SOLO del host por el dato y no por convención: un
+// invitado jamás llena sealedCard.
+//
+// # Por qué ya no lo llama solo reabrir
+//
+// Porque la tarjeta también muere EN VIDA de la sala. El registro la caduca a
+// las seis horas de la última publicación, así que una partida que sigue abierta
+// dejaba de aceptar gente nueva sin un solo error de este lado. Ahora esto
+// además cuelga del latido, cada [RepublishInterval]. Ver `enforceDeadlinesLocked`.
 //
 // Asume el candado tomado.
 func (s *Session) republishCardLocked(ctx context.Context) {
 	if len(s.sealedCard) == 0 {
 		return
 	}
-	if err := s.deps.Directory.Publish(ctx, s.state.Room.InviteID, s.sealedCard); err != nil {
+	// El reloj se sella pase lo que pase, y no solo cuando sale bien. Es lo
+	// mismo que hace announceLocked y por lo mismo: si el registro no contesta,
+	// reintentar en el siguiente intervalo es correcto, y machacarlo en cada
+	// latido de quince segundos solo gasta el límite de tasa con peticiones que
+	// también cuentan cuando fallan.
+	s.lastPublish = s.deps.Clock.Now()
+
+	err := s.deps.Directory.Publish(ctx, s.state.Room.InviteID, s.sealedCard)
+
+	// "No conozco esa sala" es distinto de "no contesto", y por eso se separa.
+	// Lo primero es definitivo: la entrada se fue del registro y publicar no
+	// crea, así que el código repartido ya no sirve y solo lo arregla renovarlo.
+	// Lo segundo se cura solo en el siguiente latido.
+	s.state.CodeLost = errors.Is(err, port.ErrUnknownRoom)
+
+	switch {
+	case err == nil:
+		if s.cardPublishFailing {
+			s.cardPublishFailing = false
+			s.deps.Log.Info("el registro volvió a aceptar la tarjeta de la sala",
+				"código", s.state.Room.InviteID.String())
+		}
+	case s.cardPublishFailing:
+		// Ya se avisó. Repetirlo en cada intervalo llenaría el diario sin
+		// aportar nada nuevo, que es como se pierde de vista lo que sí importa.
+	default:
+		s.cardPublishFailing = true
 		s.deps.Log.Warn("la tarjeta de la sala no se pudo republicar, la página de invitación "+
-			"va a mostrar la genérica", "error", err)
-		return
+			"va a mostrar la genérica", "error", err, "código", s.state.Room.InviteID.String())
 	}
-	s.deps.Log.Info("tarjeta de la sala republicada al reabrir",
-		"código", s.state.Room.InviteID.String())
 }

@@ -81,6 +81,15 @@ type RoomView struct {
 	// LastExit es por qué se volvió a la pantalla de inicio. Vacío es que no
 	// hay nada que explicar.
 	LastExit string `json:"last_exit,omitempty"`
+
+	// CodeLost es que el registro AFIRMÓ que ya no conoce este código, no que
+	// no contestara. Es la misma distinción que hace [InviteView.Unknown], y por
+	// el mismo motivo: que el servidor esté caído se arregla solo, y que haya
+	// perdido la entrada no se arregla nunca, porque publicar no crea.
+	//
+	// La sala sigue funcionando para los que están dentro; lo que se rompió es
+	// que entre alguien nuevo. Lo cierra renovar el código.
+	CodeLost bool `json:"code_lost"`
 }
 
 // InviteView es lo que trajo un enlace `kanpachi://`, ya resuelto.
@@ -160,6 +169,7 @@ func roomView(st domain.RoomState, missing string, now time.Time) RoomView {
 		},
 		Alerts:   make([]AlertView, 0, len(st.Alerts)),
 		LastExit: exitName(st.LastExit),
+		CodeLost: st.CodeLost,
 	}
 	if !st.Room.InviteID.IsZero() {
 		v.Code = st.Room.InviteID.String()

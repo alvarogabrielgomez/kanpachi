@@ -10,6 +10,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/pending_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_codec.dart';
@@ -294,6 +295,13 @@ class SessionCubit extends Cubit<SessionState> {
       // ventana porque puede llegar en cualquier momento: con la ventana
       // escondida, con otra pantalla delante, o con una sala ya abierta.
       final PendingInvite? incoming = await _repository.pendingInvite();
+      // La sala del arranque anterior. Solo se pregunta SIN sala: con una sala
+      // abierta no hay nada que ofrecer reabrir, y el daemon rechazaría el
+      // intento igual. Es además una llamada menos por latido en el caso
+      // normal, que es estar dentro de una sala.
+      final PendingRoom? anterior = sala == null
+          ? await _repository.pendingRoom()
+          : null;
       if (isClosed) return;
       emit(
         state.copyWith(
@@ -301,6 +309,8 @@ class SessionCubit extends Cubit<SessionState> {
           clearRoom: sala == null,
           health: salud,
           invite: incoming,
+          pendingRoom: anterior,
+          clearPendingRoom: anterior == null,
           daemonDown: false,
           // Volver a estar dentro de una sala tras haberla perdido de vista
           // tiene que devolver también la fase, o la app se queda con la sala
@@ -486,6 +496,39 @@ class SessionCubit extends Cubit<SessionState> {
     if (current == null) return;
     await _try(FailedAction.rotateInviteCode, () async {
       emit(state.copyWith(room: await _repository.renewCode(current)));
+    });
+  }
+
+  /// Reabre la sala que quedó del arranque anterior.
+  ///
+  /// Lleva fase `creating` aunque no cree nada, y es a propósito: por dentro
+  /// levanta el motor igual que crear, tarda lo mismo, y sin fase la ventana se
+  /// queda muda hasta noventa segundos. Lo que se ve al terminar es la misma
+  /// sala, con el mismo código y el mismo enlace que ya se repartió.
+  Future<bool> resumePendingRoom() async {
+    if (state.pendingRoom == null) return false;
+    emit(state.copyWith(phase: SessionPhase.creating, clearPendingRoom: true));
+    _watchProgress();
+    await _try(FailedAction.resumeRoom, onFail: SessionPhase.idle, () async {
+      final Room sala = await _repository.resumePendingRoom();
+      emit(state.copyWith(phase: SessionPhase.inRoom, room: sala));
+    });
+    _stopWatching();
+    await _afterWait();
+    return !isClosed && state.room != null;
+  }
+
+  /// Descarta esa sala. El código viejo queda muerto y no se vuelve a preguntar.
+  ///
+  /// Se limpia del estado ANTES de llamar, para que el diálogo se cierre en el
+  /// acto: el latido no lo va a volver a traer, porque descartar borra el
+  /// archivo del que salía. Si la llamada falla, el siguiente latido lo vuelve
+  /// a ofrecer, que es lo correcto: no se descartó nada.
+  Future<void> discardPendingRoom() async {
+    if (state.pendingRoom == null) return;
+    emit(state.copyWith(clearPendingRoom: true));
+    await _try(FailedAction.discardPendingRoom, () async {
+      await _repository.discardPendingRoom();
     });
   }
 

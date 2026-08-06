@@ -13,6 +13,17 @@
 # SignPath entra cuando la solicitud esté aprobada: ver `docs/07-futuro.md`.
 name: Release
 
+# **Los dos disparadores automáticos son necesarios, y no es cinturón y
+# tirantes.** Un tag empujado con `git push --tags` llega por `push`. Un release
+# creado desde la web de GitHub, que crea el tag por dentro, NO produjo ninguna
+# corrida de `push` acá: el tag `v0.1.0` del 2026-08-06 existió, el fichero ya
+# estaba en su commit con `push: tags`, y la API de Actions no registró nada.
+# Ese camino entra por `release: published`.
+#
+# OJO con la consecuencia: para un release de la web, el fichero que se ejecuta
+# es el del COMMIT QUE APUNTA EL TAG. Etiquetar un commit anterior a este
+# párrafo vuelve a no disparar nada, y no hay arreglo posible en `main` para
+# eso: el tag tiene que salir de un commit que ya traiga este `on:`.
 on:
   push:
     tags: ["v*"]
@@ -23,6 +34,13 @@ on:
       motor:
         description: "Ref del repositorio del motor con el que compilar"
         default: main
+
+# Empujar el tag Y crear el release sobre ese mismo tag son dos eventos para una
+# sola publicación. Sin esto se compilaría dos veces lo mismo durante veinte
+# minutos cada vez; con esto, la segunda cancela a la primera y publica.
+concurrency:
+  group: release-${{ github.event.release.tag_name || github.ref_name }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -117,6 +135,40 @@ jobs:
       # `FakeSessionRepository` salió de `lib/`, así que ponerla acá bloquearía
       # toda publicación hasta arreglarla. La suite completa sigue disponible a
       # mano en `ci.yml`.
+      # **Sin este paso no hay instalador, y por eso este workflow no publicó
+      # nunca nada.**
+      #
+      # `/third_party/` está en .gitignore por tamaño (~80 MB), así que el
+      # checkout llega SIN `Packet.dll`, `wintun.dll` ni `WinDivert64.sys`, y
+      # `preparar-carga.ps1` corta con "falta third_party\easytier\Packet.dll".
+      # En la máquina de desarrollo los ficheros están de antes y no se nota; en
+      # un runner limpio no hay de dónde sacarlos.
+      #
+      # Se bajan los SIETE del release oficial, no los tres que se empaquetan.
+      # Con el directorio completo, el guardián de `internal/arch` del paso
+      # siguiente verifica el manifiesto entero contra `easytier.sums` en vez de
+      # saltárselo por directorio ausente: acá es donde esa comprobación de
+      # cadena de suministro pasa de intención a hecho.
+      #
+      # La versión se escribe acá y el hash NO: si este `v2.6.4` se separa del
+      # pin de `easytier.sums` y de docs/02, el test del paso siguiente falla
+      # fichero por fichero. Un tercer lugar donde copiar hashes sería un tercer
+      # lugar donde quedan viejos.
+      - name: Los binarios del motor
+        shell: pwsh
+        run: |
+          $url = "https://github.com/EasyTier/EasyTier/releases/download/v2.6.4/easytier-windows-x86_64-v2.6.4.zip"
+          $zip = "$env:RUNNER_TEMP\easytier.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\easytier" -Force
+          $destino = "$env:GITHUB_WORKSPACE\third_party\easytier"
+          New-Item -ItemType Directory -Force -Path $destino | Out-Null
+          # El zip trae todo bajo una carpeta `easytier-windows-x86_64\`; el
+          # manifiesto lista las rutas relativas a `third_party\easytier`, así
+          # que se aplana acá.
+          Copy-Item -Path "$env:RUNNER_TEMP\easytier\easytier-windows-x86_64\*" -Destination $destino -Force
+          Get-ChildItem $destino | Format-Table Name, Length
+
       - name: Tests
         run: go test -count=1 ./core/... ./internal/arch/...
 
@@ -145,23 +197,43 @@ jobs:
       - name: Sumas
         shell: pwsh
         run: |
-          # El mismo formato que espera `sha256sum -c` y que ya usa el release
-          # del seed, para que las dos publicaciones se verifiquen igual.
+          # El mismo formato que espera `sha256sum -c`, para que las dos cargas
+          # del release se verifiquen igual.
+          #
+          # El nombre lleva `-windows` porque este release trae TAMBIÉN la carga
+          # de Linux, que publica `release-seed.yml` en paralelo. Con los dos
+          # llamándose `SHA256SUMS`, el último en subir pisaba al otro y dejaba
+          # a `install.sh` verificando binarios que no salían en el archivo.
           $f = Get-Item "$env:GITHUB_WORKSPACE\dist\kanpachi-setup.exe"
           $h = (Get-FileHash -Algorithm SHA256 $f.FullName).Hash.ToLower()
-          "$h  kanpachi-setup.exe" | Out-File -FilePath "$env:GITHUB_WORKSPACE\dist\SHA256SUMS" -Encoding ascii
-          Get-Content "$env:GITHUB_WORKSPACE\dist\SHA256SUMS"
+          "$h  kanpachi-setup.exe" | Out-File -FilePath "$env:GITHUB_WORKSPACE\dist\SHA256SUMS-windows" -Encoding ascii
+          Get-Content "$env:GITHUB_WORKSPACE\dist\SHA256SUMS-windows"
           "SETUP_SHA=$h" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Publicar
         if: github.ref_type == 'tag' || github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
+          # Explícito porque las dos entradas nombran el tag en sitios
+          # distintos: `github.ref_name` en el push, `event.release.tag_name` en
+          # la publicación desde la web.
+          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
+          # Sin esto, una publicación creada desde la web perdería el texto que
+          # alguien escribió a mano: `body` REEMPLAZA. Con `append_body`, lo de
+          # abajo se suma a lo que ya había, y en el camino del tag, donde no
+          # había nada, queda igual que antes.
+          append_body: true
+          # Publicar sin el instalador es lo peor de los dos mundos: una versión
+          # anunciada que no se puede instalar, y la URL permanente de la página
+          # de descarga apuntando a una publicación vacía.
+          fail_on_unmatched_files: true
           files: |
             dist/kanpachi-setup.exe
-            dist/SHA256SUMS
+            dist/SHA256SUMS-windows
           body: |
-            Kanpachi ${{ env.VERSION }} para Windows 10 y 11, 64 bits.
+            ## Cliente · Windows 10 y 11, 64 bits
+
+            `kanpachi-setup.exe`
 
             Se instala con **un solo UAC**, y ese es el único de la vida del
             producto: ni al encender la PC ni al abrir la app se vuelve a pedir.
@@ -175,6 +247,27 @@ jobs:
             ```
 
             Motor compilado desde `alvarogabrielgomez/kanpachi-engine@${{ inputs.motor || 'main' }}`.
+
+            ## Nodo de encuentro · Linux
+
+            `kanpseed-linux-amd64`, `kanpseed-linux-arm64`, `index.html`
+
+            Sale del mismo tag que el cliente, así que las dos mitades del
+            producto llevan el mismo número. Instalar o actualizar:
+
+            ```
+            curl -fsSL https://raw.githubusercontent.com/alvarogabrielgomez/kanpachi/main/seed/install.sh | sudo sh
+            ```
+
+            Sobre un seed ya instalado, también:
+
+            ```
+            sudo kanpseed upgrade --check
+            sudo kanpseed upgrade
+            ```
+
+            Cada carga trae su manifiesto: `SHA256SUMS-windows` y
+            `SHA256SUMS-linux`.
 
       # Sin publicar, la corrida manual deja el instalador como artefacto. Es lo
       # que permite probar este workflow entero sin crear un tag ni una

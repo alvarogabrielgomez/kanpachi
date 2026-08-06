@@ -122,6 +122,8 @@ func (s *Session) leaveLocked(ctx context.Context, reason string, exit domain.Ex
 	s.kicked = nil
 	s.announcedGame = ""
 	s.lastAnnounce = time.Time{}
+	s.lastPublish = time.Time{}
+	s.cardPublishFailing = false
 	s.tamperRepairs = 0
 
 	// Transition a Idle limpia la sala entera. Es legal desde cualquier

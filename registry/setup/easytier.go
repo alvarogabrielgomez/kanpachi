@@ -43,6 +43,14 @@ var lanzamientos = map[string]struct {
 // que este proyecto no usa y que sería superficie expuesta a cambio de nada.
 var BinariosNecesarios = []string{"easytier-core", "easytier-cli"}
 
+// ArchivoVersion guarda qué versión de EasyTier quedó instalada.
+//
+// Sin él, "ya están" se contestaba mirando solo si los archivos existían, así
+// que subir `VersionEasyTier` en un release NO reemplazaba nada: el droplet se
+// quedaba con el motor viejo y `kanpseed version` anunciaba el nuevo. Un
+// desajuste que no da error es peor que uno que sí.
+const ArchivoVersion = "easytier.version"
+
 // URLEasyTier arma la dirección del lanzamiento fijado para esta arquitectura.
 func URLEasyTier() (string, string, error) {
 	l, ok := lanzamientos[runtime.GOARCH]
@@ -103,7 +111,22 @@ func InstalarEasyTier(destino string, progreso func(string)) (bool, error) {
 	if err := extraer(tmp.Name(), destino); err != nil {
 		return false, err
 	}
+	// La marca se escribe DESPUÉS de extraer. Al revés, un fallo a mitad
+	// dejaría una marca que promete unos binarios que no están.
+	if err := os.WriteFile(filepath.Join(destino, ArchivoVersion), []byte(VersionEasyTier+"\n"), 0o644); err != nil {
+		return false, err
+	}
 	return true, nil
+}
+
+// VersionInstalada lee la marca. Devuelve "" si no hay ninguna, que es lo que
+// pasa en una instalación anterior a que esta marca existiera.
+func VersionInstalada(destino string) string {
+	crudo, err := os.ReadFile(filepath.Join(destino, ArchivoVersion))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(crudo))
 }
 
 func yaEstan(destino string) bool {
@@ -112,7 +135,10 @@ func yaEstan(destino string) bool {
 			return false
 		}
 	}
-	return true
+	// Una instalación sin marca se REESCRIBE una vez, y está bien que así sea:
+	// es la única forma de saber qué motor tiene, y volver a bajarlo cuesta
+	// menos que adivinar.
+	return VersionInstalada(destino) == VersionEasyTier
 }
 
 // extraer saca solo los binarios que hacen falta.

@@ -97,6 +97,15 @@ func (s *Session) enforceDeadlinesLocked(ctx context.Context) bool {
 	if s.state.IsHost() && now.Sub(s.lastAnnounce) >= AnnounceInterval {
 		s.announceLocked(ctx)
 	}
+
+	// Y la republicación de la tarjeta, por lo mismo y con el mismo criterio.
+	// La diferencia con el anuncio es a quién le habla: el anuncio va a los que
+	// ya están dentro, y esto va al registro, o sea a los que todavía no
+	// entraron. Sin esto, una sala abierta más de seis horas deja de aceptar
+	// gente nueva sin que nadie de este lado se entere.
+	if s.state.IsHost() && now.Sub(s.lastPublish) >= RepublishInterval {
+		s.republishCardLocked(ctx)
+	}
 	return false
 }
 

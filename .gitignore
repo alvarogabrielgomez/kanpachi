@@ -1,12 +1,17 @@
 # Go
 /bin/
-*.exe
-*.test
 
 # Lo que deja `GOOS=linux go build ./...`, que es parte de la verificación: al
 # cruzar de sistema los binarios salen SIN extensión, así que `*.exe` no los ve.
 /kanpachid
 /kanpseed
+
+# Todo lo que se ARMA para entregar. Ahí escriben las tres cosas que empaquetan:
+# `preparar-carga.ps1` (dist\carga), `release.yml` y `release-seed.yml`. Son
+# binarios de decenas de MB y salen de compilar, así que versionarlos es guardar
+# el resultado en vez de la receta. Sin esta línea, un `git add -A` distraído se
+# lleva 11 MB de kanpseed al repositorio.
+/dist/
 
 # Binarios de EasyTier v2.6.4, descargados del release oficial.
 # No se versionan (~80 MB). El pin y el hash viven en docs/02, decisión 1.
@@ -33,3 +38,23 @@ ui/*.iml
 # Local
 *.local.json
 scratch/
+
+# Code coverage profiles and other test artifacts
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Go workspace file
+go.work
+go.work.sum

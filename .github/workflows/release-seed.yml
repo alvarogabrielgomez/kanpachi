@@ -1,14 +1,43 @@
-# Publica el binario del seed y sus checksums.
+# Publica la carga de Linux del seed: los binarios, la página y sus checksums.
 #
-# install.sh baja de aquí y verifica contra SHA256SUMS, así que este workflow
-# es la otra mitad de esa comprobación: si el archivo de sumas no se publica,
-# el instalador se niega a instalar en vez de seguir a ciegas.
+# **Mismo disparador que `release.yml`, y no es casualidad.** Un tag `v*` corta
+# la versión del PRODUCTO, no la del cliente de Windows: el instalador y el seed
+# salen numerados igual, del mismo tag, aunque uno de los dos no haya cambiado
+# nada. Ese release "de más" es barato y compra algo que no se puede comprar
+# después: mirar un droplet, ver `v0.1.0`, y saber contra qué cliente está
+# corriendo sin cruzar dos numeraciones.
+#
+# Antes esto disparaba con `seed-v*`, y ese tag ya no existe. Tenerlo sería
+# poder publicar un release SIN `kanpachi-setup.exe`, que se llevaría el
+# `latest` y dejaría la URL permanente de la página de descarga apuntando a una
+# publicación sin instalador.
+#
+# Los dos workflows escriben en el MISMO release y ninguno espera al otro. El
+# de acá tarda un minuto y el de Windows veinte, así que entre medias existe un
+# release publicado al que todavía le falta el instalador. Se acepta a
+# conciencia: se cierra solo, y la alternativa era un único workflow donde
+# veinte minutos de Windows retrasan una carga de Linux que ya estaba lista.
 name: Release del seed
 
 on:
   push:
-    tags: ["seed-v*"]
+    tags: ["v*"]
+  release:
+    types: [published]
+  # La corrida a mano se queda, y es la vía para recompilar el seed por su
+  # cuenta sin tocar el cliente de Windows: sin `tag` deja la carga como
+  # artefacto, y con `tag` la sube al release que se le diga. Es lo que permite
+  # arreglar algo del seed y republicarlo sin veinte minutos de Windows en
+  # medio, y sin cortar una versión nueva del producto entero.
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release al que subir la carga. Vacío = solo artefacto, no publica"
+        default: ""
+
+concurrency:
+  group: release-seed-${{ github.event.release.tag_name || github.ref_name }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -25,6 +54,34 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Versión
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          # El tag ENTERO, con su `v`. Es lo que devuelve la API de GitHub en
+          # `tag_name`, y `kanpseed upgrade` compara su propia versión contra
+          # eso: quitarle la `v` acá obligaría a normalizar en el otro extremo.
+          #
+          # - push por tag local: GITHUB_REF_TYPE=tag
+          # - release publicada por web: github.event.release.tag_name
+          # - a mano CON tag: se recompila el seed y se sube a ese release, con
+          #   su número de verdad. Es una republicación, no una prueba.
+          # - a mano SIN tag: queda "dev" A PROPÓSITO. Un binario de prueba que
+          #   se anunciara como versión de verdad haría que un droplet se
+          #   declarara al día con algo que nadie publicó.
+          TAG=""
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            TAG="$GITHUB_REF_NAME"
+          elif [ "$EVENT_NAME" = "release" ] && [ -n "$RELEASE_TAG" ]; then
+            TAG="$RELEASE_TAG"
+          elif [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          fi
+          echo "VERSION=${TAG:-dev}" >> "$GITHUB_ENV"
+          echo "RELEASE_TARGET=$TAG" >> "$GITHUB_ENV"
+
       - name: Tests antes de publicar
         # Publicar un binario que no pasa sus tests es peor que no publicar.
         #
@@ -37,7 +94,6 @@ jobs:
       - name: Compilar
         run: |
           mkdir -p dist
-          VERSION="${GITHUB_REF_NAME#seed-}"
           for ARCO in amd64 arm64; do
             # Sin -ldflags "-s -w": los símbolos pesan poco y quitarlos dispara
             # falsos positivos de antivirus sobre binarios Go, que es una regla
@@ -51,23 +107,38 @@ jobs:
           cp invite/index.html dist/index.html
 
       - name: Checksums
-        # El formato es el que espera `sha256sum -c` y el que lee install.sh.
-        run: cd dist && sha256sum kanpseed-linux-* index.html > SHA256SUMS && cat SHA256SUMS
+        # El formato es el que espera `sha256sum -c`, el que lee `install.sh` y
+        # el que lee `kanpseed upgrade`.
+        #
+        # El nombre lleva `-linux` porque este release trae DOS cargas. Con el
+        # nombre a secas, el workflow de Windows subía su `SHA256SUMS` al mismo
+        # release y el último en terminar pisaba al otro: el instalador de
+        # Linux se quedaba verificando binarios que no aparecían en el archivo.
+        run: cd dist && sha256sum kanpseed-linux-* index.html > SHA256SUMS-linux && cat SHA256SUMS-linux
 
+      # Se publica cuando hay un release al que subir, y ese dato lo decidió el
+      # paso de la versión. Preguntarlo otra vez acá, con otra expresión, es
+      # como los dos sitios se separan.
       - name: Publicar
+        if: env.RELEASE_TARGET != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TARGET }}
+          # Sin cuerpo: el texto del release lo escribe `release.yml`, que es el
+          # que conoce el SHA del instalador. Dos workflows escribiendo el mismo
+          # cuerpo daría un orden distinto en cada publicación.
+          fail_on_unmatched_files: true
           files: |
             dist/kanpseed-linux-amd64
             dist/kanpseed-linux-arm64
             dist/index.html
-            dist/SHA256SUMS
-          body: |
-            Nodo de encuentro de Kanpachi.
+            dist/SHA256SUMS-linux
 
-            ```
-            curl -fsSL https://raw.githubusercontent.com/alvarogabrielgomez/kanpachi/main/seed/install.sh | sudo sh
-            ```
-
-            El instalador elige un puerto interno libre y lo imprime al terminar:
-            es el que hay que poner en el proxy inverso.
+      # Sin publicar, la corrida manual deja la carga como artefacto, para poder
+      # probar este workflow entero sin cortar una versión.
+      - name: Guardar la carga
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kanpseed-linux
+          path: dist/

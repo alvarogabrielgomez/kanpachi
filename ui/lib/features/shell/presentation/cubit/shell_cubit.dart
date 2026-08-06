@@ -40,6 +40,13 @@ enum AppDialog {
   /// Cerrar la sala siendo el host, con gente dentro. Se pregunta porque no es
   /// salirse: es terminar la sala para todos los que están jugando.
   confirmClose,
+
+  /// La sala que quedó abierta del arranque anterior: reabrirla o cerrarla.
+  ///
+  /// Es el único diálogo que se abre SIN que nadie pulse nada: lo dispara el
+  /// latido al descubrir el archivo del arranque anterior. Preguntar y no
+  /// reabrir sola es la invariante; ver `docs/05-ui.md`.
+  resumeRoom,
 }
 
 /// Cómo se listan los juegos.

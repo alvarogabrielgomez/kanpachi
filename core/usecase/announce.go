@@ -19,6 +19,20 @@ import (
 // anuncios perdidos caben dentro de [domain.HostSilenceLimit].
 const AnnounceInterval = 2 * time.Minute
 
+// RepublishInterval es cada cuánto el host vuelve a subirle la tarjeta al
+// registro mientras la sala siga abierta.
+//
+// El registro deja de resolver una sala a las seis horas de la última
+// publicación, y publicar refresca ese reloj Y el fijado de veintiún días que
+// reserva el invite ID. O sea que este latido hace las dos cosas: mantiene la
+// sala entrable mientras esté abierta, y mantiene el código en manos de su host.
+//
+// Una hora contra seis da SEIS intentos antes de que un fallo importe: para que
+// la tarjeta venza de verdad, el registro tiene que estar inalcanzable casi la
+// ventana entera. Y es tráfico despreciable contra su límite de treinta
+// peticiones por minuto: una por hora está cuatro órdenes de magnitud debajo.
+const RepublishInterval = time.Hour
+
 // announceLocked le cuenta a los presentes cómo está la sala.
 //
 // Lo llama el host después de todo lo que cambia algo que el invitado necesita

@@ -66,7 +66,7 @@ Distribución silenciosa para el grupo: `kanpachi-setup.exe /VERYSILENT /NORESTA
 
 Son dos piezas y su estado es distinto:
 
-- **La carga**, `scripts/preparar-carga.ps1`. Compila el daemon con `-trimpath` y `-H windowsgui`, la interfaz en release con su bundle entero, copia `builtin.json`, `Packet.dll`, `wintun.dll` y `WinDivert64.sys`, trae el motor del otro repositorio, y deja un `SHA256SUMS`. **Medido**: 21 ficheros, 72 MB, antes de que entrara el `.sys`.
+- **La carga**, `scripts/preparar-carga.ps1`. Compila el daemon con `-trimpath` y `-H windowsgui`, la interfaz en release con su bundle entero, copia `builtin.json`, `Packet.dll`, `wintun.dll` y `WinDivert64.sys`, trae el motor del otro repositorio, y deja un `SHA256SUMS`. **Medido**: 21 ficheros, 72 MB, antes de que entrara el `.sys`. Ojo con de dónde salen esos tres ficheros de `third_party\easytier`: están en `.gitignore` por tamaño, así que en un runner limpio no existen y el workflow los baja del release oficial de EasyTier antes de llamar a este script.
 - **El instalador**, `installer/kanpachi.iss`, para Inno Setup 6. **Escrito y sin medir**: en la máquina de desarrollo no hay Inno Setup, así que nunca se compiló ni se ejecutó. El criterio de aceptación sigue siendo el de arriba, instalar y desinstalar veinte veces en una VM sin dejar rastro.
 - **La publicación**, `.github/workflows/release.yml`. Es quien corre las dos piezas de arriba de verdad, en un runner de Windows, con Inno Setup instalado ahí mismo.
 
@@ -82,12 +82,30 @@ Y los dos scripts tenían por defecto `C:\kt`, que es un directorio de trabajo d
 
 Se publica **por tag y solo por tag**. No hay CI en cada push ni en cada pull request, y la razón no es ahorrar minutos: lo que se publica sale de un tag, y cada workflow de publicación corre los tests que gobiernan lo que publica. Un job por push repetiría eso sobre commits que nadie va a publicar. Los chequeos completos siguen existiendo en `ci.yml`, a mano.
 
-| Tag | Qué publica | Qué corre antes |
+**Un solo tag, `v*`, corta la versión de las dos mitades del producto.** Los dos workflows escuchan lo mismo y escriben en el mismo release:
+
+| Workflow | Qué publica | Qué corre antes |
 |---|---|---|
-| `v*` | `kanpachi-setup.exe` y su `SHA256SUMS` | `./core/...` y `./internal/arch/...` |
-| `seed-v*` | `kanpseed` para amd64 y arm64, `index.html`, y sus sumas | `./core/...`, `./registry/...` y `./internal/arch/...` |
+| `release.yml` | `kanpachi-setup.exe` y `SHA256SUMS-windows` | `./core/...` y `./internal/arch/...` |
+| `release-seed.yml` | `kanpseed` para amd64 y arm64, `index.html`, y `SHA256SUMS-linux` | `./core/...`, `./registry/...` y `./internal/arch/...` |
 
 `internal/arch` entra en los dos porque los dos publican algo que esos guardianes atan: el cliente y la página comparten el alfabeto del invite ID y la forma de la URL, escritos dos veces en dos lenguajes.
+
+**El tag `seed-v*` ya no existe.** Publicaba el seed por su cuenta, con su propia numeración, y eso costaba dos cosas. Una: un release SIN `kanpachi-setup.exe` se llevaba el `latest`, y la URL permanente de la página de descarga quedaba apuntando a una publicación sin instalador. Dos: había que cruzar dos numeraciones para saber qué seed habla con qué cliente. Ahora el seed se publica aunque no haya cambiado nada, y ese release "de más" es lo que compra mirar un droplet, leer `v0.1.0` y saberlo.
+
+**Cada carga trae su propio manifiesto de sumas**, `SHA256SUMS-windows` y `SHA256SUMS-linux`. Con un solo nombre para las dos, el último workflow en terminar pisaba el archivo del otro y dejaba a `install.sh` verificando binarios que no aparecían en él.
+
+**Los dos workflows corren en paralelo y ninguno espera al otro.** El de Linux tarda un minuto y el de Windows veinte, así que hay una ventana en la que el release existe sin instalador. Se acepta a conciencia: se cierra sola, y la alternativa era que veinte minutos de Windows retrasaran una carga de Linux que ya estaba lista.
+
+**Un tag creado desde la web de GitHub no dispara `push`.** Medido el 2026-08-06: el tag `v0.1.0` se creó desde la interfaz de releases, su commit ya traía el workflow con `push: tags`, y la API de Actions no registró ninguna corrida. Un `git push` de un tag sí dispara. Por eso los dos workflows escuchan además `release: published`, que es por donde entra ese camino. La consecuencia que hay que tener presente: para un release de la web, GitHub ejecuta el workflow **del commit que apunta el tag**, así que etiquetar un commit anterior a este párrafo vuelve a no disparar nada.
+
+### Actualizar un seed que ya está corriendo
+
+`sudo kanpseed upgrade`, y `--check` para mirar sin instalar. Vuelve a bajar `install.sh` solo si hace falta instalar de cero.
+
+Actualizar no es intercambiar el binario. El seed son cinco cosas que tienen que estar de acuerdo: el binario, la página que sirve, los binarios de EasyTier, las units de systemd y los procesos vivos. `upgrade` hace las cinco, en ese orden, y espera a que el registro responda antes de darse por bueno. Cambiar solo la primera deja una máquina que anuncia una versión y se comporta como otra, y ese desajuste no da error: da un droplet que "va raro".
+
+El pin de EasyTier viaja dentro del binario nuevo, así que subirlo en un release llega al droplet por esta vía. Para que eso funcione, `/usr/local/lib/kanpachi/easytier.version` guarda qué versión quedó instalada: antes "ya están" se contestaba mirando solo si los archivos existían, de modo que subir el pin no reemplazaba nada.
 
 **El nombre del instalador no lleva la versión.** `kanpachi-setup.exe`, a secas, y eso es lo que hace que `releases/latest/download/kanpachi-setup.exe` sea una URL permanente: GitHub la redirige a la publicación más nueva, así que la página de descarga se actualiza sola al publicar un tag. Con el nombre versionado habría que editar la página en cada publicación, y la página que se edita a mano es la que se queda vieja. La versión viaja dentro del ejecutable, en su `VersionInfo`, y en el título de la publicación.
 
@@ -211,6 +229,7 @@ Un solo binario, `kanpseed`. Se llama así y no `kanpachi` porque ese nombre que
 | Comando | Para qué |
 |---|---|
 | `kanpseed init` | instala y configura todo. Idempotente: repetirlo conserva los puertos |
+| `kanpseed upgrade` | se pone en la última versión publicada y reinicia. `--check` solo mira |
 | `kanpseed doctor` | revisa archivos, servicios, puertos, RPC y salud, y dice qué hacer con cada fallo |
 | `kanpseed config` | muestra o cambia puertos y dominio, reescribe las units y reinicia |
 | `kanpseed nginx` | repite el bloque del proxy, para no tener que recordar el puerto |

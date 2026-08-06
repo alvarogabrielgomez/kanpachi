@@ -137,6 +137,12 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 	// en disco un enlace que no descifra la tarjeta que el registro tiene.
 	s.cardKey = key
 	s.sealedCard = sealed
+	// El registro acaba de aceptar la tarjeta, así que el reloj de la
+	// republicación arranca acá y no en cero. Con el respaldo `sealed` viene
+	// vacío, no hay nada publicado, y republicar no va a llamar a nadie.
+	if len(sealed) > 0 {
+		s.lastPublish = s.deps.Clock.Now()
+	}
 	s.nick = nick
 
 	s.configureAdapter(ctx)

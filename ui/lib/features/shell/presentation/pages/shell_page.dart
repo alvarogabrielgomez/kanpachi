@@ -179,6 +179,32 @@ class _RoomFollower extends StatelessWidget {
             }
           },
         ),
+        // **La sala del arranque anterior pregunta, no navega.**
+        //
+        // Es un diálogo y no una pantalla porque son dos botones y una frase, y
+        // porque puede aparecer encima de donde sea. Y es el único diálogo que
+        // se abre sin que nadie pulse nada: lo descubre el latido.
+        //
+        // `listenWhen` mira el borde, así que cerrar el diálogo sin elegir NO
+        // lo vuelve a abrir a los dos segundos: el dato sigue ahí —preguntar no
+        // lo consume— pero ya no cambia. Vuelve a ofrecerse al siguiente
+        // arranque, que es cuando la pregunta vuelve a tener sentido.
+        BlocListener<SessionCubit, SessionState>(
+          listenWhen: (SessionState a, SessionState b) =>
+              (a.pendingRoom == null) != (b.pendingRoom == null),
+          listener: (BuildContext context, SessionState state) {
+            final ShellCubit shell = context.read<ShellCubit>();
+            if (state.pendingRoom != null) {
+              shell.showDialog(AppDialog.resumeRoom);
+              return;
+            }
+            // Se resolvió, por el botón que sea. El diálogo se cierra solo al
+            // pulsar, y esto cubre el caso de que lo resuelva otra ventana.
+            if (shell.state.dialog == AppDialog.resumeRoom) {
+              shell.closeDialog();
+            }
+          },
+        ),
       ],
       child: child,
     );
@@ -349,6 +375,10 @@ class _DialogLayer extends StatelessWidget {
       AppDialog.confirmClose => ConfirmCloseDialog(
         membersInside: session.room?.members.length ?? 0,
       ),
+      AppDialog.resumeRoom =>
+        session.pendingRoom == null
+            ? const SizedBox.shrink()
+            : ResumeRoomDialog(pending: session.pendingRoom!),
     };
   }
 }
