@@ -1,10 +1,17 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/daemon_failure.dart';
+import 'package:kanpachi_ui/core/messages/message_keys.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
+import 'package:kanpachi_ui/features/session/infra/daemon/daemon_codec.dart';
 import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
 
@@ -19,6 +26,120 @@ class SessionCubit extends Cubit<SessionState> {
   SessionCubit(this._repository) : super(const SessionState());
 
   final SessionRepository _repository;
+
+  /// Poll of the daemon's step diary while a long operation runs.
+  ///
+  /// **Debug builds only.** In release nothing starts it, so the field stays
+  /// null and the daemon never sees the extra connection.
+  Timer? _pollingProgreso;
+
+  /// How often the steps are asked for.
+  ///
+  /// Fast enough that a step which lands mid-wait is seen while it still means
+  /// something, slow enough that a ninety-second creation costs a couple of
+  /// hundred round trips on a local pipe rather than thousands.
+  static const Duration _cadenciaProgreso = Duration(milliseconds: 400);
+
+  /// Runs one user action and turns any failure into STATE.
+  ///
+  /// # Why failures do not escape
+  ///
+  /// Because a screen cannot catch an exception. Before this, an action that
+  /// failed either threw into nowhere or was swallowed, and on screen both
+  /// look identical: the spinner stops and nothing else changes. The user
+  /// cannot tell "it failed" from "it worked and the screen is stale", so they
+  /// press again — and pressing again is exactly what must not happen after
+  /// something that may have half executed.
+  ///
+  /// `onFail` is the phase to fall back to. It exists for the two operations
+  /// that move the phase forward before they can succeed: creating and
+  /// joining. Without it, a failure leaves a spinner spinning towards nowhere.
+  Future<void> _try(
+    FailedAction action,
+    Future<void> Function() body, {
+    SessionPhase? onFail,
+  }) async {
+    if (!isClosed) emit(state.copyWith(clearFailure: true));
+    try {
+      await body();
+    } on DaemonError catch (e) {
+      // The daemon answered, and said no. It carries a closed code, so the
+      // catalog can say the right sentence instead of a generic one.
+      await _fallo(action, e.message, code: e.code, onFail: onFail);
+    } on DaemonUnreachable catch (e) {
+      // The daemon never answered. Different sentence and different fix, so
+      // it is deliberately not folded into the case above.
+      if (!isClosed) emit(state.copyWith(daemonDown: true));
+      await _fallo(action, e.reason, onFail: onFail);
+    } on Object catch (e) {
+      // Anything else is a bug on this side, and it still has to reach the
+      // screen: an action that vanishes without a word is the failure mode
+      // this whole method exists to remove.
+      await _fallo(action, e.toString(), onFail: onFail);
+    }
+  }
+
+  Future<void> _fallo(
+    FailedAction action,
+    String reason, {
+    String? code,
+    SessionPhase? onFail,
+  }) async {
+    // The steps of what just failed, so "ver detalles" has something to show.
+    // Debug only, and best effort: if the daemon cannot be reached to ask, the
+    // failure is still reported, just without its breadcrumbs.
+    Progress? pasos = state.progress;
+    if (kDebugMode) {
+      try {
+        pasos = await _repository.progress();
+      } on Object {
+        // Keep whatever the poll had already collected.
+      }
+    }
+    if (isClosed) return;
+    emit(
+      state.copyWith(
+        phase: onFail,
+        failure: ActionFailure(
+          action: action,
+          reason: reason,
+          code: code,
+          progress: pasos,
+        ),
+        progress: pasos,
+      ),
+    );
+  }
+
+  /// Dismisses the failure notice.
+  void clearFailure() => emit(state.copyWith(clearFailure: true));
+
+  /// Starts polling the daemon's step diary. Does nothing in release.
+  void _watchProgress() {
+    if (!kDebugMode) return;
+    _pollingProgreso?.cancel();
+    _pollingProgreso = Timer.periodic(_cadenciaProgreso, (_) async {
+      try {
+        final Progress p = await _repository.progress();
+        if (!isClosed) emit(state.copyWith(progress: p));
+      } on Object {
+        // A poll that fails changes nothing: the operation it watches is the
+        // one that decides, and killing it over a missed sample would remove
+        // the panel exactly when it gets interesting.
+      }
+    });
+  }
+
+  void _stopWatching() {
+    _pollingProgreso?.cancel();
+    _pollingProgreso = null;
+  }
+
+  @override
+  Future<void> close() {
+    _stopWatching();
+    return super.close();
+  }
 
   /// Pide el catálogo al daemon.
   ///
@@ -61,21 +182,30 @@ class SessionCubit extends Cubit<SessionState> {
         clearRoom: true,
       ),
     );
-    final Room room = await _repository.createRoom(
-      name: name,
-      nickname: state.nickname,
-      game: game,
-    );
-    emit(state.copyWith(phase: SessionPhase.inRoom, room: room));
+    // The steps panel only exists in debug, so only debug pays for the poll.
+    _watchProgress();
+    await _try(FailedAction.createRoom, onFail: SessionPhase.idle, () async {
+      final Room room = await _repository.createRoom(
+        name: name,
+        nickname: state.nickname,
+        game: game,
+      );
+      emit(state.copyWith(phase: SessionPhase.inRoom, room: room));
+    });
+    _stopWatching();
   }
 
   Future<void> joinRoom(String inviteId) async {
     emit(state.copyWith(phase: SessionPhase.joining, clearRoom: true));
-    final Room room = await _repository.joinRoom(
-      inviteId,
-      nickname: state.nickname,
-    );
-    emit(state.copyWith(phase: SessionPhase.inRoom, room: room));
+    _watchProgress();
+    await _try(FailedAction.joinRoom, onFail: SessionPhase.idle, () async {
+      final Room room = await _repository.joinRoom(
+        inviteId,
+        nickname: state.nickname,
+      );
+      emit(state.copyWith(phase: SessionPhase.inRoom, room: room));
+    });
+    _stopWatching();
   }
 
   /// Abre un juego en la sala que ya existe.
@@ -83,51 +213,77 @@ class SessionCubit extends Cubit<SessionState> {
     final Room? current = state.room;
     if (current == null) return;
     emit(state.copyWith(work: RoomWork.openingGame, clearPending: false));
-    final Room updated = await _repository.setGame(current, game);
-    emit(
-      state.copyWith(room: updated, work: RoomWork.none, clearPending: true),
-    );
+    await _try(FailedAction.activateProfile, () async {
+      final Room updated = await _repository.setGame(current, game);
+      emit(
+        state.copyWith(room: updated, work: RoomWork.none, clearPending: true),
+      );
+    });
+    // The work flag comes down whatever happened. Left up on failure, every
+    // button in the room stays grey and the only way out is restarting.
+    if (!isClosed) emit(state.copyWith(work: RoomWork.none));
   }
 
   Future<void> closeGame() async {
     final Room? current = state.room;
     if (current == null) return;
     emit(state.copyWith(work: RoomWork.closingGame));
-    final Room updated = await _repository.setGame(current, null);
-    emit(state.copyWith(room: updated, work: RoomWork.none));
+    await _try(FailedAction.activateProfile, () async {
+      final Room updated = await _repository.setGame(current, null);
+      emit(state.copyWith(room: updated, work: RoomWork.none));
+    });
+    if (!isClosed) emit(state.copyWith(work: RoomWork.none));
   }
 
   Future<void> rename(String name) async {
     final Room? current = state.room;
     if (current == null) return;
-    emit(state.copyWith(room: await _repository.renameRoom(current, name)));
+    await _try(FailedAction.renameRoom, () async {
+      emit(state.copyWith(room: await _repository.renameRoom(current, name)));
+    });
   }
 
   Future<void> kick(Member member) async {
     final Room? current = state.room;
     if (current == null) return;
-    emit(state.copyWith(room: await _repository.kick(current, member)));
+    await _try(FailedAction.kickMember, () async {
+      emit(state.copyWith(room: await _repository.kick(current, member)));
+    });
   }
 
   Future<void> renewCode() async {
     final Room? current = state.room;
     if (current == null) return;
-    emit(state.copyWith(room: await _repository.renewCode(current)));
+    await _try(FailedAction.rotateInviteCode, () async {
+      emit(state.copyWith(room: await _repository.renewCode(current)));
+    });
   }
 
   Future<void> resolveForeignRule({required bool disable}) async {
     final Room? current = state.room;
     if (current == null) return;
-    emit(
-      state.copyWith(
-        room: await _repository.resolveForeignRule(current, disable: disable),
-      ),
-    );
+    await _try(FailedAction.suspendForeignRules, () async {
+      emit(
+        state.copyWith(
+          room: await _repository.resolveForeignRule(current, disable: disable),
+        ),
+      );
+    });
   }
 
+  /// Leaves the room.
+  ///
+  /// **The local state is cleared even when the daemon said no**, and that is
+  /// deliberate. Staying in a room the user asked to leave, with the buttons
+  /// live, invites a second attempt at something that may have half happened.
+  /// The failure is shown, the screen goes home, and the next refresh brings
+  /// back the truth if the room really is still open.
   Future<void> leave() async {
     final Room? current = state.room;
-    if (current != null) await _repository.leaveRoom(current);
+    if (current != null) {
+      await _try(FailedAction.leaveRoom, () => _repository.leaveRoom(current));
+    }
+    if (isClosed) return;
     emit(
       state.copyWith(
         phase: SessionPhase.idle,
@@ -148,7 +304,12 @@ class SessionCubit extends Cubit<SessionState> {
   /// No emite estado nuevo. Para cuando esto vuelva, esta ventana está muerta o
   /// a punto: el daemon se la lleva con el job. Pintar algo sería pintar sobre
   /// un proceso que ya no está.
-  Future<void> quitKanpachi() => _repository.quitEverything();
+  ///
+  /// Guarded anyway, for the one case where it comes back: a console-mode
+  /// daemon does not host the interface and answers that it cannot. Then this
+  /// window survives, and it has to say why nothing happened.
+  Future<void> quitKanpachi() =>
+      _try(FailedAction.quit, () => _repository.quitEverything());
 
   /// Lee, y opcionalmente cambia, si Kanpachi arranca con Windows.
   Future<bool> autostart({bool? enabled}) =>
@@ -228,23 +389,28 @@ class SessionCubit extends Cubit<SessionState> {
   /// El botón se apaga con ella, y eso no es cosmético: sin apagarlo, un doble
   /// clic manda dos escrituras del firewall a la vez.
   ///
-  /// El fallo se deja subir a propósito. Reponer es la acción que arregla la
-  /// alarma, así que tragarse el error dejaría al usuario mirando una alarma que
-  /// sigue puesta sin saber que su intento ni siquiera llegó.
+  /// The failure is reported and not swallowed. Reapplying is the action that
+  /// clears the alarm, so a silent failure leaves somebody staring at an alarm
+  /// that is still up, with no idea their attempt never even arrived.
   Future<void> reapplyProtection() async {
     if (state.isReapplying) return;
     emit(state.copyWith(protection: ProtectionWork.reapplying));
-    try {
+    await _try(FailedAction.reapplyProtection, () async {
       emit(state.copyWith(health: await _repository.reapplyProtection()));
-    } finally {
-      emit(state.copyWith(protection: ProtectionWork.none));
-    }
+    });
+    if (!isClosed) emit(state.copyWith(protection: ProtectionWork.none));
   }
 
-  Future<Game> saveManualGame(Game game) async {
-    final Game saved = await _repository.saveManualGame(game);
-    await loadCatalog();
+  /// Saves a profile the user typed in.
+  ///
+  /// Returns null when it did not save, so the screen knows not to navigate
+  /// away. The reason why is already on screen by then, put there by [_try].
+  Future<Game?> saveManualGame(Game game) async {
+    Game? saved;
+    await _try(FailedAction.saveProfile, () async {
+      saved = await _repository.saveManualGame(game);
+      await loadCatalog();
+    });
     return saved;
   }
-
 }

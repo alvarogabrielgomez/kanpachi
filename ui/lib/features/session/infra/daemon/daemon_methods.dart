@@ -45,6 +45,13 @@ abstract final class DaemonMethods {
   static const String discardPendingRoom = 'discard_pending_room';
   static const String lastRoom = 'last_room';
 
+  /// Steps of the long operation in flight.
+  ///
+  /// Asked down a SECOND connection: one connection's loop is sequential, so
+  /// down the same one this would queue behind what it wants to watch. See
+  /// `DaemonConnector.spare`.
+  static const String progress = 'progress';
+
   // The three that are about the PROCESS rather than the room. The daemon
   // answers these from its host, not from the session use case.
 

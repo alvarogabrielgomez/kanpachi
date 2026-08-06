@@ -60,10 +60,8 @@ class DaemonClient {
 
     _sub = transport.incoming.listen(
       _onBytes,
-      onError: (Object e) => _matarTodo(
-        'el transporte falló: $e',
-        DaemonUnreachableKind.linkLost,
-      ),
+      onError: (Object e) =>
+          _matarTodo('el transporte falló: $e', DaemonUnreachableKind.linkLost),
       onDone: () => _matarTodo(
         'el daemon cerró la conexión',
         DaemonUnreachableKind.linkLost,
@@ -208,7 +206,9 @@ class DaemonClient {
     _esperando.clear();
 
     for (final Completer<DaemonResponse> c in pendientes) {
-      if (!c.isCompleted) c.completeError(DaemonUnreachable(motivo, kind: kind));
+      if (!c.isCompleted) {
+        c.completeError(DaemonUnreachable(motivo, kind: kind));
+      }
     }
   }
 

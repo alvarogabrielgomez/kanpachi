@@ -53,12 +53,18 @@ class _ManualGameScreenState extends State<ManualGameScreen> {
       )
       .toList(growable: false);
 
-  void _save() {
+  /// Saves, and only leaves the screen if it saved.
+  ///
+  /// It used to navigate away without waiting, so a rejected profile took the
+  /// user to the catalog that did not contain it, with nothing said. Now the
+  /// form stays put and the failure notice explains why.
+  Future<void> _save() async {
     final SessionCubit session = context.read<SessionCubit>();
+    final ShellCubit shell = context.read<ShellCubit>();
     final String nombre = _name.text.trim().isEmpty
         ? 'Juego sin nombre'
         : _name.text.trim();
-    session.saveManualGame(
+    final Game? saved = await session.saveManualGame(
       Game(
         // El id sale del nombre, porque el formulario no lo pide y el daemon lo
         // exige con su forma: minúsculas, dígitos y guiones. Cuando no queda
@@ -72,7 +78,8 @@ class _ManualGameScreenState extends State<ManualGameScreen> {
         coverUrl: _cover.text.trim().isEmpty ? null : _cover.text.trim(),
       ),
     );
-    context.read<ShellCubit>().go(AppScreen.catalog);
+    if (saved == null) return;
+    shell.go(AppScreen.catalog);
   }
 
   @override

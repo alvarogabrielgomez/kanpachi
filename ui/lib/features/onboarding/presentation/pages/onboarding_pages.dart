@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
@@ -8,7 +9,9 @@ import 'package:kanpachi_ui/core/design_system/atoms/kanpachi_wordmark.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_ambient_background.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
+import 'package:kanpachi_ui/features/session/presentation/widgets/progress_steps.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
 
@@ -200,8 +203,35 @@ class ProgressScreen extends StatelessWidget {
                 onPressed: onCancel,
               ),
             ],
+            // What the daemon is doing right now. Debug builds only, and it
+            // paints itself away when there is nothing: `state.progress` is
+            // never even fetched in release. See [ProgressSteps].
+            const _PasosSiEstamosDepurando(),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The step panel, wired to the session. Debug only.
+///
+/// Its own class so the wait screen stays free of the cubit in release: the
+/// `kDebugMode` check is a compile-time constant, so this whole subtree is
+/// tree-shaken out of a release build along with the watch on the session.
+class _PasosSiEstamosDepurando extends StatelessWidget {
+  const _PasosSiEstamosDepurando();
+
+  @override
+  Widget build(BuildContext context) {
+    if (!kDebugMode) return const SizedBox.shrink();
+    final Progress? p = context.watch<SessionCubit>().state.progress;
+    if (p == null || p.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.x6l),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 620),
+        child: ProgressSteps(progress: p),
       ),
     );
   }

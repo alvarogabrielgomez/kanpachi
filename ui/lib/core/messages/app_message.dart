@@ -18,6 +18,13 @@ enum MessageSeverity {
 
   /// Confirmación de algo que ya pasó.
   done,
+
+  /// Rojo. Algo que el usuario PIDIÓ y no ocurrió.
+  ///
+  /// Distinto de [warn] a propósito: aquel avisa de lo que Kanpachi observó
+  /// solo, este de una orden que falló. Solo en el segundo hay alguien
+  /// esperando y algo que reintentar.
+  error,
 }
 
 /// Un mensaje del producto, ya resuelto y listo para pintar.

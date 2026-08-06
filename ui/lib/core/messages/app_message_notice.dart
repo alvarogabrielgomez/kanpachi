@@ -45,6 +45,7 @@ class AppMessageNotice extends StatelessWidget {
       MessageSeverity.warn => AppNoticeTone.warn,
       MessageSeverity.neutral => AppNoticeTone.neutral,
       MessageSeverity.done => AppNoticeTone.done,
+      MessageSeverity.error => AppNoticeTone.error,
     };
 
     final Widget body = _MessageBody(message: message);

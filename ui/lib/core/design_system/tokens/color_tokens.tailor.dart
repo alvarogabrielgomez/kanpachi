@@ -26,6 +26,8 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
   Color get okInk;
   Color get warn;
   Color get warnSurface;
+  Color get danger;
+  Color get dangerSurface;
   Color get shapeOne;
   Color get shapeTwo;
   Color get shapeThree;
@@ -53,6 +55,8 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
     Color? okInk,
     Color? warn,
     Color? warnSurface,
+    Color? danger,
+    Color? dangerSurface,
     Color? shapeOne,
     Color? shapeTwo,
     Color? shapeThree,
@@ -79,6 +83,8 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
       okInk: okInk ?? this.okInk,
       warn: warn ?? this.warn,
       warnSurface: warnSurface ?? this.warnSurface,
+      danger: danger ?? this.danger,
+      dangerSurface: dangerSurface ?? this.dangerSurface,
       shapeOne: shapeOne ?? this.shapeOne,
       shapeTwo: shapeTwo ?? this.shapeTwo,
       shapeThree: shapeThree ?? this.shapeThree,
@@ -110,6 +116,8 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
       okInk: Color.lerp(okInk, other.okInk, t)!,
       warn: Color.lerp(warn, other.warn, t)!,
       warnSurface: Color.lerp(warnSurface, other.warnSurface, t)!,
+      danger: Color.lerp(danger, other.danger, t)!,
+      dangerSurface: Color.lerp(dangerSurface, other.dangerSurface, t)!,
       shapeOne: Color.lerp(shapeOne, other.shapeOne, t)!,
       shapeTwo: Color.lerp(shapeTwo, other.shapeTwo, t)!,
       shapeThree: Color.lerp(shapeThree, other.shapeThree, t)!,
@@ -160,6 +168,11 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
               warnSurface,
               other.warnSurface,
             ) &&
+            const DeepCollectionEquality().equals(danger, other.danger) &&
+            const DeepCollectionEquality().equals(
+              dangerSurface,
+              other.dangerSurface,
+            ) &&
             const DeepCollectionEquality().equals(shapeOne, other.shapeOne) &&
             const DeepCollectionEquality().equals(shapeTwo, other.shapeTwo) &&
             const DeepCollectionEquality().equals(
@@ -196,6 +209,8 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
       const DeepCollectionEquality().hash(okInk),
       const DeepCollectionEquality().hash(warn),
       const DeepCollectionEquality().hash(warnSurface),
+      const DeepCollectionEquality().hash(danger),
+      const DeepCollectionEquality().hash(dangerSurface),
       const DeepCollectionEquality().hash(shapeOne),
       const DeepCollectionEquality().hash(shapeTwo),
       const DeepCollectionEquality().hash(shapeThree),
@@ -266,6 +281,18 @@ extension ColorTokensBuildContextProps on BuildContext {
   /// estos avisos no tienen.
   Color get warn => colorTokens.warn;
   Color get warnSurface => colorTokens.warnSurface;
+
+  /// Rojo de "esto no se hizo": una acción del usuario que FALLÓ.
+  ///
+  /// Es el acento tirado hacia el rojo y no un rojo de sistema, para que siga
+  /// siendo Kanpachi. Y es otro rol distinto de [warn], que ya avisa de cosas
+  /// mejorables: mezclarlos haría que "tu firewall está apagado" y "no se pudo
+  /// crear la sala" pesaran igual, y el segundo pide un reintento AHORA.
+  ///
+  /// Se reserva para lo que el usuario pidió y no ocurrió. Nada de fondo, nada
+  /// automático: eso es [warn].
+  Color get danger => colorTokens.danger;
+  Color get dangerSurface => colorTokens.dangerSurface;
 
   /// Las cuatro manchas del fondo ambiental.
   Color get shapeOne => colorTokens.shapeOne;

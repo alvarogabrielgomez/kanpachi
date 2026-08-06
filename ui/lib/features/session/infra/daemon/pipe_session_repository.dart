@@ -3,6 +3,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_client.dart';
@@ -110,6 +111,27 @@ class PipeSessionRepository implements SessionRepository {
     return r['enabled'] as bool? ?? false;
   }
 
+  @override
+  Future<Progress> progress() async {
+    // Over a SPARE connection, and that is the whole point: the one this
+    // repository normally uses is parked inside `create_room`, and a
+    // connection's server loop is sequential. Down that one, this would be
+    // answered when there is nothing left to watch.
+    //
+    // Opened and closed per poll. Keeping it alive would hold one of the
+    // daemon's eight slots for as long as the app is open, to be used for a
+    // few seconds every time somebody creates a room.
+    final DaemonClient c = await _connector.spare();
+    try {
+      final Map<String, Object?> r =
+          await c.call(DaemonMethods.progress) as Map<String, Object?>? ??
+          <String, Object?>{};
+      return Progress.fromJson(r);
+    } finally {
+      await c.close();
+    }
+  }
+
   // -------------------------------------------------------------------- sala
 
   @override
@@ -148,10 +170,9 @@ class PipeSessionRepository implements SessionRepository {
   }
 
   @override
-  Future<Room> renameRoom(Room room, String name) async =>
-      _sala(await _mapa(DaemonMethods.renameRoom, <String, Object?>{
-        'name': name,
-      }));
+  Future<Room> renameRoom(Room room, String name) async => _sala(
+    await _mapa(DaemonMethods.renameRoom, <String, Object?>{'name': name}),
+  );
 
   @override
   Future<Room> renewCode(Room room) async =>
@@ -304,14 +325,10 @@ class PipeSessionRepository implements SessionRepository {
   Future<Map<String, Object?>> _mapa(
     String metodo, [
     Map<String, Object?>? params,
-  ]) => _conReintento(
-    (DaemonClient c) => c.call(metodo, params),
-  );
+  ]) => _conReintento((DaemonClient c) => c.call(metodo, params));
 
-  Future<List<Object?>> _lista(
-    String metodo, [
-    Map<String, Object?>? params,
-  ]) => _conReintento((DaemonClient c) => c.callList(metodo, params));
+  Future<List<Object?>> _lista(String metodo, [Map<String, Object?>? params]) =>
+      _conReintento((DaemonClient c) => c.callList(metodo, params));
 
   /// Una llamada, con un solo reintento y solo cuando es seguro.
   Future<T> _conReintento<T>(Future<T> Function(DaemonClient) llamada) async {

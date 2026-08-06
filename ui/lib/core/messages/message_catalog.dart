@@ -132,60 +132,62 @@ abstract final class AppMessages {
     String? detail,
   }) => _foreignRule(kind, gameName).withDetail(detail);
 
-  static AppMessage _foreignRule(RuleClass kind, String? gameName) =>
-      switch (kind) {
-        RuleClass.game => AppMessage(
-          severity: MessageSeverity.warn,
-          title: '${gameName ?? 'El juego'} dejó una regla en tu firewall',
-          body:
-              'Con ella el juego es alcanzable desde tu red de casa y por '
-              'toda la sala, sin pasar por el control de Kanpachi: expulsar '
-              'a alguien no lo tapa. Se puede desactivar mientras juegas y '
-              'se devuelve al salir.',
-        ),
+  static AppMessage _foreignRule(
+    RuleClass kind,
+    String? gameName,
+  ) => switch (kind) {
+    RuleClass.game => AppMessage(
+      severity: MessageSeverity.warn,
+      title: '${gameName ?? 'El juego'} dejó una regla en tu firewall',
+      body:
+          'Con ella el juego es alcanzable desde tu red de casa y por '
+          'toda la sala, sin pasar por el control de Kanpachi: expulsar '
+          'a alguien no lo tapa. Se puede desactivar mientras juegas y '
+          'se devuelve al salir.',
+    ),
 
-        // La única que impide abrir la sala, y por eso no ofrece "dejar así"
-        // como una opción equivalente a la otra. El texto nombra lo que se
-        // entrega en vez de decir "riesgo de seguridad", porque lo primero se
-        // entiende y lo segundo se despacha.
-        RuleClass.remoteControl => const AppMessage(
-          severity: MessageSeverity.warn,
-          title: 'Un programa de control remoto está abierto en tu firewall',
-          body:
-              'Quien entre a la sala puede llegar a él y quedarse con tu '
-              'teclado, tu pantalla y tus archivos, aunque lo expulses '
-              'después: el código de invitación no es un secreto. Hay que '
-              'resolverlo antes de abrir la sala. Se puede desactivar '
-              'mientras juegas y se devuelve al salir.',
-        ),
+    // La única que impide abrir la sala, y por eso no ofrece "dejar así"
+    // como una opción equivalente a la otra. El texto nombra lo que se
+    // entrega en vez de decir "riesgo de seguridad", porque lo primero se
+    // entiende y lo segundo se despacha.
+    RuleClass.remoteControl => const AppMessage(
+      severity: MessageSeverity.warn,
+      title: 'Un programa de control remoto está abierto en tu firewall',
+      body:
+          'Quien entre a la sala puede llegar a él y quedarse con tu '
+          'teclado, tu pantalla y tus archivos, aunque lo expulses '
+          'después: el código de invitación no es un secreto. Hay que '
+          'resolverlo antes de abrir la sala. Se puede desactivar '
+          'mientras juegas y se devuelve al salir.',
+    ),
 
-        // La otra que impide abrir la sala. Lo que la hace peligrosa no es de
-        // quién es, es DÓNDE está, y por eso el texto habla del sitio y no del
-        // programa: puede no haber ninguno.
-        RuleClass.onOurAdapter => const AppMessage(
-          severity: MessageSeverity.warn,
-          title: 'Algo abrió tu red de Kanpachi por fuera de Kanpachi',
-          body:
-              'Hay un permiso en tu firewall puesto sobre la red virtual que '
-              'Kanpachi crea, y no lo puso Kanpachi. Mientras esté, cualquiera '
-              'de la sala llega a esa máquina sin pasar por el control de '
-              'Kanpachi, y expulsarlo no lo tapa. Hay que resolverlo antes de '
-              'abrir la sala. Se puede desactivar mientras juegas y se devuelve '
-              'al salir.',
-        ),
+    // La otra que impide abrir la sala. Lo que la hace peligrosa no es de
+    // quién es, es DÓNDE está, y por eso el texto habla del sitio y no del
+    // programa: puede no haber ninguno.
+    RuleClass.onOurAdapter => const AppMessage(
+      severity: MessageSeverity.warn,
+      title: 'Algo abrió tu red de Kanpachi por fuera de Kanpachi',
+      body:
+          'Hay un permiso en tu firewall puesto sobre la red virtual que '
+          'Kanpachi crea, y no lo puso Kanpachi. Mientras esté, cualquiera '
+          'de la sala llega a esa máquina sin pasar por el control de '
+          'Kanpachi, y expulsarlo no lo tapa. Hay que resolverlo antes de '
+          'abrir la sala. Se puede desactivar mientras juegas y se devuelve '
+          'al salir.',
+    ),
 
-        // Se muestra igual en vez de callarse. Kanpachi la encontró buscando lo
-        // que abre la máquina, así que decir "hay algo que no sé clasificar" es
-        // más honesto que no decir nada.
-        RuleClass.other => const AppMessage(
-          severity: MessageSeverity.neutral,
-          title: 'Hay una regla en tu firewall que Kanpachi no puso',
-          body:
-              'No es del juego ni de un programa de control remoto '
-              'conocido. Se puede desactivar mientras dure la sala y se '
-              'devuelve al salir.',
-        ),
-      };
+    // Se muestra igual en vez de callarse. Kanpachi la encontró buscando lo
+    // que abre la máquina, así que decir "hay algo que no sé clasificar" es
+    // más honesto que no decir nada.
+    RuleClass.other => const AppMessage(
+      severity: MessageSeverity.neutral,
+      title: 'Hay una regla en tu firewall que Kanpachi no puso',
+      body:
+          'No es del juego ni de un programa de control remoto '
+          'conocido. Se puede desactivar mientras dure la sala y se '
+          'devuelve al salir.',
+    ),
+  };
 
   /// Por qué volviste a la portada, si la sesión anterior terminó sola.
   ///
@@ -526,4 +528,67 @@ abstract final class AppMessages {
     if (code == null) return unknown;
     return failure(code);
   }
+
+  /// An action the user asked for, that did not happen.
+  ///
+  /// # Why the ACTION and not just the code
+  ///
+  /// Because the code says what went wrong and the action says what did not
+  /// happen, and the person reading only cares about the second. `unavailable`
+  /// is the same code whether the room could not be created or the invite code
+  /// could not be renewed, and those are two very different things to be told.
+  ///
+  /// So the title comes from the action and the explanation from the code. When
+  /// the daemon never answered there is no code, and the sentence is another
+  /// one entirely: nothing was even asked, so nothing half happened.
+  static AppMessage actionFailed(FailedAction action, {String? code}) {
+    final FailureCode? resolved = FailureCode.fromWire(code);
+    final AppMessage base = code == null
+        ? _sinServicio
+        : (resolved == null ? unknown : failure(resolved));
+    return AppMessage(
+      severity: MessageSeverity.error,
+      title: _actionTitle(action),
+      body: base.body,
+      hint: base.hint,
+    );
+  }
+
+  /// What did not happen. One sentence per button that can fail.
+  ///
+  /// A single generic "algo salió mal" is the message that teaches people to
+  /// stop reading messages.
+  static String _actionTitle(FailedAction action) => switch (action) {
+    FailedAction.createRoom => 'No se pudo abrir la sala',
+    FailedAction.joinRoom => 'No se pudo entrar a la sala',
+    FailedAction.leaveRoom => 'No se pudo salir de la sala',
+    FailedAction.activateProfile => 'No se pudo cambiar el juego',
+    FailedAction.kickMember => 'No se pudo expulsar',
+    FailedAction.rotateInviteCode => 'No se pudo renovar el código',
+    FailedAction.renameRoom => 'No se pudo cambiar el nombre',
+    FailedAction.resumeRoom => 'No se pudo reabrir la sala anterior',
+    FailedAction.discardPendingRoom => 'No se pudo descartar la sala anterior',
+    FailedAction.reapplyProtection => 'No se pudo reponer la protección',
+    FailedAction.probeHost => 'No se pudo comprobar los puertos del host',
+    FailedAction.loadCatalog => 'No se pudo leer el catálogo de juegos',
+    FailedAction.saveProfile => 'No se pudo guardar el perfil',
+    FailedAction.importCatalog => 'No se pudo importar el catálogo',
+    FailedAction.exportCatalog => 'No se pudo exportar el catálogo',
+    FailedAction.suspendForeignRules => 'No se pudo cambiar la regla del juego',
+    FailedAction.quit => 'No se pudo cerrar Kanpachi',
+  };
+
+  /// The daemon never answered.
+  ///
+  /// Kept apart from every [FailureCode] on purpose: those are the daemon
+  /// saying no, and this is the daemon not being there. Nothing was asked, so
+  /// nothing half happened, and that is the one thing worth saying — it makes
+  /// retrying safe.
+  static const AppMessage _sinServicio = AppMessage(
+    severity: MessageSeverity.error,
+    body:
+        'El servicio de Kanpachi no contestó, así que no llegó a intentarse. '
+        'Vuelve a probar.',
+    hint: 'Si sigue igual, cierra Kanpachi y ábrelo otra vez.',
+  );
 }

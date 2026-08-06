@@ -82,7 +82,11 @@ class WindowsPipeTransport implements DaemonTransport {
       toOwner: buzon.sendPort,
     );
 
-    _lector = await Isolate.spawn(pipeReader, cfg, debugName: 'kanpachi-pipe-r');
+    _lector = await Isolate.spawn(
+      pipeReader,
+      cfg,
+      debugName: 'kanpachi-pipe-r',
+    );
     _escritor = await Isolate.spawn(
       pipeWriter,
       cfg,
@@ -179,12 +183,14 @@ class WindowsPipeTransport implements DaemonTransport {
       case PipeMsg.ack:
         _escrituras.remove(m[1]! as int)?.complete();
       case PipeMsg.fail:
-        _escrituras.remove(m[1]! as int)?.completeError(
-          DaemonUnreachable(
-            m[2]! as String,
-            kind: DaemonUnreachableKind.writeFailed,
-          ),
-        );
+        _escrituras
+            .remove(m[1]! as int)
+            ?.completeError(
+              DaemonUnreachable(
+                m[2]! as String,
+                kind: DaemonUnreachableKind.writeFailed,
+              ),
+            );
       case PipeMsg.closed:
         _despedidas++;
         if (_despedidas >= 2 && !_ambosFuera.isCompleted) {

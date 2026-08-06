@@ -1,0 +1,128 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
+import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
+import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
+import 'package:kanpachi_ui/core/messages/message_catalog.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
+import 'package:kanpachi_ui/features/session/presentation/widgets/progress_steps.dart';
+
+/// The notice for an action the user asked for, that did not happen.
+///
+/// Same shape as every other notice in the app, in the error tone: accent
+/// pulled towards red. It is the only tone that breaks the "never red" rule,
+/// and it breaks it with reason — the other notices talk about things Kanpachi
+/// noticed on its own, this one about an order that failed, and only here is
+/// somebody waiting with something to retry.
+///
+/// # The details button is DEBUG only
+///
+/// Not for secrecy. The details name subnets, adapters, seeds and Go error
+/// strings: useful to whoever builds Kanpachi, noise to whoever plays it. In a
+/// release build the button is not there at all, so there is nothing to press
+/// and no half-open drawer to explain.
+class FailureNotice extends StatefulWidget {
+  const FailureNotice({required this.failure, this.onDismiss, super.key});
+
+  final ActionFailure failure;
+
+  /// Dismisses the notice. Null hides the button, for screens where the notice
+  /// goes away on its own with the next action.
+  final VoidCallback? onDismiss;
+
+  @override
+  State<FailureNotice> createState() => _FailureNoticeState();
+}
+
+class _FailureNoticeState extends State<FailureNotice> {
+  bool _abierto = false;
+
+  @override
+  void didUpdateWidget(FailureNotice old) {
+    super.didUpdateWidget(old);
+    // A new failure closes the drawer. Leaving it open would show the previous
+    // failure's steps under the new failure's title, which is worse than
+    // showing nothing.
+    if (!identical(old.failure, widget.failure)) _abierto = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool puedeDetallar = kDebugMode && widget.failure.hasDetails;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        AppMessageNotice(
+          message: AppMessages.actionFailed(
+            widget.failure.action,
+            code: widget.failure.code,
+          ),
+          actions: <Widget>[
+            if (widget.onDismiss != null)
+              AppButton(
+                label: 'Entendido',
+                onPressed: widget.onDismiss,
+                variant: AppButtonVariant.ghost,
+              ),
+            if (puedeDetallar)
+              AppButton(
+                label: _abierto ? 'Ocultar detalles' : 'Ver detalles',
+                onPressed: () => setState(() => _abierto = !_abierto),
+                variant: AppButtonVariant.ghost,
+              ),
+          ],
+        ),
+        if (puedeDetallar && _abierto) ...<Widget>[
+          const SizedBox(height: AppSpacing.xl),
+          _Detalles(failure: widget.failure),
+        ],
+      ],
+    );
+  }
+}
+
+/// The steps of what failed, plus the raw daemon text.
+///
+/// The steps come first and the raw line last, and that order is the point:
+/// the error line says where it stopped, and the steps say how far it got.
+/// Almost always the second is what tells you which one of them to go look at.
+class _Detalles extends StatelessWidget {
+  const _Detalles({required this.failure});
+
+  final ActionFailure failure;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.x3l),
+      decoration: BoxDecoration(
+        color: colors.surfaceSunken,
+        borderRadius: AppRadius.allLg,
+        border: Border.all(color: colors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          if (failure.progress != null)
+            ProgressSteps(progress: failure.progress!),
+          if (failure.progress != null && failure.reason.isNotEmpty)
+            const SizedBox(height: AppSpacing.x3l),
+          if (failure.reason.isNotEmpty) ...<Widget>[
+            Text(
+              'Lo que dijo el daemon',
+              style: context.type.strong.copyWith(color: colors.textMuted),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            SelectableText(
+              failure.reason,
+              style: context.type.monoSm.copyWith(color: colors.textOnChip),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}

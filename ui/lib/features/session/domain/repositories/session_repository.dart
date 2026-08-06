@@ -2,6 +2,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 
 /// Lo que la UI necesita del daemon.
@@ -138,4 +139,16 @@ abstract interface class SessionRepository {
   /// devolver lo que se pidió enseñaría como aceptado un cambio que Windows
   /// pudo rechazar.
   Future<bool> autostart({bool? enabled});
+
+  /// Steps of the long operation the daemon has in flight, or the last one.
+  ///
+  /// # Why it is PULLED
+  ///
+  /// The local API is pure request and response, with no server push, and this
+  /// does not change that: the daemon piles the steps on its side and whoever
+  /// wants them asks. See `docs/03`.
+  ///
+  /// Asked down a connection of its own, because the one carrying the long
+  /// operation is busy carrying it.
+  Future<Progress> progress();
 }

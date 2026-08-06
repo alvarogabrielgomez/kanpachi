@@ -447,3 +447,32 @@ enum ProbeOutcome {
     return ProbeOutcome.failed;
   }
 }
+
+/// Which thing the user asked for. One per button that can fail.
+///
+/// Lives here, next to the wire enums, and not in the session feature: this is
+/// a key into the message catalog, and `core/messages` cannot depend on a
+/// feature without turning the dependency arrow around.
+///
+/// It drives the COPY. "No se pudo abrir la sala" and "no se pudo renovar el
+/// código" are different sentences, and one generic "algo salió mal" is the
+/// message that teaches people to stop reading messages.
+enum FailedAction {
+  createRoom,
+  joinRoom,
+  leaveRoom,
+  activateProfile,
+  kickMember,
+  rotateInviteCode,
+  renameRoom,
+  resumeRoom,
+  discardPendingRoom,
+  reapplyProtection,
+  probeHost,
+  loadCatalog,
+  saveProfile,
+  importCatalog,
+  exportCatalog,
+  suspendForeignRules,
+  quit,
+}

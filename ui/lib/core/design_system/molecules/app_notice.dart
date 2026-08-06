@@ -18,6 +18,15 @@ enum AppNoticeTone {
 
   /// Confirmación de algo que ya se hizo: la regla quedó desactivada.
   done,
+
+  /// Rojo. Algo que el usuario PIDIÓ y no ocurrió: la sala no se creó, el
+  /// código no se renovó, no se pudo salir.
+  ///
+  /// Es el único tono que rompe la regla de "nunca rojo", y la rompe con
+  /// motivo: los otros tres hablan de cosas que Kanpachi observó por su
+  /// cuenta, y este habla de una orden que falló. Ahí la urgencia sí existe,
+  /// porque hay algo que reintentar y alguien esperando.
+  error,
 }
 
 /// El aviso: punto de color, título y explicación.
@@ -71,6 +80,7 @@ class AppNotice extends StatelessWidget {
       AppNoticeTone.warn => (colors.warnSurface, colors.warn),
       AppNoticeTone.neutral => (colors.chip, colors.textMuted),
       AppNoticeTone.done => (colors.chip, colors.ok),
+      AppNoticeTone.error => (colors.dangerSurface, colors.danger),
     };
 
     final bool oneLine = title == null && actions == null;

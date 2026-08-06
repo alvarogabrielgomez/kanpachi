@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 
@@ -47,6 +49,8 @@ class SessionState {
     this.protection = ProtectionWork.none,
     this.refreshing = false,
     this.daemonDown = false,
+    this.failure,
+    this.progress,
   });
 
   final SessionPhase phase;
@@ -91,6 +95,25 @@ class SessionState {
   /// miente en el peor momento.
   final bool daemonDown;
 
+  /// The last action the user asked for that did not happen.
+  ///
+  /// Lives in the state instead of escaping as an exception because a screen
+  /// cannot catch one. Before this, a failing action either threw into nowhere
+  /// or was swallowed, and on screen both look the same: the spinner stops and
+  /// nothing changes. The user cannot tell "it failed" from "it worked and the
+  /// screen is stale", so they press again.
+  ///
+  /// Cleared when the next action starts, or when the user dismisses it.
+  final ActionFailure? failure;
+
+  /// Steps of the long operation in flight. **Debug builds only.**
+  ///
+  /// Nothing polls for this in a release build, so it stays null there and the
+  /// panel that reads it never paints. The reason is not secrecy: the steps
+  /// name subnets, adapters and seeds, which help whoever builds Kanpachi and
+  /// mean nothing to whoever plays it.
+  final Progress? progress;
+
   bool get hasRoom => room != null;
   bool get isBusy => work != RoomWork.none;
   bool get isReapplying => protection == ProtectionWork.reapplying;
@@ -110,6 +133,10 @@ class SessionState {
     ProtectionWork? protection,
     bool? refreshing,
     bool? daemonDown,
+    ActionFailure? failure,
+    bool clearFailure = false,
+    Progress? progress,
+    bool clearProgress = false,
   }) => SessionState(
     phase: phase ?? this.phase,
     room: clearRoom ? null : (room ?? this.room),
@@ -122,5 +149,7 @@ class SessionState {
     protection: protection ?? this.protection,
     refreshing: refreshing ?? this.refreshing,
     daemonDown: daemonDown ?? this.daemonDown,
+    failure: clearFailure ? null : (failure ?? this.failure),
+    progress: clearProgress ? null : (progress ?? this.progress),
   );
 }

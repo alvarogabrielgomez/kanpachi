@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
+import 'package:kanpachi_ui/features/session/presentation/widgets/failure_notice.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/features/games/presentation/pages/game_picker_page.dart';
@@ -79,11 +82,43 @@ class _WindowBody extends StatelessWidget {
       fit: StackFit.expand,
       children: <Widget>[
         const _CurrentScreen(),
+        // The failure notice sits ABOVE the screen and below the dialogs.
+        //
+        // Here and not inside each screen, because every screen has buttons
+        // that can fail and the alternative is the same notice pasted into
+        // seven places, six of which get it right. Anchored to the bottom so
+        // it does not push the layout around: an action that fails must not
+        // move the button the user is about to press again.
+        const _FailureLayer(),
         // Dentro del marco y no como ruta aparte: los tres diálogos confirman
         // algo que cambia la sala que se ve por detrás, y dejarla visible tras
         // el velo es lo que da contexto a qué se está confirmando.
         _DialogLayer(shell: shell, session: session),
       ],
+    );
+  }
+}
+
+/// The notice for whatever the user asked for last and did not happen.
+class _FailureLayer extends StatelessWidget {
+  const _FailureLayer();
+
+  @override
+  Widget build(BuildContext context) {
+    final ActionFailure? failure = context.watch<SessionCubit>().state.failure;
+    if (failure == null) return const SizedBox.shrink();
+
+    return Positioned(
+      left: AppSpacing.x4l,
+      right: AppSpacing.x4l,
+      bottom: AppSpacing.x4l,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: FailureNotice(
+          failure: failure,
+          onDismiss: () => context.read<SessionCubit>().clearFailure(),
+        ),
+      ),
     );
   }
 }

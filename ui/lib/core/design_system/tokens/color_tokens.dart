@@ -32,6 +32,8 @@ class ColorTokens extends ThemeExtension<ColorTokens>
     required this.ok,
     required this.okInk,
     required this.warn,
+    required this.danger,
+    required this.dangerSurface,
     required this.warnSurface,
     required this.shapeOne,
     required this.shapeTwo,
@@ -118,6 +120,21 @@ class ColorTokens extends ThemeExtension<ColorTokens>
   @override
   final Color warnSurface;
 
+  /// Rojo de "esto no se hizo": una acción del usuario que FALLÓ.
+  ///
+  /// Es el acento tirado hacia el rojo y no un rojo de sistema, para que siga
+  /// siendo Kanpachi. Y es otro rol distinto de [warn], que ya avisa de cosas
+  /// mejorables: mezclarlos haría que "tu firewall está apagado" y "no se pudo
+  /// crear la sala" pesaran igual, y el segundo pide un reintento AHORA.
+  ///
+  /// Se reserva para lo que el usuario pidió y no ocurrió. Nada de fondo, nada
+  /// automático: eso es [warn].
+  @override
+  final Color danger;
+
+  @override
+  final Color dangerSurface;
+
   /// Las cuatro manchas del fondo ambiental.
   @override
   final Color shapeOne;
@@ -158,6 +175,8 @@ abstract final class AppPalette {
     textMuted: Color(0xFF57514A),
     textOnChip: Color(0xFF463F38),
     accent: Color(0xFF9D3915),
+    danger: Color(0xFFA8231A),
+    dangerSurface: Color(0xFFF9E1DC),
     accentInk: Color(0xFFFFFFFF),
     accentShadow: Color(0xFF6D2810),
     border: Color(0xFFD8D2C8),
@@ -185,6 +204,8 @@ abstract final class AppPalette {
     textMuted: Color(0xFFA19A8F),
     textOnChip: Color(0xFFC9C2B8),
     accent: Color(0xFFE0703F),
+    danger: Color(0xFFE8705F),
+    dangerSurface: Color(0xFF2E1B18),
     accentInk: Color(0xFF201E1B),
     accentShadow: Color(0xFFA94B26),
     border: Color(0xFF35322D),

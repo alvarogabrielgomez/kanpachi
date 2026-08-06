@@ -77,4 +77,35 @@ class DaemonConnector {
     _vivo = null;
     await c?.close();
   }
+
+  /// A SECOND connection, greeted, that the caller owns and closes.
+  ///
+  /// # Why a second one is not a shortcut
+  ///
+  /// Because one connection's server loop is sequential: read, dispatch,
+  /// answer. `create_room` holds it for up to ninety seconds, so asking for
+  /// the progress down the same connection would queue behind exactly the
+  /// operation it wants to watch, and arrive when there is nothing left to
+  /// show.
+  ///
+  /// It is not memoized, unlike [client]: this one is opened for a poll and
+  /// closed after. The daemon takes eight, the interface holds one, so a
+  /// second is well inside the budget — and closing it is the caller's job
+  /// precisely so it cannot pile up.
+  Future<DaemonClient> spare() async {
+    final String? token = await readApiToken(path: tokenPath);
+    if (token == null) {
+      throw const DaemonUnreachable(
+        'no está el archivo del token, así que el servicio de Kanpachi no '
+        'está corriendo',
+        kind: DaemonUnreachableKind.notConnected,
+      );
+    }
+    final DaemonClient c = DaemonClient(
+      transport: WindowsPipeTransport(name: _pipeName),
+      token: token,
+    );
+    await c.connect();
+    return c;
+  }
 }
