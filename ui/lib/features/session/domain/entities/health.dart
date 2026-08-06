@@ -22,13 +22,15 @@ class HealthReport {
   const HealthReport({
     this.alerts = const <HealthAlert>[],
     this.canary = const CanaryCheck.blind(),
+    this.net = const NetDiagnostics.unknown(),
   });
 
   /// Antes de haber preguntado. Ni avisos ni comprobación, que no es lo mismo
   /// que "está todo bien": es que todavía no se sabe.
   const HealthReport.unknown()
     : alerts = const <HealthAlert>[],
-      canary = const CanaryCheck.blind();
+      canary = const CanaryCheck.blind(),
+      net = const NetDiagnostics.unknown();
 
   /// Los avisos vivos, **en el orden que los mandó el daemon**.
   ///
@@ -39,6 +41,9 @@ class HealthReport {
 
   /// La última ronda de la Protección Kanpachi.
   final CanaryCheck canary;
+
+  /// Lo que el daemon sabe de la red por la que va el túnel.
+  final NetDiagnostics net;
 
   bool get hasAlerts => alerts.isNotEmpty;
 
@@ -58,7 +63,58 @@ class HealthReport {
     canary: CanaryCheck.fromJson(
       (json['canary'] as Map<String, Object?>?) ?? const <String, Object?>{},
     ),
+    net: NetDiagnostics.fromJson(
+      (json['net'] as Map<String, Object?>?) ?? const <String, Object?>{},
+    ),
   );
+}
+
+/// Lo que el daemon midió de la red que hay debajo del túnel.
+///
+/// Vive acá y no en [Room] por el mismo criterio que el resto de este archivo:
+/// no lo pidió nadie, lo produjo el daemon solo. Y lo que dice importa aunque la
+/// sala esté perfecta: con UDP bloqueado todo el mundo llega por relay, y la
+/// partida va lenta sin que ninguna pantalla lo explique.
+@immutable
+class NetDiagnostics {
+  const NetDiagnostics({
+    this.natKind,
+    this.udpBlocked = false,
+    this.mtu,
+    this.subnetReason,
+  });
+
+  /// Antes de que haya sala no se midió nada, y eso no es "está todo bien".
+  const NetDiagnostics.unknown()
+    : natKind = null,
+      udpBlocked = false,
+      mtu = null,
+      subnetReason = null;
+
+  /// Qué tipo de NAT hay delante, tal como lo nombra el motor.
+  final String? natKind;
+
+  /// UDP no sale. Con esto puesto la sala funciona por relay y va más lenta.
+  final bool udpBlocked;
+
+  /// El MTU que quedó puesto en el adaptador virtual.
+  final int? mtu;
+
+  /// Por qué se eligió ese rango de direcciones y no otro.
+  final String? subnetReason;
+
+  bool get isKnown =>
+      natKind != null || mtu != null || udpBlocked || subnetReason != null;
+
+  static NetDiagnostics fromJson(Map<String, Object?> json) {
+    final int mtu = (json['mtu'] as num? ?? 0).toInt();
+    return NetDiagnostics(
+      natKind: json['nat_kind'] as String?,
+      udpBlocked: json['udp_blocked'] as bool? ?? false,
+      mtu: mtu > 0 ? mtu : null,
+      subnetReason: json['subnet_reason'] as String?,
+    );
+  }
 }
 
 /// Un aviso del módulo de exposición, tal como llegó.

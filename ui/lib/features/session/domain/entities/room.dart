@@ -5,18 +5,47 @@ import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 /// Cómo llega el tráfico hasta un miembro.
 enum PeerPath {
   /// Conexión directa, que es lo normal y lo deseable.
-  direct('directo'),
+  direct('direct', 'directo'),
 
   /// A través del seed. Funciona igual, va más lento, y se dice para que
   /// nadie culpe al juego de una latencia que es de la red.
-  relay('relay'),
+  relay('relay', 'relay'),
 
   /// Uno mismo. No hay ruta que describir.
-  self('');
+  self('self', '');
 
-  const PeerPath(this.label);
+  const PeerPath(this.wire, this.label);
 
+  /// What the daemon sends. Kept apart from [label] because they used to be the
+  /// same string by accident: the daemon was sending its own Spanish log word
+  /// and this enum happened to store that word as the display label, so the two
+  /// agreed without anybody deciding they should.
+  final String wire;
+
+  /// What the screen shows.
   final String label;
+
+  /// Unknown counts as [direct], which is the reading that does not accuse the
+  /// network of anything. Marking an unknown path as relay would paint the room
+  /// amber over a word this version has not heard of.
+  static PeerPath fromWire(String? s) => switch (s) {
+    'relay' => PeerPath.relay,
+    'self' => PeerPath.self,
+    _ => PeerPath.direct,
+  };
+}
+
+/// Qué eres tú en esta sala.
+enum RoomRole {
+  host('host'),
+  guest('guest');
+
+  const RoomRole(this.wire);
+
+  final String wire;
+
+  static RoomRole fromWire(String? s) =>
+      s == 'host' ? RoomRole.host : RoomRole.guest;
 }
 
 /// Alguien dentro de la sala.
@@ -30,6 +59,21 @@ class Member {
     this.isHost = false,
     this.isSelf = false,
   });
+
+  factory Member.fromJson(Map<String, Object?> json) {
+    final int rtt = (json['rtt_ms'] as num? ?? 0).toInt();
+    return Member(
+      name: json['name'] as String? ?? '',
+      address: json['ip'] as String? ?? '',
+      path: PeerPath.fromWire(json['path'] as String?),
+      // Zero is "not measured yet", which is not the same as zero milliseconds.
+      // Showing "0 ms" next to somebody who just joined would be a number the
+      // product invented.
+      latencyMs: rtt > 0 ? rtt : null,
+      isHost: json['host'] as bool? ?? false,
+      isSelf: json['self'] as bool? ?? false,
+    );
+  }
 
   final String name;
 
@@ -87,14 +131,59 @@ class Room {
     required this.code,
     required this.members,
     required this.selfIsHost,
+    this.seed,
     this.game,
+    this.missingGameId,
+    this.localIp,
+    this.subnet,
     this.hostName,
     this.hostLeft = false,
+    this.hostGoneFor,
+    this.reconnectingFor,
     this.network = ConnState.connected,
     this.foreignRule = ForeignRuleState.open,
     this.foreignRuleClass = RuleClass.game,
     this.foreignRuleProgram,
   });
+
+  /// Builds a room out of a `RoomView`.
+  ///
+  /// [game] comes from OUTSIDE because the wire only carries the game's id and
+  /// name, never its ports, and [gameAddress] needs a port. Whoever calls this
+  /// already fetched the catalog, so resolving the id belongs there. Passing it
+  /// as an argument keeps the dependency visible instead of hiding it behind a
+  /// global the entity would have to reach for.
+  factory Room.fromJson(Map<String, Object?> json, {Game? game}) {
+    final int ausente = (json['host_gone_for_ms'] as num? ?? 0).toInt();
+    final int reconectando = (json['reconnecting_for_ms'] as num? ?? 0).toInt();
+    final Object? peers = json['peers'];
+
+    return Room(
+      name: json['name'] as String? ?? '',
+      code: json['code'] as String? ?? '',
+      seed: json['seed'] as String?,
+      members: <Member>[
+        if (peers is List<Object?>)
+          for (final Object? p in peers)
+            if (p is Map<String, Object?>) Member.fromJson(p),
+      ],
+      selfIsHost: RoomRole.fromWire(json['role'] as String?) == RoomRole.host,
+      game: game,
+      missingGameId: json['missing_game'] as String?,
+      localIp: json['local_ip'] as String?,
+      subnet: json['subnet'] as String?,
+      // Inverted on purpose: the daemon says who IS there, and the screen talks
+      // about who left.
+      hostLeft: !(json['host_present'] as bool? ?? true),
+      hostGoneFor: ausente > 0 ? Duration(milliseconds: ausente) : null,
+      reconnectingFor: reconectando > 0
+          ? Duration(milliseconds: reconectando)
+          : null,
+      // Unknown state counts as idle, which is the only safe reading: it
+      // promises nothing about there being a room.
+      network: ConnState.fromWire(json['conn'] as String?) ?? ConnState.idle,
+    );
+  }
 
   final String name;
 
@@ -103,6 +192,35 @@ class Room {
 
   final List<Member> members;
   final bool selfIsHost;
+
+  /// El seed del código, que viaja junto a él.
+  ///
+  /// Hace falta para volver a la última sala: un código sin su seed no se puede
+  /// resolver, porque el seed es parte de a dónde hay que preguntar.
+  final String? seed;
+
+  /// El perfil que la sala reanudada pide y este catálogo no tiene.
+  ///
+  /// Pasa al reabrir una sala guardada tras desinstalar el juego o borrar un
+  /// perfil propio. La sala está entera; lo que falta es saber qué puertos
+  /// abrir.
+  final String? missingGameId;
+
+  /// Tu dirección dentro de la red virtual.
+  ///
+  /// Viene aparte de la tabla de miembros porque justo después de crear la
+  /// sala esa tabla puede venir vacía, y la pantalla igual quiere enseñarla.
+  final String? localIp;
+
+  /// El rango que la sala eligió. Es diagnóstico, no va en la tarjeta.
+  final String? subnet;
+
+  /// Cuánto lleva el host ausente, y por qué importa: a los veinte minutos la
+  /// sala se cierra sola. Sin esta cuenta no se puede avisar antes.
+  final Duration? hostGoneFor;
+
+  /// Lo mismo para el túnel, que está acotado a diez minutos.
+  final Duration? reconnectingFor;
 
   /// `null` es una sala sin juego, que es un estado normal y no un error: la
   /// sala se crea vacía y el juego se elige adentro.
@@ -167,9 +285,15 @@ class Room {
     code: code,
     members: members ?? this.members,
     selfIsHost: selfIsHost,
+    seed: seed,
     game: clearGame ? null : (game ?? this.game),
+    missingGameId: missingGameId,
+    localIp: localIp,
+    subnet: subnet,
     hostName: hostName,
     hostLeft: hostLeft ?? this.hostLeft,
+    hostGoneFor: hostGoneFor,
+    reconnectingFor: reconnectingFor,
     network: network ?? this.network,
     foreignRule: foreignRule ?? this.foreignRule,
     foreignRuleClass: foreignRuleClass ?? this.foreignRuleClass,

@@ -55,13 +55,20 @@ class _ManualGameScreenState extends State<ManualGameScreen> {
 
   void _save() {
     final SessionCubit session = context.read<SessionCubit>();
+    final String nombre = _name.text.trim().isEmpty
+        ? 'Juego sin nombre'
+        : _name.text.trim();
     session.saveManualGame(
       Game(
-        name: _name.text.trim().isEmpty
-            ? 'Juego sin nombre'
-            : _name.text.trim(),
+        // El id sale del nombre, porque el formulario no lo pide y el daemon lo
+        // exige con su forma: minúsculas, dígitos y guiones. Cuando no queda
+        // nada utilizable, el respaldo es un nombre que sí pasa.
+        id: slugForProfile(nombre).isEmpty
+            ? 'juego-sin-nombre'
+            : slugForProfile(nombre),
+        name: nombre,
         rules: _portRules,
-        manual: true,
+        origin: GameOrigin.mine,
         coverUrl: _cover.text.trim().isEmpty ? null : _cover.text.trim(),
       ),
     );

@@ -58,8 +58,10 @@ class FakeSessionRepository implements SessionRepository {
     PortProtocol protocol, {
     bool installed = false,
   }) => Game(
+    id: slugForProfile(name),
     name: name,
     installed: installed,
+    origin: GameOrigin.builtin,
     rules: <PortRule>[PortRule(range: range, protocol: protocol)],
   );
 
