@@ -644,14 +644,26 @@ propia herramienta.
 | 3 | **RoutingTable** | Que se pueda elegir subred, o sea crear una sala | Bajo | **HECHO** |
 | 4 | **netcfg** | Que el túnel sea usable | Medio | **HECHO** |
 | 5 | **RoomDirectory** | Crear y entrar con código | Medio | pendiente |
-| 6 | **Auditoría** | Que las alertas digan la verdad | Bajo | pendiente |
+| 6 | **Auditoría** | Que las alertas digan la verdad | Bajo | **la mitad**, ver abajo |
 | 7 | **SystemEvents** | Que los ajustes sobrevivan a Windows | Medio | pendiente |
 | 8 | **Steam** | Comodidad. Ordena, jamás filtra | Bajo | pendiente |
 | 9 | **iphlpapi** | Solo el creador de perfiles | Bajo | pendiente |
-| 10 | **Rendezvous** | Argon2id local puro | Bajo | pendiente |
+| 10 | **Rendezvous** | Argon2id local puro | Bajo | **HECHO** |
 
-El 10 es Go **puro**, sin red y sin Windows, así que es el más barato y entra en
-la lista de `puros` del guardián de arquitectura.
+El 10 es Go **puro**, sin red y sin Windows, así que resultó el más barato de
+todos: `domain.DeriveRendezvous` vive en el dominio, la llaman crear, entrar y
+reabrir, y nunca necesitó adaptador.
+
+La **6 está partida en dos y solo una mitad falta.** La del firewall es real y
+corre desde hace días: `AuditForeign` enumera por COM y clasifica las reglas
+ajenas, incluidas las permisivas sobre nuestros propios adaptadores. La que
+falta es la consulta al IGD del router, que es la que deja esta línea en cada
+barrido: `el router no respondió a la consulta de mapeos`. Es la única lectura
+que Kanpachi le hace al router, y jamás escribe.
+
+La **7 es la que más engaña**, porque no falla: sus canales nunca emiten, así que
+todo lo que dependa de un aviso de Windows depende hoy, en realidad, del respaldo
+periódico. Medido, ver la sección del cambio de red.
 
 `RoutingTable` salió antes de lo previsto porque era lo que faltaba para que
 `create_room` llegara a alguna parte: fallaba en `planSubnet`, antes de tocar el
@@ -864,10 +876,16 @@ dos preguntas y solo una necesita que la red cambie.
 
 El acto A se queda así por ser mejor prueba que el cable: determinista y con el
 daño elegido. Métrica a 9999 y una ruta por defecto sobre `kanpachi0`, las dos
-con métrica absurda para que no pudieran robar tráfico. Los 103 s son el dato:
-cambiar una métrica **no dispara** ninguno de los tres avisos suscritos, así que
-lo repuso el respaldo periódico de los ocho latidos, que es justo su caso y es la
-primera vez que se le ve trabajar. Que lo repuso Kanpachi lo dice el log, `había
+con métrica absurda para que no pudieran robar tráfico.
+
+Los 103 s son el dato, y su causa no es la que parece. **`SystemEvents` sigue
+siendo un provisional cuyos canales NUNCA emiten**, y es el que `main.go` cablea
+hoy en producción. O sea que el respaldo periódico de los ocho latidos no es lo
+que salvó este caso concreto: es **el único mecanismo que existe**, para
+cualquier causa. Los avisos de Windows no llegan tarde, no llegan. Eso le da a
+la fila 7 su prueba de aceptación ya escrita: con el adaptador de verdad puesto,
+esta misma medición tiene que bajar de 103 s a unos pocos, y ese salto es la
+única forma de saber que la suscripción está viva. Que lo repuso Kanpachi lo dice el log, `había
 una ruta por defecto sobre el adaptador virtual y se quitó`; sin esa línea, una
 ruta que desaparece sola se lee igual que una que borramos.
 

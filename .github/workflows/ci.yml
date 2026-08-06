@@ -26,7 +26,7 @@ jobs:
           cache: true
 
       - name: go vet
-        run: go vet ./core/... ./internal/... ./daemon/service/... ./daemon/transport/protocol/... ./daemon/transport/wire/... ./daemon/transport/control/... ./daemon/transport/pipe/... ./daemon/adapter/sinimplementar/... ./daemon/adapter/safewrite/... ./daemon/adapter/state/... ./daemon/adapter/catalog/... ./daemon/adapter/canary/... ./registry/...
+        run: go vet ./core/... ./internal/... ./daemon/service/... ./daemon/transport/protocol/... ./daemon/transport/wire/... ./daemon/transport/control/... ./daemon/transport/pipe/... ./daemon/adapter/sinimplementar/... ./daemon/adapter/safewrite/... ./daemon/adapter/state/... ./daemon/adapter/catalog/... ./daemon/adapter/canary/... ./daemon/adapter/directory/... ./daemon/adapter/identity/... ./registry/...
 
       - name: Test de pureza de imports
         # Se ejecuta aparte y primero para que su fallo sea inconfundible en el
@@ -71,6 +71,10 @@ jobs:
       #
       # La lista es explícita a propósito: el motor, el firewall por COM y
       # netcfg son solo Windows y sus paquetes no compilan acá.
+      #
+      # adapter/directory es net/http puro, y su test de CONTRATO habla con el
+      # paquete registry de este mismo repositorio: las dos puntas del protocolo
+      # del seed quedan congeladas acá, sin red y sin despliegue.
       - name: Tests de lo portable de daemon
         run: >-
           go test -race -count=1
@@ -85,6 +89,8 @@ jobs:
           ./daemon/adapter/catalog/...
           ./daemon/adapter/probe/...
           ./daemon/adapter/canary/...
+          ./daemon/adapter/identity/...
+          ./daemon/adapter/directory/...
           ./daemon/adapter/firewall
           ./daemon/adapter/firewall/wfp/...
 

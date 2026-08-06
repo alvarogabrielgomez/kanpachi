@@ -204,7 +204,12 @@ try {
     if ($t -ge 0) {
         Bien "los ajustes volvieron solos en $t s"
         if ($t -le 20) { Nota "tan rapido que lo disparo el aviso de Windows, no el respaldo" }
-        else { Nota "tardo lo que tarda el respaldo periodico, o sea que el aviso no llego" }
+        else {
+            Nota "tardo lo que tarda el respaldo periodico, o sea que el aviso no llego"
+            Nota "hoy eso es lo esperado: SystemEvents es un provisional y sus canales"
+            Nota "nunca emiten. Cuando se escriba el de verdad, esto tiene que bajar"
+            Nota "a unos pocos segundos, y ese salto es su prueba de aceptacion"
+        }
     }
     else {
         Mal "los ajustes NO volvieron en $EsperaReaplicado s: metrica=$($tras.MetricaV4) rutas por defecto=$($tras.PorDefecto)"

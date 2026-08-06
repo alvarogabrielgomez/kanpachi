@@ -468,8 +468,23 @@ type RoomDirectory interface {
 	// venir ausente, y ausente dice la verdad: el registro omite el número si
 	// nunca pudo hablar con el motor, porque un cero afirmaría que no hay
 	// nadie y sería falso.
+	//
+	// **Ausente llega como -1, jamás como 0.** El adaptador no inventa el cero
+	// que el registro se negó a decir: son dos afirmaciones distintas, "no hay
+	// nadie" y "no lo sé", y solo una de las dos es cierta cuando el contador
+	// no arrancó.
 	Lookup(ctx context.Context, id domain.InviteID) (sealed []byte, members int, err error)
 	// Publish actualiza la tarjeta, o reabre la sala con el mismo invite ID.
+	//
+	// **No crea nada.** Un invite ID que este registro jamás emitió, o uno cuyo
+	// fijado ya venció y se barrió, contestan que no existe. Ahí está el límite
+	// de "o reabre": vale mientras el fijado siga vivo, y ese fijado es lo único
+	// que impide que un ex miembro que se quedó con el código llegue primero.
+	//
+	// La firma sale de `identity.key`, que vive en disco con ACL propia y core
+	// no conoce. Es lo que cierra el agujero que el cifrado no puede: la clave
+	// de la tarjeta se deriva del enlace, así que cualquiera que lo recibió
+	// puede fabricar una tarjeta que la página descifra.
 	Publish(ctx context.Context, id domain.InviteID, sealed []byte) error
 }
 

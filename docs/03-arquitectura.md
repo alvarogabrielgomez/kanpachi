@@ -522,10 +522,41 @@ El registro del seed se consume por un puerto aparte, porque es opcional por dis
 ```go
 // Solo presentación. Que falle no impide entrar a ninguna sala.
 type RoomDirectory interface {
-    Lookup(inviteID domain.InviteID) (domain.RoomCard, error)
-    Publish(card domain.RoomCard, signer domain.Signer) error
+    Open(ctx context.Context, sealed []byte) (domain.Room, error)
+    Lookup(ctx context.Context, id domain.InviteID) (sealed []byte, members int, err error)
+    Publish(ctx context.Context, id domain.InviteID, sealed []byte) error
 }
 ```
+
+**Habla de bytes opacos y jamás de una tarjeta en claro.** El sellado ocurre en el dominio, con `domain.SealRoomCard`, y la clave se queda en la máquina del host: viaja en el fragmento del enlace, que el navegador no manda al servidor. Un puerto que recibiera la tarjeta legible obligaría al adaptador a decidir con qué cifrarla, y ahí es donde se filtraría.
+
+**`Open` y no "publicar con un ID que traigo yo":** el registro EMITE el invite ID, porque es quien puede garantizar unicidad en su espacio, y emitir evita el ida y vuelta de proponer y ser rechazado. Devuelve la `Room` entera con el seed pegado, porque un invite ID solo significa algo en el registro que lo emitió y quien sabe cuál es ese registro es el adaptador.
+
+**El contador ausente llega como `-1`, jamás como `0`.** El registro omite el número cuando nunca pudo hablar con el motor. Convertirlo en cero cambiaría "no lo sé" por "no hay nadie", que es otra afirmación y es falsa.
+
+#### El cliente del registro
+
+Vive en `daemon/adapter/directory`, es Go **puro** y corre en el job de Linux. Cada ajuste suyo es una negativa:
+
+| Qué | Por qué |
+|---|---|
+| Esquema `https` fijo, con el certificado verificado | La tarjeta es presentación, y una presentación manipulada sigue siendo una mentira en la pantalla de alguien |
+| `CheckSeedAddr` sobre CADA dirección resuelta, en CADA uso | Nada impide registrar un dominio cuyo registro A apunte a `192.168.1.1`, y esto corre como SYSTEM |
+| El transporte jamás resuelve: se le entrega la dirección ya aprobada | Si resolviera él, entre nuestra consulta y la suya el DNS puede contestar otra cosa, y comprobar no gobernaría nada |
+| Sin seguir redirecciones | Una redirección es cómo un nombre impecable termina en otro sitio, salteándose la comprobación que se acaba de hacer |
+| Tope de respuesta y dos plazos, uno de conexión más corto que el de la llamada | `Open` y `Publish` corren con el candado de la sesión tomado y la pantalla comparte ese candado. Un seed que calla en vez de rebotar congelaría la UI el plazo entero |
+| Sin proxy del entorno | Una variable de entorno no elige a dónde marca un proceso SYSTEM |
+| Sin reintentos | El límite de tasa del registro cuenta también las peticiones que fallan, así que reintentar es cómo un tropiezo se convierte en un minuto de puerta cerrada |
+
+Un adaptador de una sola dirección no necesita partirse en dos como los de Windows: no hay syscall que aislar. Lo que sí tiene es un **test de contrato** que levanta el paquete `registry` de este mismo repositorio en proceso y habla el protocolo entero contra él, con la firma, el base64, el fijado de la llave y los códigos de estado de verdad. Las dos puntas del protocolo del seed quedan congeladas en CI, sin red y sin despliegue.
+
+#### `identity.key`, y quién puede crearla
+
+La llave larga de esta instalación vive en `daemon/adapter/identity`, y ese paquete es el **único que la crea**. Todo consumidor la consume.
+
+No es organización: la llave tiene un segundo consumidor prometido, el canje de credencial de la decisión 25, y un cargador escrito al lado de ese segundo consumidor sería dos escritores. El día que uno de los dos regenerara al no poder leer, las salas que este equipo tiene reservadas en el registro quedarían fuera de su alcance durante lo que le quede a su fijado, y la cara con la que lo conocen quienes ya jugaron con él cambiaría sin que nadie lo pidiera. Por eso **una llave presente e ilegible es un error y jamás una llave nueva**.
+
+Se escribe con un orden que no admite ventana: se crea el temporal **vacío**, se le pone su ACL propia mientras no tiene nada dentro, y solo entonces se escribe la semilla. La ACL viaja con el rename, así que el nombre bueno tampoco existe nunca sin ella. Es el único fichero del proyecto que se escribe así, y la razón es que es el único cuyo robo ES la suplantación.
 
 ### Catálogo
 
