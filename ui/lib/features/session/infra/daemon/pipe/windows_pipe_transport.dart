@@ -32,10 +32,10 @@ import 'package:win32/win32.dart';
 /// own inbox. See `pipe_workers.dart` for why the handle has to be overlapped.
 class WindowsPipeTransport implements DaemonTransport {
   WindowsPipeTransport({String? name, this.busyRetries = 3})
-    : name = name ?? PipeNames.console;
+    : name = name ?? PipeNames.defaultName;
 
-  /// Which pipe. Defaults to the console one because that is the only name a
-  /// daemon answers on today: service mode exists in Go and nothing calls it.
+  /// Which pipe. See [PipeNames.defaultName]: production unless this build was
+  /// compiled to talk to a `--console` daemon.
   final String name;
 
   /// How many times to come back when the daemon has all its instances busy.

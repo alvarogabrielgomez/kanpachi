@@ -29,7 +29,7 @@ import 'package:kanpachi_ui/features/session/infra/daemon/pipe/windows_pipe_tran
 /// can explain.
 class DaemonConnector {
   DaemonConnector({String? pipeName, this.tokenPath})
-    : _pipeName = pipeName ?? PipeNames.console;
+    : _pipeName = pipeName ?? PipeNames.defaultName;
 
   final String _pipeName;
 
