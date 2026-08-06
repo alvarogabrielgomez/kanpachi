@@ -137,11 +137,17 @@ func TestPaginaDeInvitacionRespetaSusInvariantes(t *testing.T) {
 			}
 		}
 
-		// El enlace al repositorio es la única URL absoluta admitida, y es un
+		// El repositorio es la única URL absoluta admitida, y siempre es un
 		// href sobre el que el usuario decide, no una carga automática. Los
 		// logos van EN LÍNEA justamente para no necesitar ninguna otra.
+		//
+		// El prefijo es el del repositorio DE VERDAD, que es el que tiene que
+		// resolver: `seed/install.sh` y `release-seed.yml` bajan de ahí. Decía
+		// `accentiostudios`, que es el camino del módulo de Go y no existe como
+		// repositorio, así que el enlace del pie llevaba a un 404 y esto lo
+		// defendía.
 		for _, u := range regexp.MustCompile(`https?://[^"'\s)]+`).FindAllString(html, -1) {
-			if !strings.HasPrefix(u, "https://github.com/accentiostudios/") {
+			if !strings.HasPrefix(u, "https://github.com/alvarogabrielgomez/kanpachi") {
 				t.Errorf("URL absoluta inesperada en la página: %q", u)
 			}
 		}

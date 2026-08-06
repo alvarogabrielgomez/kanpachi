@@ -11,6 +11,11 @@
 #ifndef AppVersion
   #define AppVersion   "0.0.0"
 #endif
+; VersionInfoVersion tiene que ser numerica: un 0.2.0-rc1 pierde el sufijo aqui
+; y solo aqui. Se pasa con /DVersionInfo=...
+#ifndef VersionInfo
+  #define VersionInfo  "0.0.0"
+#endif
 #define AppPublisher   "Accentio Studios"
 #define AppURL         "https://kanpachi.accentio.dev"
 #define ServiceName    "kanpachi-daemon"
@@ -30,12 +35,16 @@ AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
 AppPublisherURL={#AppURL}
 AppSupportURL={#AppURL}
-VersionInfoVersion={#AppVersion}
+VersionInfoVersion={#VersionInfo}
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 OutputDir=..\dist
-OutputBaseFilename=kanpachi-setup-{#AppVersion}
+; Sin la version en el nombre, a proposito: la pagina de descarga apunta a
+; releases/latest/download/kanpachi-setup.exe, que es una URL permanente. Con el
+; nombre versionado habria que editar la pagina en cada publicacion, y la pagina
+; que se edita a mano es la que se queda vieja. La version va dentro del .exe.
+OutputBaseFilename=kanpachi-setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern

@@ -423,19 +423,16 @@
     <div class="wordmark"><svg class="glyph" viewBox="0 0 202 51" role="img" aria-label="Kanpachi"><use href="#kp-word"/></svg></div>
     <h1 class="title" id="dl-title">Descargar Kanpachi</h1>
     <p class="lede" id="dl-sub"></p>
-    <a class="primary hidden" id="dl-button" href="#"></a>
-    <div class="sha hidden" id="dl-sha">
-      <div class="cap">SHA256 DEL INSTALADOR</div>
-      <div class="val" id="dl-sha-val"></div>
-    </div>
+    <a class="primary" id="dl-button" href="#"></a>
+    <p class="note center" id="dl-note"></p>
   </main>
 </div>
 
 <footer class="bar">
   <span id="bar-host"></span>
   <span class="right">
-    <a href="https://github.com/accentiostudios/kanpachi">Código fuente</a>
-    <span id="bar-version"></span>
+    <a id="bar-source" href="#">Código fuente</a>
+    <a id="bar-version" href="#">Versiones</a>
   </span>
 </footer>
 
@@ -467,9 +464,22 @@
   var MAX_KEY = 64;
   var MAX_NAME = 40;
 
-  // Vacío mientras no haya instalador publicado. La pantalla de descarga se
-  // adapta sola en vez de ofrecer un botón que no lleva a ningún lado.
-  var RELEASE = { version: "", size: "", sha256: "" };
+  // De dónde sale el instalador.
+  //
+  // **De la release de GitHub, y siempre de `latest`.** Esta página no sabe qué
+  // versión es la última y no tiene forma honesta de saberlo: la publica un tag
+  // en otro repositorio, y el seed se despliega por su cuenta. La versión que
+  // llegó a estar escrita acá como constante era exactamente eso, y quedó vacía
+  // para siempre, de modo que la pantalla dijo "todavía no hay instalador"
+  // durante toda la vida del producto.
+  //
+  // `releases/latest/download/<fichero>` es una URL permanente que GitHub
+  // redirige al fichero de la última publicación. Es el mismo mecanismo que ya
+  // usa `seed/install.sh`, y lo que hace que publicar un tag actualice esta
+  // página sin tocarla.
+  var REPO = "https://github.com/alvarogabrielgomez/kanpachi";
+  var SETUP = REPO + "/releases/latest/download/kanpachi-setup.exe";
+  var RELEASES = REPO + "/releases/latest";
 
   var $ = function (id) { return document.getElementById(id); };
   var show = function (id) { $(id).classList.remove("hidden"); };
@@ -578,7 +588,8 @@
   // ocupar un chip. Es un dato, no una alarma: la advertencia con peso está en
   // la tarjeta de confirmación de la app, que aparece siempre.
   if (!isDefault) $("bar-host").classList.add("foreign");
-  text("bar-version", RELEASE.version ? "v" + RELEASE.version : "sin publicar");
+  $("bar-source").setAttribute("href", REPO);
+  $("bar-version").setAttribute("href", RELEASES);
 
   var path = window.location.pathname.replace(/^\/+|\/+$/g, "");
 
@@ -711,14 +722,9 @@
   // instalador, y lo único que cambia es lo que se le explica al usuario.
   function aplicarPlataforma() {
     var boton = $("get");
-    if (!RELEASE.version) {
-      boton.textContent = "Descargar Kanpachi";
-      text("get-note", "Todavía no hay instalador publicado.");
-      return;
-    }
     if (isWindows) {
       boton.textContent = "Descargar Kanpachi para Windows";
-      text("get-note", "Windows 10 y 11 · " + RELEASE.size + " · un solo UAC");
+      text("get-note", "Windows 10 y 11 · 64-bit · un solo UAC");
       return;
     }
     boton.textContent = "Descargar el instalador de Windows";
@@ -727,19 +733,23 @@
   }
 
   function renderDownload() {
-    if (!RELEASE.version) {
-      text("dl-title", "Todavía no hay instalador");
-      text("dl-sub", "Kanpachi está en construcción. Cuando haya una versión publicada, aparece acá con su hash para que puedas verificarla.");
-      show("sec-download");
-      return;
-    }
     text("dl-sub", "Windows 10 y 11 · 64-bit · se instala con un solo UAC");
     var b = $("dl-button");
-    b.textContent = "Kanpachi " + RELEASE.version + " · " + RELEASE.size;
-    b.setAttribute("href", "/descargar/kanpachi-" + RELEASE.version + ".exe");
-    show("dl-button");
-    text("dl-sha-val", RELEASE.sha256);
-    show("dl-sha");
+    b.textContent = "Descargar la última versión";
+    b.setAttribute("href", SETUP);
+    // El hash NO se escribe acá. Esta página no lo puede saber sin que alguien
+    // la edite en cada publicación, y un hash desactualizado es peor que
+    // ninguno: verificar contra él daría por manipulado un instalador bueno.
+    // Vive donde se genera, en la release, junto a su SHA256SUMS.
+    var nota = $("dl-note");
+    nota.textContent = "";
+    var antes = document.createTextNode("El número de versión y el SHA256 están en ");
+    var enlace = document.createElement("a");
+    enlace.setAttribute("href", RELEASES);
+    enlace.textContent = "la página de la publicación";
+    nota.appendChild(antes);
+    nota.appendChild(enlace);
+    nota.appendChild(document.createTextNode("."));
     show("sec-download");
   }
 

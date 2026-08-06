@@ -27,7 +27,12 @@ jobs:
 
       - name: Tests antes de publicar
         # Publicar un binario que no pasa sus tests es peor que no publicar.
-        run: go test -race -count=1 ./core/... ./registry/...
+        #
+        # `internal/arch` entra porque este workflow publica TAMBIEN la pagina:
+        # ahi viven los guardianes que atan su alfabeto de invite ID, su seed
+        # por defecto y sus invariantes al dominio de Go. Sin ellos se podria
+        # publicar una pagina que acepta codigos que la app rechaza.
+        run: go test -race -count=1 ./core/... ./registry/... ./internal/arch/...
 
       - name: Compilar
         run: |

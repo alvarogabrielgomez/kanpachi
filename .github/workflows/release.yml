@@ -1,0 +1,172 @@
+# Publica el instalador de Windows.
+#
+# Un tag `v*` produce `kanpachi-setup.exe` y sus sumas. El nombre del fichero NO
+# lleva la versión, y eso es deliberado: la página de descarga apunta a
+# `releases/latest/download/kanpachi-setup.exe`, que es una URL permanente que
+# GitHub redirige a la última publicación. Con el nombre versionado, cada
+# release obligaría a editar la página, y la página que hay que editar a mano es
+# la que se queda desactualizada. La versión viaja dentro del ejecutable, en su
+# VersionInfo, y en el título de la publicación.
+#
+# Sin firmar todavía. Windows va a enseñar el aviso de SmartScreen, y eso está
+# dicho en el cuerpo de la publicación en vez de disimulado. La firma con
+# SignPath entra cuando la solicitud esté aprobada: ver `docs/07-futuro.md`.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      motor:
+        description: "Ref del repositorio del motor con el que compilar"
+        default: main
+
+permissions:
+  contents: write
+
+jobs:
+  instalador:
+    name: kanpachi-setup.exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # **El motor vive en otro repositorio y se compila acá.**
+      #
+      # No se baja de una publicación suya porque todavía no tiene ninguna: hoy
+      # ese repositorio solo compila en cada push. Compilarlo desde el fuente es
+      # lo que hace que este workflow produzca la carga entera sin depender de
+      # que alguien suba un binario a mano.
+      #
+      # El ref queda anotado en el cuerpo de la publicación. Es lo que hace
+      # reconstruible este instalador: sin eso, "la versión 0.1.0" no dice con
+      # qué motor se armó.
+      - uses: actions/checkout@v4
+        with:
+          repository: alvarogabrielgomez/kanpachi-engine
+          ref: ${{ inputs.motor || 'main' }}
+          path: motor
+
+      - name: Versión
+        shell: bash
+        run: |
+          # `v0.1.0` -> `0.1.0`. Con `workflow_dispatch` no hay tag, así que se
+          # publica como 0.0.0: una prueba manual no puede producir un
+          # instalador que se haga pasar por una versión.
+          VER="${GITHUB_REF_NAME#v}"
+          case "$GITHUB_REF_TYPE" in tag) ;; *) VER="0.0.0" ;; esac
+          echo "VERSION=$VER" >> "$GITHUB_ENV"
+          # VersionInfoVersion de Inno tiene que ser numérica, así que un
+          # `0.2.0-rc1` pierde el sufijo SOLO para ese campo. El nombre de la
+          # publicación conserva el tag entero.
+          echo "VERSION_NUM=${VER%%-*}" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Fijada por SHA y no por tag, por lo mismo que en ci.yml: corre en el
+      # mismo trabajo que el checkout, así que un tag movido ejecutaría código
+      # nuevo sobre este fuente sin que nada en el diff lo diga.
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: "3.44.1"
+          channel: stable
+          cache: true
+
+      # Lo que la cadena de Rust del motor necesita, y cada cosa por su razón.
+      # Es lo mismo que hace `build.yml` del otro repositorio.
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: protoc y libclang para el motor
+        run: |
+          choco install protoc --no-progress -y
+          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+
+      - name: Compilar el motor
+        working-directory: motor
+        run: cargo build --release
+
+      # **Lo que se publica pasa por los tests que pasan hoy.**
+      #
+      # `core` es el dominio y los casos de uso, y `internal/arch` son los
+      # guardianes que atan las dos puntas del cable: el alfabeto del invite ID,
+      # la página de invitación, y el cableado que ya se quedó sin llamar tres
+      # veces en este repositorio.
+      #
+      # NO se corre la suite de Flutter, y hay que decir por qué en vez de
+      # dejarlo como un olvido: `ui/test` no compila desde que
+      # `FakeSessionRepository` salió de `lib/`, así que ponerla acá bloquearía
+      # toda publicación hasta arreglarla. La suite completa sigue disponible a
+      # mano en `ci.yml`.
+      - name: Tests
+        run: go test -count=1 ./core/... ./internal/arch/...
+
+      - name: Armar la carga
+        shell: pwsh
+        run: |
+          .\scripts\preparar-carga.ps1 `
+            -Salida "$env:GITHUB_WORKSPACE\dist\carga" `
+            -Motor  "$env:GITHUB_WORKSPACE\motor\target\release\kanpachi-engine.exe"
+
+      - name: Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Empaquetar
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & $iscc `
+            "/DCarga=$env:GITHUB_WORKSPACE\dist\carga" `
+            "/DAppVersion=$env:VERSION" `
+            "/DVersionInfo=$env:VERSION_NUM" `
+            "/O$env:GITHUB_WORKSPACE\dist" `
+            "installer\kanpachi.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC salio con $LASTEXITCODE" }
+
+      - name: Sumas
+        shell: pwsh
+        run: |
+          # El mismo formato que espera `sha256sum -c` y que ya usa el release
+          # del seed, para que las dos publicaciones se verifiquen igual.
+          $f = Get-Item "$env:GITHUB_WORKSPACE\dist\kanpachi-setup.exe"
+          $h = (Get-FileHash -Algorithm SHA256 $f.FullName).Hash.ToLower()
+          "$h  kanpachi-setup.exe" | Out-File -FilePath "$env:GITHUB_WORKSPACE\dist\SHA256SUMS" -Encoding ascii
+          Get-Content "$env:GITHUB_WORKSPACE\dist\SHA256SUMS"
+          "SETUP_SHA=$h" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Publicar
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/kanpachi-setup.exe
+            dist/SHA256SUMS
+          body: |
+            Kanpachi ${{ env.VERSION }} para Windows 10 y 11, 64 bits.
+
+            Se instala con **un solo UAC**, y ese es el único de la vida del
+            producto: ni al encender la PC ni al abrir la app se vuelve a pedir.
+
+            **Todavía no está firmado.** Windows va a enseñar el aviso de
+            SmartScreen al abrirlo; hay que pulsar "Más información" y "Ejecutar
+            de todas formas". La firma llega con el certificado de SignPath.
+
+            ```
+            SHA256  ${{ env.SETUP_SHA }}
+            ```
+
+            Motor compilado desde `alvarogabrielgomez/kanpachi-engine@${{ inputs.motor || 'main' }}`.
+
+      # Sin publicar, la corrida manual deja el instalador como artefacto. Es lo
+      # que permite probar este workflow entero sin crear un tag ni una
+      # publicación que después haya que borrar.
+      - name: Guardar el instalador
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kanpachi-setup
+          path: |
+            dist/kanpachi-setup.exe
+            dist/SHA256SUMS

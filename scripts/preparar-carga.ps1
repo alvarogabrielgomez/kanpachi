@@ -18,15 +18,21 @@
 # Mismo criterio que release-seed.yml.
 #
 #   .\scripts\preparar-carga.ps1
-#   .\scripts\preparar-carga.ps1 -Salida "C:\kt\carga"
+#   .\scripts\preparar-carga.ps1 -Salida .\dist\carga -Motor ..\kanpachi-engine\target\release\kanpachi-engine.exe
+#
+# Los defaults son RELATIVOS AL REPOSITORIO. Antes apuntaban a C:\kt, que es un
+# directorio de trabajo de una sola maquina y no existe en ninguna otra ni en el
+# CI: cualquiera que clonara el repositorio y corriera esto se llevaba una carga
+# escrita en una ruta que no significa nada.
 #
 # No hace falta elevar: esto solo compila y copia.
 
 [CmdletBinding()]
 param(
-    [string]$Salida = "C:\kt\carga",
-    # El motor viene del otro repositorio. Vacio lo busca en el stage.
-    [string]$Motor = "C:\kt\stage\kanpachi-engine.exe"
+    [string]$Salida = "",
+    # El motor viene del otro repositorio, y no se compila aca: es Rust, con su
+    # propia cadena de herramientas. Vacio lo busca al lado de este repositorio.
+    [string]$Motor = ""
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,6 +45,11 @@ function Nota($t) { Write-Host "  --  $t" -ForegroundColor DarkGray }
 # El repositorio sale de la ubicacion del script y jamas del directorio actual.
 $repo = Split-Path -Parent $PSScriptRoot
 $fallos = 0
+
+if ([string]::IsNullOrWhiteSpace($Salida)) { $Salida = Join-Path $repo 'dist\carga' }
+if ([string]::IsNullOrWhiteSpace($Motor)) {
+    $Motor = Join-Path (Split-Path -Parent $repo) 'kanpachi-engine\target\release\kanpachi-engine.exe'
+}
 
 if (Test-Path $Salida) {
     # Se borra entera. Una carga con restos de una version anterior es
@@ -98,7 +109,12 @@ Paso "lo que no se compila aca"
 $copias = @(
     @{ origen = 'daemon\adapter\catalog\jsonfile\builtin.json'; nombre = 'builtin.json' },
     @{ origen = 'third_party\easytier\Packet.dll';              nombre = 'Packet.dll' },
-    @{ origen = 'third_party\easytier\wintun.dll';              nombre = 'wintun.dll' }
+    @{ origen = 'third_party\easytier\wintun.dll';              nombre = 'wintun.dll' },
+    # Faltaba, y docs/03 lo lista dentro del directorio de instalacion desde
+    # siempre. La carpeta portable si lo copiaba, asi que la carga que se
+    # empaqueta era la unica de las dos formas de entregar Kanpachi a la que le
+    # faltaba un fichero.
+    @{ origen = 'third_party\easytier\WinDivert64.sys';         nombre = 'WinDivert64.sys' }
 )
 foreach ($c in $copias) {
     $src = Join-Path $repo $c.origen
