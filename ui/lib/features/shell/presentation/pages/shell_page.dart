@@ -160,15 +160,46 @@ class _RoomFollower extends StatelessWidget {
   }
 }
 
+/// The screen actually on show, or null while an operation is being waited on.
+///
+/// Shared by [_CurrentScreen] and [_FailureLayer] so the floor that sends a
+/// roomless app back home is written once. Two copies of it would drift, and the
+/// symptom would be the failure notice painted twice or not at all.
+AppScreen? _visibleScreen(ShellState shell, SessionState session) {
+  if (session.isWaiting) return null;
+  if (session.room == null &&
+      (shell.screen == AppScreen.room ||
+          shell.screen == AppScreen.exposure ||
+          shell.screen == AppScreen.invite)) {
+    return AppScreen.home;
+  }
+  return shell.screen;
+}
+
 /// The notice for whatever the user asked for last and did not happen.
 class _FailureLayer extends StatelessWidget {
   const _FailureLayer();
 
+  /// The screens that paint the failure THEMSELVES, inside their left panel.
+  ///
+  /// They have somewhere to put it: a column of its own that scrolls, where the
+  /// notice can be read whole and its details unfolded without covering the
+  /// list next to it. The rest have no panel, so for them the frame keeps
+  /// floating it at the bottom.
+  static const Set<AppScreen> _withPanels = <AppScreen>{
+    AppScreen.home,
+    AppScreen.room,
+  };
+
   @override
   Widget build(BuildContext context) {
+    final ShellState shell = context.watch<ShellCubit>().state;
     final SessionState session = context.watch<SessionCubit>().state;
     final ActionFailure? failure = session.failure;
     if (failure == null) return const SizedBox.shrink();
+    if (_withPanels.contains(_visibleScreen(shell, session))) {
+      return const SizedBox.shrink();
+    }
 
     return Positioned(
       left: AppSpacing.x4l,
@@ -235,17 +266,10 @@ class _CurrentScreen extends StatelessWidget {
     // task manager. It happened for real: creating a room navigated at the
     // same time as asking, so a creation that failed parked the app here.
     //
-    // The call sites now wait before navigating, and this stays as the floor.
-    // A dead screen is worse than any wrong screen, and the cost of being sure
-    // is one comparison.
-    if (session.room == null &&
-        (shell.screen == AppScreen.room ||
-            shell.screen == AppScreen.exposure ||
-            shell.screen == AppScreen.invite)) {
-      return const HomeScreen();
-    }
-
-    return switch (shell.screen) {
+    // The call sites now wait before navigating, and [_visibleScreen] stays as
+    // the floor. A dead screen is worse than any wrong screen, and the cost of
+    // being sure is one comparison.
+    return switch (_visibleScreen(shell, session)!) {
       AppScreen.welcome => WelcomeScreen(ambient: shell.ambient),
       // Coming from the account menu is not onboarding: the copy about being
       // halfway through signing up only belongs to the sign-up. Whether it is

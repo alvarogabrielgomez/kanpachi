@@ -75,6 +75,197 @@ class ScreenBody extends StatelessWidget {
   }
 }
 
+/// Dos paneles lado a lado, cada uno con su propio scroll.
+///
+/// # Por qué no vale el scroll único de [ScreenBody]
+///
+/// Con un solo scroll para toda la pantalla, la columna más larga arrastra a la
+/// otra: bajar para leer el tercer aviso de la izquierda se lleva también la
+/// lista de juegos o la de miembros, que es justo lo que se estaba mirando. Y
+/// como la altura de la página la fija la columna más alta, un aviso que aparece
+/// abajo estira el documento entero y mueve de sitio lo que ya estaba puesto.
+///
+/// Con un scroll por panel, cada columna crece hacia adentro. La izquierda puede
+/// acumular avisos hasta hacerse una lista y recorrerse entera sin que la
+/// derecha se mueva un píxel. Es la razón de ser de este widget: **el panel
+/// izquierdo es donde viven los mensajes**, y necesita poder ser largo sin
+/// costarle la vista al panel derecho.
+///
+/// # La altura tiene que venir acotada
+///
+/// Los paneles se reparten el alto disponible, así que este widget NO se puede
+/// colgar de un scroll — dentro de uno la altura es infinita y no hay nada que
+/// repartir. En la app cuelga del `Expanded` del marco, que siempre la acota.
+/// Fallar ahí es preferible a un apaño silencioso: un panel que no scrollea
+/// porque alguien lo envolvió en un `SingleChildScrollView` no se nota mirando.
+class ScreenPanels extends StatelessWidget {
+  const ScreenPanels({
+    required this.left,
+    required this.right,
+    this.header,
+    this.gap = AppSpacing.x9l,
+    super.key,
+  });
+
+  /// El panel de los mensajes y de la acción principal.
+  final Widget left;
+
+  final Widget right;
+
+  /// Lo que se queda FIJO por encima de los dos paneles.
+  ///
+  /// La cabecera de la sala va acá: lleva el nombre, el código y los botones del
+  /// host, y perderlos de vista al bajar por los avisos obligaría a subir otra
+  /// vez para copiar el enlace.
+  final Widget? header;
+
+  /// La separación entre las dos columnas, y también entre ellas cuando la
+  /// ventana es tan estrecha que se apilan.
+  final double gap;
+
+  /// Por debajo de este ancho de contenido dos columnas no son dos columnas:
+  /// son dos tiras. Ahí se apilan y vuelve el scroll único, que es la forma
+  /// correcta de leer una sola columna.
+  static const double _twoColumnMin = 640;
+
+  @override
+  Widget build(BuildContext context) {
+    final DensityTokens d = context.density;
+
+    return ScreenEnter(
+      // El mismo tope que [ScreenBody], y una sola vez para toda la pantalla:
+      // ponerlo por panel daría dos topes de 940 y una ventana maximizada
+      // enseñaría dos columnas separadas por medio monitor.
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: AppSpacing.contentMax),
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints c) {
+              final bool wide =
+                  c.maxWidth - AppSpacing.pageInline * 2 >= _twoColumnMin;
+
+              if (!wide) {
+                return SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.pageInline,
+                    d.pagePad,
+                    AppSpacing.pageInline,
+                    d.pagePad,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      if (header != null) ...<Widget>[
+                        header!,
+                        SizedBox(height: gap),
+                      ],
+                      left,
+                      SizedBox(height: gap),
+                      right,
+                    ],
+                  ),
+                );
+              }
+
+              // El aire de arriba lo paga la cabecera cuando la hay, y los
+              // paneles arrancan pegados a ella con el hueco normal entre
+              // bloques. Sin cabecera lo pagan ellos.
+              final double topOfPanels = header == null ? d.pagePad : d.gap;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  if (header != null)
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        AppSpacing.pageInline,
+                        d.pagePad,
+                        AppSpacing.pageInline,
+                        0,
+                      ),
+                      child: header,
+                    ),
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        Expanded(
+                          child: _Panel(
+                            padding: EdgeInsets.fromLTRB(
+                              AppSpacing.pageInline,
+                              topOfPanels,
+                              0,
+                              d.pagePad,
+                            ),
+                            child: left,
+                          ),
+                        ),
+                        SizedBox(width: gap),
+                        Expanded(
+                          child: _Panel(
+                            padding: EdgeInsets.fromLTRB(
+                              0,
+                              topOfPanels,
+                              AppSpacing.pageInline,
+                              d.pagePad,
+                            ),
+                            child: right,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Una columna que se recorre sola.
+///
+/// Con controlador propio y no el primario: dos scrolls verticales sin
+/// controlador se pelean por el `PrimaryScrollController` del marco y Flutter
+/// lanza. Además es lo que le permite a la barra saber de cuál de los dos es.
+///
+/// La barra va POR FUERA del padding, así que el pulgar se apoya en el borde del
+/// panel y el contenido conserva su margen. Sólo aparece cuando el panel de
+/// verdad se pasa de alto, que es exactamente el aviso que hace falta dar.
+class _Panel extends StatefulWidget {
+  const _Panel({required this.child, required this.padding});
+
+  final Widget child;
+  final EdgeInsets padding;
+
+  @override
+  State<_Panel> createState() => _PanelState();
+}
+
+class _PanelState extends State<_Panel> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scrollbar(
+      controller: _controller,
+      child: SingleChildScrollView(
+        controller: _controller,
+        padding: widget.padding,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
 /// El cuerpo de una pantalla centrada, sin más contenido que un bloque: la
 /// bienvenida, el nombre, las esperas.
 class ScreenCentered extends StatelessWidget {

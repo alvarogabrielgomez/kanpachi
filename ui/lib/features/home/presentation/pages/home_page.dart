@@ -12,12 +12,14 @@ import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
 import 'package:kanpachi_ui/core/messages/message_catalog.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/invite_code.dart';
 import 'package:kanpachi_ui/features/session/domain/room_names.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
+import 'package:kanpachi_ui/features/session/presentation/widgets/failure_notice.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
 
@@ -88,11 +90,27 @@ class _HomeScreenState extends State<HomeScreen> {
     final SessionState session = context.watch<SessionCubit>().state;
     final bool canJoin = InviteCode.isComplete(_code.text);
 
-    return ScreenBody(
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          final bool wide = constraints.maxWidth >= 640;
-          final Widget left = _JoinAndCreate(
+    final ActionFailure? failure = session.failure;
+
+    return ScreenPanels(
+      // El fallo va ARRIBA del todo y no flotando sobre la pantalla, que es
+      // donde vivía. Flotando abajo tapaba la biblioteca y el botón de crear
+      // sala justo cuando había que volver a pulsarlo; acá empuja el formulario
+      // hacia abajo, que es el precio, y a cambio se lee entero, se puede
+      // desplegar el detalle y se recorre con el resto de los avisos sin que la
+      // columna de la derecha se mueva.
+      left: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (failure != null) ...<Widget>[
+            FailureNotice(
+              failure: failure,
+              verbose: session.verbose,
+              onDismiss: () => context.read<SessionCubit>().clearFailure(),
+            ),
+            const SizedBox(height: AppSpacing.x5l),
+          ],
+          _JoinAndCreate(
             code: _code,
             roomName: _roomName,
             nameHint: _nameHint,
@@ -102,32 +120,13 @@ class _HomeScreenState extends State<HomeScreen> {
             onCodeChanged: _onCodeChanged,
             onJoin: _join,
             onCreate: _createEmpty,
-          );
-          final Widget right = _MyGames(
-            games: session.installed,
-            artMode: shell.artMode,
-            total: session.catalog.length,
-          );
-
-          if (!wide) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                left,
-                const SizedBox(height: AppSpacing.x9l),
-                right,
-              ],
-            );
-          }
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(child: left),
-              const SizedBox(width: AppSpacing.x9l),
-              Expanded(child: right),
-            ],
-          );
-        },
+          ),
+        ],
+      ),
+      right: _MyGames(
+        games: session.installed,
+        artMode: shell.artMode,
+        total: session.catalog.length,
       ),
     );
   }

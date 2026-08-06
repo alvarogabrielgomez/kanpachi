@@ -20,9 +20,11 @@ import 'package:kanpachi_ui/core/messages/message_catalog.dart';
 import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/features/room/presentation/widgets/canary_alarm.dart';
 import 'package:kanpachi_ui/features/room/presentation/widgets/copy_button.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
+import 'package:kanpachi_ui/features/session/presentation/widgets/failure_notice.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
 
@@ -68,12 +70,20 @@ class _RoomScreenState extends State<RoomScreen> {
 
     final DensityTokens d = context.density;
 
-    return ScreenBody(
-      child: Column(
+    final ActionFailure? failure = session.failure;
+
+    // **Los avisos bajaron al panel izquierdo, y ya no van de borde a borde.**
+    //
+    // Antes ocupaban el ancho entero por encima de las dos columnas, así que
+    // con dos puestos a la vez la sala empezaba con los miembros fuera de
+    // pantalla. Ahora se apilan en su columna y se recorren ahí, con la lista de
+    // quién está dentro quieta al lado.
+    return ScreenPanels(
+      gap: AppSpacing.x7l,
+      header: _RoomHeader(room: room),
+      left: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          _RoomHeader(room: room),
-          SizedBox(height: d.gap),
           // Encima de todo lo demás, y por delante incluso del host que se fue.
           // El usuario puede no abrir jamás la pantalla de exposición, y una
           // protección que dejó de contener no puede esperar a que vaya a
@@ -89,6 +99,17 @@ class _RoomScreenState extends State<RoomScreen> {
             ),
             SizedBox(height: d.gap),
           ],
+          // Detrás de la alarma y delante del resto: la alarma habla de una
+          // protección que dejó de contener, esto de una orden que el usuario
+          // acaba de dar y no pasó.
+          if (failure != null) ...<Widget>[
+            FailureNotice(
+              failure: failure,
+              verbose: session.verbose,
+              onDismiss: () => context.read<SessionCubit>().clearFailure(),
+            ),
+            SizedBox(height: d.gap),
+          ],
           if (room.hostLeft && !room.selfIsHost) ...<Widget>[
             AppMessageNotice(message: AppMessages.hostLeft(room.hostName)),
             SizedBox(height: d.gap),
@@ -100,33 +121,10 @@ class _RoomScreenState extends State<RoomScreen> {
             ),
             SizedBox(height: d.gap),
           ],
-          LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final bool wide = constraints.maxWidth >= 640;
-              final Widget left = _RoomStatus(room: room, session: session);
-              final Widget right = _RoomMembers(room: room);
-              if (!wide) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    left,
-                    SizedBox(height: d.gap),
-                    right,
-                  ],
-                );
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Expanded(child: left),
-                  const SizedBox(width: AppSpacing.x7l),
-                  Expanded(child: right),
-                ],
-              );
-            },
-          ),
+          _RoomStatus(room: room, session: session),
         ],
       ),
+      right: _RoomMembers(room: room),
     );
   }
 }
