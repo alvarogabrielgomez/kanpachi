@@ -3,7 +3,7 @@ import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 
-/// What the daemon is doing, step by step. **Debug builds only.**
+/// What the daemon is doing, step by step.
 ///
 /// # Why it exists
 ///
@@ -14,19 +14,39 @@ import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 /// and when it fails the only thing that reaches the screen is the last error
 /// line, which is almost never where the problem was.
 ///
-/// # Why only in debug
+/// # Who sees it
 ///
-/// Not secrecy. These lines name subnets, adapters, seeds and timings: they
-/// are how somebody building Kanpachi finds which of eight steps is slow, and
-/// they are noise to somebody who wants to play. Whoever is playing gets one
-/// spinner and, if it fails, one sentence that says what did not happen.
+/// Whoever turned it on. It is on by default while developing and off by
+/// default in the product, and either way it is a setting and not a build
+/// flag — see [AppPreferences.verbose]. The reason it is off by default is not
+/// secrecy: these lines name subnets, adapters, seeds and timings, which is
+/// what somebody building Kanpachi needs and noise to somebody who wants to
+/// play.
 ///
-/// Nothing polls for this in a release build, so `Progress` is never even
-/// fetched there.
+/// # Why the list scrolls inside itself
+///
+/// Because the number of steps is not known in advance and the panel shares a
+/// screen with a spinner, a title and a note that must stay put. Measured: a
+/// creation that reached the engine overflowed the wait screen by 116 px, and
+/// what a bottom overflow hides is the END of the list, which is exactly the
+/// part being waited on. The header stays outside the scroll so the operation
+/// and its clock never leave.
 class ProgressSteps extends StatelessWidget {
-  const ProgressSteps({required this.progress, super.key});
+  const ProgressSteps({
+    required this.progress,
+    this.maxHeight = 240,
+    super.key,
+  });
 
   final Progress progress;
+
+  /// How tall the list of steps gets before it starts scrolling.
+  ///
+  /// A cap and not a share of the window: this panel sits in two very
+  /// different places — under the wait screen and inside the failure notice's
+  /// details drawer — and in both the rest of the content has to remain
+  /// reachable.
+  final double maxHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -35,6 +55,7 @@ class ProgressSteps extends StatelessWidget {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         Row(
           children: <Widget>[
@@ -51,7 +72,11 @@ class ProgressSteps extends StatelessWidget {
           ],
         ),
         const SizedBox(height: AppSpacing.md),
-        for (final ProgressStep s in progress.steps) _Linea(step: s),
+        // Not wrapped in a `Flexible`, and that is load-bearing: the failure
+        // notice hangs from a `Positioned` with no top, so its height arrives
+        // UNBOUNDED, and a flex child under an unbounded main axis throws. The
+        // cap lives inside the list itself, which works in both places.
+        _StepList(progress: progress, maxHeight: maxHeight),
         if (progress.dropped > 0) ...<Widget>[
           const SizedBox(height: AppSpacing.sm),
           // Said out loud on purpose. A list cut in silence reads as a
@@ -63,6 +88,77 @@ class ProgressSteps extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// The scrolling part: the steps themselves, newest at the bottom.
+///
+/// # Why it follows the tail, and why only sometimes
+///
+/// Because this is a live log of something the reader is waiting on: pinned to
+/// the top, a creation past the eighth step shows only the part that already
+/// finished. So it jumps to the end when a step lands — **unless the reader
+/// scrolled up**, because scrolling up is somebody reading an earlier step, and
+/// yanking them back to the bottom every 400 ms would make that impossible.
+class _StepList extends StatefulWidget {
+  const _StepList({required this.progress, required this.maxHeight});
+
+  final Progress progress;
+  final double maxHeight;
+
+  @override
+  State<_StepList> createState() => _StepListState();
+}
+
+class _StepListState extends State<_StepList> {
+  final ScrollController _scroll = ScrollController();
+
+  /// How far off the bottom still counts as "at the bottom". One line of the
+  /// mono type plus its gap: a couple of pixels of overscroll must not read as
+  /// a deliberate scroll up.
+  static const double _tailSlack = 24;
+
+  @override
+  void didUpdateWidget(_StepList old) {
+    super.didUpdateWidget(old);
+    if (widget.progress.steps.length == old.progress.steps.length) return;
+    // Asked BEFORE the new step is laid out, which is why it is read here and
+    // not in the callback: at this point the controller still holds the
+    // metrics of the list the reader was looking at.
+    if (!_pegadoAlFinal()) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    });
+  }
+
+  bool _pegadoAlFinal() {
+    if (!_scroll.hasClients) return true;
+    final ScrollPosition p = _scroll.position;
+    return p.pixels >= p.maxScrollExtent - _tailSlack;
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: widget.maxHeight),
+      child: SingleChildScrollView(
+        controller: _scroll,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (final ProgressStep s in widget.progress.steps) _Linea(step: s),
+          ],
+        ),
+      ),
     );
   }
 }
