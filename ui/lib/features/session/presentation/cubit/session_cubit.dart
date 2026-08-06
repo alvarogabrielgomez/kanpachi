@@ -40,13 +40,20 @@ class SessionCubit extends Cubit<SessionState> {
         clearRoom: true,
       ),
     );
-    final Room room = await _repository.createRoom(name: name, game: game);
+    final Room room = await _repository.createRoom(
+      name: name,
+      nickname: state.nickname,
+      game: game,
+    );
     emit(state.copyWith(phase: SessionPhase.inRoom, room: room));
   }
 
   Future<void> joinRoom(String inviteId) async {
     emit(state.copyWith(phase: SessionPhase.joining, clearRoom: true));
-    final Room room = await _repository.joinRoom(inviteId);
+    final Room room = await _repository.joinRoom(
+      inviteId,
+      nickname: state.nickname,
+    );
     emit(state.copyWith(phase: SessionPhase.inRoom, room: room));
   }
 

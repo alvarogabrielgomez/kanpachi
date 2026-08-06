@@ -27,7 +27,10 @@ void main() {
   late Room sala;
 
   setUpAll(() async {
-    sala = await FakeSessionRepository().createRoom(name: 'La Guarida');
+    sala = await FakeSessionRepository().createRoom(
+      name: 'La Guarida',
+      nickname: 'Alvaro',
+    );
   });
 
   /// Monta el armazón ENTERO, y ahí está la gracia: es lo único que puede

@@ -43,8 +43,11 @@ void main() {
 
   setUpAll(() async {
     final FakeSessionRepository fake = FakeSessionRepository();
-    salaDeHost = await fake.createRoom(name: 'La Guarida de los Panas');
-    salaDeInvitado = await fake.joinRoom('A7K2-M9QX');
+    salaDeHost = await fake.createRoom(
+      name: 'La Guarida de los Panas',
+      nickname: 'Alvaro',
+    );
+    salaDeInvitado = await fake.joinRoom('A7K2-M9QX', nickname: 'Alvaro');
   });
 
   /// Pinta el marco entero con la pantalla puesta y devuelve los desbordes.

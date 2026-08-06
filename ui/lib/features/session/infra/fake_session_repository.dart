@@ -73,7 +73,11 @@ class FakeSessionRepository implements SessionRepository {
       _catalog.where((Game g) => g.installed).toList();
 
   @override
-  Future<Room> createRoom({required String name, Game? game}) async {
+  Future<Room> createRoom({
+    required String name,
+    required String nickname,
+    Game? game,
+  }) async {
     await Future<void>.delayed(_createDelay);
     return Room(
       name: name,
@@ -111,7 +115,7 @@ class FakeSessionRepository implements SessionRepository {
   }
 
   @override
-  Future<Room> joinRoom(String inviteId) async {
+  Future<Room> joinRoom(String inviteId, {required String nickname}) async {
     await Future<void>.delayed(_joinDelay);
     return Room(
       name: 'La Guarida',

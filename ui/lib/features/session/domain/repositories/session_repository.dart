@@ -23,10 +23,21 @@ abstract interface class SessionRepository {
 
   /// Crea una sala. `game` en null es una sala vacía, que es lo normal: el
   /// juego se elige adentro.
-  Future<Room> createRoom({required String name, Game? game});
+  ///
+  /// El apodo es un ARGUMENTO y no un estado guardado, porque en el cable lo es:
+  /// `create_room` y `join_room` lo reciben, y no existe ningún `set_nickname`
+  /// entre los métodos del daemon. Un repositorio que fuera a buscarlo a algún
+  /// sitio estaría inventando una capa de identidad que el protocolo no tiene, y
+  /// el primer fallo sería una sala creada con un apodo que el usuario cambió
+  /// tres pantallas atrás.
+  Future<Room> createRoom({
+    required String name,
+    required String nickname,
+    Game? game,
+  });
 
   /// Entra a una sala con un invite ID.
-  Future<Room> joinRoom(String inviteId);
+  Future<Room> joinRoom(String inviteId, {required String nickname});
 
   /// Abre un juego en la sala, o lo cierra si `game` es null. Devuelve la
   /// sala ya con los puertos aplicados.

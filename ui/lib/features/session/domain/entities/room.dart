@@ -112,6 +112,13 @@ class Member {
 
 /// Qué se hizo con la regla de firewall que dejó el propio juego.
 enum ForeignRuleState {
+  /// No hay ninguna. Es el caso normal y no dice nada en pantalla.
+  ///
+  /// Existe aparte de [kept] porque no son lo mismo: aquel es una decisión del
+  /// usuario sobre una regla que existe, y este es que no había regla. Sin este
+  /// valor, una sala sin reglas ajenas tendría que fingir una de las otras.
+  none,
+
   /// Existe y sigue activa: el juego es alcanzable sin pasar por el control
   /// de Kanpachi, así que expulsar a alguien no lo tapa.
   open,

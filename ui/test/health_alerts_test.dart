@@ -143,7 +143,10 @@ void main() {
     late final Room sala;
 
     setUpAll(() async {
-      sala = await FakeSessionRepository().createRoom(name: 'La Guarida');
+      sala = await FakeSessionRepository().createRoom(
+      name: 'La Guarida',
+      nickname: 'Alvaro',
+    );
     });
 
     Future<RepoConSalud> pintaSala(
