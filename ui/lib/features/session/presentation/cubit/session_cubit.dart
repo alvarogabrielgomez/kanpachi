@@ -174,7 +174,15 @@ class SessionCubit extends Cubit<SessionState> {
 
   void cancelProposal() => emit(state.copyWith(clearPending: true));
 
-  Future<void> createRoom({required String name, Game? game}) async {
+  /// Opens a room. Returns whether it opened.
+  ///
+  /// **The caller must not navigate until this answers.** It used to navigate
+  /// to the room screen at the same time as asking, so a creation that failed
+  /// left the app parked on a room screen with no room: an empty window with no
+  /// way back, because every control on it needs a room to act on. That is
+  /// worse than any error message, and it is the reason this returns a bool
+  /// instead of void.
+  Future<bool> createRoom({required String name, Game? game}) async {
     emit(
       state.copyWith(
         phase: SessionPhase.creating,
@@ -193,9 +201,11 @@ class SessionCubit extends Cubit<SessionState> {
       emit(state.copyWith(phase: SessionPhase.inRoom, room: room));
     });
     _stopWatching();
+    return !isClosed && state.room != null;
   }
 
-  Future<void> joinRoom(String inviteId) async {
+  /// Joins a room. Returns whether it joined. Same rule as [createRoom].
+  Future<bool> joinRoom(String inviteId) async {
     emit(state.copyWith(phase: SessionPhase.joining, clearRoom: true));
     _watchProgress();
     await _try(FailedAction.joinRoom, onFail: SessionPhase.idle, () async {
@@ -206,6 +216,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(state.copyWith(phase: SessionPhase.inRoom, room: room));
     });
     _stopWatching();
+    return !isClosed && state.room != null;
   }
 
   /// Abre un juego en la sala que ya existe.

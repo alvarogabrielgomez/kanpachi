@@ -59,18 +59,27 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {});
   }
 
-  void _join() {
+  /// Joins, and only navigates if it joined.
+  ///
+  /// **Navigating at the same time as asking is what left the app stuck.** A
+  /// join that failed put the room screen up with no room behind it: an empty
+  /// window with no way back, because every control there needs a room to act
+  /// on. The failure notice was drawn underneath and could not be reached.
+  Future<void> _join() async {
     if (!InviteCode.isComplete(_code.text)) return;
-    context.read<SessionCubit>().joinRoom(_code.text);
-    context.read<ShellCubit>().go(AppScreen.room);
+    final SessionCubit session = context.read<SessionCubit>();
+    final ShellCubit shell = context.read<ShellCubit>();
+    if (await session.joinRoom(_code.text)) shell.go(AppScreen.room);
   }
 
-  void _createEmpty() {
+  /// Same rule as [_join]: the screen moves only once there is a room.
+  Future<void> _createEmpty() async {
+    final SessionCubit session = context.read<SessionCubit>();
+    final ShellCubit shell = context.read<ShellCubit>();
     final String name = _roomName.text.trim().isEmpty
         ? _nameHint
         : _roomName.text.trim();
-    context.read<SessionCubit>().createRoom(name: name);
-    context.read<ShellCubit>().go(AppScreen.room);
+    if (await session.createRoom(name: name)) shell.go(AppScreen.room);
   }
 
   @override

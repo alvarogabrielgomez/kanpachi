@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -43,8 +44,32 @@ Future<void> main(List<String> args) async {
   }
 
   IocManager.register();
-  await _prepareWindow(silent: !args.contains(kShowFlag) && await _hayDaemon());
+  await _prepareWindow(silent: await _shouldStayQuiet(args));
   runApp(const KanpachiApp());
+}
+
+/// Whether this run should stay in the tray with no window.
+///
+/// Silence is the default of both executables, and the flag asks to SHOW. That
+/// direction is deliberate: a flag lost along the way has to fail towards
+/// quiet, because the other way round the failure is a window opening by itself
+/// on top of whatever you were doing when the machine booted.
+///
+/// Two things override it, and both are the same idea — silence only makes
+/// sense when something else is carrying the tray icon.
+///
+///  - **No daemon.** The icon only exists if there is one, so a hidden window
+///    with no daemon is a process with no window, no icon, and no way to close
+///    it short of Task Manager. See [_hayDaemon].
+///  - **A debug build.** `flutter run` cannot pass arguments to the app, so
+///    every development run would come up invisible. A debug build is a
+///    development session by definition, and there is no daemon parenting it.
+///    Silent startup is measured with the release binary, which is the one that
+///    ships.
+Future<bool> _shouldStayQuiet(List<String> args) async {
+  if (kDebugMode) return false;
+  if (args.contains(kShowFlag)) return false;
+  return _hayDaemon();
 }
 
 /// Si hay un daemon del otro lado del pipe, ahora mismo.

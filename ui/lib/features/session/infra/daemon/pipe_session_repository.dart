@@ -225,7 +225,13 @@ class PipeSessionRepository implements SessionRepository {
     // Sin código no hay sala: `status` contesta igual cuando no hay ninguna, y
     // el estado vacío no es un error, es la portada.
     if ((st['code'] as String? ?? '').isEmpty) return null;
-    return _sala(st);
+    // Foreign rules are resolved HERE too, and not only when the game changes.
+    // They are not on the wire: they come from a second query, so a room that
+    // skips it carries whatever the entity defaults to. Asking on every
+    // refresh is what makes the warning true at the moment it is painted —
+    // rules appear when a game installs itself and disappear when somebody
+    // removes them, neither of which passes through this app.
+    return _conReglasAjenas(await _sala(st));
   }
 
   // ------------------------------------------------------------ diagnósticos

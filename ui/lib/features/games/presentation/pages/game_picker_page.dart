@@ -112,11 +112,14 @@ class _GamePickerScreenState extends State<GamePickerScreen> {
                 horizontal: AppSpacing.x4l,
                 vertical: AppSpacing.xxl,
               ),
-              onTap: () {
-                context.read<SessionCubit>().createRoom(
-                  name: 'Sala de Kanpachi',
-                );
-                shell.go(AppScreen.room);
+              // Waits before navigating. See `SessionCubit.createRoom`: going
+              // to the room screen with no room leaves a window with no way
+              // out of it.
+              onTap: () async {
+                final SessionCubit session = context.read<SessionCubit>();
+                if (await session.createRoom(name: 'Sala de Kanpachi')) {
+                  shell.go(AppScreen.room);
+                }
               },
               child: Row(
                 children: <Widget>[

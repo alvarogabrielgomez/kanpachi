@@ -148,7 +148,15 @@ class Room {
     this.hostGoneFor,
     this.reconnectingFor,
     this.network = ConnState.connected,
-    this.foreignRule = ForeignRuleState.open,
+    // **`none` and not `open`, and that is a correctness fix.**
+    //
+    // The wire does NOT carry this: it comes from a separate query,
+    // `foreign_rules_for`, which only some paths make. With `open` as the
+    // default, every room that had not been asked about came back asserting
+    // there was an open foreign rule — so the warning appeared after any
+    // refresh, naming the active game, with nobody having looked. A default
+    // that claims a finding is a finding invented by a constructor.
+    this.foreignRule = ForeignRuleState.none,
     this.foreignRuleClass = RuleClass.game,
     this.foreignRuleProgram,
   });

@@ -96,13 +96,20 @@ class ConfirmGameDialog extends StatelessWidget {
               session.cancelProposal();
               shell.closeDialog();
             },
-            onConfirm: () {
+            // Creating waits before navigating; applying does not need to,
+            // because there is already a room to come back to. See
+            // `SessionCubit.createRoom`.
+            onConfirm: () async {
               shell.closeDialog();
               if (insideRoom) {
-                session.applyGame(game);
                 shell.go(AppScreen.room);
-              } else {
-                session.createRoom(name: 'Sala de Kanpachi', game: game);
+                await session.applyGame(game);
+                return;
+              }
+              if (await session.createRoom(
+                name: 'Sala de Kanpachi',
+                game: game,
+              )) {
                 shell.go(AppScreen.room);
               }
             },

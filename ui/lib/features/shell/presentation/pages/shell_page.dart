@@ -157,6 +157,23 @@ class _CurrentScreen extends StatelessWidget {
       );
     }
 
+    // **Three screens need a room, and without one they are a dead end.**
+    //
+    // Every control on them acts on the room, so with none there is nothing to
+    // draw and nothing to press — an empty window whose only way out is the
+    // task manager. It happened for real: creating a room navigated at the
+    // same time as asking, so a creation that failed parked the app here.
+    //
+    // The call sites now wait before navigating, and this stays as the floor.
+    // A dead screen is worse than any wrong screen, and the cost of being sure
+    // is one comparison.
+    if (session.room == null &&
+        (shell.screen == AppScreen.room ||
+            shell.screen == AppScreen.exposure ||
+            shell.screen == AppScreen.invite)) {
+      return const HomeScreen();
+    }
+
     return switch (shell.screen) {
       AppScreen.welcome => WelcomeScreen(ambient: shell.ambient),
       AppScreen.nickname => const NicknameScreen(),
