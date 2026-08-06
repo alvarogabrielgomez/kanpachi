@@ -926,6 +926,71 @@ sala de dos máquinas, que es cuando se puede medir desde el otro lado.
 así que no es un fallo; lo que importa es que no le aparezca una ruta por
 defecto, y el script lo comprueba aparte porque a `kanpachi1` no lo mira nadie.
 
+## El directorio, medido contra el droplet
+
+Medido el 2026-08-05 con `scripts/medir-directorio.ps1`, elevado, contra
+`kanpachi.accentio.dev` de verdad. El test de contrato ya habla el protocolo
+entero con las dos puntas en proceso; lo que esto agrega es el servidor del
+droplet, con su TLS, su proxy inverso y su límite de tasa, y el daemon
+hablándole desde Windows como SYSTEM.
+
+| Qué | Resultado |
+|---|---|
+| Crear una sala deja tarjeta | 86 caracteres base64, código `JUQX-FBLL` |
+| El contador de miembros | **`members = 1`**, o sea que el contador del droplet sí habla con el motor |
+| Renombrar cambia los bytes | sí |
+| Renovar emite un ID nuevo que resuelve | `CGGN-L7VS` |
+| Muerte sucia y reabrir | la tarjeta vuelve |
+| Llave ajena, firma VÁLIDA | **403**, `ese invite ID pertenece a otra llave` |
+| Llave ajena, firma basura | **403**, `la firma no valida contra la llave que trae` |
+| `identity.key` | 32 bytes, sin heredar, solo SYSTEM y Administradores |
+| Avisos en el log | uno, el del catálogo que falta |
+
+Los dos intentos de la llave ajena van juntos a propósito, y llegan con mensajes
+DISTINTOS: si mañana uno de los dos pasara a 204, se sabe cuál se rompió sin
+adivinar. Los hace `internal/dirprobe`, porque PowerShell 5.1 no sabe firmar
+Ed25519.
+
+**Lo que ya no aparece es la línea `la sala va sin tarjeta`**, que salía en cada
+sala desde que el proyecto existe.
+
+El único paso que ningún script puede cerrar queda anotado en la salida: la
+clave de la tarjeta viaja en el FRAGMENTO del enlace, que el navegador no le
+manda al servidor, así que ver el nombre exige abrir el enlace completo a mano.
+
+### Tres fallos del medidor, ninguno del producto
+
+Esta corrida costó cuatro intentos, y los cuatro fallos estaban en el script.
+Van escritos porque los tres primeros muerden a cualquier script de este
+repositorio:
+
+1. **`kanpctl` SALUDA antes de cada llamada, y el saludo trae `"result"`.**
+   Buscar `"result"` en la salida entera da verde sobre cualquier error. Un
+   `create_room` fallido se dio por bueno y el síntoma apareció tres pasos
+   después como "la sala no reportó código". Ahora se busca la línea del método
+   concreto y se mira si trae `"error"`.
+2. **PowerShell 5.1 PARTE un argumento con espacios cuando ya lleva comillas
+   escapadas.** Medido con un volcador de `argv`:
+
+   ```
+   sin espacios:  [1] "{\"nickname\":\"Alvaro\",\"name\":\"Prueba\"}"     entero
+   con espacios:  [1] "{\"nickname\":\"Alvaro\",\"name\":\"Los"           cortado
+                  [2] "panas\"}"
+   ```
+
+   `kanpctl` recibía un JSON truncado y contestaba `unexpected end of JSON
+   input`. Envolver en comillas, no escapar, y escapar con acento grave fallan
+   las tres. Lo único que aguanta es construir la línea de comandos entera con
+   `ProcessStartInfo`, que nadie vuelve a interpretar. **`medir-motor-punta-a-punta.ps1`
+   se salva por casualidad**: su sala se llama `Prueba`, sin espacios.
+3. **Los nombres de cuenta de Windows están traducidos.** En esta máquina SYSTEM
+   es `AUTORIDADE NT\SISTEMA`, así que comprobar la ACL buscando la palabra
+   `SYSTEM` daba rojo sobre una ACL correcta. Se compara por SID, `S-1-5-18` y
+   `S-1-5-32-544`, que no se traducen.
+4. **`WaitForExit` sobre un proceso lanzado con `-Verb RunAs` vuelve antes de
+   tiempo**: el handle es del lanzador y no del proceso elevado. Una corrida se
+   leyó a mitad creyéndola terminada.
+
 **RoomDirectory pagó la deuda escrita en `docs/CLAUDE.md`.** `domain.CheckSeedAddr`
 estaba escrita, probada y llamada por un solo adaptador. Ahora la llaman los dos
 que hablan con el seed, sobre lo que resolvió el DNS y en **cada** uso, porque un
