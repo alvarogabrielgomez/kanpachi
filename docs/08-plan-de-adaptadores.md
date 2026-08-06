@@ -1062,14 +1062,12 @@ ahora la construye `scripts/preparar-stage.ps1`.
 
 # Del lado de la UI
 
-1. **El transporte del pipe en Dart.** Decidido: `package:win32` más transporte
-   propio, con E/S superpuesta y dos isolates trabajadores. `dart_ipc` se
-   descartó tras mirarlo: depende de `win32` igual, así que la elección no era
-   una dependencia contra ninguna, era un envoltorio de siete likes en la puerta
-   de un daemon que corre como SYSTEM contra doscientas líneas nuestras. Los tres
-   disparadores que este documento le ponía (el nombre con prefijo protegido, no
-   bloquear el isolate de la UI, y que siga mantenido) son justo los tres puntos
-   donde el transporte propio manda.
+1. ~~**El transporte del pipe en Dart**~~: **HECHO y medido.** `package:win32`
+   más transporte propio, con E/S superpuesta y dos isolates trabajadores.
+   `dart_ipc` se descartó tras mirarlo: depende de `win32` igual, así que la
+   elección no era una dependencia contra ninguna, era un envoltorio de siete
+   likes en la puerta de un daemon que corre como SYSTEM contra doscientas
+   líneas nuestras. Ver la sección de más abajo.
 2. **Una línea de `ioc_manager.dart`** para que `SessionRepository` sea el real.
    El comentario del propio archivo ya lo dice.
 3. ~~**La pantalla de exposición**~~: **HECHA**, con las dos filas y el bloque
@@ -1083,6 +1081,61 @@ ahora la construye `scripts/preparar-stage.ps1`.
    idempotente de reponerla. Ver `05-ui.md`. El aviso NO nombra ningún puerto: lo
    que falla es la contención entera, y el canario vive en un puerto al azar que
    ya se cerró.
+
+## El pipe desde Dart, medido sin elevar
+
+Medido el 2026-08-06 con `ui/tool/pipe_smoke.dart`, un proceso **sin
+privilegios**, contra el daemon de verdad en consola elevada.
+
+| Comprobación | Resultado |
+|---|---|
+| Abrir `...\ProtectedPrefix\Administrators\kanpachi-console` sin elevar | **abre**, y completa el saludo |
+| `list_games` por el cable | 11 juegos |
+| `exposure` | medido |
+| Un método que no existe | `bad_request` |
+| Crear una sala de verdad | **16 s**, código emitido, IP virtual y subred |
+| Poner juego, renombrar, pedir el enlace, salir | los cuatro |
+
+**Los 16 segundos son el dato que justifica los plazos por método.** El cliente
+tenía un plazo único de diez segundos para todo, así que esa misma sala, creada
+correctamente por un daemon que funciona, se habría reportado como fallida.
+
+Tres cosas que solo aparecen al correrlo:
+
+**Un handle síncrono se traba solo.** Windows serializa la E/S sobre un objeto
+de archivo síncrono, de modo que la lectura que espera la respuesta retiene el
+objeto y la escritura que lleva la pregunta se encola detrás. Va con
+`FILE_FLAG_OVERLAPPED`, que es lo mismo que hace go-winio del otro lado.
+
+**Y hacen falta DOS isolates trabajadores, no uno.** Un isolate parado dentro de
+una llamada nativa no puede vaciar su propio buzón, porque los mensajes los
+entrega el bucle de eventos y el bucle no está corriendo. Uno solo no puede a la
+vez esperar a que el daemon hable y aceptar bytes que escribir.
+
+**Un cierre que no espera es un uso después de liberar.** Cada trabajador tiene
+su `OVERLAPPED` y una operación pendiente sobre el handle; cerrarlo por debajo
+revienta en otro sitio y mucho después. El cierre espera a que los dos digan que
+soltaron, con plazo.
+
+Quedan dos cabos, y se anotan porque no están cerrados:
+
+- **Un crash intermitente que aparecía en una de cada siete corridas y no volvió
+  a aparecer en las últimas doce.** Se corrigieron dos cosas reales por el
+  camino: el cierre que no esperaba, y una cadena reservada con un asignador y
+  liberada con el otro. Doce corridas limpias no son una prueba con un fallo que
+  salía dos de quince. Lo que lo zanjaría es una tanda larga.
+- **Abrir muchos handles seguidos da `ERROR_PIPE_BUSY`.** El daemon acepta ocho
+  conexiones, y el cliente reintenta tres veces cada 120 ms. Con la UI de verdad
+  no debería llegar a pasar, y con varias ventanas conviene medirlo.
+
+**Y un fallo del medidor, que es el cuarto de la serie.** El detector de crashes
+buscaba la palabra `CRASH` en la salida, y el mensaje de éxito decía "sin
+crash": PowerShell compara sin distinguir mayúsculas, así que daba por caída
+cada corrida buena. Tres conclusiones de bisección salieron al revés antes de
+verlo. La otra mitad del mismo fallo: la salida estándar de Dart va bufferizada
+cuando no es una terminal, de modo que la última línea impresa **no** es la
+última que se ejecutó, y leer el crash como si lo fuera manda a buscar el fallo
+donde no está. La herramienta escribe ahora una traza síncrona a disco.
 
 ---
 

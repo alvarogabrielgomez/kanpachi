@@ -23,6 +23,15 @@ dependencies:
   # bandeja de Windows. Cerrar la ventana esconde la ventana, y ese icono es
   # lo único que queda para volver.
   tray_manager: ^0.5.2
+  # El named pipe del daemon, por FFI. `dart:io` no habla named pipes de
+  # Windows y el atajo de abrirlo como archivo está roto desde Flutter 3.27,
+  # así que la única vía es kernel32.
+  #
+  # Version FIJA y sin acento circunflejo: esto es la puerta de un daemon que
+  # corre como SYSTEM, y una actualización que entre sola no es una decisión de
+  # nadie. Subirla es un commit a propósito.
+  ffi: 2.1.4
+  win32: 6.3.0
 
 dev_dependencies:
   flutter_test:
