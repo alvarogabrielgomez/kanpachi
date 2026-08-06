@@ -155,7 +155,13 @@ type Request struct {
 	Params json.RawMessage `json:"params,omitempty"`
 }
 
-// Response es lo que sale. Lleva Result o Error, jamás los dos.
+// Response es lo que sale.
+//
+// **Puede llevar Result y Error a la vez**, y no es un descuido: la expulsión a
+// medias contesta con la sala YA sin el expulsado más el aviso de lo que no se
+// pudo cerrar, porque la pantalla necesita las dos cosas. Es el único caso, y
+// está en `roomWithError`. Un cliente que mire el error primero y descarte el
+// resultado tira el estado que acaba de pedir.
 type Response struct {
 	ID     uint64          `json:"id"`
 	Result json.RawMessage `json:"result,omitempty"`

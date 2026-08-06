@@ -143,7 +143,7 @@ func roomView(st domain.RoomState, missing string, now time.Time) RoomView {
 		v.Peers = append(v.Peers, PeerView{
 			IP:    p.VirtualIP.String(),
 			Name:  p.Name.String(),
-			Path:  p.Path.String(),
+			Path:  pathName(p.Path),
 			RTTMS: p.RTT.Milliseconds(),
 			Self:  p.Self,
 			Host:  p.Host,
@@ -556,6 +556,28 @@ func connName(c domain.ConnState) string {
 		return "degraded"
 	case domain.StateReconnecting:
 		return "reconnecting"
+	default:
+		return "unknown"
+	}
+}
+
+// pathName is the wire name of a path, and it exists because the domain's own
+// String() is Spanish log prose: "directo", "relay", "", "desconocido".
+//
+// The rule is already written next to `ruleClassName` in `params.go`: stable
+// English names, like the rest of the protocol, and NEVER the domain's
+// String(), because that one is for the log and swapping it for a better word
+// would break the UI in silence. This field was the one place that did not
+// follow it, and it had not bitten only by accident: the Dart enum happens to
+// store 'directo' as its display label, so the two coincided.
+func pathName(p domain.PathKind) string {
+	switch p {
+	case domain.PathDirect:
+		return "direct"
+	case domain.PathRelay:
+		return "relay"
+	case domain.PathSelf:
+		return "self"
 	default:
 		return "unknown"
 	}

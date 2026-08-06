@@ -148,7 +148,9 @@ func (s *Server) Serve(ctx context.Context, rw io.ReadWriter) error {
 func (s *Server) handle(ctx context.Context, linea []byte) Response {
 	var req Request
 	if e := decodeInto(linea, &req); e != nil {
-		return Response{Error: e}
+		// El id viaja aunque el sobre no pase, para que el error le llegue a
+		// quien preguntó en vez de quedarse sin dueño. Ver `decodeInto`.
+		return Response{ID: req.ID, Error: e}
 	}
 	resp := Response{ID: req.ID}
 
@@ -453,12 +455,17 @@ func (s *Server) roomOrErr(st domain.RoomState, err error) (json.RawMessage, *Er
 // roomWithError manda el estado Y el error. Es el caso de la expulsión a
 // medias, que es la única operación cuyo fallo deja un estado que la UI
 // necesita.
+//
+// Hasta ahora además metía la vista entera de la sala DENTRO del texto del
+// error, y eso existía por un solo motivo: ningún cliente leía el resultado
+// cuando venía acompañado de un error, así que el estado se perdía. El cliente
+// de Dart ya lee los dos, de modo que la copia dentro del mensaje es ruido en
+// el log y bytes duplicados en un cable con tope de un mega.
 func (s *Server) roomWithError(st domain.RoomState, e *Error) (json.RawMessage, *Error) {
 	raw, err2 := s.room(st)
 	if err2 != nil {
 		return nil, err2
 	}
-	e.Message = e.Message + " | estado: " + string(raw)
 	return raw, e
 }
 
@@ -550,11 +557,40 @@ func stamp(t time.Time) string {
 
 // decodeInto interpreta el sobre del mensaje, estricto igual que los
 // parámetros.
+//
+// # Por qué hay una segunda pasada laxa
+//
+// Para quedarse con el ID aunque el sobre no pase. Sin ella, un campo
+// desconocido tumbaba el sobre entero y la respuesta salía con `id` cero, con
+// el id perfectamente legible dentro de la línea. Un cliente empareja por id,
+// así que esa respuesta no le llega a nadie y quien preguntó se cuelga hasta
+// que vence su plazo, que para crear una sala son noventa segundos.
+//
+// Con el id recuperado, el error vuelve ATRIBUIDO y la UI falla una petición
+// en vez de la conexión entera. Es el mismo patrón que el catálogo usa para
+// nombrar un perfil que no pudo interpretar.
+//
+// El id cero se sigue usando para lo que de verdad no se puede atribuir: una
+// línea que no es ni JSON, y el mensaje que pasa el tope. Ese caso es terminal
+// del lado del cliente, y tiene que serlo: el flujo de bytes perdió el paso.
 func decodeInto(linea []byte, req *Request) *Error {
 	r, e := decodeStrict[Request](linea)
 	if e != nil {
+		req.ID = idSuelto(linea)
 		return e
 	}
 	*req = r
 	return nil
+}
+
+// idSuelto saca solo el id de una línea que el decodificador estricto rechazó.
+// Devuelve cero cuando ni eso se puede.
+func idSuelto(linea []byte) uint64 {
+	var sobre struct {
+		ID uint64 `json:"id"`
+	}
+	if err := json.Unmarshal(linea, &sobre); err != nil {
+		return 0
+	}
+	return sobre.ID
 }
