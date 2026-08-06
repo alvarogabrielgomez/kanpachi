@@ -1026,11 +1026,50 @@ el mismo error que el motor tenía escrito como advertencia, en otra forma.
 
 ---
 
+## El catálogo de fábrica, que no existía
+
+`builtin.json` no estaba en el repositorio. El cargador llevaba desde siempre
+buscando un archivo que nadie había escrito, así que cada arranque dejaba la
+línea `no se pudo leer el catálogo que vino con la app` y la lista de juegos
+volvía vacía, que es lo que el usuario vive como un producto que no hace nada.
+
+Medido el 2026-08-05 con el daemon de verdad y `kanpctl` por el pipe:
+
+| Comprobación | Resultado |
+|---|---|
+| Perfiles que devuelve `list_games` | **11**, ninguno rechazado |
+| Perfiles con `verified` | 0, se gana jugando |
+| Perfiles con `client_ports` | 0, los once son de estrella |
+| Alguno pidiendo el 57623 | ninguno |
+| La línea del catálogo en el log | **desapareció** |
+
+Dos cosas salieron de escribirlo, y ninguna se veía desde fuera:
+
+**`lan_discovery` no lo consume nadie.** Se parsea, sobrevive al viaje a disco, y
+ningún adaptador lo lee. Lo que activaría es el relay de broadcast UDP del motor,
+que está en la lista de capacidades siempre apagadas porque capturaría el tráfico
+de la red de casa del usuario. `docs/06` afirmaba que el campo enciende ese relay;
+ahora dice lo que es cierto, y nombra `broadcast_route` como lo que sí hace ese
+trabajo hoy.
+
+**`go run` del daemon ya no servía para nada que abra una sala**, y el documento
+lo seguía recomendando. El motor y el catálogo se resuelven al lado del propio
+ejecutable, y bajo `go run` ese sitio es un directorio temporal. El stage era la
+única vía que funcionaba, y era la única que nada en el repositorio construía:
+ahora la construye `scripts/preparar-stage.ps1`.
+
+---
+
 # Del lado de la UI
 
-1. **El transporte del pipe en Dart**, probando `dart_ipc` primero. El disparador
-   para internalizarlo: que no soporte el prefijo protegido, que bloquee el
-   isolate, o que deje de mantenerse.
+1. **El transporte del pipe en Dart.** Decidido: `package:win32` más transporte
+   propio, con E/S superpuesta y dos isolates trabajadores. `dart_ipc` se
+   descartó tras mirarlo: depende de `win32` igual, así que la elección no era
+   una dependencia contra ninguna, era un envoltorio de siete likes en la puerta
+   de un daemon que corre como SYSTEM contra doscientas líneas nuestras. Los tres
+   disparadores que este documento le ponía (el nombre con prefijo protegido, no
+   bloquear el isolate de la UI, y que siga mantenido) son justo los tres puntos
+   donde el transporte propio manda.
 2. **Una línea de `ioc_manager.dart`** para que `SessionRepository` sea el real.
    El comentario del propio archivo ya lo dice.
 3. ~~**La pantalla de exposición**~~: **HECHA**, con las dos filas y el bloque
