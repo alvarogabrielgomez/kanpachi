@@ -18,6 +18,29 @@ import (
 	"github.com/accentiostudios/kanpachi/registry/setup"
 )
 
+// recargarConHUP vuelve a leer la página cada vez que llega un SIGHUP.
+//
+// Un fallo al releer NO tumba nada y deja servida la página anterior: el
+// fichero puede estar a medio copiar cuando llega la señal, y quedarse con la
+// versión buena es mejor que dejar de servir.
+func recargarConHUP(ctx context.Context, page *registry.Page) {
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-hup:
+			if err := page.Reload(); err != nil {
+				log.Printf("kanpseed: la página no se pudo recargar, se sigue con la de antes: %v", err)
+				continue
+			}
+			log.Print("kanpseed: página recargada")
+		}
+	}
+}
+
 // cmdServe es lo que arranca systemd. No está pensado para invocarse a mano,
 // y por eso sus valores por defecto salen de la configuración instalada en vez
 // de ser constantes: así `kanpseed serve` a secas hace lo correcto en una
@@ -59,6 +82,18 @@ func cmdServe(args []string) error {
 
 	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer parar()
+
+	// **SIGHUP vuelve a leer la página, sin reiniciar el proceso.**
+	//
+	// Existe por una razón concreta y no por parecerse a otros daemons: el
+	// registro de salas vive EN MEMORIA. Reiniciar para publicar un cambio de
+	// la página tira todas las salas registradas, y quien tuviera un enlace
+	// repartido se queda con un código que el servidor ya no conoce.
+	//
+	// `Page.Reload` estaba escrito, documentado con este motivo exacto, y no lo
+	// llamaba nadie. Es la cuarta vez que pasa en este repositorio, después de
+	// `control.Attach`, `firewall.SetScope` y el modo servicio.
+	go recargarConHUP(ctx, page)
 
 	go counter.Run(ctx, *cada)
 	go barrer(ctx, store)

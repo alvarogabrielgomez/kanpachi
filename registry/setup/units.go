@@ -38,7 +38,7 @@ func UnitDelMotor(c Config) string {
 # usa `+"`kanpseed config`"+`, que reescribe esto y recarga systemd.
 [Unit]
 Description=Kanpachi seed: motor de red (EasyTier)
-Documentation=https://github.com/accentiostudios/kanpachi
+Documentation=https://github.com/alvarogabrielgomez/kanpachi
 After=network-online.target
 Wants=network-online.target
 
@@ -104,7 +104,7 @@ func UnitDelRegistro(c Config) string {
 # usa `+"`kanpseed config`"+`, que reescribe esto y recarga systemd.
 [Unit]
 Description=Kanpachi seed: registro de salas
-Documentation=https://github.com/accentiostudios/kanpachi
+Documentation=https://github.com/alvarogabrielgomez/kanpachi
 After=network-online.target %s
 Wants=network-online.target
 # BindsTo y no Requires: si el motor se detiene, el registro se detiene con él
@@ -120,6 +120,12 @@ ExecStart=%s serve \
   --rpc-portal 127.0.0.1:%d
 Restart=always
 RestartSec=2s
+
+# Recargar es releer la PAGINA, y nada mas. El registro de salas vive en
+# memoria: reiniciar para publicar un cambio de la pagina tiraria todas las
+# salas registradas, y quien tuviera un enlace repartido se quedaria con un
+# codigo que el servidor ya no conoce.
+ExecReload=/bin/kill -HUP $MAINPID
 
 # Un proceso vivo pero colgado no lo detecta Restart=always. El registro manda
 # WATCHDOG=1 mientras responda, y si deja de hacerlo systemd lo reinicia.
