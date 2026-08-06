@@ -21,7 +21,9 @@ import (
 // Entrar depende de que el host esté alcanzable en ese instante. Es un costo
 // aceptado y explícito: si está reconectando, el ingreso falla y hay que
 // reintentar. Se gana poder revocar y renovar, se pierde robustez.
-func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickname) (domain.RoomState, error) {
+// Los resultados van con NOMBRE para que el cierre diferido pueda anotar el
+// error en el diario sin tocar cada `return`. Mismo motivo que en CreateRoom.
+func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickname) (estado domain.RoomState, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -36,16 +38,20 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 	// formas documentadas y rechaza entero cualquier otra cosa. Que ocurra
 	// ANTES de la transición importa, porque un código mal pegado no tiene por
 	// qué mover la máquina de estados.
+	s.deps.Progress.Begin("entrar a la sala")
+	s.deps.Progress.Step(domain.ScopeDaemon, "leyendo el código pegado")
 	room, err := domain.ParseRoom(input)
 	if err != nil {
 		return domain.RoomState{}, err
 	}
+	s.deps.Progress.Stepf(domain.ScopeDaemon, "código válido: %s, servido por %s", room.InviteID, room.Seed)
 
 	if err := s.state.Transition(domain.StateResolving, "el usuario pegó un código"); err != nil {
 		return domain.RoomState{}, err
 	}
 	ok := false
 	defer func() {
+		s.deps.Progress.End(err)
 		if !ok {
 			s.teardown(ctx)
 			_ = s.state.TransitionWithExit(domain.StateIdle, "falló el ingreso a la sala", domain.ExitFailed)
@@ -70,16 +76,19 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 	if err != nil {
 		return domain.RoomState{}, err
 	}
+	s.deps.Progress.Step(domain.ScopeEngine, "entrando al vestíbulo, que es donde espera el host")
 	if err := s.deps.Engine.JoinRendezvous(ctx, domain.RendezvousSpec{
 		Rendezvous: rdv, Address: lobbyIP, Name: nick, Seeds: seeds,
 	}); err != nil {
 		return domain.RoomState{}, fmt.Errorf("entrando al vestíbulo de la sala: %w", err)
 	}
 
+	s.deps.Progress.Step(domain.ScopeDaemon, "pidiéndole al host la credencial de la sala")
 	cred, err := s.exchangeForCredential(ctx, nick)
 	if err != nil {
 		return domain.RoomState{}, err
 	}
+	s.deps.Progress.Stepf(domain.ScopeDaemon, "credencial recibida, tu dirección será %s", cred.VirtualIP)
 	// La subred la eligió el host mirando SU máquina, no esta. Antes de
 	// instalarla hay que comprobarla contra la tabla de rutas de acá: una sala
 	// en 192.168.1.0/24 rompe la LAN de casa de quien tenga ese rango, y el
@@ -88,6 +97,7 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 	// Se rechaza en vez de avisar por el mismo motivo por el que el plan de
 	// direcciones prefiere fallar a forzar un rango: pisar una ruta existente
 	// rompe conectividad que el usuario ya tenía, y eso es peor que no entrar.
+	s.deps.Progress.Stepf(domain.ScopeDaemon, "comprobando que %s no pise ninguna red de esta máquina", cred.Subnet)
 	if err := s.checkSubnetAgainstLocal(ctx, cred.Subnet); err != nil {
 		return domain.RoomState{}, err
 	}
@@ -99,6 +109,7 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 	if err := s.deps.Engine.LeaveRendezvous(ctx); err != nil {
 		s.deps.Log.Warn("el motor no salió limpio del vestíbulo", "error", err)
 	}
+	s.deps.Progress.Step(domain.ScopeEngine, "saliendo del vestíbulo y entrando a la red real")
 	if err := s.deps.Engine.JoinWithCredential(ctx, domain.GuestSpec{
 		Credential: cred, Name: nick, Seeds: seeds,
 	}); err != nil {

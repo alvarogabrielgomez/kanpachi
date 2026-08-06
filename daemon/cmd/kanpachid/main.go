@@ -441,9 +441,15 @@ func arrancar(ctx context.Context, datos, nombre string, consola, mostrarUI bool
 	// No arranca acá. El proceso hijo se lanza con la primera orden que lo
 	// necesite, así que un daemon que nunca abre una sala nunca levanta un
 	// motor.
+	// Diary of long op. Made HERE and not inside the session because the
+	// ADAPTERS write to it too: only engine adapter knows engine process just
+	// started, or that virtual adapter took twelve seconds to get its address.
+	diary := usecase.NewJournal(relojReal{})
+
 	motor, err := kanpachiengine.New(kanpachiengine.Deps{
-		Exe: filepath.Join(dirDelBinario(), "kanpachi-engine.exe"),
-		Log: log,
+		Exe:      filepath.Join(dirDelBinario(), "kanpachi-engine.exe"),
+		Log:      log,
+		Progress: diary,
 	})
 	if err != nil {
 		return abortar(err)
@@ -482,10 +488,11 @@ func arrancar(ctx context.Context, datos, nombre string, consola, mostrarUI bool
 		// El canario es real desde el primer día, y puede serlo porque es `net`
 		// puro: no toca Windows ni necesita privilegios para ligar en el
 		// adaptador virtual. Ver daemon/adapter/canary.
-		Canary: opener.New(log),
-		Clock:  relojReal{},
-		Log:    log,
-		Rand:   rand.Reader,
+		Canary:   opener.New(log),
+		Clock:    relojReal{},
+		Log:      log,
+		Rand:     rand.Reader,
+		Progress: diary,
 	})
 	if err != nil {
 		return abortar(err)

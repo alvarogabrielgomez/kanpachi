@@ -86,6 +86,18 @@ type Deps struct {
 	// toma de crypto/rand directamente para que los tests puedan fijar un
 	// resultado sin dejar de ejercitar el mismo camino.
 	Rand io.Reader
+
+	// Progress es el diario de la operación larga en curso. Ver [Journal].
+	//
+	// **Es el ÚNICO opcional de esta lista**, y por eso no está en `validate`:
+	// nada del producto depende de él, se mira cuando algo tardó de más o
+	// falló. Nil se sustituye por uno propio en [NewSession] para que nadie
+	// tenga que comprobarlo en cada llamada.
+	//
+	// Entra por aquí y no se crea adentro porque los ADAPTADORES escriben en
+	// el mismo diario: quien sabe que el motor tardó doce segundos en tomar
+	// dirección es el adaptador del motor, no este paquete.
+	Progress *Journal
 }
 
 // validate comprueba que estén todos los puertos.
@@ -270,6 +282,9 @@ func NewSession(ctx context.Context, d Deps) (*Session, error) {
 	// como mensaje de error y el firewall a medio aplicar.
 	if err := d.validate(); err != nil {
 		return nil, err
+	}
+	if d.Progress == nil {
+		d.Progress = NewJournal(d.Clock)
 	}
 	s := &Session{deps: d, canaryDue: make(chan struct{}, 1)}
 

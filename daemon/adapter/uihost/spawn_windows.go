@@ -228,6 +228,8 @@ func (h *Host) watch() {
 		if caídas > maxRelaunches {
 			h.deps.Log.Error("la interfaz se cayó demasiadas veces seguidas y no se relanza más",
 				"intentos", caídas)
+			Warn("Kanpachi no consigue mantener su ventana abierta y va a cerrarse.\n\n" +
+				"Se intentó abrirla varias veces seguidas y se cerró sola cada vez.")
 			if h.deps.OnGiveUp != nil {
 				h.deps.OnGiveUp()
 			}
@@ -272,4 +274,48 @@ func (h *Host) closeHandles() {
 	if wake != 0 {
 		_ = windows.CloseHandle(windows.Handle(wake))
 	}
+}
+
+// procWTSSendMessage shows message box IN the user session.
+//
+// Daemon lives in session 0: no desktop, no notification area. A plain
+// MessageBox from here draws on a window station nobody watches, so it waits
+// forever for an OK nobody can click. WTSSendMessageW is the documented way a
+// service talks to whoever is at the machine.
+//
+// Used only when interface CANNOT be launched. Without it, that failure is
+// total silence: no tray, no window, no error. Kanpachi running and nothing on
+// screen is exactly the shape the invariant forbids.
+var procWTSSendMessage = windows.NewLazySystemDLL("wtsapi32.dll").NewProc("WTSSendMessageW")
+
+// Style flags. MB_OK | MB_ICONERROR | MB_SETFOREGROUND.
+const mbErrorEnFrente = 0x0 | 0x10 | 0x10000
+
+// avisarEnSesión pops the message on the user desktop. Best effort.
+func avisarEnSesión(título, texto string) {
+	sesión := windows.WTSGetActiveConsoleSessionId()
+	if sesión == 0xFFFFFFFF {
+		return
+	}
+	t, err := windows.UTF16FromString(título)
+	if err != nil {
+		return
+	}
+	m, err := windows.UTF16FromString(texto)
+	if err != nil {
+		return
+	}
+	var respuesta uint32
+	// Timeout 0 with bWait FALSE = show and return. Waiting would park a
+	// daemon goroutine on a dialog nobody may be there to close.
+	_, _, _ = procWTSSendMessage.Call(
+		0, // WTS_CURRENT_SERVER_HANDLE
+		uintptr(sesión),
+		uintptr(unsafe.Pointer(&t[0])), uintptr(len(t)*2),
+		uintptr(unsafe.Pointer(&m[0])), uintptr(len(m)*2),
+		uintptr(mbErrorEnFrente),
+		0, // timeout, ignored when not waiting
+		uintptr(unsafe.Pointer(&respuesta)),
+		0, // bWait FALSE
+	)
 }

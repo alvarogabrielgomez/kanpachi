@@ -639,3 +639,47 @@ func alertName(k domain.AlertKind) string {
 		return "unknown"
 	}
 }
+
+// ProgressView = steps of long op, on the wire.
+//
+// Times go as MILLISECONDS since op start, not as clock stamps. Daemon and UI
+// share a pipe, not a clock: subtracting two different clocks gives numbers
+// that lie.
+type ProgressView struct {
+	Op        string           `json:"op"`
+	Running   bool             `json:"running"`
+	Failure   string           `json:"failure,omitempty"`
+	ElapsedMs int64            `json:"elapsed_ms"`
+	Steps     []ProgressStepVw `json:"steps"`
+	// Dropped = middle steps thrown away by the cap. Said out loud on purpose:
+	// list cut in silence reads like a complete list, so the hole where the
+	// problem was looks like it never happened.
+	Dropped int `json:"dropped,omitempty"`
+}
+
+// ProgressStepVw = one step.
+type ProgressStepVw struct {
+	// Scope = who did it. Closed list, see domain.ProgressScope.
+	Scope   string `json:"scope"`
+	Text    string `json:"text"`
+	SinceMs int64  `json:"since_ms"`
+}
+
+func progressView(p domain.Progress) ProgressView {
+	steps := make([]ProgressStepVw, 0, len(p.Steps))
+	for _, s := range p.Steps {
+		steps = append(steps, ProgressStepVw{
+			Scope:   string(s.Scope),
+			Text:    s.Text,
+			SinceMs: s.Since.Milliseconds(),
+		})
+	}
+	return ProgressView{
+		Op:        p.Op,
+		Running:   p.Running,
+		Failure:   p.Failure,
+		ElapsedMs: p.Elapsed.Milliseconds(),
+		Steps:     steps,
+		Dropped:   p.Dropped,
+	}
+}

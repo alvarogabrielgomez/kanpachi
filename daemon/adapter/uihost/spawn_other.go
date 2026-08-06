@@ -20,3 +20,5 @@ func (h *Host) launch(bool, bool) error {
 func (h *Host) watch()        {}
 func (h *Host) signalWake()   {}
 func (h *Host) closeHandles() {}
+
+func avisarEnSesión(string, string) {}

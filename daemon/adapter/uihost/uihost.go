@@ -112,6 +112,11 @@ func New(deps Deps) (*Host, error) {
 // encender la máquina: ahí la bandeja aparece y la ventana no.
 func (h *Host) Start(show bool) error {
 	if err := h.launch(show, true); err != nil {
+		// Say it on the user desktop. Without this, failing to launch is total
+		// silence: no tray, no window, no error, and a daemon running with
+		// nothing on screen — the shape the invariant forbids.
+		Warn("Kanpachi no pudo abrir su ventana.\n\n" + err.Error() +
+			"\n\nEl servicio sigue corriendo. Cierra Kanpachi desde Servicios de Windows si quieres pararlo.")
 		return err
 	}
 	h.watching.Add(1)
@@ -139,6 +144,13 @@ func (h *Host) Show() error {
 	}
 	return h.launch(true, true)
 }
+
+// Warn puts a message on the user desktop, from session 0.
+//
+// Exported because the daemon needs it too, for the same reason this package
+// needs it: a service that cannot show its interface has no other way to say
+// so. See the implementation for why a plain MessageBox does not work here.
+func Warn(text string) { avisarEnSesión("Kanpachi", text) }
 
 // Close cierra el job, y con él se va la interfaz.
 //

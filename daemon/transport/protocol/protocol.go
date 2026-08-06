@@ -77,6 +77,14 @@ const (
 	MethodDiscardPendingRoom Method = "discard_pending_room"
 	MethodLastRoom           Method = "last_room"
 
+	// MethodProgress son los pasos de la operación larga en curso.
+	//
+	// **Se pide por una conexión APARTE de la que está esperando.** El bucle de
+	// una conexión es secuencial —leer, despachar, contestar—, así que pedirlo
+	// por la misma se encolaría detrás de justo lo que se quiere observar. Hay
+	// ocho plazas y la interfaz usa una.
+	MethodProgress Method = "progress"
+
 	// Los tres del PROCESO, no de la sala. Los contesta [Host] y no [API]. Ver
 	// el modelo de procesos en `docs/03`.
 
@@ -128,6 +136,7 @@ var métodos = map[Method]bool{
 	MethodResumeRoom:          true,
 	MethodDiscardPendingRoom:  true,
 	MethodLastRoom:            true,
+	MethodProgress:            true,
 	MethodShowUI:              true,
 	MethodShutdown:            true,
 	MethodAutostart:           true,

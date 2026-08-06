@@ -796,6 +796,22 @@ transport/
   pipe/        el named pipe y su autenticación por token
 ```
 
+#### El diario de la operación larga, y por qué se PIDE
+
+Crear una sala tarda decenas de segundos con todo funcionando bien: se lee la tabla de rutas, el registro entrega un código, arranca el motor, dos adaptadores tienen que tomar dirección, se sondea el MTU, se acota la compuerta y se abre el canal. Desde fuera, esa espera y un cuelgue se ven igual, y cuando falla lo único que llega a la pantalla es la última línea de error, que casi nunca es donde estaba el problema.
+
+El daemon acumula los pasos en un diario y la pantalla los pide con el método `progress`. **La API sigue siendo petición y respuesta pura, sin empuje del servidor**, y esto no lo cambia: nadie manda nada que no le hayan pedido.
+
+Tres cosas que no son detalles:
+
+- **El diario tiene su PROPIO candado, no el de la sesión.** `CreateRoom` toma el de la sesión durante toda su ejecución, y este diario existe justamente para poder mirar dentro de esa espera. Colgándolo del mismo candado, quien preguntara se quedaría esperando exactamente lo que quiere observar.
+- **`progress` se pide por una conexión APARTE.** El bucle de una conexión es secuencial —leer, despachar, contestar—, así que por la misma se encolaría detrás de la operación que quiere mirar y llegaría cuando ya no hay nada que enseñar. Hay ocho plazas y la interfaz usa una.
+- **Los adaptadores también escriben en él**, a través de `port.ProgressSink`. Quien sabe que el proceso del motor acaba de arrancar, o que el adaptador virtual tardó doce segundos en tomar dirección, es el adaptador del motor y no el caso de uso.
+
+Al pasarse de sesenta y cuatro pasos se tiran los del MEDIO, y **se cuenta cuántos**: una lista recortada en silencio se lee como una lista completa, y entonces el hueco donde estaba el problema parece que nunca ocurrió.
+
+La interfaz solo sondea esto **en compilaciones de depuración**. No es por secreto: los pasos nombran subredes, adaptadores, seeds y tiempos, que sirven a quien construye Kanpachi y son ruido para quien juega. Ver `docs/05`.
+
 **El enmarcado vive una sola vez.** El pipe y el canal de la sala leen bytes de gente que no es este programa, los dos corren como SYSTEM, y los dos necesitan el mismo tratamiento: tope antes de deserializar y desincronización tratada como terminal. Lo único que cambia entre ellos es el tope, un mega por el pipe donde pasa un catálogo importado, ocho kilobytes por el canal donde el mensaje más grande son unos cientos de bytes. Por eso el tope es un parámetro y el código es uno: el día que una copia se arregle, la otra no.
 
 **La superficie es la mitigación principal:** la API solo puede aplicar perfiles del catálogo embebido. No existe la operación "abrir puerto arbitrario". Un proceso malicioso corriendo como el usuario puede, como máximo, unirse a una sala y aplicar el perfil de un juego, nunca abrir 445 ni nada fuera del catálogo. La frontera de seguridad honesta es la sesión del usuario, igual que en cualquier aplicación de escritorio.

@@ -18,7 +18,11 @@ import (
 // El rol queda fijado para toda la vida de la sala. Nadie lo hereda: si el
 // host se va, no hay promoción ni elección, y quien quiera hospedar crea una
 // sala nueva, que es un click.
-func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName string) (domain.RoomState, error) {
+// Los resultados van con NOMBRE para que el cierre diferido pueda leer el
+// error. Sin eso, anotar el fallo en el diario obligaría a tocar cada uno de
+// los catorce `return` de aquí abajo, y el que se olvidara sería el único que
+// no dejaría rastro.
+func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName string) (estado domain.RoomState, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -28,6 +32,11 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 	if nick.IsZero() {
 		return domain.RoomState{}, domain.ErrNicknameEmpty
 	}
+
+	// El diario se abre ANTES de la primera transición, porque el primer paso
+	// que puede fallar ya está dentro. Ver [Journal].
+	s.deps.Progress.Begin("crear la sala")
+	s.deps.Progress.Step(domain.ScopeDaemon, "recibida la orden de crear una sala")
 
 	if err := s.state.Transition(domain.StateResolving, "el usuario creó una sala"); err != nil {
 		return domain.RoomState{}, err
@@ -40,6 +49,9 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 	// dentro de una red que la app cree que no existe.
 	ok := false
 	defer func() {
+		// El diario se cierra SIEMPRE, y con el error si lo hubo: lo que la
+		// pantalla enseña dentro de "ver detalles" son justo estos pasos.
+		s.deps.Progress.End(err)
 		if !ok {
 			s.teardown(ctx)
 			_ = s.state.TransitionWithExit(domain.StateIdle, "falló la creación de la sala", domain.ExitFailed)
@@ -50,10 +62,12 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 		}
 	}()
 
+	s.deps.Progress.Step(domain.ScopeDaemon, "leyendo la tabla de rutas para elegir un rango libre")
 	plan, err := s.planSubnet(ctx)
 	if err != nil {
 		return domain.RoomState{}, err
 	}
+	s.deps.Progress.Stepf(domain.ScopeDaemon, "rango elegido para la sala: %s", plan.Subnet)
 
 	// La identidad de la red REAL. Aleatoria, generada acá, y no derivada de
 	// ningún string que alguien pueda escribir: ni el seed, ni quien adivine
@@ -69,6 +83,7 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 	if _, err := io.ReadFull(s.deps.Rand, spec.NetworkSecret[:]); err != nil {
 		return domain.RoomState{}, fmt.Errorf("generando el secreto de la red: %w", err)
 	}
+	s.deps.Progress.Step(domain.ScopeDaemon, "generada la identidad de la red, que nunca sale de esta máquina")
 
 	room, key, sealed, err := s.publishCard(ctx, nick, roomName)
 	if err != nil {
@@ -80,6 +95,7 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 	if err := s.state.Transition(domain.StateConnecting, "levantando la red"); err != nil {
 		return domain.RoomState{}, err
 	}
+	s.deps.Progress.Step(domain.ScopeEngine, "levantando la red cifrada de la sala")
 	if err := s.deps.Engine.HostNetwork(ctx, spec); err != nil {
 		return domain.RoomState{}, fmt.Errorf("levantando la red: %w", err)
 	}
@@ -109,6 +125,7 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 	// El host se queda TAMBIÉN en el vestíbulo mientras la sala esté abierta.
 	// Es su puerta: el invitado no tiene forma de alcanzarlo en la red real
 	// antes de tener la credencial, y la credencial es justo lo que va a pedir.
+	s.deps.Progress.Step(domain.ScopeEngine, "abriendo el vestíbulo, que es por donde va a entrar quien tenga el código")
 	if err := s.deps.Engine.JoinRendezvous(ctx, domain.RendezvousSpec{
 		Rendezvous: spec.Rendezvous,
 		Address:    domain.RendezvousHostAddress,
@@ -126,15 +143,18 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 	// en aditiva, o sea una regla ajena de escritorio remoto alcanzando al
 	// usuario por la red virtual. Una sala que no abre es mejor que una que dice
 	// estar contenida y no lo está.
+	s.deps.Progress.Step(domain.ScopeFirewall, "acotando la contención a la sala y al vestíbulo")
 	if err := s.deps.Firewall.BindRoom(ctx, plan.Subnet, domain.BindRoomAndLobby); err != nil {
 		return domain.RoomState{}, fmt.Errorf("acotando la contención a la sala: %w", err)
 	}
 
 	// El canal de control SOLO escucha en la máquina del host. Los invitados
 	// marcan hacia afuera y no abren nada, así que su deny-all queda intacto.
+	s.deps.Progress.Step(domain.ScopeDaemon, "abriendo el canal de la sala")
 	if err := s.deps.Control.Serve(ctx, s.controlScope()); err != nil {
 		return domain.RoomState{}, fmt.Errorf("abriendo el canal de la sala: %w", err)
 	}
+	s.deps.Progress.Step(domain.ScopeDaemon, "la sala está abierta")
 
 	if err := s.state.Transition(domain.StateConnected, "la sala está levantada"); err != nil {
 		return domain.RoomState{}, err
@@ -182,19 +202,24 @@ func (s *Session) publishCard(ctx context.Context, nick domain.Nickname, roomNam
 	if err != nil {
 		return domain.Room{}, key, nil, err
 	}
+	s.deps.Progress.Step(domain.ScopeDaemon, "tarjeta de la sala sellada, con una clave que solo viaja en el enlace")
 
+	s.deps.Progress.Stepf(domain.ScopeSeed, "pidiéndole un código al registro (%s)", domain.DefaultSeedHost)
 	room, err := s.deps.Directory.Open(ctx, sealed)
 	if err != nil {
 		s.deps.Log.Warn("el registro del seed no respondió, la sala va sin tarjeta", "error", err)
+		s.deps.Progress.Stepf(domain.ScopeSeed, "el registro no contestó (%v), se sigue con un código local", err)
 		id, err := domain.NewInviteID(s.deps.Rand)
 		if err != nil {
 			return domain.Room{}, key, nil, fmt.Errorf("generando un código sin registro: %w", err)
 		}
+		s.deps.Progress.Stepf(domain.ScopeDaemon, "código generado aquí: %s, sin tarjeta ni página de invitación", id)
 		// Sin registro que conteste no hay forma de saber a qué seed pertenece
 		// el código, y el por defecto es el único que el otro lado va a probar
 		// con un ID pelado.
 		return domain.Room{InviteID: id, Seed: domain.DefaultSeedHost}, key, nil, nil
 	}
+	s.deps.Progress.Stepf(domain.ScopeSeed, "código reservado: %s", room.InviteID)
 	return room, key, sealed, nil
 }
 
@@ -206,14 +231,20 @@ func (s *Session) publishCard(ctx context.Context, nick domain.Nickname, roomNam
 // imperfecto. Los dos fallos quedan en el log, que es donde se diagnostica el
 // "conecta pero el mundo no carga".
 func (s *Session) configureAdapter(ctx context.Context) {
+	s.deps.Progress.Step(domain.ScopeNetwork, "sondeando el MTU del camino")
 	if mtu, err := s.deps.NetCfg.ProbeMTU(ctx); err != nil {
 		s.deps.Log.Warn("no se pudo sondear el MTU del camino", "error", err)
+		s.deps.Progress.Stepf(domain.ScopeNetwork, "el sondeo del MTU falló (%v), se sigue con el valor por defecto", err)
 	} else {
 		s.state.Net.MTU = mtu
+		s.deps.Progress.Stepf(domain.ScopeNetwork, "MTU del camino: %d", mtu)
 	}
 	want := domain.AdapterStateFor(s.state.LocalIP, s.state.Subnet, s.state.Net.MTU, s.state.Game)
 	if err := s.deps.NetCfg.ApplyAdapter(ctx, want); err != nil {
 		s.deps.Log.Warn("no se pudieron aplicar los ajustes del adaptador", "error", err)
+		s.deps.Progress.Stepf(domain.ScopeNetwork, "no se pudieron aplicar los ajustes del adaptador (%v), la sala abre igual", err)
+	} else {
+		s.deps.Progress.Stepf(domain.ScopeNetwork, "adaptador configurado con %s", s.state.LocalIP)
 	}
 	// DirectPlay va aparte porque no es un ajuste del adaptador. Se apaga solo
 	// cuando no hay juego, que es lo que hace que salir de la sala lo revierta

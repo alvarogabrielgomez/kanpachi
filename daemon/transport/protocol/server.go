@@ -69,6 +69,19 @@ type API interface {
 	ResumeRoom(ctx context.Context) (domain.RoomState, error)
 	DiscardPendingRoom(ctx context.Context) error
 	LastRoom() (domain.LastRoom, bool)
+
+	// Progress son los pasos de la operación larga que esté en curso, o los de
+	// la última si ya terminó.
+	//
+	// **No toma el candado de la sesión, y ahí está todo el punto.** Crear una
+	// sala lo tiene tomado durante decenas de segundos, y esto existe para
+	// poder mirar dentro de esa espera: colgándolo del mismo candado, quien
+	// preguntara se quedaría esperando exactamente lo que quiere observar. Ver
+	// [usecase.Journal].
+	//
+	// Sin error: no hay nada que pueda fallar, y un diario vacío es una
+	// respuesta legítima que significa que no ha pasado nada todavía.
+	Progress() domain.Progress
 }
 
 // Host es lo que el protocolo puede pedirle al PROCESO del daemon, en vez de a
@@ -504,6 +517,9 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 			Code: last.Room.InviteID.String(), Seed: last.Room.Seed,
 			Name: last.Name, Nick: last.Nick.String(), SavedAt: stamp(last.SavedAt),
 		}})
+
+	case MethodProgress:
+		return result(progressView(s.api.Progress()))
 	}
 	// Inalcanzable: Known() ya filtró. Se contesta igual en vez de caerse,
 	// porque el día que alguien agregue un método a la tabla y olvide el caso,

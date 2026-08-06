@@ -61,6 +61,17 @@ type Deps struct {
 	// ninguno de estos adaptadores existe.
 	Addrs func(adapter string) ([]netip.Addr, error)
 
+	// Progress es el diario de la operación en curso, cuando la hay.
+	//
+	// Lo escribe este adaptador porque es el único que sabe dos cosas que
+	// desde arriba no se ven: cuándo se arranca el PROCESO del motor, que solo
+	// pasa la primera vez, y cuánto tardó el adaptador virtual en quedar
+	// utilizable. Esa espera es la parte larga de crear una sala, y sin
+	// contarla la pantalla se queda quieta durante segundos sin decir en qué.
+	//
+	// Nil vale: se sustituye por [port.NoProgress] en [New].
+	Progress port.ProgressSink
+
 	spawn spawner
 }
 
@@ -170,6 +181,11 @@ func New(deps Deps) (*Engine, error) {
 	if deps.spawn == nil {
 		deps.spawn = spawn
 	}
+	// Un sumidero que no anota es mejor que un nil comprobado en cada llamada:
+	// esa comprobación es la que un día falta en el camino nuevo.
+	if deps.Progress == nil {
+		deps.Progress = port.NoProgress{}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Engine{
 		deps:       deps,
@@ -267,6 +283,10 @@ func (e *Engine) ensureLocked(context.Context) error {
 	if e.proc != nil {
 		return nil
 	}
+	// Solo la PRIMERA vez deja rastro, que es justo lo que hace útil el paso:
+	// las llamadas siguientes reusan el proceso, y verlo aparecer dos veces en
+	// la misma operación diría que el motor se cayó por el camino.
+	e.deps.Progress.Step(domain.ScopeEngine, "arrancando kanpachi-engine.exe")
 	p, err := e.deps.spawn(e.procCtx, e.deps.Exe)
 	if err != nil {
 		return fmt.Errorf("arrancando el motor: %w", err)
@@ -471,11 +491,17 @@ func (e *Engine) JoinRendezvous(ctx context.Context, spec domain.RendezvousSpec)
 // falla se ven igual desde fuera mientras pasa.
 func (e *Engine) awaitAddress(ctx context.Context, adapter string, want netip.Addr) error {
 	inicio := time.Now()
+	// Antes de esperar y no después: es el paso más largo de crear una sala, y
+	// anotarlo al terminar dejaría la pantalla quieta justo mientras dura.
+	e.deps.Progress.Step(domain.ScopeEngine,
+		fmt.Sprintf("esperando a que %s tome la dirección %s", adapter, want))
 	if err := waitForAddress(ctx, e.deps.Addrs, adapter, want, AddressDeadline); err != nil {
 		return fmt.Errorf("la red arrancó y el adaptador no quedó utilizable: %w", err)
 	}
+	tardó := time.Since(inicio).Round(time.Millisecond)
 	e.deps.Log.Info("adaptador virtual listo",
-		"adaptador", adapter, "dirección", want.String(), "tardó", time.Since(inicio).Round(time.Millisecond).String())
+		"adaptador", adapter, "dirección", want.String(), "tardó", tardó.String())
+	e.deps.Progress.Step(domain.ScopeEngine, fmt.Sprintf("%s listo con %s, tardó %s", adapter, want, tardó))
 	return nil
 }
 
