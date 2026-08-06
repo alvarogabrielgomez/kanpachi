@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
-	"os/exec"
 	"strings"
 	"unsafe"
 
@@ -151,7 +150,7 @@ func setPrivateCategory() error {
 // directPlayEnabled asks DISM whether the legacy component is installed.
 func directPlayEnabled(ctx context.Context) (bool, error) {
 	args := []string{"/online", "/get-featureinfo", "/featurename:DirectPlay", "/english"}
-	out, err := exec.CommandContext(ctx, "dism.exe", args...).CombinedOutput()
+	out, err := silentCommand(ctx, "dism.exe", args...).CombinedOutput()
 	if err != nil {
 		return false, fmt.Errorf("dism %v: %w (%s)", args, err, out)
 	}

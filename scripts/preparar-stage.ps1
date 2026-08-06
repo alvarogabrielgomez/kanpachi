@@ -56,20 +56,34 @@ Paso "compilando"
 
 # Sin -ldflags "-s -w": quitar los simbolos dispara falsos positivos de Defender
 # sobre binarios de Go, y el binario que se mide tiene que ser el que se envia.
+#
+# kanpachid SI lleva -H windowsgui, y solo el. El acceso directo del instalador
+# apunta a el, asi que un binario de subsistema consola abriria una ventana
+# negra al hacer doble clic, que es justo lo que el producto promete que nadie
+# ve. La salida de --console y --reset no se pierde: el binario se reengancha a
+# la consola del padre cuando la hay. Ver reengancharConsola.
+#
+# Las sondas NO lo llevan: son herramientas de linea de comandos y ahi la
+# ventana es el punto.
 $binarios = @(
-    @{ nombre = 'kanpachid.exe';    paquete = './daemon/cmd/kanpachid' },
+    @{ nombre = 'kanpachid.exe';    paquete = './daemon/cmd/kanpachid'; gui = $true },
     @{ nombre = 'kanpctl.exe';      paquete = './internal/kanpctl' },
     @{ nombre = 'dirprobe.exe';     paquete = './internal/dirprobe' },
     @{ nombre = 'engineprobe.exe';  paquete = './internal/engineprobe' },
     @{ nombre = 'netcfgprobe.exe';  paquete = './internal/netcfgprobe' },
-    @{ nombre = 'fwprobe.exe';      paquete = './internal/fwprobe' }
+    @{ nombre = 'fwprobe.exe';      paquete = './internal/fwprobe' },
+    @{ nombre = 'watchprobe.exe';   paquete = './internal/watchprobe' }
 )
 
 Push-Location $repo
 try {
     foreach ($b in $binarios) {
         $destino = Join-Path $Stage $b.nombre
-        & go build -o $destino $b.paquete
+        if ($b.gui) {
+            & go build -ldflags "-H windowsgui" -o $destino $b.paquete
+        } else {
+            & go build -o $destino $b.paquete
+        }
         if ($LASTEXITCODE -ne 0) {
             Mal ("no compilo " + $b.paquete)
             $fallos++

@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -43,6 +44,11 @@ import (
 )
 
 func main() {
+	// LO PRIMERO, antes incluso de leer las banderas: sin esto, un binario
+	// enlazado con `-H windowsgui` no puede imprimir ni el error de una bandera
+	// mal escrita. Ver [reengancharConsola].
+	reengancharConsola()
+
 	consola := flag.Bool("console", false, "correr como aplicación de consola en vez de servicio")
 	datos := flag.String("data", "", "directorio de datos. Vacío usa ProgramData\\Kanpachi")
 	// El nombre del pipe se puede cambiar SOLO en modo consola, y existe por una
@@ -188,10 +194,26 @@ func (m watchers) stubbed() []string {
 	return sinimplementar.Names(m.Events, m.Library, m.Inspector, m.Router)
 }
 
+// booted es lo que un arranque deja vivo: cómo esperar a que se caiga, y cómo
+// apagarlo.
+//
+// Existe porque los DOS modos necesitan exactamente el mismo cableado y lo
+// necesitan de formas distintas. En consola, el proceso espera y Ctrl+C apaga.
+// Como servicio, el Administrador de servicios exige que el arranque DEVUELVA
+// cuando el daemon está listo, y que esperar y apagar sean dos cosas
+// separadas: es lo que hace que SERVICE_RUNNING se reporte después de que el
+// pipe esté abierto y no antes.
+//
+// Devolver esto en vez de bloquear es lo que permite que el cableado se escriba
+// UNA vez. Duplicarlo por modo es exactamente el fallo que este repositorio ya
+// tuvo tres veces: `control.Attach`, `firewall.SetScope` y este mismo modo
+// servicio, todos escritos, probados, y llamados por nadie.
+type booted struct {
+	wait     func() error
+	shutdown func()
+}
+
 func correr(consola bool, datos, nombre string) error {
-	if nombre == "" {
-		nombre = pipe.ConsoleName
-	}
 	if datos == "" {
 		datos = filepath.Join(os.Getenv("ProgramData"), "Kanpachi")
 	}
@@ -202,15 +224,82 @@ func correr(consola bool, datos, nombre string) error {
 			"  Lo crea el instalador con su ACL. Para probar, créalo a mano o pasa --data", datos)
 	}
 
+	// **La pregunta se la hace a Windows, no a la bandera.** Arrancar como
+	// servicio y arrancar a mano se distinguen por CÓMO entró el proceso, no
+	// por lo que alguien escribió en la línea de comandos. Ver [EnServicio].
+	//
+	// `--console` no fuerza el modo consola: lo pide, y si resulta que a este
+	// proceso lo arrancó el Administrador de servicios, gana lo que dice el
+	// sistema. Al revés, un servicio arrancado con la bandera puesta se
+	// quedaría sin contestarle nunca al SCM, que lo mataría por no arrancar.
+	enServicio, err := EnServicio()
+	if err != nil {
+		return fmt.Errorf("preguntando si este proceso es un servicio: %w", err)
+	}
+
+	if enServicio {
+		// El nombre de producción, siempre. La bandera `--pipe` no se lee acá y
+		// eso es la mitad de por qué existe: el nombre alternativo sirve para
+		// no pedir un UAC en cada prueba, y un servicio que lo aceptara sería
+		// una forma de que el daemon de verdad atienda en un nombre que
+		// cualquiera puede ocupar.
+		return CorrerComoServicio(func(ctx context.Context) (func() error, func(), error) {
+			b, err := arrancar(ctx, datos, pipe.Name, false)
+			if err != nil {
+				return nil, nil, err
+			}
+			return b.wait, b.shutdown, nil
+		})
+	}
+
+	if nombre == "" {
+		nombre = pipe.ConsoleName
+	}
+
 	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer parar()
 
+	b, err := arrancar(ctx, datos, nombre, consola)
+	if err != nil {
+		return err
+	}
+	go func() {
+		<-ctx.Done()
+		b.shutdown()
+	}()
+	return b.wait()
+}
+
+// arrancar monta el daemon entero y devuelve cuando está listo.
+//
+// # Por qué no usa `defer` para limpiar
+//
+// Porque en modo servicio esta función RETORNA con el daemon vivo, así que un
+// `defer` correría el cierre justo cuando acaba de arrancar. Los cierres se
+// apuntan en orden y se corren al revés a mano, en dos sitios: si el arranque
+// falla a mitad, y dentro de `shutdown`.
+func arrancar(ctx context.Context, datos, nombre string, consola bool) (*booted, error) {
 	log := logConsola{}
+
+	// Los cierres, en orden de creación. Se corren al revés, que es lo que
+	// hacía el `defer` y por los mismos motivos: el motor se va antes que el
+	// firewall, para que la red virtual desaparezca antes que las reglas que la
+	// contenían.
+	var cierres []func()
+	cerrarTodo := func() {
+		for i := len(cierres) - 1; i >= 0; i-- {
+			cierres[i]()
+		}
+	}
+	abortar := func(err error) (*booted, error) {
+		cerrarTodo()
+		return nil, err
+	}
 
 	// Los watchers ANTES del guardián, porque el guardián les pregunta a ellos.
 	// Ninguno escribe nada, así que construirlos y descartarlos no deja rastro.
 	watch := chooseWatchers(log)
-	defer func() { _ = watch.Events.Close() }()
+	cierres = append(cierres, func() { _ = watch.Events.Close() })
 
 	// **Un binario con provisionales NO se instala como servicio.** El riesgo
 	// real nunca fue que fallen: es que uno con un firewall que dice que purgó
@@ -221,10 +310,10 @@ func correr(consola bool, datos, nombre string) error {
 	// el error lo nombra en vez de decir que hay algo. Va ANTES del firewall,
 	// que es lo primero con efectos de verdad.
 	if missing := watch.stubbed(); len(missing) > 0 && !consola {
-		return fmt.Errorf("este binario lleva adaptadores provisionales dentro (%s), así que "+
-			"solo arranca con --console.\n"+
+		return abortar(fmt.Errorf("este binario lleva adaptadores provisionales dentro (%s), "+
+			"así que solo arranca con --console.\n"+
 			"  Un provisional que devuelve éxito hace la cuarentena inverificable, y eso "+
-			"instalado es peor que no tener daemon", strings.Join(missing, ", "))
+			"instalado es peor que no tener daemon", strings.Join(missing, ", ")))
 	}
 
 	// El firewall ANTES que el resto, y no por orden de lectura: construir la
@@ -232,9 +321,9 @@ func correr(consola bool, datos, nombre string) error {
 	// no se puede abrir hay que enterarse acá y no a mitad del arranque.
 	fw, audit, cerrarFirewall, err := realFirewall(datos, log, watch.Router)
 	if err != nil {
-		return err
+		return abortar(err)
 	}
-	defer func() { _ = cerrarFirewall() }()
+	cierres = append(cierres, func() { _ = cerrarFirewall() })
 
 	eventos := watch.Events
 
@@ -253,7 +342,7 @@ func correr(consola bool, datos, nombre string) error {
 		Protect: protegerFichero,
 	})
 	if err != nil {
-		return err
+		return abortar(err)
 	}
 
 	// El motor REAL. Vive al lado de este binario y no se busca en el PATH: un
@@ -268,13 +357,13 @@ func correr(consola bool, datos, nombre string) error {
 		Log: log,
 	})
 	if err != nil {
-		return err
+		return abortar(err)
 	}
-	// El cierre va acá arriba y no al final por el orden de los `defer`: se
-	// ejecutan al revés, así que este corre DESPUÉS del cierre del firewall.
+	// El cierre se apunta acá arriba y no al final por el orden en que se
+	// corren: al revés, así que este corre DESPUÉS del cierre del firewall.
 	// Es el orden que hace falta: primero se va el motor y con él la red
 	// virtual, y solo entonces se sueltan las reglas que la contenían.
-	defer func() { _ = motor.Close() }()
+	cierres = append(cierres, func() { _ = motor.Close() })
 
 	// NewSession PURGA el firewall antes de devolver, así que a partir de acá la
 	// máquina está en el estado que este arranque decidió y no en el que dejó el
@@ -310,7 +399,7 @@ func correr(consola bool, datos, nombre string) error {
 		Rand:   rand.Reader,
 	})
 	if err != nil {
-		return err
+		return abortar(err)
 	}
 
 	// El canal y la sesión se unen ACÁ, y hace falta: la dependencia es circular
@@ -331,7 +420,7 @@ func correr(consola bool, datos, nombre string) error {
 		Log:     log,
 	})
 	if err != nil {
-		return err
+		return abortar(err)
 	}
 
 	// El token rota una vez por vida del proceso y se borra en TODO camino de
@@ -339,12 +428,12 @@ func correr(consola bool, datos, nombre string) error {
 	// muerto en disco.
 	token, err := pipe.NewToken()
 	if err != nil {
-		return err
+		return abortar(err)
 	}
 	if err := pipe.WriteToken(datos, token); err != nil {
-		return err
+		return abortar(err)
 	}
-	defer func() { _ = pipe.RemoveToken(datos) }()
+	cierres = append(cierres, func() { _ = pipe.RemoveToken(datos) })
 
 	ln, err := pipe.Listen(pipe.Deps{
 		API:   sesion,
@@ -354,7 +443,7 @@ func correr(consola bool, datos, nombre string) error {
 		Name:  nombre,
 	})
 	if err != nil {
-		return err
+		return abortar(err)
 	}
 
 	rt, err := service.Start(ctx, service.Deps{
@@ -365,22 +454,34 @@ func correr(consola bool, datos, nombre string) error {
 	})
 	if err != nil {
 		_ = ln.Close()
-		return err
+		return abortar(err)
 	}
 
-	fmt.Printf("kanpachid en modo consola\n  pipe:  %s\n  token: %s\n  datos: %s\n\n"+
-		"Ctrl+C para salir. Prueba con:  go run ./internal/kanpctl -data %q status\n\n",
-		nombre, token, datos, datos)
+	if consola {
+		fmt.Printf("kanpachid en modo consola\n  pipe:  %s\n  token: %s\n  datos: %s\n\n"+
+			"Ctrl+C para salir. Prueba con:  go run ./internal/kanpctl -data %q status\n\n",
+			nombre, token, datos, datos)
+	} else {
+		log.Info("kanpachid listo", "pipe", nombre, "datos", datos)
+	}
 
-	go func() {
-		<-ctx.Done()
-		// El apagado tiene su PROPIO contexto dentro de service, porque el de
-		// acá ya viene cancelado y con él cada cierre de puerto sería un no-op.
-		if err := rt.Shutdown(ctx); err != nil {
-			log.Error("el apagado no terminó bien", "error", err)
-		}
-	}()
-	return rt.Wait()
+	// Una sola vez. Como servicio, `shutdown` lo puede llamar el SCM y además
+	// dispararlo el bucle al caerse solo, y dos apagados a la vez sueltan los
+	// mismos handles dos veces.
+	var unaVez sync.Once
+	apagar := func() {
+		unaVez.Do(func() {
+			// El apagado tiene su PROPIO contexto dentro de service, porque el
+			// de acá puede venir ya cancelado y con él cada cierre de puerto
+			// sería un no-op.
+			if err := rt.Shutdown(ctx); err != nil {
+				log.Error("el apagado no terminó bien", "error", err)
+			}
+			cerrarTodo()
+		})
+	}
+
+	return &booted{wait: rt.Wait, shutdown: apagar}, nil
 }
 
 // dirDelBinario es donde vive el catálogo que trajo el instalador.

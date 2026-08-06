@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
-	"os/exec"
 	"sync"
 	"unsafe"
 
@@ -217,7 +216,7 @@ func (c *Config) setPrefixPolicy(ctx context.Context, want bool) error {
 	if !want {
 		args = []string{"interface", "ipv6", "delete", "prefixpolicy", "::ffff:0:0/96"}
 	}
-	if out, err := exec.CommandContext(ctx, "netsh.exe", args...).CombinedOutput(); err != nil {
+	if out, err := silentCommand(ctx, "netsh.exe", args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("netsh %v: %w (%s)", args, err, out)
 	}
 
@@ -244,7 +243,7 @@ func (c *Config) RevertTweaks(ctx context.Context) error {
 	var fallos []error
 	if t.PrefixPolicyAdded {
 		args := []string{"interface", "ipv6", "delete", "prefixpolicy", "::ffff:0:0/96"}
-		if out, err := exec.CommandContext(ctx, "netsh.exe", args...).CombinedOutput(); err != nil {
+		if out, err := silentCommand(ctx, "netsh.exe", args...).CombinedOutput(); err != nil {
 			fallos = append(fallos, fmt.Errorf("quitando la política de prefijo: %w (%s)", err, out))
 		} else {
 			t.PrefixPolicyAdded = false
@@ -333,7 +332,7 @@ func (c *Config) applyDirectPlay(ctx context.Context, want bool) error {
 	// Constant argument list, never a shell string. The only variable part is
 	// one of two literals chosen above.
 	args := []string{"/online", verbo, "/featurename:DirectPlay", "/norestart"}
-	if out, err := exec.CommandContext(ctx, "dism.exe", args...).CombinedOutput(); err != nil {
+	if out, err := silentCommand(ctx, "dism.exe", args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("dism %v: %w (%s)", args, err, out)
 	}
 	return nil
