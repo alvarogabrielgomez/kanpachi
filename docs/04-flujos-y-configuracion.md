@@ -52,10 +52,11 @@ Nota de rol: "host" es quien corre el servidor del juego. Cualquier miembro pued
 
    **El puerto de las reglas es siempre el LOCAL, en las dos direcciones**, y de eso depende que la cuarentena no rompa la máquina. Entrante con puerto local 445 es "nadie llega a MI compartir archivos", que es la protección. Saliente con puerto local 445 cierra ese mismo servicio por el otro lado. Lo que NO hace: **impedir que esta PC sea CLIENTE**. Montar un disco de red, entrar por Escritorio remoto a otra máquina o usar git por SSH salen de un puerto local efímero hacia el 445, el 3389 o el 22 del OTRO, así que ninguna de estas reglas los toca. Bloquear por puerto remoto sí los rompería, y para siempre, porque la cuarentena sigue puesta con Kanpachi apagado.
 9. Genera el token de la API local en ProgramData.
-10. Accesos directos en Menú Inicio y escritorio, **apuntando al daemon con el parámetro `--show`, y no a la UI**. El daemon es lo que Kanpachi es; la UI son sus mandos. Ver el modelo de procesos en `03`: quien lanza la UI es siempre el daemon, así que un acceso directo a la UI podría dejar mandos abiertos sin nada detrás.
+10. **Registra el manejador de `kanpachi://`, y le pasa el enlace.** La clave `HKLM\SOFTWARE\Classes\kanpachi` apunta a `kanpachid.exe --show "%1"`. El `"%1"` es el enlace que abrió el navegador, y hasta ahora no estaba: el manejador abría Kanpachi y el código había que pegarlo a mano. Adónde va desde ahí, y por qué al daemon y no a la interfaz, está en la sección del enlace profundo de `03-arquitectura.md`.
+11. Accesos directos en Menú Inicio y escritorio, **apuntando al daemon con el parámetro `--show`, y no a la UI**. El daemon es lo que Kanpachi es; la UI son sus mandos. Ver el modelo de procesos en `03`: quien lanza la UI es siempre el daemon, así que un acceso directo a la UI podría dejar mandos abiertos sin nada detrás.
 
     El parámetro no es adorno. `kanpachid.exe` a secas es lo que arranca el Administrador de servicios; `--show` es lo que le pide a ese servicio que arranque y además enseñe la ventana. Mismo binario, papeles distintos.
-11. Arranca el servicio con `--show`, por el paso del acceso directo y no a mano. El servicio lanza la UI con ventana, y con ella aparece el icono de la bandeja. Arrancarlo por las dos vías dejaría un daemon corriendo en silencio y un segundo intento de arranque que no hace nada.
+12. Arranca el servicio con `--show`, por el paso del acceso directo y no a mano. El servicio lanza la UI con ventana, y con ella aparece el icono de la bandeja. Arrancarlo por las dos vías dejaría un daemon corriendo en silencio y un segundo intento de arranque que no hace nada.
 
 **Ninguno de los pasos 6 a 8 es definitivo.** Windows revierte la métrica, la categoría y las rutas en cada evento de identificación de red, que se dispara al cambiar una IP, conectar o desconectar un adaptador, o en eventos de DHCP. Por eso el servicio se suscribe al Event ID 10000 de `Microsoft-Windows-NetworkProfile/Operational` y reaplica todo cada vez. El instalador solo deja el estado inicial correcto para que la primera sesión funcione sin esperar un evento.
 
@@ -65,10 +66,36 @@ Distribución silenciosa para el grupo: `kanpachi-setup.exe /VERYSILENT /NORESTA
 
 Son dos piezas y su estado es distinto:
 
-- **La carga**, `scripts/preparar-carga.ps1`. Compila el daemon con `-trimpath` y `-H windowsgui`, la interfaz en release con su bundle entero, copia `builtin.json`, `Packet.dll` y `wintun.dll`, trae el motor del otro repositorio, y deja un `SHA256SUMS`. **Medido**: 21 ficheros, 72 MB.
+- **La carga**, `scripts/preparar-carga.ps1`. Compila el daemon con `-trimpath` y `-H windowsgui`, la interfaz en release con su bundle entero, copia `builtin.json`, `Packet.dll`, `wintun.dll` y `WinDivert64.sys`, trae el motor del otro repositorio, y deja un `SHA256SUMS`. **Medido**: 21 ficheros, 72 MB, antes de que entrara el `.sys`.
 - **El instalador**, `installer/kanpachi.iss`, para Inno Setup 6. **Escrito y sin medir**: en la máquina de desarrollo no hay Inno Setup, así que nunca se compiló ni se ejecutó. El criterio de aceptación sigue siendo el de arriba, instalar y desinstalar veinte veces en una VM sin dejar rastro.
+- **La publicación**, `.github/workflows/release.yml`. Es quien corre las dos piezas de arriba de verdad, en un runner de Windows, con Inno Setup instalado ahí mismo.
 
 Nada de `-ldflags "-s -w"`: quitar los símbolos dispara falsos positivos de Defender sobre binarios de Go, y el binario que se firma tiene que ser el que se probó. Mismo criterio que `release-seed.yml`.
+
+### Dos rutas que dejaron de estar escritas a mano
+
+`WinDivert64.sys` no se copiaba. Este documento lo lista dentro del directorio de instalación desde siempre y la carpeta portable sí lo copiaba, así que de las dos formas de entregar Kanpachi la que se empaqueta era la única a la que le faltaba un fichero. Nadie lo vio porque el instalador nunca se compiló.
+
+Y los dos scripts tenían por defecto `C:\kt`, que es un directorio de trabajo de UNA máquina. No existe en ninguna otra ni en el runner del CI, de modo que quien clonara el repositorio se llevaba una carga escrita en una ruta que no significa nada. Ahora los defaults salen de la ubicación del script: `dist\carga` dentro del repositorio, y el motor en `..\kanpachi-engine\target\release\`.
+
+## Publicar una versión
+
+Se publica **por tag y solo por tag**. No hay CI en cada push ni en cada pull request, y la razón no es ahorrar minutos: lo que se publica sale de un tag, y cada workflow de publicación corre los tests que gobiernan lo que publica. Un job por push repetiría eso sobre commits que nadie va a publicar. Los chequeos completos siguen existiendo en `ci.yml`, a mano.
+
+| Tag | Qué publica | Qué corre antes |
+|---|---|---|
+| `v*` | `kanpachi-setup.exe` y su `SHA256SUMS` | `./core/...` y `./internal/arch/...` |
+| `seed-v*` | `kanpseed` para amd64 y arm64, `index.html`, y sus sumas | `./core/...`, `./registry/...` y `./internal/arch/...` |
+
+`internal/arch` entra en los dos porque los dos publican algo que esos guardianes atan: el cliente y la página comparten el alfabeto del invite ID y la forma de la URL, escritos dos veces en dos lenguajes.
+
+**El nombre del instalador no lleva la versión.** `kanpachi-setup.exe`, a secas, y eso es lo que hace que `releases/latest/download/kanpachi-setup.exe` sea una URL permanente: GitHub la redirige a la publicación más nueva, así que la página de descarga se actualiza sola al publicar un tag. Con el nombre versionado habría que editar la página en cada publicación, y la página que se edita a mano es la que se queda vieja. La versión viaja dentro del ejecutable, en su `VersionInfo`, y en el título de la publicación.
+
+**El motor se compila dentro del workflow**, desde su propio repositorio. No se baja de una publicación suya porque todavía no tiene ninguna: ese repositorio solo compila en cada push. El ref con el que se compiló queda escrito en el cuerpo de la publicación, y eso es lo que hace reconstruible un instalador: sin él, "la versión 0.1.0" no dice con qué motor se armó.
+
+**Sin firmar todavía.** Windows enseña el aviso de SmartScreen, y el cuerpo de la publicación lo dice con las palabras exactas que hay que pulsar, en vez de disimularlo. La vía elegida es SignPath Foundation, que firma gratis proyectos de código abierto; qué falta para poder solicitarlo está en `07-futuro.md`.
+
+**El job de la interfaz de `ci.yml` falla hoy.** `ui/test` referencia `FakeSessionRepository`, que salió de `lib/`, así que ni `flutter analyze` sobre `test/` ni `flutter test` compilan. Por eso la publicación no lo llama: bloquearía toda entrega. Se deja declarado y sin disparador automático en vez de recortarle el alcance, porque bajar el listón para que pase es como se pierde `message_lockstep_test.dart`, que es el guardián que ata los enums de las dos puntas del cable.
 
 ## La carpeta portable, y el script que la arma
 

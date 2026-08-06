@@ -705,6 +705,39 @@ El instalador registra el esquema `kanpachi://`. Se invoca desde dos sitios: un 
 
 **La página de invitación resuelve el invite ID contra el registro del seed.** La URL lo lleva en la ruta (`kanpachi.accentio.dev/A7K2M9QX`), así que el servidor lo recibe y lo registra en sus logs. Es aceptable porque el invite ID dejó de ser material criptográfico con la decisión 2: quien lo lea obtiene la tarjeta y el derecho a tocar la puerta, jamás el secreto de la red real, que no vive en ningún servidor. Ver decisión 17 para el intercambio completo.
 
+#### Por dónde viaja el enlace, de Chrome a la pantalla
+
+Toda la cadena existía en piezas y no conectaba en ningún sitio: la página armaba el intent sin la clave de la tarjeta, el instalador registraba el manejador **sin `"%1"`**, de modo que Windows nunca pasaba la URL, y la pantalla de confirmación se alimentaba de dos cadenas de relleno. El enlace abría Kanpachi y el código había que pegarlo a mano.
+
+```
+Chrome  kanpachi://A7K2M9QX#<clave de tarjeta>
+   |
+   v  HKLM\SOFTWARE\Classes\kanpachi\shell\open\command
+kanpachid.exe --show "%1"            el LANZADOR, sin elevar
+   |
+   +-- ¿hay daemon?  sí -> show_ui {"link": ...} por el pipe
+   |                 no -> el enlace va en los argumentos de arranque
+   v
+procesoHost.invitación               un buzón de UN enlace, el último gana
+   |
+   v  ui.Show()  ->  la ventana aparece
+kanpachiui.exe
+   |
+   v  pending_invite, en el latido. Pedirlo lo CONSUME
+InviteScreen                         y acá para, hasta que alguien pulse
+```
+
+Cuatro cosas de esa cadena tienen razón y no son detalle:
+
+- **El enlace va al DAEMON y no a la interfaz**, por lo mismo que el acceso directo: la interfaz sin daemon son mandos sin nada detrás, y arranca callada por defecto, así que abrirla sola no enseñaría ni una ventana. Ver el modelo de procesos.
+- **Dos vías para el mismo enlace, y hacen falta las dos.** El daemon puede estar vivo o no. Por el pipe cuando ya está; por los argumentos de arranque cuando hay que levantarlo. Las dos terminan en el mismo buzón, y el enlace se guarda **antes** de enseñar la ventana: al revés es una carrera que se pierde en la máquina rápida, porque la interfaz pregunta en cuanto aparece.
+- **Recogerlo lo consume.** Sin eso, el latido de la interfaz volvería a enseñar la pantalla de confirmación cada dos segundos, incluso después de que alguien la cancelara.
+- **Lo resuelve el daemon, no la app.** `PeekInvite` parsea el enlace, le pregunta al registro si esa sala existe y abre la tarjeta con la clave del fragmento. La app recibe el nombre de la sala y el apodo del host ya resueltos: no descifra nada y no vuelve a parsear una URL que vino de la web. **No toma el candado de la sesión**, y eso hace falta de verdad: el enlace puede llegar mientras se crea una sala, que lo tiene tomado durante decenas de segundos, y la confirmación no puede esperar a algo que el usuario quizá quiera cancelar justamente por haber pulsado el enlace.
+
+**El fragmento sigue sin decidir a qué sala se entra.** `ParseRoom` lo descarta antes de mirar la forma, como siempre, y la clave se recorta aparte y solo sirve para descifrar la tarjeta. Una clave equivocada deja la vista genérica; jamás cambia el destino.
+
+**Dos casos no ofrecen el botón de entrar**, y son distintos: que el enlace no se entienda, porque lo mandó una web y puede traer cualquier cosa, y que el registro AFIRME que esa sala no existe. El segundo es un hecho, no un silencio: un registro que no contesta deja la sala como desconocida y el botón puesto, porque entrar no pasa por él.
+
 ### Punto de extensión de identidad
 
 ```go

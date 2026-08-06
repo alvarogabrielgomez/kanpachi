@@ -8,7 +8,21 @@ Formato: cada bloque dice qué lo activa, qué implica y qué ya quedó preparad
 
 Lo que se activa, en orden:
 
-1. **Firma de código.** Certificado de una CA tradicional a nombre de Accentio, del orden de 400 a 900 USD al año. Azure Trusted Signing quedó descartado: la elegibilidad se limita a EE. UU., Canadá, UE y Reino Unido, Brasil queda fuera. Sin firma, SmartScreen mata la conversión de desconocidos.
+1. **Firma de código.** **La vía elegida es SignPath Foundation**, que firma gratis proyectos de código abierto: los tres repositorios de Kanpachi son públicos, así que califica, y sale gratis lo que por una CA tradicional cuesta entre 400 y 900 USD al año. Azure Trusted Signing quedó descartado: la elegibilidad se limita a EE. UU., Canadá, UE y Reino Unido, Brasil queda fuera. Sin firma, SmartScreen mata la conversión de desconocidos.
+
+   **Pendiente: solicitarlo.** No se puede hasta tener lo que la solicitud exige, y eso es exactamente el trabajo que el primer release deja hecho o casi:
+
+   | Requisito | Estado |
+   |---|---|
+   | Repositorio público con licencia OSI | los tres lo son; falta la licencia formal del cliente, punto 6 de esta lista |
+   | Una URL de descarga real, publicada | la da `release.yml`: `releases/latest/download/kanpachi-setup.exe` |
+   | Un sitio del proyecto con política de privacidad | el seed sirve la portada; **la política de privacidad no existe todavía** |
+   | Build reproducible desde CI, sin pasos manuales | lo hace `release.yml` |
+   | Que el binario no lo firme nadie más | así es |
+
+   Cuando esté aprobado, el job de firma entra en `release.yml` entre empaquetar y publicar. **Es un paso aparte a propósito**: SignPath firma un artefacto que su CI ya produjo, así que el instalador que se firma es exactamente el que se compiló, y no uno recompilado para la ocasión.
+
+   Mientras tanto se publica **sin firmar**, y el cuerpo de la publicación lo dice con las palabras exactas que hay que pulsar en el aviso de SmartScreen. Disimularlo sería peor: quien no sabe que el aviso es esperado, cierra.
 
    **El problema empieza antes que SmartScreen.** Los binarios compilados en Go sin firmar disparan falsos positivos del modelo de aprendizaje automático de Defender con frecuencia, típicamente como `Trojan:Win32/Wacatac.*!ml`, y el archivo se pone en cuarentena solo. Es un problema conocido y reportado por el propio equipo de Go de Microsoft. Un daemon Go que además crea adaptadores de red y toca el firewall es un candidato de manual.
 
