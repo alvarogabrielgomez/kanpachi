@@ -1,4 +1,7 @@
+import 'dart:ui' show Size;
+
 import 'package:flutter/foundation.dart';
+import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// What this window remembers between runs.
@@ -34,6 +37,8 @@ class AppPreferences {
 
   static const String _nicknameKey = 'nickname';
   static const String _verboseKey = 'verbose';
+  static const String _windowWidthKey = 'window_width';
+  static const String _windowHeightKey = 'window_height';
 
   final SharedPreferences _prefs;
 
@@ -80,4 +85,40 @@ class AppPreferences {
 
   Future<void> setVerbose({required bool enabled}) async =>
       _prefs.setBool(_verboseKey, enabled);
+
+  /// How big the window was when it was last closed, or null the first time.
+  ///
+  /// # Why the size is remembered and the POSITION is not
+  ///
+  /// They look like the same setting and they are not. Somebody who made the
+  /// window taller wants it taller next time: it is a choice about the app.
+  /// Where it happened to sit is a choice about that moment — which monitor
+  /// was plugged in, what else was open — and restoring it is how a window
+  /// comes back half off the screen after unplugging a second display, or on
+  /// the monitor that is now switched off. Centred always is boring and always
+  /// works.
+  ///
+  /// Read as two doubles rather than one string, because that is what
+  /// `shared_preferences` stores natively and because half a size is not a
+  /// size: with one missing, this returns null and the default applies.
+  Size? get windowSize {
+    final double? w = _prefs.getDouble(_windowWidthKey);
+    final double? h = _prefs.getDouble(_windowHeightKey);
+    if (w == null || h == null) return null;
+    return Size(w, h);
+  }
+
+  /// Remembers the window size, clamped to what the app can actually draw.
+  ///
+  /// The clamp is not paranoia: a stored size below the minimum comes back as
+  /// a window the layout cannot fit, and the overflow it produces is
+  /// unreachable because the window cannot be made smaller than the minimum
+  /// anyway. Storing something the app would refuse to honour just means the
+  /// file disagrees with the screen.
+  Future<void> setWindowSize(Size size) async {
+    final double w = size.width.clamp(AppSpacing.minWindow.width, 10000.0);
+    final double h = size.height.clamp(AppSpacing.minWindow.height, 10000.0);
+    await _prefs.setDouble(_windowWidthKey, w);
+    await _prefs.setDouble(_windowHeightKey, h);
+  }
 }

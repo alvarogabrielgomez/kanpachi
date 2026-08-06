@@ -13,6 +13,7 @@ import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.da
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/pages/shell_page.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/tray_bridge.dart';
+import 'package:kanpachi_ui/features/shell/presentation/widgets/window_size_memory.dart';
 import 'package:kanpachi_ui/ioc/injector.dart';
 import 'package:kanpachi_ui/ioc/ioc_manager.dart';
 import 'package:window_manager/window_manager.dart';
@@ -52,8 +53,13 @@ Future<void> main(List<String> args) async {
   final AppPreferences preferences = await AppPreferences.open();
 
   IocManager.register(preferences: preferences);
-  await _prepareWindow(silent: await _shouldStayQuiet(args));
-  runApp(KanpachiApp(onboarded: preferences.onboarded));
+  await _prepareWindow(
+    silent: await _shouldStayQuiet(args),
+    size: preferences.windowSize ?? AppSpacing.initialWindow,
+  );
+  runApp(
+    KanpachiApp(onboarded: preferences.onboarded, preferences: preferences),
+  );
 }
 
 /// Whether this run should stay in the tray with no window.
@@ -133,11 +139,15 @@ Future<bool> _hayDaemon() async {
 /// La ventana se construye igual, y eso es a propósito: así el catálogo se pide
 /// y la salud se mide desde el primer momento, y el menú de la bandeja tiene
 /// algo que decir antes de que nadie la abra.
-Future<void> _prepareWindow({required bool silent}) async {
+Future<void> _prepareWindow({required bool silent, required Size size}) async {
   await windowManager.ensureInitialized();
   final WindowOptions options = WindowOptions(
-    size: AppSpacing.initialWindow,
+    size: size,
     minimumSize: AppSpacing.minWindow,
+    // **Centrada SIEMPRE, y la posición no se guarda.** El tamaño sí, y no son
+    // la misma decisión: quien agrandó la ventana la quiere grande otra vez, y
+    // dónde estaba era cosa de aquel momento. Recordar la posición es cómo una
+    // ventana vuelve medio fuera de la pantalla al desenchufar un monitor.
     center: true,
     backgroundColor: Colors.transparent,
     // Fuera de la barra de tareas mientras esté escondida: una entrada en la
@@ -182,13 +192,16 @@ Future<void> _traerAlFrente() async {
 }
 
 class KanpachiApp extends StatelessWidget {
-  const KanpachiApp({this.onboarded = false, super.key});
+  const KanpachiApp({this.onboarded = false, this.preferences, super.key});
 
   /// Whether this machine already went through onboarding.
   ///
   /// Which is the same question as having a nickname: onboarding is two
   /// screens and the second one asks for it. See [AppPreferences].
   final bool onboarded;
+
+  /// Where this window remembers things. Null in tests, which have no window.
+  final AppPreferences? preferences;
 
   @override
   Widget build(BuildContext context) {
@@ -216,7 +229,12 @@ class KanpachiApp extends StatelessWidget {
       // Por encima de la app y por debajo de los cubits: tiene que durar lo
       // que dure la ventana y necesita leer la sala para escribir el menú de
       // la bandeja.
-      child: const TrayBridge(child: _ThemedApp()),
+      child: TrayBridge(
+        child: WindowSizeMemory(
+          preferences: preferences,
+          child: const _ThemedApp(),
+        ),
+      ),
     );
   }
 }

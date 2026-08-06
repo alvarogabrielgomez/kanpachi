@@ -46,10 +46,18 @@ abstract final class AppSpacing {
   /// tamaño, así que subirlo sin mirar deja pantallas sin cubrir.
   static const Size minWindow = Size(720, 520);
 
-  /// Con la que abre. El ancho del diseño más el aire de los lados; el alto da
-  /// para la sala entera sin scroll, que es la pantalla más larga de uso
-  /// normal.
-  static const Size initialWindow = Size(1000, 720);
+  /// Con la que abre la PRIMERA vez, y solo la primera.
+  ///
+  /// A partir de ahí manda lo que el usuario haya dejado: el tamaño se recuerda
+  /// entre arranques, ver [AppPreferences.windowSize]. Esto es el punto de
+  /// partida, no un tope ni una preferencia.
+  ///
+  /// El ancho es el del diseño más el aire de los lados. El alto no sale del
+  /// diseño: sale de que una ventana que abre ocupando media pantalla es una
+  /// ventana que hay que encoger, y encogerla es lo que nadie hace. Cabe la
+  /// portada entera, y las pantallas largas hacen scroll, que es lo que hacen
+  /// igual en cualquier tamaño.
+  static const Size initialWindow = Size(1000, 555);
 
   static const double titleBarHeight = 44;
   static const double statusBarHeight = 38;
