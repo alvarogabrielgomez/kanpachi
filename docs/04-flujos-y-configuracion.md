@@ -40,6 +40,10 @@ Nota de rol: "host" es quien corre el servidor del juego. Cualquier miembro pued
 3. Crea `ProgramData\Kanpachi\` con ACL: escritura solo SYSTEM y Administradores.
 4. Registra el servicio `kanpachi-daemon`, arranque automático retrasado.
 5. Política de recuperación del servicio: reiniciar a los 5 s, 10 s, 30 s.
+
+   **Y le concede al usuario interactivo `SERVICE_START`, `SERVICE_STOP` y `SERVICE_QUERY_STATUS` sobre este servicio**, con `sc sdset`. Sin esa concesión, hacer doble clic en el acceso directo con Kanpachi cerrado pediría UAC, y el producto promete un solo UAC en toda su vida. Es una concesión mínima y acotada: el usuario puede arrancar y detener este servicio, nada más, y no gana ningún permiso sobre los demás del sistema.
+
+   Lo que **no** se concede es `SERVICE_CHANGE_CONFIG`. El ajuste de "abrir Kanpachi con Windows" cambia el tipo de arranque entre `AUTO_START` y `DEMAND_START`, y eso lo hace el daemon consigo mismo cuando la UI se lo pide por el pipe. El daemon ya es SYSTEM, así que no hay que ampliarle permisos a nadie para tener ese interruptor.
 6. Crea el adaptador Wintun `kanpachi0`, fija su categoría de red en **Privada** y escribe `Category=1` en su perfil del registro. Hacerlo aquí evita el diálogo de "¿quieres que este equipo sea detectable?" a mitad de una partida.
 7. Fija la métrica del adaptador: IPv4 en 1, IPv6 en 20, `AutomaticMetric` desactivado en ambas pilas.
 8. **La cuarentena de base ya no es paso del instalador.** La escribe el DAEMON en cada arranque, con el grupo `Kanpachi-base` y en los tres perfiles: bloqueo de los puertos prohibidos **en las dos direcciones**, sin acotar por dirección ni por adaptador. **No es un deny-all**, y no puede serlo: los bloqueos ganan sobre los permisos sin desempate por especificidad, así que un bloqueo total taparía las reglas del juego activo que crea el propio daemon. Ver decisión 4.
@@ -48,8 +52,8 @@ Nota de rol: "host" es quien corre el servidor del juego. Cualquier miembro pued
 
    **El puerto de las reglas es siempre el LOCAL, en las dos direcciones**, y de eso depende que la cuarentena no rompa la máquina. Entrante con puerto local 445 es "nadie llega a MI compartir archivos", que es la protección. Saliente con puerto local 445 cierra ese mismo servicio por el otro lado. Lo que NO hace: **impedir que esta PC sea CLIENTE**. Montar un disco de red, entrar por Escritorio remoto a otra máquina o usar git por SSH salen de un puerto local efímero hacia el 445, el 3389 o el 22 del OTRO, así que ninguna de estas reglas los toca. Bloquear por puerto remoto sí los rompería, y para siempre, porque la cuarentena sigue puesta con Kanpachi apagado.
 9. Genera el token de la API local en ProgramData.
-10. Accesos directos en Menú Inicio y escritorio.
-11. Arranca el servicio y abre la UI.
+10. Accesos directos en Menú Inicio y escritorio, **apuntando al daemon y no a la UI**. El daemon es lo que Kanpachi es; la UI son sus mandos. Ver el modelo de procesos en `03`: quien lanza la UI es siempre el daemon, así que un acceso directo a la UI podría dejar mandos abiertos sin nada detrás.
+11. Arranca el servicio. El servicio lanza la UI, y con ella aparece el icono de la bandeja.
 
 **Ninguno de los pasos 6 a 8 es definitivo.** Windows revierte la métrica, la categoría y las rutas en cada evento de identificación de red, que se dispara al cambiar una IP, conectar o desconectar un adaptador, o en eventos de DHCP. Por eso el servicio se suscribe al Event ID 10000 de `Microsoft-Windows-NetworkProfile/Operational` y reaplica todo cada vez. El instalador solo deja el estado inicial correcto para que la primera sesión funcione sin esperar un evento.
 

@@ -6,7 +6,8 @@
 ┌──────────────────────────── PC Windows ────────────────────────────┐
 │                                                                    │
 │  kanpachi-ui  (Flutter, usuario, sin privilegios)                  │
-│      │                                                             │
+│      │        lo lanza el daemon, muere con el daemon, y es quien  │
+│      │        pone el icono en la bandeja. Ver "modelo de procesos"│
 │      │  named pipe \\.\pipe\kanpachi  +  token                     │
 │      ▼                                                             │
 │  kanpachi-daemon  (servicio Windows, SYSTEM)                       │
@@ -37,6 +38,99 @@
 ```
 
 `core/` no vive dentro de `daemon/`, vive al lado. Se dibuja acá para que se lea la dirección de las dependencias: todo apunta hacia adentro, y `core` no conoce a ninguno de los de arriba.
+
+## El modelo de procesos
+
+Tres procesos, y uno solo manda.
+
+```
+sesión 0  (aislada, sin escritorio, sin área de notificación)
+│
+│  kanpachid.exe                       servicio Windows, SYSTEM
+│    │
+│    ├──[job]──> kanpachi-engine.exe   sesión 0, SYSTEM
+│    │
+└────┼───────────────────────────────────────────────────────────────
+     │
+sesión del usuario
+     │
+     └──[job]──> Kanpachi.exe          Flutter, SIN elevar
+                   el icono de la bandeja vive acá
+                   habla con el daemon por el named pipe
+```
+
+`[job]` es un Job Object con `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, el mismo mecanismo que ya usaba el motor. De ahí sale la invariante que gobierna todo lo demás:
+
+> **Hay bandeja si y solo si hay daemon.**
+
+Mientras el daemon vive, hay un icono que lo dice. Cuando el daemon muere, por la vía que sea (apagado ordenado, `TerminateProcess` desde el Administrador de tareas, un fallo), **el kernel se lleva el motor y la UI con él**, y el icono desaparece. No es código que corre en el cierre: es una propiedad del objeto, así que no hay ninguna muerte del daemon lo bastante sucia como para dejar un túnel vivo sin nada visible que lo explique.
+
+Un túnel abierto sin interfaz que lo enseñe tiene la forma exacta de un troyano. Esa es la razón de la invariante, y es de producto antes que técnica.
+
+### Por qué la bandeja está en la UI y no en el daemon
+
+Porque no hay alternativa. **Un proceso de la sesión 0 no puede poner un icono en la bandeja**: esa sesión no tiene escritorio interactivo ni área de notificación. Los servicios interactivos (`SERVICE_INTERACTIVE_PROCESS`) los retiró Microsoft en Windows 10 1803. Y un servicio que corriera como usuario en vez de SYSTEM seguiría en la sesión 0, porque la sesión no depende de la cuenta.
+
+Así que el icono lo pone el único proceso que puede: uno sin elevar, en la sesión del usuario. Ese proceso ya existía y ya tenía el código de la bandeja escrito. Lo que cambia es **quién lo arranca**.
+
+### Por qué el daemon lanza la UI, y no al revés
+
+Si la UI se lanzara sola, la bandeja podría sobrevivir al daemon o faltar con el daemon vivo, y la invariante se cae. Con el daemon de padre no hay nada que vigilar ni que sincronizar: el `job` lo resuelve el kernel.
+
+Sale gratis, además, la detección del cierre abrupto de la UI. El daemon es el padre, así que tiene el handle del proceso desde que nace y lo único que hace es esperar sobre él. Cuando la UI se cierra de golpe la relanza en modo silencioso, con tope: si vuelve a caer enseguida, apaga todo en vez de insistir.
+
+### Cómo lanza el daemon un proceso con menos privilegios que él
+
+El daemon es SYSTEM en la sesión 0. Un `CreateProcess` normal daría una ventana de Flutter corriendo como administrador, que es superficie de ataque regalada y además rompe cosas visibles, como arrastrar un fichero desde el Explorador, que UIPI bloquea contra una ventana elevada.
+
+```
+WTSGetActiveConsoleSessionId()
+WTSQueryUserToken(sid, &tok)
+GetTokenInformation(tok, TokenElevationType)
+    si es TokenElevationTypeFull -> GetTokenInformation(tok, TokenLinkedToken)
+DuplicateTokenEx(..., TokenPrimary, &prim)
+CreateProcessAsUser(prim, os.Executable() del directorio propio, ...,
+                    STARTUPINFO{ lpDesktop: "winsta0\\default" })
+AssignProcessToJobObject(job, hProcess)
+```
+
+Tres cosas que hay que respetar, y las tres vienen de la documentación de Microsoft:
+
+- **`WTSQueryUserToken` exige LocalSystem y `SE_TCB_NAME`**, textual. Es otro motivo por el que el daemon es un servicio como SYSTEM: como proceso de usuario, ni elevado, no podría lanzar su propia UI en condiciones.
+- **La documentación no dice cuál de los dos tokens devuelve** para un administrador con UAC, el completo o el filtrado. Por eso el paso de `TokenElevationType` más `TokenLinkedToken` no es adorno: es lo único que garantiza que la UI no salga elevada por accidente. Windows fabrica los dos tokens en el inicio de sesión y el filtrado es el que corre el Explorador, así que ese es el que queremos.
+- **Los handles de token se cierran los tres.** La documentación advierte explícitamente de no filtrarlos.
+
+**La ruta que se lanza sale de `os.Executable()` y del directorio propio, jamás del estado ni de la configuración ni del pipe.** Un SYSTEM que lanza una ruta que alguien puede influir es escalada de privilegios directa.
+
+### Los dos modos de la UI
+
+| Cómo entra | Ventana | Bandeja |
+|---|---|---|
+| El daemon la lanza con `--silent` | no | sí |
+| El daemon la lanza normal | sí | sí |
+| El usuario la abre a mano, sin daemon | sí, con el aviso de servicio ausente | **no** |
+
+La tercera fila es la que protege la invariante. Una UI suelta son mandos sin nada que mandar, y está bien que se pueda abrir así. Si además pusiera icono, habría bandeja sin daemon detrás, que es justo lo contrario de lo que la bandeja significa.
+
+### Qué pasa al hacer doble clic
+
+El acceso directo apunta al **daemon**, que es lo que Kanpachi es.
+
+| Estado | Qué ocurre |
+|---|---|
+| Windows arranca | el SCM levanta el servicio, que lanza la UI con `--silent`: bandeja, sin ventana |
+| Doble clic, daemon parado | arranca el servicio, que lanza la UI normal |
+| Doble clic, daemon vivo | el daemon ya está: solo abre la ventana de la UI que ya corre |
+
+Ninguna de las tres pide UAC. Arrancar el servicio no lo pide porque el instalador le concede al usuario interactivo `SERVICE_START`, `SERVICE_STOP` y `SERVICE_QUERY_STATUS` **sobre este servicio y ninguno más**, con `sc sdset`. Es una concesión mínima, hecha una vez, con el único UAC de la vida del producto.
+
+**El daemon se compila con `-H windowsgui`.** Con el subsistema de consola, que es lo que Go hace por defecto, el doble clic haría parpadear una ventana negra. Para no perder la salida de `--console` y `--reset`, se reengancha a la consola del padre con `AttachConsole(ATTACH_PARENT_PROCESS)` cuando la hay: lanzado desde una terminal imprime, lanzado desde el acceso directo no muestra nada.
+
+### Salir de Kanpachi
+
+"Salir de Kanpachi" en el menú de la bandeja **no cierra la UI**. Manda la orden al daemon, que es el único que puede cerrar bien: sale de la sala, purga las reglas, baja el motor y el adaptador, y al final se detiene él. La UI muere de camino, con el `job`.
+
+La UI no coordina el apagado porque no controla nada de lo que hay que apagar.
 
 ## Arquitectura interna: regla de dependencia
 
