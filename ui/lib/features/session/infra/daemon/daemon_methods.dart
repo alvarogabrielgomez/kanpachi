@@ -70,6 +70,14 @@ abstract final class DaemonMethods {
   /// shortcut is double-clicked with Kanpachi already running. It is listed
   /// here because the wire name has to live in one place.
   static const String showUi = 'show_ui';
+
+  /// Collect the `kanpachi://` link the browser brought, already resolved
+  /// against the registry. Asking for it CONSUMES it.
+  ///
+  /// Pulled and not pushed, like everything else here: the daemon piles up what
+  /// reached it and the app asks. What signals there is something to collect is
+  /// the window opening, which is what the daemon does right after storing it.
+  static const String pendingInvite = 'pending_invite';
 }
 
 /// The default budget: what something answered from memory or with one small

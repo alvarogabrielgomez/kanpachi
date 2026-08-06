@@ -2,6 +2,7 @@ import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
@@ -249,6 +250,17 @@ class PipeSessionRepository implements SessionRepository {
     // rules appear when a game installs itself and disappear when somebody
     // removes them, neither of which passes through this app.
     return _conReglasAjenas(await _sala(st));
+  }
+
+  @override
+  Future<PendingInvite?> pendingInvite() async {
+    final Map<String, Object?> v = await _mapa(DaemonMethods.pendingInvite);
+    // Sin enlace no hay nada pendiente, que es la respuesta normal: esto se
+    // pregunta en cada latido y casi siempre no hay nada. El daemon contesta un
+    // objeto vacío en vez de un error, porque «no hay» no es un fallo.
+    final String link = v['link'] as String? ?? '';
+    if (link.isEmpty) return null;
+    return PendingInvite.fromJson(v);
   }
 
   // ------------------------------------------------------------ diagnósticos

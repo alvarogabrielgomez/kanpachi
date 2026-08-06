@@ -754,7 +754,15 @@
     //
     // Un ID pelado significa el seed por defecto. Para cualquier otro host se
     // agrega explícitamente, porque el cliente jamás asume el último usado.
+    //
+    // La clave de la tarjeta viaja también, y hace falta: es lo que permite a
+    // la app enseñar el nombre de la sala y cómo se identifica quien invita en
+    // la pantalla de confirmación, en vez de un código pelado. No sale de esta
+    // máquina —el esquema lo atiende Kanpachi en este mismo PC— y no cambia a
+    // qué sala apunta el enlace: el cliente descarta el fragmento antes de
+    // decidir eso, y solo lo usa para descifrar.
     var target = isDefault ? "kanpachi://" + id : "kanpachi://" + id + "@" + host;
+    if (cardKey) target += "#" + cardKey;
 
     if (!isWindows) {
       text("nowin-code", pretty);

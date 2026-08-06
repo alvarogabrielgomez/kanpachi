@@ -507,6 +507,10 @@ func (a *apiFalsa) RenameRoom(context.Context, string) (domain.RoomState, error)
 
 func (a *apiFalsa) InviteLink() string { return "" }
 
+func (a *apiFalsa) PeekInvite(context.Context, string) (usecase.InvitePreview, error) {
+	return usecase.InvitePreview{}, nil
+}
+
 func (a *apiFalsa) Catalog() (domain.Catalog, []domain.GameRef) {
 	return domain.Catalog{}, nil
 }

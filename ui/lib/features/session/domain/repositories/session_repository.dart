@@ -1,6 +1,7 @@
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
@@ -70,6 +71,17 @@ abstract interface class SessionRepository {
   /// ninguna capa, y eso resultó ser mucho peor que ver datos viejos: la app se
   /// bloqueaba sola. Ver [SessionCubit.watchSession] y `docs/03`.
   Future<Room?> currentRoom();
+
+  /// El enlace `kanpachi://` que trajo el navegador, o null si no hay ninguno.
+  ///
+  /// **Pedirlo lo CONSUME**, y eso es parte del contrato: sin ello el latido
+  /// volvería a enseñar la pantalla de confirmación cada dos segundos, incluso
+  /// después de que alguien la cancelara.
+  ///
+  /// Viene ya resuelto contra el registro. La app no descifra la tarjeta ni
+  /// parsea el enlace: eso vive en el dominio del daemon, que es donde está
+  /// escrita y probada la frontera de entrada hostil.
+  Future<PendingInvite?> pendingInvite();
 
   /// Lo que la máquina tiene abierto AHORA, medido.
   ///

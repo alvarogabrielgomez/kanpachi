@@ -1,101 +1,86 @@
-; El instalador de Kanpachi.
+; Instalador de Kanpachi. Compilar:
 ;
-; Compilar con Inno Setup 6:
+;   .\scripts\preparar-carga.ps1 -Salida .\dist\carga
+;   ISCC.exe /DCarga=".\dist\carga" installer\kanpachi.iss
 ;
-;   .\scripts\preparar-carga.ps1
-;   ISCC.exe installer\kanpachi.iss
-;
-; NOTA DE ESTADO: este script esta escrito y NO esta medido. Esta maquina no
-; tiene Inno Setup instalado, asi que nunca se compilo ni se ejecuto. Lo que si
-; esta medido es la carga que empaqueta, que la arma preparar-carga.ps1. El
-; criterio de aceptacion de docs/04 sigue siendo el de siempre: instalar y
-; desinstalar veinte veces seguidas en una VM sin dejar rastro.
+; Sin medir: esta maquina no tiene Inno Setup. El criterio de aceptacion sigue
+; siendo el de docs/04: instalar y desinstalar veinte veces en una VM sin dejar
+; rastro.
 
 #define AppName        "Kanpachi"
-#define AppVersion     "0.1.0"
+#ifndef AppVersion
+  #define AppVersion   "0.0.0"
+#endif
 #define AppPublisher   "Accentio Studios"
+#define AppURL         "https://kanpachi.accentio.dev"
 #define ServiceName    "kanpachi-daemon"
 #define DaemonExe      "kanpachid.exe"
 #define UiExe          "kanpachiui.exe"
-; El parametro que convierte al daemon en LANZADOR y ademas abre la ventana.
-; Mismo binario, papel distinto: ver el modelo de procesos en docs/03.
+; Lanzador + abrir ventana. Mismo binario, papel distinto: ver docs/03.
 #define ArgShow        "--show"
-#define Carga          "C:\kt\carga"
+; La carga que arma preparar-carga.ps1. Se pasa con /DCarga=...
+#ifndef Carga
+  #define Carga        "..\dist\carga"
+#endif
 
 [Setup]
 AppId={{7A6C1D2E-4B3F-4E1A-9C5D-0A1B2C3D4E5F}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
+AppPublisherURL={#AppURL}
+AppSupportURL={#AppURL}
+VersionInfoVersion={#AppVersion}
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
-OutputBaseFilename=kanpachi-setup
+OutputDir=..\dist
+OutputBaseFilename=kanpachi-setup-{#AppVersion}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-; Los dos son de 64 bits y el daemon habla con APIs que no existen en WOW64.
+; 64 bits: el daemon usa APIs que no existen en WOW64.
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-; EL UNICO UAC DE LA VIDA DEL PRODUCTO. Todo lo que hace falta elevar se hace
-; aca: registrar el servicio, crear ProgramData con su ACL, y conceder el
-; arranque al usuario. Despues de esto, ni al encender la PC ni al abrir la app.
+; EL UNICO UAC DE LA VIDA DEL PRODUCTO. Todo lo que hay que elevar se hace aca:
+; el servicio, ProgramData con su ACL, y la concesion de arranque al usuario.
 PrivilegesRequired=admin
-; Un desinstalador que NO puede correrse a medias: deja puertos bloqueados.
+; Un desinstalador a medias deja puertos bloqueados.
 UninstallDisplayIcon={app}\{#UiExe}
 
 [Languages]
 Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Files]
-; La carga ENTERA, tal como la dejo preparar-carga.ps1. Sin lista de ficheros a
-; mano: el bundle de Flutter son veintitantos y una lista se desincroniza en
-; silencio con la primera dependencia nueva.
+; La carga entera. Sin lista a mano: el bundle de Flutter son veintitantos
+; ficheros y una lista se desincroniza con la primera dependencia nueva.
 Source: "{#Carga}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-; **Los accesos directos apuntan al DAEMON, con parametro.**
-;
-; El daemon es lo que Kanpachi ES; la interfaz son sus mandos. Quien lanza la
-; interfaz es siempre el daemon, asi que un acceso directo a la interfaz podria
-; dejar mandos abiertos sin nada detras. Ver el modelo de procesos en docs/03.
-;
-; El parametro NO es decoracion: kanpachid.exe a secas es lo que arranca el
-; Administrador de servicios, y --show es lo que le pide a ESE servicio que
-; arranque y ademas ensene la ventana. Es el mismo binario con dos papeles, como
-; un motor de juego que corre dos juegos segun con que lo llamen.
-;
-; El icono se toma del ejecutable de la interfaz, que es el que lo tiene.
+; Apuntan al DAEMON. La interfaz sin daemon son mandos sin nada detras, y a un
+; servicio no lo arranca un doble clic: lo pide este binario con --show.
 Name: "{group}\{#AppName}"; Filename: "{app}\{#DaemonExe}"; Parameters: "{#ArgShow}"; IconFilename: "{app}\{#UiExe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#DaemonExe}"; Parameters: "{#ArgShow}"; IconFilename: "{app}\{#UiExe}"
 
 [Registry]
-; El manejador de kanpachi://, que es como entra un enlace de invitacion.
+; El manejador de kanpachi://, por donde entra un enlace de invitacion.
 ;
-; Va al DAEMON con --show y no a la interfaz, por lo mismo que el acceso
-; directo: la interfaz sin daemon son mandos sin nada detras, y ahora ademas
-; arranca callada por defecto, asi que abrirla sola no ensenaria ni una ventana.
-;
-; ESTADO: el enlace TODAVIA NO SE PASA. La interfaz no sabe leer un kanpachi://
-; y escribir un "%1" que nadie interpreta seria prometer algo que no pasa. Hoy
-; el enlace abre Kanpachi y ya; el codigo hay que pegarlo. Cuando la interfaz
-; aprenda a leerlo, el %1 entra aca y el lanzador lo reenvia.
+; El "%1" es el enlace. Va al daemon, que lo guarda y abre la ventana; la
+; interfaz lo recoge con pending_invite y pide confirmacion. Nada que llegue de
+; fuera entra a una sala sin que alguien lo confirme dentro.
 Root: HKLM; Subkey: "SOFTWARE\Classes\kanpachi"; ValueType: string; ValueName: ""; ValueData: "URL:Kanpachi"; Flags: uninsdeletekey
 Root: HKLM; Subkey: "SOFTWARE\Classes\kanpachi"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
 Root: HKLM; Subkey: "SOFTWARE\Classes\kanpachi\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#UiExe}"",0"
-Root: HKLM; Subkey: "SOFTWARE\Classes\kanpachi\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#DaemonExe}"" {#ArgShow}"
+Root: HKLM; Subkey: "SOFTWARE\Classes\kanpachi\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#DaemonExe}"" {#ArgShow} ""%1"""
 
 [Run]
 Filename: "{app}\{#DaemonExe}"; Parameters: "{#ArgShow}"; Description: "Abrir Kanpachi"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-; **El orden importa y es lo contrario de lo intuitivo.**
-;
-; Primero se DETIENE el servicio, luego se corre la limpieza con los ficheros
-; todavia en disco, y solo despues se borra el servicio. Al reves, la limpieza
-; no tendria binario que ejecutar y la maquina se quedaria con la cuarentena de
-; base puesta: bloqueos sobre el 445 y el 3389 en toda la PC, con Kanpachi ya
-; borrado, sin causa visible y sin nada que culpar.
+; El orden es lo contrario de lo intuitivo: parar, limpiar CON los ficheros
+; todavia en disco, y despues borrar el servicio. Al reves la limpieza no tiene
+; binario que ejecutar y la maquina se queda con la cuarentena de base puesta:
+; el 445 y el 3389 bloqueados, sin Kanpachi y sin nada que culpar.
 Filename: "{sys}\sc.exe"; Parameters: "stop {#ServiceName}"; Flags: runhidden; RunOnceId: "PararServicio"
 Filename: "{app}\{#DaemonExe}"; Parameters: "--uninstall-cleanup"; Flags: runhidden waituntilterminated; RunOnceId: "LimpiarTodo"
 Filename: "{sys}\sc.exe"; Parameters: "delete {#ServiceName}"; Flags: runhidden; RunOnceId: "BorrarServicio"
@@ -105,7 +90,6 @@ Filename: "{sys}\sc.exe"; Parameters: "delete {#ServiceName}"; Flags: runhidden;
 Type: filesandordirs; Name: "{commonappdata}\{#AppName}"
 
 [Code]
-{ Corre un programa oculto y devuelve su codigo de salida. }
 function Correr(const Exe, Params: string; var Codigo: Integer): Boolean;
 begin
   Result := Exec(Exe, Params, '', SW_HIDE, ewWaitUntilTerminated, Codigo);
@@ -116,7 +100,6 @@ begin
   Result := ExpandConstant('{sys}\') + Nombre;
 end;
 
-{ Registra el servicio, su politica de recuperacion, y la concesion al usuario. }
 procedure RegistrarServicio();
 var
   Codigo: Integer;
@@ -124,10 +107,9 @@ var
 begin
   Bin := ExpandConstant('{app}\{#DaemonExe}');
 
-  { Arranque automatico RETRASADO. Un servicio que toca el firewall y levanta un
-    adaptador durante el arranque de Windows compite con todo lo demas;
-    retrasado llega cuando la maquina ya respira, y nadie esta jugando en el
-    segundo cero. Los espacios despues de los "=" son sintaxis de sc.exe. }
+  { delayed-auto: un servicio que toca el firewall y levanta un adaptador no
+    tiene que competir con el arranque de Windows. Nadie juega en el segundo
+    cero. Los espacios tras los "=" son sintaxis de sc.exe. }
   Correr(SysExe('sc.exe'),
     'create {#ServiceName} binPath= "' + Bin + '" start= delayed-auto DisplayName= "Kanpachi"',
     Codigo);
@@ -136,29 +118,20 @@ begin
     'description {#ServiceName} "Abre y cierra los puertos de tus partidas en LAN, y los vuelve a cerrar al salir."',
     Codigo);
 
-  { Reintentar a los 5 s, 10 s y 30 s, y contar desde cero pasado un dia. Si el
-    daemon se cae, la sala se cae con el: volver solo es la diferencia entre una
-    partida interrumpida y una partida perdida. }
+  { Reintentar a los 5 s, 10 s y 30 s. Si el daemon se cae, la sala se cae con
+    el: volver solo es la diferencia entre partida interrumpida y perdida. }
   Correr(SysExe('sc.exe'),
     'failure {#ServiceName} reset= 86400 actions= restart/5000/restart/10000/restart/30000',
     Codigo);
 
-  { **La concesion minima, y es lo que mantiene la promesa de un solo UAC.**
+  { La concesion minima, y lo que mantiene la promesa de un solo UAC: con el
+    daemon parado, el acceso directo tiene que poder arrancar el servicio.
 
-    Con el daemon parado, hacer doble clic en el acceso directo tiene que poder
-    arrancar el servicio, y arrancar un servicio exige permiso. Se le concede al
-    usuario interactivo sobre ESTE servicio y ninguno mas.
-
-    El descriptor es el de por defecto de un servicio con UNA diferencia: la
-    entrada de IU (usuarios interactivos) pasa de CCLCSWLOCRRC a
-    CCLCSWRPWPLOCRRC, o sea gana RP (arrancar) y WP (detener). Todo lo demas se
-    escribe igual porque `sc sdset` REEMPLAZA el descriptor entero: omitir las
-    entradas de SYSTEM o de Administradores dejaria un servicio que ni el
-    sistema puede manejar.
-
-    Lo que NO se concede es CCDC ni WD/WO: el usuario no puede reconfigurar ni
-    borrar el servicio. El interruptor de "abrir con Windows" no pasa por aqui;
-    lo hace el daemon consigo mismo, que ya es SYSTEM. }
+    Es el descriptor por defecto con UNA diferencia: la entrada de usuarios
+    interactivos (IU) pasa de CCLCSWLOCRRC a CCLCSWRPWPLOCRRC, o sea gana RP
+    (arrancar) y WP (detener). Lo demas se escribe igual porque sdset REEMPLAZA
+    el descriptor entero. No se concede CCDC ni WD/WO: el usuario no puede
+    reconfigurar ni borrar el servicio. }
   Correr(SysExe('sc.exe'),
     'sdset {#ServiceName} ' +
     'D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)' +
@@ -169,19 +142,18 @@ begin
     Codigo);
 end;
 
-{ Crea ProgramData\Kanpachi con su ACL propia.
+{ ProgramData\Kanpachi con su ACL propia.
 
-  **La ACL es la mitad de la proteccion del token de la API local**, y por eso
-  el daemon se NIEGA a crear este directorio: crearlo el heredaria la ACL de
-  ProgramData y la perderia en silencio.
+  Esta ACL es la mitad de la proteccion del token de la API local, y por eso el
+  daemon se NIEGA a crear el directorio: crearlo el heredaria la de ProgramData
+  y la perderia en silencio.
 
-  Escritura solo para SYSTEM y Administradores. LECTURA para los usuarios de la
-  maquina, y eso es deliberado: la interfaz corre sin elevar y tiene que poder
-  leer api.token. Lo que acota la superficie no es este permiso, es la lista
-  cerrada de metodos del protocolo.
+  Escritura para SYSTEM y Administradores. LECTURA para los usuarios: la
+  interfaz corre sin elevar y tiene que poder leer api.token. Lo que acota la
+  superficie no es este permiso, es la lista cerrada de metodos del protocolo.
 
   /inheritance:r es la mitad que se olvida: sin ella la ACL nueva se SUMA a la
-  heredada y esto no habria servido de nada. }
+  heredada. }
 procedure CrearDirectorioDeDatos();
 var
   Codigo: Integer;
@@ -198,25 +170,18 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
-var
-  Codigo: Integer;
 begin
   if CurStep = ssPostInstall then
   begin
     CrearDirectorioDeDatos();
     RegistrarServicio();
-    { El servicio NO se arranca aca. Lo arranca el acceso directo del paso
-      [Run], que ademas le pasa que abra la ventana. Arrancarlo por las dos vias
-      dejaria un daemon corriendo en silencio y un segundo intento de arranque
-      que no hace nada. }
-    Codigo := 0;
+    { El servicio NO se arranca aca: lo arranca el paso [Run], que ademas pide
+      la ventana. Por las dos vias quedaria un daemon en silencio. }
   end;
 end;
 
 function InitializeUninstall(): Boolean;
 begin
-  { Se avisa antes de tocar nada. Desinstalar cierra la sala de todos los que
-    esten dentro, y eso no puede ser una sorpresa. }
   Result := MsgBox('Se va a desinstalar Kanpachi.' + #13#10#13#10 +
     'Si hay una sala abierta se cerrara, y los puertos que Kanpachi tenia ' +
     'bloqueados para protegerte volveran a su estado anterior.' + #13#10#13#10 +

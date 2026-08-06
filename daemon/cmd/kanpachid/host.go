@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/accentiostudios/kanpachi/core/port"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/uihost"
@@ -25,13 +26,53 @@ type procesoHost struct {
 	// apagar es el apagado coordinado del daemon entero.
 	apagar func()
 	log    port.Logger
+
+	mu sync.Mutex
+	// invitación es el `kanpachi://` que trajo el navegador y que la interfaz
+	// todavía no recogió.
+	//
+	// **Vive acá y no en la sesión**, y no es organización: es un recado entre
+	// PROCESOS —el que abrió Windows por el enlace y el que tiene la ventana—,
+	// no un estado de la sala. La sesión no cambia hasta que alguien confirme.
+	//
+	// Uno solo, y el último gana. Dos clics seguidos en dos enlaces distintos
+	// son alguien que se equivocó y volvió a pulsar: acumularlos daría una cola
+	// de pantallas de confirmación que hay que despachar una por una.
+	invitación string
 }
 
-func (h *procesoHost) ShowUI() error {
+// ShowUI guarda el enlace, si vino, y enseña la ventana.
+//
+// **El orden importa y es este.** La interfaz pregunta por el enlace en cuanto
+// aparece, así que guardarlo después de mostrarla es una carrera que se pierde
+// en la máquina rápida: la ventana se abre, pregunta, no hay nada, y el enlace
+// llega a un buzón que nadie va a volver a mirar hasta el latido siguiente.
+func (h *procesoHost) ShowUI(link string) error {
+	h.setInvitación(link)
 	if h.ui == nil {
 		return fmt.Errorf("este daemon no hospeda la interfaz")
 	}
 	return h.ui.Show()
+}
+
+// setInvitación guarda un enlace pendiente. El vacío no borra el que hubiera:
+// un `show_ui` a secas es el doble clic del acceso directo, y no tiene por qué
+// tirar un enlace que llegó un instante antes.
+func (h *procesoHost) setInvitación(link string) {
+	if link == "" {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.invitación = link
+}
+
+func (h *procesoHost) TakePendingInvite() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	link := h.invitación
+	h.invitación = ""
+	return link
 }
 
 // Shutdown apaga todo, y NO bloquea.

@@ -101,6 +101,18 @@ const (
 	// Kanpachi ya corriendo tiene que abrir la ventana, que es lo que cualquiera
 	// espera del icono.
 	MethodShowUI Method = "show_ui"
+	// MethodPendingInvite recoge el enlace `kanpachi://` que trajo el navegador,
+	// ya resuelto contra el registro. Devolverlo lo CONSUME.
+	//
+	// Es una recogida y no un empuje porque el API local es petición y
+	// respuesta pura: el daemon apila lo que le llegó y la interfaz pregunta.
+	// El aviso de que hay algo que recoger es la ventana abriéndose, que es lo
+	// que [MethodShowUI] hace justo después de guardarlo.
+	//
+	// **Consumirlo es parte del contrato.** Sin eso, el latido de la interfaz
+	// volvería a enseñar la pantalla de confirmación cada dos segundos, incluso
+	// después de que alguien la cancelara.
+	MethodPendingInvite Method = "pending_invite"
 	// MethodShutdown es "Salir de Kanpachi" del menú de la bandeja.
 	//
 	// **No lo coordina la interfaz.** La interfaz no controla nada de lo que
@@ -146,6 +158,7 @@ var métodos = map[Method]bool{
 	MethodProgress:            true,
 	MethodCancel:              true,
 	MethodShowUI:              true,
+	MethodPendingInvite:       true,
 	MethodShutdown:            true,
 	MethodAutostart:           true,
 }

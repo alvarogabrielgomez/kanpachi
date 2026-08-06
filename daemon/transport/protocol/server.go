@@ -35,6 +35,9 @@ type API interface {
 	RotateInviteCode(ctx context.Context) (domain.RoomState, error)
 	RenameRoom(ctx context.Context, name string) (domain.RoomState, error)
 	InviteLink() string
+	// PeekInvite mira qué hay detrás de un enlace SIN entrar y sin tocar la
+	// sesión. Es lo que llena la pantalla de confirmación de un `kanpachi://`.
+	PeekInvite(ctx context.Context, link string) (usecase.InvitePreview, error)
 
 	Catalog() (domain.Catalog, []domain.GameRef)
 	ListGames() []domain.GameProfile
@@ -106,7 +109,16 @@ type API interface {
 // disponibles, que es la verdad y no un fallo.
 type Host interface {
 	// ShowUI enseña la ventana de la interfaz, lanzándola si hace falta.
-	ShowUI() error
+	//
+	// `link` es el `kanpachi://` que trajo el navegador, o vacío cuando lo que
+	// se pide es solo abrir la ventana. Se GUARDA antes de mostrar nada, para
+	// que la interfaz lo encuentre ya puesto cuando pregunte.
+	ShowUI(link string) error
+	// TakePendingInvite devuelve el enlace guardado y lo OLVIDA.
+	//
+	// Devolverlo y olvidarlo en el mismo acto es lo que impide que la pantalla
+	// de confirmación reaparezca en cada latido después de cancelarla.
+	TakePendingInvite() string
 	// Shutdown apaga TODO de forma coordinada: sale de la sala, purga las
 	// reglas, baja el motor y el adaptador, y al final se detiene el daemon.
 	//
@@ -475,12 +487,35 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 		if s.host == nil {
 			return nil, sinHost()
 		}
-		if err := s.host.ShowUI(); err != nil {
+		// El enlace es OPCIONAL: `show_ui` sin nada es el doble clic en el
+		// acceso directo, que solo pide ventana. El tope de longitud lo pone el
+		// dominio al parsearlo, y quien lo manda es el lanzador, o sea otro
+		// proceso del usuario que ya pasó el saludo con token.
+		p, e := decodeStrict[struct {
+			Link string `json:"link"`
+		}](req.Params)
+		if e != nil {
+			return nil, e
+		}
+		if err := s.host.ShowUI(p.Link); err != nil {
 			return nil, &Error{Code: CodeUnavailable, Message: err.Error()}
 		}
 		return result(struct {
 			OK bool `json:"ok"`
 		}{true})
+
+	case MethodPendingInvite:
+		// Sin host no hay quién guarde enlaces, y eso NO es un error: es el
+		// modo consola, donde el daemon no hospeda la interfaz. Se contesta que
+		// no hay nada pendiente, que es la verdad.
+		if s.host == nil {
+			return result(InviteView{})
+		}
+		link := s.host.TakePendingInvite()
+		if link == "" {
+			return result(InviteView{})
+		}
+		return result(s.invite(ctx, link))
 
 	case MethodShutdown:
 		if s.host == nil {
@@ -541,6 +576,27 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 	// porque el día que alguien agregue un método a la tabla y olvide el caso,
 	// el síntoma tiene que ser un error y no una UI esperando para siempre.
 	return nil, badRequest("el método %q está en la tabla y no tiene manejador", req.Method)
+}
+
+// invite resuelve un enlace y lo devuelve como vista.
+//
+// **Nunca devuelve error**, y esa es la decisión: un enlace que no se entiende
+// no es un fallo del método, es un dato que la pantalla tiene que poder
+// enseñar. Contestar con error dejaría a la interfaz sin nada que decirle a
+// quien acaba de pulsar un botón en su navegador y no vio pasar nada.
+func (s *Server) invite(ctx context.Context, link string) InviteView {
+	v := InviteView{Link: link}
+	p, err := s.api.PeekInvite(ctx, link)
+	if err != nil {
+		s.log.Warn("llegó un enlace que no se entiende", "error", err)
+		return v
+	}
+	v.Code = p.Room.InviteID.String()
+	v.Seed = p.Room.Seed
+	v.Room = p.Card.Room
+	v.Host = p.Card.Host.String()
+	v.Unknown = p.Unknown
+	return v
 }
 
 func (s *Server) room(st domain.RoomState) (json.RawMessage, *Error) {

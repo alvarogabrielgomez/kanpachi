@@ -139,22 +139,47 @@ class _RoomFollower extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocListener<SessionCubit, SessionState>(
-      listenWhen: (SessionState a, SessionState b) =>
-          (a.room == null) != (b.room == null),
-      listener: (BuildContext context, SessionState state) {
-        final ShellCubit shell = context.read<ShellCubit>();
-        final AppScreen ahora = shell.state.screen;
-        if (state.room != null) {
-          if (_sinSala.contains(ahora)) shell.go(AppScreen.room);
-          return;
-        }
-        if (ahora == AppScreen.room ||
-            ahora == AppScreen.invite ||
-            ahora == AppScreen.exposure) {
-          shell.go(AppScreen.home);
-        }
-      },
+    return MultiBlocListener(
+      listeners: <BlocListener<SessionCubit, SessionState>>[
+        BlocListener<SessionCubit, SessionState>(
+          listenWhen: (SessionState a, SessionState b) =>
+              (a.room == null) != (b.room == null),
+          listener: (BuildContext context, SessionState state) {
+            final ShellCubit shell = context.read<ShellCubit>();
+            final AppScreen ahora = shell.state.screen;
+            if (state.room != null) {
+              if (_sinSala.contains(ahora)) shell.go(AppScreen.room);
+              return;
+            }
+            if (ahora == AppScreen.room || ahora == AppScreen.exposure) {
+              shell.go(AppScreen.home);
+            }
+          },
+        ),
+        // **Un enlace que llega manda, esté donde esté el usuario.**
+        //
+        // A diferencia de la sala, esto SÍ arrastra desde cualquier pantalla, y
+        // la asimetría tiene motivo: la sala aparece por cosas que pasan solas
+        // —alguien entró, el daemon reanudó— y el enlace es un acto deliberado
+        // de la persona que está delante, que acaba de pulsar un botón en su
+        // navegador y espera ver algo.
+        BlocListener<SessionCubit, SessionState>(
+          listenWhen: (SessionState a, SessionState b) =>
+              (a.invite == null) != (b.invite == null),
+          listener: (BuildContext context, SessionState state) {
+            final ShellCubit shell = context.read<ShellCubit>();
+            if (state.invite != null) {
+              shell.go(AppScreen.invite);
+              return;
+            }
+            // Se fue el enlace sin haber entrado a nada: se vuelve de donde se
+            // vino. Con sala abierta el otro oyente ya manda.
+            if (shell.state.screen == AppScreen.invite && !state.hasRoom) {
+              shell.go(AppScreen.home);
+            }
+          },
+        ),
+      ],
       child: child,
     );
   }
@@ -167,10 +192,14 @@ class _RoomFollower extends StatelessWidget {
 /// symptom would be the failure notice painted twice or not at all.
 AppScreen? _visibleScreen(ShellState shell, SessionState session) {
   if (session.isWaiting) return null;
+  // La confirmación de un enlace vive SIN sala, que es justo lo que el suelo de
+  // abajo derriba. Se comprueba primero, y por eso: la pantalla de invitación
+  // existe precisamente cuando todavía no se ha entrado a ninguna parte.
+  if (shell.screen == AppScreen.invite) {
+    return session.invite != null ? AppScreen.invite : AppScreen.home;
+  }
   if (session.room == null &&
-      (shell.screen == AppScreen.room ||
-          shell.screen == AppScreen.exposure ||
-          shell.screen == AppScreen.invite)) {
+      (shell.screen == AppScreen.room || shell.screen == AppScreen.exposure)) {
     return AppScreen.home;
   }
   return shell.screen;
@@ -283,10 +312,11 @@ class _CurrentScreen extends StatelessWidget {
       AppScreen.manualGame => const ManualGameScreen(),
       AppScreen.room => const RoomScreen(),
       AppScreen.exposure => const ExposureScreen(),
-      AppScreen.invite => InviteScreen(
-        code: session.room?.code ?? 'A7K2-M9QX',
-        roomName: session.room?.name ?? 'La Guarida',
-      ),
+      // El `!` está defendido por [_visibleScreen], que devuelve `home` cuando
+      // no hay enlace pendiente. Sin esa defensa haría falta un placeholder, y
+      // un placeholder acá es una sala inventada en la pantalla que existe para
+      // decir a qué sala vas a entrar.
+      AppScreen.invite => InviteScreen(invite: session.invite!),
       AppScreen.settings => const SettingsScreen(),
     };
   }

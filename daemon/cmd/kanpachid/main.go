@@ -84,7 +84,17 @@ func main() {
 		return
 	}
 
-	if err := correr(*consola, *suelto, *mostrar, *datos, *nombre); err != nil {
+	// El enlace que trajo el navegador. Ver [enlaceDe] para por qué se filtra
+	// en vez de tomar el primer argumento suelto.
+	enlace := enlaceDe(flag.Args())
+	// Un enlace implica ventana aunque nadie haya escrito `--show`. Quien
+	// pulsó un botón en su navegador está mirando: abrir Kanpachi en silencio
+	// sería, desde donde él está, no haber hecho nada.
+	if enlace != "" {
+		*mostrar = true
+	}
+
+	if err := correr(*consola, *suelto, *mostrar, *datos, *nombre, enlace); err != nil {
 		fmt.Fprintln(os.Stderr, "kanpachid:", err)
 		// Y en una ventana si no hay consola, que es el caso del doble clic.
 		// Sin esto, un acceso directo que falla no hace nada visible. Ver
@@ -240,7 +250,28 @@ type booted struct {
 	shutdown func()
 }
 
-func correr(consola, suelto, mostrar bool, datos, nombre string) error {
+// enlaceDe saca el `kanpachi://` de una lista de argumentos.
+//
+// **Filtra por el esquema en vez de tomar el primer suelto**, y esa es toda su
+// razón de existir: este binario lo invoca Windows con `"%1"` desde el
+// manejador de protocolo, o sea con lo que un sitio web cualquiera puso en un
+// enlace. Aceptar cualquier argumento suelto convertiría una ruta de fichero o
+// una bandera en algo que el daemon se pasa a sí mismo.
+//
+// Lo que pase este filtro sigue siendo entrada hostil: quien lo valida de
+// verdad es [domain.ParseRoom], que rechaza rutas, argumentos y todo lo que no
+// sea una de las seis formas.
+func enlaceDe(args []string) string {
+	const esquema = "kanpachi://"
+	for _, a := range args {
+		if len(a) > len(esquema) && strings.EqualFold(a[:len(esquema)], esquema) {
+			return a
+		}
+	}
+	return ""
+}
+
+func correr(consola, suelto, mostrar bool, datos, nombre, enlace string) error {
 	portable := esPortable()
 	datos = dirDeDatos(datos)
 
@@ -290,7 +321,10 @@ func correr(consola, suelto, mostrar bool, datos, nombre string) error {
 			// `StartService`, y es como el lanzador dice "ábrela con ventana":
 			// el arranque automático de Windows no manda ninguno, así que la
 			// interfaz sale en silencio.
-			b, err := arrancar(ctx, datos, pipe.Name, false, tiene(args, ArgShow))
+			// El enlace viaja por los MISMOS argumentos del servicio, que es la
+			// única vía que el SCM tiene de pasar algo. El lanzador lo pone ahí
+			// cuando no hay daemon todavía: ver [abrir].
+			b, err := arrancar(ctx, datos, pipe.Name, false, tiene(args, ArgShow), enlaceDe(args))
 			if err != nil {
 				return nil, nil, err
 			}
@@ -314,7 +348,7 @@ func correr(consola, suelto, mostrar bool, datos, nombre string) error {
 		ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer parar()
 
-		b, err := arrancar(ctx, datos, pipe.Name, false, mostrar)
+		b, err := arrancar(ctx, datos, pipe.Name, false, mostrar, enlace)
 		if err != nil {
 			return err
 		}
@@ -333,7 +367,7 @@ func correr(consola, suelto, mostrar bool, datos, nombre string) error {
 	// mano hay que PEDIRLO con `--console`, y ese pide un nombre de pipe
 	// distinto justamente para no poder ocupar el de producción. Ver [abrir].
 	if !consola {
-		return abrir(datos, mostrar)
+		return abrir(datos, mostrar, enlace)
 	}
 
 	if nombre == "" {
@@ -343,7 +377,7 @@ func correr(consola, suelto, mostrar bool, datos, nombre string) error {
 	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer parar()
 
-	b, err := arrancar(ctx, datos, nombre, consola, false)
+	b, err := arrancar(ctx, datos, nombre, consola, false, enlace)
 	if err != nil {
 		return err
 	}
@@ -369,7 +403,7 @@ func correr(consola, suelto, mostrar bool, datos, nombre string) error {
 // `defer` correría el cierre justo cuando acaba de arrancar. Los cierres se
 // apuntan en orden y se corren al revés a mano, en dos sitios: si el arranque
 // falla a mitad, y dentro de `shutdown`.
-func arrancar(ctx context.Context, datos, nombre string, consola, mostrarUI bool) (*booted, error) {
+func arrancar(ctx context.Context, datos, nombre string, consola, mostrarUI bool, invitación string) (*booted, error) {
 	// **Un servicio no tiene salida estándar.** En consola quien mira es una
 	// persona con una terminal delante; como servicio, todo lo que se imprima se
 	// pierde y un arranque fallido queda sin una sola línea que lo explique. Ver
@@ -437,6 +471,11 @@ func arrancar(ctx context.Context, datos, nombre string, consola, mostrarUI bool
 	// Windows. Se construye acá porque el listener del pipe lo necesita, y su
 	// `apagar` se une al final, cuando existe.
 	host := &procesoHost{log: log}
+	// El enlace que levantó a este daemon queda puesto ANTES de que la interfaz
+	// exista. Es el arranque en frío del `kanpachi://`: no había daemon, así que
+	// el enlace vino por los argumentos en vez de por el pipe, y la interfaz que
+	// se lanza unas líneas más abajo lo va a encontrar ya en el buzón.
+	host.setInvitación(invitación)
 
 	// La interfaz NO se hospeda en modo consola, y esa es toda la diferencia.
 	// El modo consola es para desarrollar: quien lo usa ya tiene una terminal

@@ -9,6 +9,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_codec.dart';
@@ -287,12 +288,19 @@ class SessionCubit extends Cubit<SessionState> {
     try {
       final Room? sala = await _repository.currentRoom();
       final HealthReport salud = await _repository.health();
+      // El enlace `kanpachi://` que trajo el navegador. Pedirlo lo CONSUME del
+      // lado del daemon, así que un enlace se atiende una vez y no vuelve a
+      // aparecer después de cancelarlo. Se pide en el latido y no al abrir la
+      // ventana porque puede llegar en cualquier momento: con la ventana
+      // escondida, con otra pantalla delante, o con una sala ya abierta.
+      final PendingInvite? incoming = await _repository.pendingInvite();
       if (isClosed) return;
       emit(
         state.copyWith(
           room: sala,
           clearRoom: sala == null,
           health: salud,
+          invite: incoming,
           daemonDown: false,
           // Volver a estar dentro de una sala tras haberla perdido de vista
           // tiene que devolver también la fase, o la app se queda con la sala
@@ -408,6 +416,26 @@ class SessionCubit extends Cubit<SessionState> {
     _stopWatching();
     await _afterWait();
     return !isClosed && state.room != null;
+  }
+
+  /// Descarta el enlace que llegó de fuera, sin entrar a nada.
+  ///
+  /// Es el «Cancelar» de la pantalla de confirmación, y no le pide nada al
+  /// daemon: recogerlo ya lo consumió allá. Lo único que queda por hacer es
+  /// olvidarlo acá.
+  void dismissInvite() => emit(state.copyWith(clearInvite: true));
+
+  /// Entra a la sala que trajo el enlace.
+  ///
+  /// Se manda el enlace ENTERO y no el código suelto. Los dos funcionan, y el
+  /// entero conserva el seed: un código pelado significa la semilla por
+  /// defecto, así que recortarlo mandaría a otro servidor a quien recibió una
+  /// invitación de un Kanpachi autohospedado.
+  Future<bool> acceptInvite() async {
+    final PendingInvite? invitation = state.invite;
+    if (invitation == null || !invitation.understood) return false;
+    emit(state.copyWith(clearInvite: true));
+    return joinRoom(invitation.link);
   }
 
   /// Abre un juego en la sala que ya existe.

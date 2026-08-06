@@ -63,14 +63,20 @@ const (
 
 // abrir es el modo lanzador: deja a Kanpachi corriendo y, si se pide, con la
 // ventana a la vista.
-func abrir(datos string, mostrar bool) error {
+//
+// `enlace` es el `kanpachi://` que trajo el navegador, o vacío. Viaja hasta el
+// daemon por dos vías distintas según quién lo levante, y las dos existen
+// porque el daemon puede estar vivo o no: por el pipe cuando ya está, y por
+// los argumentos de arranque cuando hay que levantarlo. En los dos casos
+// termina en el mismo buzón, ver [procesoHost].
+func abrir(datos string, mostrar bool, enlace string) error {
 	// 1. ¿Ya hay daemon? Si lo hay, esto es todo lo que hay que hacer.
 	if conn, err := marcarPipe(probeWait); err == nil {
 		defer func() { _ = conn.Close() }()
 		if !mostrar {
 			return nil
 		}
-		return decirShow(conn, datos)
+		return decirShow(conn, datos, enlace)
 	}
 
 	// 2. No hay, y esto es una carpeta portable: no hay SCM a quien pedírselo,
@@ -86,14 +92,10 @@ func abrir(datos string, mostrar bool) error {
 	// el permiso de arranque; una carpeta que se copió no concedió nada, así
 	// que paga un UAC por arranque de Kanpachi.
 	if esPortable() {
-		var args []string
-		if mostrar {
-			args = append(args, ArgShow)
-		}
 		// No se le insiste por el pipe después: el daemon que acaba de nacer
 		// abre la ventana él mismo si se lo pidieron, igual que en el camino
 		// del servicio.
-		return ArrancarSuelto(args)
+		return ArrancarSuelto(argsDeArranque(mostrar, enlace))
 	}
 
 	// 3. No hay. Que lo arranque el Administrador de servicios.
@@ -101,11 +103,7 @@ func abrir(datos string, mostrar bool) error {
 	// El argumento viaja por `StartService` y no por la línea de comandos de
 	// este proceso: el daemon lo va a recibir como argumento del SERVICIO, que
 	// es la única vía que el SCM tiene de pasarle algo. Ver [ArgShow].
-	var args []string
-	if mostrar {
-		args = append(args, ArgShow)
-	}
-	yaEstaba, err := ArrancarServicio(args)
+	yaEstaba, err := ArrancarServicio(argsDeArranque(mostrar, enlace))
 	if err != nil {
 		return err
 	}
@@ -124,7 +122,25 @@ func abrir(datos string, mostrar bool) error {
 		return err
 	}
 	defer func() { _ = conn.Close() }()
-	return decirShow(conn, datos)
+	return decirShow(conn, datos, enlace)
+}
+
+// argsDeArranque son los argumentos con los que se levanta un daemon nuevo.
+//
+// El enlace va DESPUÉS de la bandera y sin bandera propia, que es la forma en
+// que lo recibe este mismo binario desde el manejador de protocolo: Windows
+// invoca `kanpachid.exe --show "%1"`. Una bandera propia sería una segunda
+// forma de decir lo mismo, y la que se olvidara de actualizarse sería la que
+// deja de funcionar.
+func argsDeArranque(mostrar bool, enlace string) []string {
+	var args []string
+	if mostrar {
+		args = append(args, ArgShow)
+	}
+	if enlace != "" {
+		args = append(args, enlace)
+	}
+	return args
 }
 
 // esperarPipe insiste hasta que el daemon abra la puerta.
@@ -149,7 +165,7 @@ func esperarPipe() (net.Conn, error) {
 // importa: un proceso que llega de fuera puede pedir que se muestre una ventana
 // y nada más. Lo que acota el resto no es esta función, es la lista cerrada de
 // métodos de `protocol`, y el saludo con token de `pipe`.
-func decirShow(conn net.Conn, datos string) error {
+func decirShow(conn net.Conn, datos, enlace string) error {
 	// El token se relee del disco en cada conexión y jamás se recuerda: el
 	// daemon lo rota en cada arranque suyo.
 	token, err := pipe.ReadToken(datos)
@@ -188,5 +204,15 @@ func decirShow(conn net.Conn, datos string) error {
 	if err := pedir(1, protocol.MethodHello, saludo); err != nil {
 		return err
 	}
-	return pedir(2, protocol.MethodShowUI, nil)
+
+	// El enlace viaja DENTRO de show_ui y no en un método propio, y esa es la
+	// propiedad que se conserva: este camino le sigue pidiendo al daemon una
+	// sola cosa, abrir la ventana. Lo que se agrega es con qué abrirla.
+	mostrar, err := json.Marshal(struct {
+		Link string `json:"link,omitempty"`
+	}{enlace})
+	if err != nil {
+		return err
+	}
+	return pedir(2, protocol.MethodShowUI, mostrar)
 }

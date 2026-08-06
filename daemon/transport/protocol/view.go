@@ -83,6 +83,38 @@ type RoomView struct {
 	LastExit string `json:"last_exit,omitempty"`
 }
 
+// InviteView es lo que trajo un enlace `kanpachi://`, ya resuelto.
+//
+// Su cero significa "no hay nada pendiente", que es la respuesta normal: la
+// interfaz pregunta en cada latido y casi siempre no hay nada. Por eso NO hay
+// un booleano aparte — [InviteView.Code] vacío ya lo dice, y dos formas de
+// decir lo mismo se contradicen el día que una se olvide.
+type InviteView struct {
+	// Link es lo que llegó, tal cual, sin interpretar.
+	//
+	// Va aunque no se haya entendido, y ese es su motivo de ser: alguien pulsó
+	// un botón en su navegador y hay que poder decirle qué llegó. Es texto de
+	// fuera; la pantalla lo trata como tal.
+	Link string `json:"link,omitempty"`
+
+	// Code y Seed salen del parseo. Vacíos significa que el enlace NO se
+	// entendió, y entonces no hay sala a la que ofrecerse entrar.
+	Code string `json:"code,omitempty"`
+	Seed string `json:"seed,omitempty"`
+
+	// Room y Host salen de la tarjeta, que va cifrada con una clave que solo
+	// viaja en el fragmento del enlace. Vacíos cuando no venía la clave, cuando
+	// el registro no contestó, o cuando la tarjeta no se pudo abrir. Nada de
+	// eso impide entrar: la tarjeta es presentación.
+	Room string `json:"room,omitempty"`
+	Host string `json:"host,omitempty"`
+
+	// Unknown es que el registro AFIRMÓ que esa sala no existe. Que no
+	// contestara deja esto en false: son dos cosas distintas y la pantalla dice
+	// una frase distinta para cada una.
+	Unknown bool `json:"unknown"`
+}
+
 type PeerView struct {
 	IP    string `json:"ip"`
 	Name  string `json:"name"`
