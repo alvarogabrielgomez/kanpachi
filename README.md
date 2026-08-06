@@ -46,6 +46,31 @@ See the protection statement: [kanpachi-protection.md](kanpachi-protection.md).
 | [kanpachi-engine](https://github.com/alvarogabrielgomez/kanpachi-engine) | Rust network engine binary used by the daemon |
 | [EasyTier fork](https://github.com/alvarogabrielgomez/EasyTier) | Upstream-based dependency with Kanpachi-specific firewall change |
 
+## How Host, Peers and Seed Connect
+
+Short version:
+
+- The seed is a public meeting point, not the game tunnel itself.
+- The host publishes an invite ID and an encrypted room card in the seed registry.
+- Peers use that invite to find the host and request access.
+- The host decides who enters by issuing credentials.
+- Data traffic then goes peer-to-peer (or relay fallback), while the seed stays as coordination.
+
+```mermaid
+sequenceDiagram
+  participant H as Host
+  participant S as Seed
+  participant P as Peer
+
+  H->>S: Publish invite ID + encrypted room card
+  P->>S: Resolve invite ID
+  S-->>P: Card + members (if available)
+  P->>H: Knock through rendezvous/lobby
+  H-->>P: Issue credential
+  P->>H: Join room network
+  Note over H,P: Game traffic flows P2P (relay fallback if needed)
+```
+
 ## Host Your Own Seed (Linux)
 
 To install and host your own Kanpachi seed on a Linux server with systemd:
@@ -73,6 +98,26 @@ After installation:
   ```sh
   kanpseed nginx
   ```
+
+### What The Seed Web Page Is For
+
+The invite page is a lightweight entry point for users opening a room link.
+
+- It reads the invite ID from the URL path.
+- It asks the same seed for room metadata at /api/i/{invite_id}.
+- If the URL fragment includes the card key, the browser decrypts and shows room/host text.
+- It offers the direct action: open Kanpachi (or download if not installed).
+- If the registry API is down, the page still works with a generic card so users can still continue.
+
+```mermaid
+flowchart LR
+  L[Invite link] --> W[Seed web page]
+  W --> A[GET /api/i/:invite_id]
+  A --> C[Card + members]
+  C --> D[Decrypt card in browser if key exists]
+  D --> U[User sees room details]
+  U --> O[Open Kanpachi or download]
+```
 
 ## Quick Technical Notes
 

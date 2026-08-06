@@ -16,6 +16,8 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       motor:
@@ -50,12 +52,27 @@ jobs:
 
       - name: Versión
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          # `v0.1.0` -> `0.1.0`. Con `workflow_dispatch` no hay tag, así que se
-          # publica como 0.0.0: una prueba manual no puede producir un
-          # instalador que se haga pasar por una versión.
-          VER="${GITHUB_REF_NAME#v}"
-          case "$GITHUB_REF_TYPE" in tag) ;; *) VER="0.0.0" ;; esac
+          # `v0.1.0` -> `0.1.0`.
+          #
+          # - push por tag local: viene por GITHUB_REF_TYPE=tag
+          # - release publicada por web: viene por github.event.release.tag_name
+          # - workflow_dispatch: no hay tag, se publica como 0.0.0 para pruebas
+          TAG=""
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            TAG="$GITHUB_REF_NAME"
+          elif [ "$EVENT_NAME" = "release" ] && [ -n "$RELEASE_TAG" ]; then
+            TAG="$RELEASE_TAG"
+          fi
+
+          if [ -z "$TAG" ]; then
+            VER="0.0.0"
+          else
+            VER="${TAG#v}"
+          fi
           echo "VERSION=$VER" >> "$GITHUB_ENV"
           # VersionInfoVersion de Inno tiene que ser numérica, así que un
           # `0.2.0-rc1` pierde el sufijo SOLO para ese campo. El nombre de la
@@ -137,7 +154,7 @@ jobs:
           "SETUP_SHA=$h" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Publicar
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' || github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -163,7 +180,7 @@ jobs:
       # que permite probar este workflow entero sin crear un tag ni una
       # publicación que después haya que borrar.
       - name: Guardar el instalador
-        if: github.ref_type != 'tag'
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: kanpachi-setup
