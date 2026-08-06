@@ -35,6 +35,21 @@ type RoomView struct {
 	Seed string `json:"seed,omitempty"`
 	Name string `json:"name,omitempty"`
 
+	// Link es el enlace COMPLETO, con el seed en el host y la clave de la
+	// tarjeta pegada en el fragmento. Es lo que se copia al portapapeles.
+	//
+	// Viaja armado desde acá y no se compone en la UI, y esa es la razón de que
+	// exista el campo: la clave de la tarjeta no sale de ningún otro campo de
+	// esta vista, así que una UI que arme el enlace por su cuenta solo puede
+	// producir la forma sin clave. Eso ya pasó — el botón pegaba un literal con
+	// el seed por defecto escrito dentro, de modo que quien se autohospedaba
+	// repartía enlaces al servidor de otro y nadie veía jamás el nombre de la
+	// sala en la página.
+	//
+	// Vacío cuando no hay sala. Se rellena en [Server.room], que es quien tiene
+	// a mano la clave; [roomView] no la ve.
+	Link string `json:"link,omitempty"`
+
 	Peers []PeerView `json:"peers"`
 
 	HostPresent bool `json:"host_present"`

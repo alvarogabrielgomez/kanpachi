@@ -219,15 +219,18 @@ class _RoomHeaderState extends State<_RoomHeader> {
                         ? null
                         : () => context.read<SessionCubit>().refresh(),
                   ),
-                  CopyButton(
-                    label: 'Copiar enlace',
-                    height: 36,
-                    horizontalPadding: AppSpacing.x3l,
-                    textStyle: context.type.labelSm.copyWith(
-                      fontWeight: FontWeight.w600,
+                  // El enlace viene armado del daemon, con el seed de ESTA sala
+                  // y la clave de la tarjeta en el fragmento. Ver [Room.link].
+                  if (room.link.isNotEmpty)
+                    CopyButton(
+                      label: 'Copiar enlace',
+                      height: 36,
+                      horizontalPadding: AppSpacing.x3l,
+                      textStyle: context.type.labelSm.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                      value: room.link,
                     ),
-                    value: 'https://kanpachi.accentio.dev/${room.code}',
-                  ),
                   if (room.selfIsHost)
                     AppButton(
                       label: 'Renovar código',

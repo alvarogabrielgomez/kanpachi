@@ -144,6 +144,7 @@ class Room {
     required this.code,
     required this.members,
     required this.selfIsHost,
+    this.link = '',
     this.seed,
     this.game,
     this.missingGameId,
@@ -182,6 +183,7 @@ class Room {
     return Room(
       name: json['name'] as String? ?? '',
       code: json['code'] as String? ?? '',
+      link: json['link'] as String? ?? '',
       seed: json['seed'] as String?,
       members: <Member>[
         if (peers is List<Object?>)
@@ -210,6 +212,21 @@ class Room {
 
   /// El invite ID en su forma legible, con guiones.
   final String code;
+
+  /// El enlace completo que se copia y se pega en Telegram.
+  ///
+  /// Lleva el seed de la sala en el host y la clave de la tarjeta en el
+  /// fragmento, y las dos partes hacen falta: sin el host, quien se autohospeda
+  /// reparte enlaces al servidor de otro; sin la clave, la página no puede
+  /// descifrar la tarjeta y quien lo reciba ve «una sala de Kanpachi» en vez del
+  /// nombre y de quién le invitó.
+  ///
+  /// **Viene armado del daemon.** No se compone acá, y no es una preferencia: la
+  /// clave de la tarjeta no viaja en ningún otro campo, así que un enlace
+  /// compuesto en la pantalla solo puede salir sin ella. Vacío cuando el daemon
+  /// no lo mandó, y entonces el botón de copiar no se dibuja: pegar una forma a
+  /// medias es peor que no ofrecer el botón.
+  final String link;
 
   final List<Member> members;
   final bool selfIsHost;
@@ -304,6 +321,7 @@ class Room {
   }) => Room(
     name: name ?? this.name,
     code: code,
+    link: link,
     members: members ?? this.members,
     selfIsHost: selfIsHost,
     seed: seed,

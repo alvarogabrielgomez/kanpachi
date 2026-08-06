@@ -544,7 +544,12 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 }
 
 func (s *Server) room(st domain.RoomState) (json.RawMessage, *Error) {
-	return result(roomView(st, s.api.MissingGame(), s.clock.Now()))
+	v := roomView(st, s.api.MissingGame(), s.clock.Now())
+	// El enlace se pega acá y no dentro de roomView porque la clave de la
+	// tarjeta no está en el estado de la sala: vive en la sesión, que es quien
+	// la generó al sellar la tarjeta. Ver [RoomView.Link].
+	v.Link = s.api.InviteLink()
+	return result(v)
 }
 
 func (s *Server) roomOrErr(st domain.RoomState, err error) (json.RawMessage, *Error) {
