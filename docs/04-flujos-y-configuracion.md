@@ -278,3 +278,4 @@ Lectura rápida:
 | **El juego sale por la LAN física en vez de la virtual** | Métrica del adaptador revertida. Debe ser 1 en IPv4 con `AutomaticMetric` desactivado |
 | **Nada resuelve y el usuario tiene otra VPN** | Conflicto de rango. `Diagnostics` reporta el `/24` elegido, revisar colisión con `100.64.0.0/10` |
 | **El instalador desaparece al descargarlo** | Falso positivo de Defender sobre un binario Go sin firmar, ver `07-futuro.md` |
+| **Kanpachi desaparece solo, sin cerrar nada y sin error** | Lo mismo, y contra el daemon YA INSTALADO. **Medido el 2026-08-06:** Defender marcó `kanpachid.exe` como `Trojan:Win32/Bearfoos.A!ml` y lo borró con el proceso corriendo, cincuenta segundos después de arrancar. Se comprueba con `Get-MpThreatDetection`, que da el fichero, el PID y la hora. El log del daemon no dice nada, porque no llega a enterarse |

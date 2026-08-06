@@ -24,7 +24,15 @@ Lo que se activa, en orden:
 
    Mientras tanto se publica **sin firmar**, y el cuerpo de la publicación lo dice con las palabras exactas que hay que pulsar en el aviso de SmartScreen. Disimularlo sería peor: quien no sabe que el aviso es esperado, cierra.
 
-   **El problema empieza antes que SmartScreen.** Los binarios compilados en Go sin firmar disparan falsos positivos del modelo de aprendizaje automático de Defender con frecuencia, típicamente como `Trojan:Win32/Wacatac.*!ml`, y el archivo se pone en cuarentena solo. Es un problema conocido y reportado por el propio equipo de Go de Microsoft. Un daemon Go que además crea adaptadores de red y toca el firewall es un candidato de manual.
+   **El problema empieza antes que SmartScreen, y ya nos pasó, medido.**
+
+   El 2026-08-06 a las 13:29:04 Defender detectó `C:\kt\portable\Kanpachi\kanpachid.exe` como **`Trojan:Win32/Bearfoos.A!ml`**, severidad 5, y a las 13:29:50 lo borró y mató el proceso. El daemon llevaba cincuenta segundos corriendo, con la interfaz ya conectada. Es un falso positivo del modelo de aprendizaje automático, del mismo tipo que el `Wacatac.*!ml` que estaba anotado acá como riesgo teórico.
+
+   **Así es como se veía desde dentro, y por eso costó tanto:** el daemon se moría sin una línea. El log de fichero terminaba a mitad de un latido, sin el mensaje de apagado, sin panic, sin código de salida. Pasó al menos tres veces en dos sesiones y cada vez se buscó la causa dentro del programa. Lo que la delató fue `Get-MpThreatDetection`, que nombra el fichero, el PID y la hora exacta.
+
+   **Lo que significa para el producto**, y es peor que una molestia de desarrollo: a alguien que instale Kanpachi hoy le pueden borrar el daemon **a mitad de una partida**, en silencio, y lo que verá es que Kanpachi desapareció. No hay nada que el programa pueda hacer al respecto desde dentro. Es la razón más fuerte que existe para priorizar la firma.
+
+   Es un problema conocido y reportado por el propio equipo de Go de Microsoft. Un daemon Go que además crea adaptadores de red y toca el firewall es un candidato de manual.
 
    Mitigaciones, en orden de efectividad:
    - Firmar. Es la única solución de fondo.

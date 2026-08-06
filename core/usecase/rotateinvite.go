@@ -201,12 +201,16 @@ func (s *Session) RenameRoom(ctx context.Context, name string) (domain.RoomState
 // [domain.Room.InviteURL] es la otra forma, sin clave, que es la que se dicta
 // por teléfono: quien la reciba entra igual y ve la tarjeta genérica, porque
 // la clave no es lo que abre la sala.
+// **NO toma el candado**, y eso es un requisito y no una optimización: esto
+// viaja dentro de cada `status`, o sea que el latido de la interfaz lo pide
+// cada dos segundos. Tomándolo, crear una sala dejaría a la ventana esperando
+// el minuto entero que dura la operación por leer un campo de texto. Lee lo
+// publicado, igual que [Session.Status], y lo publica [Session.snapshot].
 func (s *Session) InviteLink() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.state.Room.InviteID.IsZero() {
-		return ""
+	if link := s.publishedLink.Load(); link != nil {
+		return *link
 	}
-	return s.state.Room.InviteLink(s.cardKey)
+	// Antes de la primera publicación no hay sala, y por lo tanto no hay
+	// enlace. No es un error.
+	return ""
 }

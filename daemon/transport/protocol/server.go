@@ -487,17 +487,25 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 		if s.host == nil {
 			return nil, sinHost()
 		}
-		// El enlace es OPCIONAL: `show_ui` sin nada es el doble clic en el
-		// acceso directo, que solo pide ventana. El tope de longitud lo pone el
-		// dominio al parsearlo, y quien lo manda es el lanzador, o sea otro
-		// proceso del usuario que ya pasó el saludo con token.
-		p, e := decodeStrict[struct {
-			Link string `json:"link"`
-		}](req.Params)
-		if e != nil {
-			return nil, e
+		// El enlace es OPCIONAL, y los parámetros ENTEROS también. `show_ui` a
+		// secas es el doble clic en el acceso directo, que solo pide ventana, y
+		// así lo pidió este método toda su vida: exigir un objeto ahora sería
+		// romper a cualquier cliente que se quedara con la forma vieja.
+		//
+		// El tope de longitud del enlace lo pone el dominio al parsearlo, y
+		// quien lo manda es el lanzador, o sea otro proceso del usuario que ya
+		// pasó el saludo con token.
+		var link string
+		if len(req.Params) > 0 {
+			p, e := decodeStrict[struct {
+				Link string `json:"link"`
+			}](req.Params)
+			if e != nil {
+				return nil, e
+			}
+			link = p.Link
 		}
-		if err := s.host.ShowUI(p.Link); err != nil {
+		if err := s.host.ShowUI(link); err != nil {
 			return nil, &Error{Code: CodeUnavailable, Message: err.Error()}
 		}
 		return result(struct {

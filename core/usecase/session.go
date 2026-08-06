@@ -291,6 +291,19 @@ type Session struct {
 	// corre con el candado tomado. Lo peor que puede pasar es que un Status
 	// devuelva el estado de hace un instante.
 	published atomic.Pointer[domain.RoomState]
+
+	// publishedLink es el enlace de invitación completo, publicado junto al
+	// estado y por el mismo motivo.
+	//
+	// **No se puede derivar de lo publicado**, y por eso existe un segundo
+	// puntero en vez de armarlo al leer: la clave de la tarjeta vive en
+	// `cardKey`, que el candado protege. Componerlo al vuelo obligaría a tomar
+	// el candado dentro de `Status`, que es exactamente lo que el puntero de
+	// arriba existe para evitar. Pasó: el enlace entró en la vista de la sala,
+	// el latido de la interfaz empezó a pedirlo cada dos segundos, y crear una
+	// sala dejaba a la ventana esperando el minuto entero que dura la
+	// operación por leer un campo de texto.
+	publishedLink atomic.Pointer[string]
 }
 
 // NewSession construye la sesión y purga lo que haya quedado de una ejecución
@@ -409,6 +422,13 @@ func (s *Session) Status() domain.RoomState {
 func (s *Session) snapshot() domain.RoomState {
 	out := s.state.Clone()
 	s.published.Store(&out)
+	// El enlace se publica ACÁ, que es el único sitio donde el estado y la
+	// clave de la tarjeta se leen juntos con el candado tomado.
+	enlace := ""
+	if !s.state.Room.InviteID.IsZero() {
+		enlace = s.state.Room.InviteLink(s.cardKey)
+	}
+	s.publishedLink.Store(&enlace)
 	return out.Clone()
 }
 
