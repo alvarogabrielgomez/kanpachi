@@ -172,10 +172,16 @@ class _RoomFollower extends StatelessWidget {
               shell.go(AppScreen.invite);
               return;
             }
-            // Se fue el enlace sin haber entrado a nada: se vuelve de donde se
-            // vino, que es lo que ya sabe el historial. Con sala abierta el
-            // otro oyente ya manda.
-            if (shell.state.screen == AppScreen.invite && !state.hasRoom) {
+            // Se fue el enlace: se vuelve de donde se vino, que es lo que ya
+            // sabe el historial.
+            //
+            // **Sin excepción por tener sala, que era la que dejaba la pantalla
+            // clavada en `invite`.** Decía que con sala abierta mandaba el otro
+            // oyente, y no es verdad: ese solo se despierta cuando la sala
+            // aparece o desaparece, y acá la sala no se ha movido. Nadie
+            // navegaba, la pantalla seguía siendo `invite` sin enlace que
+            // pintar, y lo que se veía era la portada.
+            if (shell.state.screen == AppScreen.invite) {
               shell.back();
             }
           },
@@ -222,8 +228,16 @@ AppScreen? _visibleScreen(ShellState shell, SessionState session) {
   // La confirmación de un enlace vive SIN sala, que es justo lo que el suelo de
   // abajo derriba. Se comprueba primero, y por eso: la pantalla de invitación
   // existe precisamente cuando todavía no se ha entrado a ninguna parte.
+  //
+  // **Y cuando el enlace se va, la caída es a la SALA si hay sala.** Caer
+  // siempre a la portada era el agujero por el que un host acababa mirando una
+  // portada con su sala abierta detrás: la pantalla seguía siendo `invite`, así
+  // que el suelo de abajo —que solo mira `home` y `welcome`— no llegaba a
+  // correr nunca. Medido en v0.1.3 con la sala arriba y `kanpachi0 · 10.99.9.1`
+  // en la barra de estado, que es la propia app diciendo que sí había sala.
   if (shell.screen == AppScreen.invite) {
-    return session.invite != null ? AppScreen.invite : AppScreen.home;
+    if (session.invite != null) return AppScreen.invite;
+    return session.room != null ? AppScreen.room : AppScreen.home;
   }
   // **Con sala abierta, la portada no es un sitio donde se pueda estar.**
   //

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -42,6 +44,25 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Se sortea una vez y se queda. Volver a sortearlo en cada rebuild haría
   /// que el nombre sugerido bailara mientras se escribe el código de al lado.
   late final String _nameHint = RoomNames.suggest();
+
+  /// Al aparecer la portada se le PREGUNTA al daemon si hay sala.
+  ///
+  /// El marco ya no deja pintar la portada con una sala abierta, pero eso lo
+  /// decide con lo último que se supo, y lo último que se supo puede estar
+  /// viejo: basta que el latido se haya perdido un rato —el daemon
+  /// reiniciándose, la ventana escondida, una llamada que venció— para que la
+  /// app crea que no hay sala mientras el daemon está dentro de una. La
+  /// portada es justo la pantalla donde esa creencia equivocada hace daño,
+  /// porque sus dos botones contestan `busy` y no hay forma de salir.
+  ///
+  /// Preguntar al aparecer cierra esa ventana: el daemon es la única fuente de
+  /// la verdad sobre si hay sala, y cuando conteste que sí, el marco lleva a
+  /// la sala sin que nadie toque nada.
+  @override
+  void initState() {
+    super.initState();
+    unawaited(context.read<SessionCubit>().refresh());
+  }
 
   @override
   void dispose() {
