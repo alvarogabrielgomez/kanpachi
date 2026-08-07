@@ -32,6 +32,35 @@ const MemoriaDelRegistroMiB = 4 * domain.ArgonMemoryKiB / 1024
 // El endurecimiento importa más de lo que parece: este proceso escucha en un
 // puerto público y habla con desconocidos. Corre como usuario efímero, sin
 // capacidades, sin poder escribir en el disco y sin ver /home.
+//
+// # Por qué `--secure-mode true`, medido
+//
+// Sin ella el seed **rechaza a todo invitado**, y con eso ninguna sala tiene
+// más de una persona. Un invitado entra con credencial y no con el secreto de
+// la red, y una credencial obliga a abrir con un handshake de Noise. El
+// servidor solo lo atiende si él mismo tiene modo seguro:
+//
+//	// easytier/src/peers/peer_conn.rs
+//	if self.is_secure_mode_enabled() && hdr.packet_type == PacketType::NoiseHandshakeMsg1 as u8 {
+//	    ... noise ...
+//	} else if hdr.packet_type == PacketType::HandShake as u8 {
+//	    ... el de siempre ...
+//	} else {
+//	    return Err(...("unexpected packet type during handshake: {}", hdr.packet_type));
+//	}
+//
+// Con el modo seguro apagado caía en el `else` y cerraba la conexión, 236
+// veces seguidas en la última medición del 2026-08-07. El invitado se queda sin
+// ningún peer, y sin peers el DHCP de EasyTier no reparte dirección, y sin
+// dirección no se crea el adaptador: el síntoma que llegaba al usuario era «el
+// adaptador kanpachi0 no tomó la dirección en 30s», treinta segundos de espera
+// por una conexión rechazada en el primer paquete.
+//
+// **No rompe a nadie de los que ya entraban.** El host y el vestíbulo abren con
+// `PacketType::HandShake`, que sigue teniendo su rama. Y sin clave declarada,
+// `process_secure_mode_cfg` genera un par al arrancar: el seed no guarda
+// identidad criptográfica entre reinicios y no hace falta que la guarde, porque
+// a quien se autentica acá es al invitado y no al servidor.
 func UnitDelMotor(c Config) string {
 	motor := filepath.Join(DirLib, "easytier-core")
 	return fmt.Sprintf(`# Generado por kanpseed init. Los cambios a mano se pierden:
@@ -49,6 +78,7 @@ ExecStart=%s \
   --listeners udp://0.0.0.0:%d \
   --disable-upnp true \
   --no-tun true \
+  --secure-mode true \
   --rpc-portal 127.0.0.1:%d \
   --rpc-portal-whitelist 127.0.0.1 \
   --stun-servers "" \

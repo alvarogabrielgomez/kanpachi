@@ -1380,3 +1380,43 @@ La vía obvia tampoco sirve, y también hizo falta medirlo: pedir el token enlaz
 Lo que funciona es tomar prestado el token del Explorador de esta sesión, que es el proceso que ya está corriendo con el token que se quiere: mismo usuario, sin elevar, y primario. Se lanza con `CreateProcessWithTokenW`, que pide `SeImpersonatePrivilege` en vez de `SE_ASSIGNPRIMARYTOKEN`; el primero lo tiene un administrador elevado y el segundo no. Dos detalles más que costaron un intento cada uno: el privilegio hay que ENCENDERLO, tenerlo no basta, y el duplicado hay que pedirlo con sus derechos explícitos, porque heredar "los mismos que el original" lo dejaba sin `TOKEN_ASSIGN_PRIMARY`.
 
 **El resultado se comprobó:** la interfaz de una carpeta portable corre SIN elevar, igual que la instalada, y muere con el daemon por el mismo job.
+
+## 31. El modo seguro va en TODOS los nodos, no solo en el invitado
+
+**Alternativas:** dejarlo solo en el invitado, que es quien lleva credencial. Ponerlo también en el seed. Ponerlo en los cuatro sitios: seed, host, vestíbulo e invitado.
+
+**Elección:** **en los cuatro.** Un invitado abre con credencial y no con el secreto de la red, y el modo seguro es lo que esa credencial necesita para valer.
+
+**Estuvo solo en el invitado, y ninguna sala pasó nunca de una persona.** El fallo se midió el 2026-08-07 con dos máquinas de verdad: el invitado hacía todo bien —el registro confirmaba el código, entraba al vestíbulo, pedía la credencial y la recibía— y después se quedaba treinta segundos esperando un adaptador que jamás aparecía. Lo que llegaba al usuario era esto:
+
+```
+entrando a la sala: la red arrancó y el adaptador no quedó utilizable:
+el adaptador "kanpachi0" no tomó la dirección 10.99.244.2 en 30s:
+context deadline exceeded (route ip+net: no such network interface)
+```
+
+Y lo que pasaba de verdad estaba en el diario del droplet, tres capas más arriba:
+
+```
+ERROR easytier::instance::listeners: handle conn error
+  error=WaitRespError("unexpected packet type during handshake: 13")
+```
+
+La cadena entera, de la causa al síntoma:
+
+1. Una credencial obliga a abrir la conexión con un handshake de Noise: `NoiseHandshakeMsg1`, que es el paquete **13**.
+2. `peer_conn.rs` toma esa rama con `is_secure_mode_enabled() && packet_type == NoiseHandshakeMsg1`. El seed arrancaba sin modo seguro, así que caía al `else` final y cerraba la conexión. 236 veces seguidas en la última medición, una por segundo.
+3. Sin conexión no hay peers, y **el DHCP de EasyTier no reparte dirección mientras la lista de rutas esté vacía** (`instance.rs`: `if routes.is_empty() { continue; }`).
+4. Sin dirección no se crea el adaptador. De ahí `no such network interface`, que es lo único que veía el usuario: treinta segundos de espera por una conexión rechazada en el primer paquete.
+
+**Por qué el host y el vestíbulo también, y no solo el seed.** El seed es el que desbloquea entrar; el host es el que decide si se juega por P2P o por relay. Un invitado siempre abre con Noise, así que un host sin modo seguro le rechaza la conexión DIRECTA y la sala entera termina relevando por el droplet cada paquete del juego, que es exactamente lo que este producto existe para no hacer. Los tests de credenciales de EasyTier lo encienden en todos los nodos de la topología, el administrador incluido.
+
+**Lo que NO cambia.** El host y el vestíbulo se identifican con el secreto de la red y abren con `PacketType::HandShake`, que conserva su rama de siempre: un seed con modo seguro sigue atendiendo a los clientes que no lo tienen. Por eso el orden del despliegue es seed primero y clientes después, y no al revés.
+
+**Ninguno guarda clave.** Sin clave declarada se genera un par en cada arranque. Lo que se autentica acá es la credencial del invitado, no la identidad del servidor, y una clave que sobreviviera a los reinicios sería un secreto en disco a cambio de nada.
+
+### Por qué esto sobrevivió a toda la batería de pruebas
+
+Porque **nada en el repositorio ejercitaba el camino del invitado**. `medir-motor-punta-a-punta.ps1` y `engineprobe` crean salas, que es la mitad que funciona; el `join` con credencial no lo corría nadie. El primer intento real fue el de una persona instalando el instalador, y es el que lo encontró.
+
+Y costó encontrarlo más de lo debido por una segunda razón: **el motor del cliente no deja rastro**. No instala ningún `subscriber` de `tracing`, y su `stderr` va al del daemon, que como servicio con `-H windowsgui` no existe. Todo lo que EasyTier dijo del fallo se tiró. En el droplet, la misma causa estaba escrita en una línea.
