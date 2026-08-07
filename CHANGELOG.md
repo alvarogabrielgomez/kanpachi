@@ -14,7 +14,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Fixed
 
-- Land unit changes on `kanpseed upgrade` instead of needing a second command, by handing the second half to the binary just installed ([PENDIENTE](https://github.com/alvarogabrielgomez/kanpachi/commit/PENDIENTE))
+- Land unit changes on `kanpseed upgrade` instead of needing a second command, by handing the second half to the binary just installed ([76fc320](https://github.com/alvarogabrielgomez/kanpachi/commit/76fc320))
 
 ## [0.1.4] - 2026-08-07
 
