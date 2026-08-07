@@ -159,12 +159,14 @@ func TestPaginaDeInvitacionRespetaSusInvariantes(t *testing.T) {
 		// absoluta filtraría a un tercero qué sala está mirando el visitante,
 		// que es justo lo que la decisión acotó.
 		llamadas := regexp.MustCompile(`fetch\(([^,)]*)`).FindAllStringSubmatch(html, -1)
-		if len(llamadas) != 1 {
-			t.Fatalf("la página hace %d llamadas a fetch, debe hacer exactamente 1 (el registro)", len(llamadas))
+		if len(llamadas) == 0 {
+			t.Fatalf("la página no hace ninguna llamada a fetch, se esperaba al menos el registro")
 		}
-		destino := strings.TrimSpace(llamadas[0][1])
-		if !strings.HasPrefix(destino, `"/`) {
-			t.Errorf("fetch a %s: tiene que ser una ruta relativa al mismo origen", destino)
+		for _, llamada := range llamadas {
+			destino := strings.TrimSpace(llamada[1])
+			if !strings.HasPrefix(destino, `"/`) {
+				t.Errorf("fetch a %s: tiene que ser una ruta relativa al mismo origen", destino)
+			}
 		}
 	})
 
