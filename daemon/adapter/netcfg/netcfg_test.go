@@ -25,7 +25,7 @@ func TestWantedRoutesFollowTheProfileAndNothingElse(t *testing.T) {
 			// El resto del estado no puede inventar rutas. Es lo que impide que
 			// un ajuste que no habla de rutas termine escribiendo una.
 			"lo demás no añade rutas",
-			domain.AdapterState{PreferIPv4: true, PrivateCategory: true, MTU: 1500,
+			domain.AdapterState{PreferIPv4: true, MTU: 1500,
 				MetricIPv4: 1, Address: netip.MustParseAddr("100.87.4.1")},
 			nil,
 		},

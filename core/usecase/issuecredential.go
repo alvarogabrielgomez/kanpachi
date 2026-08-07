@@ -49,11 +49,7 @@ func (s *Session) IssueCredentialFor(ctx context.Context, req domain.CredentialR
 		return domain.Credential{}, domain.ErrNicknameEmpty
 	}
 
-	taken, err := s.takenAddressesLocked(ctx)
-	if err != nil {
-		return domain.Credential{}, err
-	}
-	ip, err := nextFreeAddress(s.state.Subnet, taken)
+	ip, err := nextFreeAddress(s.state.Subnet, s.takenAddressesLocked())
 	if err != nil {
 		return domain.Credential{}, err
 	}
@@ -77,6 +73,8 @@ func (s *Session) IssueCredentialFor(ctx context.Context, req domain.CredentialR
 	cred.IssuedAt = now
 	cred.ExpiresAt = now.Add(CredentialTTL)
 
+	s.issued[ip] = cred
+
 	s.deps.Log.Info("credencial emitida", "nombre", req.Name.String(), "ip", ip.String())
 
 	// Pre-autorizamos el canal de control abriéndolo para esta IP de inmediato, en
@@ -97,8 +95,14 @@ func (s *Session) IssueCredentialFor(ctx context.Context, req domain.CredentialR
 // misma dirección dos veces a dos personas que entran a la vez, que es
 // exactamente lo que pasa cuando alguien manda el código al grupo.
 //
+// Las emitidas salen de [Session.issued] y no del motor, por lo mismo que en
+// [Session.credentialFor]: el motor no sabe qué dirección lleva cada
+// credencial. Preguntárselo devolvía una lista de ceros, o sea que la mitad
+// que existe para no repartir dos veces la misma dirección no estaba mirando
+// nada.
+//
 // Asume el candado tomado.
-func (s *Session) takenAddressesLocked(ctx context.Context) (map[netip.Addr]bool, error) {
+func (s *Session) takenAddressesLocked() map[netip.Addr]bool {
 	taken := map[netip.Addr]bool{
 		// La red y el broadcast del /24 no son de nadie, y la .1 es del host.
 		s.state.Subnet.Addr():              true,
@@ -109,21 +113,17 @@ func (s *Session) takenAddressesLocked(ctx context.Context) (map[netip.Addr]bool
 		taken[p.VirtualIP] = true
 	}
 
-	creds, err := s.deps.Engine.ListCredentials(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("consultando las credenciales emitidas: %w", err)
-	}
 	now := s.deps.Clock.Now()
-	for _, c := range creds {
+	for ip, c := range s.issued {
 		// Una vencida ya no autoriza a nadie, así que su dirección vuelve al
 		// bote. Sin esto, una sala de mucho uso se quedaría sin direcciones
 		// libres teniendo el /24 vacío.
 		if c.Expired(now) {
 			continue
 		}
-		taken[c.VirtualIP] = true
+		taken[ip] = true
 	}
-	return taken, nil
+	return taken
 }
 
 // nextFreeAddress recorre la subred de menor a mayor y devuelve la primera

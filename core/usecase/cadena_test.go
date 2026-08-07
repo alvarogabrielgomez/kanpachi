@@ -561,7 +561,7 @@ func salaConDosYJuego(t *testing.T) (*banco, netip.Addr) {
 		{VirtualIP: self, Name: nick(t, "alvaro")},
 		{VirtualIP: invitado, Name: nick(t, "humberto"), Path: domain.PathDirect},
 	}
-	b.motor.credentials = []domain.Credential{{ID: "c1", Token: "t", VirtualIP: invitado}}
+	emiteCredencial(t, b, "humberto", "c1", invitado)
 	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}

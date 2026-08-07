@@ -119,10 +119,22 @@ func (m *motorFalso) Restart(context.Context) error {
 	return nil
 }
 
+// ListCredentials devuelve lo mismo que el adaptador real: id y vencimiento,
+// SIN dirección virtual.
+//
+// El borrado de `VirtualIP` es el punto entero de este método. El motor no sabe
+// a qué dirección fue cada credencial, y mientras el falso sí lo sabía, ocho
+// tests de expulsión daban verde sobre un producto donde expulsar no encontraba
+// a nadie y ningún invitado podía entrar. Un falso que puede más que el real no
+// prueba el producto, prueba el falso.
 func (m *motorFalso) ListCredentials(context.Context) ([]domain.Credential, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return append([]domain.Credential(nil), m.credentials...), nil
+	out := append([]domain.Credential(nil), m.credentials...)
+	for i := range out {
+		out[i].VirtualIP = netip.Addr{}
+	}
+	return out, nil
 }
 
 func (m *motorFalso) Peers(context.Context) ([]domain.Peer, error) {

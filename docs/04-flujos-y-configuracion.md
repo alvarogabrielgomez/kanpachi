@@ -38,7 +38,7 @@ Nota de rol: "host" es quien corre el servidor del juego. Cualquier miembro pued
 1. Manifiesto `requireAdministrator`: el único UAC de la vida del producto.
 2. Copia a `Program Files\Kanpachi\`: daemon, UI, `wintun.dll`, y `builtin.json`, que va suelto al lado del ejecutable del daemon y no en un subdirectorio.
 3. Crea `ProgramData\Kanpachi\` con ACL: escritura solo SYSTEM y Administradores.
-4. Registra o actualiza el servicio `kanpachi-daemon`, siempre apuntando al `kanpachid.exe` recién copiado en Program Files, como LocalSystem y con arranque automático retrasado. Antes de reemplazar archivos detiene ESE servicio y espera hasta 120 segundos; no busca ni detiene carpetas portables.
+4. Registra o actualiza el servicio `kanpachi-daemon`, siempre apuntando al `kanpachid.exe` recién copiado en Program Files, como LocalSystem y con arranque automático retrasado. Antes de reemplazar archivos avisa de que eso cierra la sala, detiene ESE servicio y espera hasta 120 segundos; no busca ni detiene carpetas portables. Ver «Instalar encima cierra la sala» más abajo.
 5. Política de recuperación del servicio: reiniciar a los 5 s, 10 s, 30 s.
 
    **Y le concede al usuario interactivo `SERVICE_START`, `SERVICE_STOP` y `SERVICE_QUERY_STATUS` sobre este servicio**, con `sc sdset`. Sin esa concesión, hacer doble clic en el acceso directo con Kanpachi cerrado pediría UAC, y el producto promete un solo UAC en toda su vida. Es una concesión mínima y acotada: el usuario puede arrancar y detener este servicio, nada más, y no gana ningún permiso sobre los demás del sistema.
@@ -61,6 +61,20 @@ Nota de rol: "host" es quien corre el servidor del juego. Cualquier miembro pued
 **Ninguno de los pasos 6 a 8 es definitivo.** Windows revierte la métrica, la categoría y las rutas en cada evento de identificación de red, que se dispara al cambiar una IP, conectar o desconectar un adaptador, o en eventos de DHCP. Por eso el servicio se suscribe al Event ID 10000 de `Microsoft-Windows-NetworkProfile/Operational` y reaplica todo cada vez. El instalador solo deja el estado inicial correcto para que la primera sesión funcione sin esperar un evento.
 
 Distribución silenciosa para el grupo: `kanpachi-setup.exe /VERYSILENT /NORESTART`.
+
+### Instalar encima cierra la sala, y ahora lo avisa
+
+Actualizar es reinstalar sobre lo que hay: mismo `AppId`, misma carpeta, ficheros con `ignoreversion` y un `sc config` que reimpone la ruta. No hay que desinstalar nada, y `ProgramData\Kanpachi` queda intacto.
+
+Lo que sí pasa, y no se puede evitar, es que **detener el servicio cierra la sala para todos**: se cierran los puertos del juego, se revierten las reglas y el motor cae con el Job. No se reemplaza el binario de un daemon vivo.
+
+Antes de tocar un solo fichero, `PrepareToInstall` lo pregunta con un diálogo que dice exactamente eso, y cancelar deja todo como estaba —«no se reemplazó ningún archivo y la sala sigue abierta». **Solo aparece si el servicio está CORRIENDO**: una instalación nueva, o una encima de un Kanpachi ya detenido, no lo ve. Un clic de más en el caso en que la advertencia no aplica es cómo una advertencia deja de leerse.
+
+El diálogo de Inno que cierra la interfaz —el de `CloseApplications`, que está en `yes` por omisión y por eso no aparece escrito en el `.iss`— no cubre esto: nombra ficheros en uso, no dice que la sala se vaya a cerrar, y el daemon ni siquiera sale ahí porque a ése lo detiene el script antes.
+
+Aceptado el diálogo, sigue lo de siempre: `sc stop` y hasta 120 segundos esperando el estado `STOPPED`, porque el daemon tarda lo que tarde en cerrar la sala y restaurar el firewall. Si no llega, el instalador aborta sin haber copiado nada.
+
+**Y no existe autoactualización en el cliente.** El seed se actualiza solo con `kanpseed upgrade`; una PC con Kanpachi instalado no. Lo único que hace la app es avisar de que hay versión nueva y llevar a la página de descarga —ver `05-ui.md`—; instalarla es bajar el instalador y ejecutarlo. Es una asimetría deliberada mientras no haya firma de código: ver el punto 4 de `07-futuro.md`.
 
 ### Dónde está esto escrito, y qué está medido
 

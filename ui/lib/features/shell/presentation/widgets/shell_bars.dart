@@ -10,6 +10,7 @@ import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
+import 'package:kanpachi_ui/features/update/presentation/widgets/update_notice.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// La barra de título: logotipo, cuenta y los botones de ventana.
@@ -436,6 +437,12 @@ class ShellStatusBar extends StatelessWidget {
             style: context.type.statusLabel.copyWith(color: colors.textMuted),
           ),
           const Spacer(),
+          // A la izquierda del dato del adaptador y no a la derecha del todo:
+          // ese dato es el ancla fija de la barra —siempre está, siempre en el
+          // mismo sitio— y meterle algo a la derecha lo movería el día que
+          // aparece una versión nueva. El aviso empuja hacia dentro, y cuando
+          // no hay ninguno la barra queda exactamente como estaba.
+          const UpdateNotice(),
           Text(
             right,
             style: context.type.statusMono.copyWith(color: colors.textMuted),

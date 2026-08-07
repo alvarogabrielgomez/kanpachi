@@ -11,8 +11,20 @@ import 'package:kanpachi_ui/features/session/infra/daemon/pipe_session_repositor
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/pages/shell_page.dart';
+import 'package:kanpachi_ui/features/update/domain/repositories/update_repository.dart';
+import 'package:kanpachi_ui/features/update/presentation/cubit/update_cubit.dart';
 
 import 'daemon_client_test.dart' show daemonTestConnector;
+
+/// El marco pregunta por versiones nuevas al abrirse y cerrarse una sala, así
+/// que montarlo entero necesita a quién preguntarle. Éste contesta que no hay,
+/// sin red: un test que sale a internet falla el día que el CI no tiene salida.
+class _SinVersionNueva implements UpdateRepository {
+  const _SinVersionNueva();
+
+  @override
+  Future<String?> latestVersion() async => null;
+}
 
 /// El camino hasta la medición, y la vuelta.
 ///
@@ -68,6 +80,9 @@ void main() {
         providers: <BlocProvider<dynamic>>[
           BlocProvider<ShellCubit>.value(value: shell),
           BlocProvider<SessionCubit>.value(value: session),
+          BlocProvider<UpdateCubit>(
+            create: (_) => UpdateCubit(const _SinVersionNueva()),
+          ),
         ],
         child: MaterialApp(
           debugShowCheckedModeBanner: false,

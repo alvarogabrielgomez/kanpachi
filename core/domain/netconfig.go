@@ -129,10 +129,21 @@ type AdapterState struct {
 	MetricIPv4 int
 	MetricIPv6 int
 
-	// PrivateCategory pide clasificar la red como Privada. Kanpachi intenta
-	// fijarlo y NO depende de lograrlo: por eso las reglas se aplican a los
-	// tres perfiles de firewall.
-	PrivateCategory bool
+	// El perfil de red de Windows (Privada/Pública) NO está acá, y no es un
+	// olvido: es la decisión de no intentarlo.
+	//
+	// Un adaptador sin puerta de enlace se queda "no identificado" y Windows lo
+	// archiva como Pública, porque NLA identifica una red por la MAC de su
+	// puerta. `INetwork::SetCategory` sobre una red no identificada no
+	// funciona, y la directiva de grupo que trata a TODA red no identificada
+	// como privada tocaría también la red de casa del usuario: sería debilitar
+	// su firewall entero para arreglar el nuestro.
+	//
+	// Y no cambia nada, que es lo que cierra el asunto: cada regla de Kanpachi
+	// se escribe en los tres perfiles, así que la contención no depende del
+	// perfil en el que Windows archive la red. Hubo un intento que devolvía
+	// "todavía no está implementado" y lo escribía en el log cada dos minutos,
+	// para siempre.
 
 	// MTU sondeado del camino. Cero significa "todavía no se sondeó" y netcfg
 	// deja el valor que haya en vez de escribir un cero, que apagaría la
@@ -159,14 +170,13 @@ type AdapterState struct {
 // del sistema en cada evento de identificación de red.
 func AdapterStateFor(addr netip.Addr, subnet netip.Prefix, mtu int, game GameProfile) AdapterState {
 	return AdapterState{
-		Address:         addr,
-		Subnet:          subnet,
-		MetricIPv4:      MetricIPv4,
-		MetricIPv6:      MetricIPv6,
-		PrivateCategory: true,
-		MTU:             mtu,
-		BroadcastRoute:  game.Tweaks.BroadcastRoute,
-		MulticastRoute:  game.Tweaks.MulticastRoute,
-		PreferIPv4:      game.Tweaks.PreferIPv4,
+		Address:        addr,
+		Subnet:         subnet,
+		MetricIPv4:     MetricIPv4,
+		MetricIPv6:     MetricIPv6,
+		MTU:            mtu,
+		BroadcastRoute: game.Tweaks.BroadcastRoute,
+		MulticastRoute: game.Tweaks.MulticastRoute,
+		PreferIPv4:     game.Tweaks.PreferIPv4,
 	}
 }

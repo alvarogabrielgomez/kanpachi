@@ -212,6 +212,24 @@ type Session struct {
 	// puerto, deshaciendo justo la mitad de la expulsión que era inmediata.
 	kicked map[netip.Addr]time.Time
 
+	// appliedRules es la firma del último conjunto que se aplicó, y existe solo
+	// para no repetir la misma línea de log. Ver [Session.applyRuleSetLocked].
+	appliedRules string
+
+	// issued son las credenciales que emitió esta sala, por la dirección que se
+	// le asignó a cada una.
+	//
+	// **Es el único sitio donde existe ese lazo.** La dirección la elige el host
+	// en [Session.IssueCredentialFor] y no baja al motor, así que
+	// `Engine.ListCredentials` devuelve id y vencimiento con la IP en cero.
+	// De este mapa dependen las dos cosas que necesitan traducir una dirección a
+	// una credencial: pre-autorizar el canal de control de quien acaba de
+	// recibirla, y encontrar qué revocar al expulsar.
+	//
+	// Se vacía al salir de la sala, en [Session.leaveLocked]. Vive solo en
+	// memoria: ver el precio en [Session.credentialFor].
+	issued map[netip.Addr]domain.Credential
+
 	// verificables son los juegos que SÍ se pueden marcar como verificados, con
 	// la fecha en que se salió de la sala donde estuvieron activos.
 	//
@@ -342,7 +360,15 @@ func NewSession(ctx context.Context, d Deps) (*Session, error) {
 	if d.Progress == nil {
 		d.Progress = NewJournal(d.Clock)
 	}
-	s := &Session{deps: d, canaryDue: make(chan struct{}, 1)}
+	// `issued` se crea acá y no perezosamente como `kicked` o `verificables`,
+	// porque emitir una credencial escribe en él sin comprobar: en nil, la
+	// primera persona que pide entrar no recibe un error, tira un pánico dentro
+	// del canal de control del host.
+	s := &Session{
+		deps:      d,
+		canaryDue: make(chan struct{}, 1),
+		issued:    make(map[netip.Addr]domain.Credential),
+	}
 
 	// La cuarentena de base va ANTES de la purga, y el orden es de seguridad.
 	//
@@ -543,7 +569,7 @@ func (s *Session) planSubnet(ctx context.Context) (domain.AddressPlan, error) {
 //
 // Asume el candado tomado.
 func (s *Session) applyPolicy(ctx context.Context) error {
-	desired, err := s.desiredRuleSetLocked(ctx)
+	desired, err := s.desiredRuleSetLocked()
 	if err != nil {
 		return err
 	}
@@ -558,7 +584,7 @@ func (s *Session) applyPolicy(ctx context.Context) error {
 // pidió, en vez de una segunda versión del cálculo que puede separarse.
 //
 // Asume el candado tomado.
-func (s *Session) desiredRuleSetLocked(ctx context.Context) (domain.RuleSet, error) {
+func (s *Session) desiredRuleSetLocked() (domain.RuleSet, error) {
 	desired, err := domain.BuildRuleSet(
 		s.state.Game,
 		s.state.Role,
@@ -578,15 +604,11 @@ func (s *Session) desiredRuleSetLocked(ctx context.Context) (domain.RuleSet, err
 	// consecuencia buena y gratis: expulsar lo cierra en el firewall, y no solo
 	// en la lista del oyente.
 	if s.state.Conn.InRoom() {
-		ips, err := s.authorizedControlIPsLocked(ctx)
-		if err != nil {
-			return domain.RuleSet{}, err
-		}
 		canal, err := domain.ControlRules(
 			s.state.Role,
 			domain.RendezvousHostAddress,
 			s.state.LocalIP,
-			ips,
+			s.authorizedControlIPsLocked(),
 		)
 		if err != nil {
 			return domain.RuleSet{}, err
@@ -604,8 +626,24 @@ func (s *Session) applyRuleSetLocked(ctx context.Context, desired domain.RuleSet
 	// que nadie pueda quitar se queda para siempre, y una alerta eterna deja de
 	// ser información.
 	s.state.DropAlerts(domain.AlertKickIncomplete)
-	s.deps.Log.Info("reglas aplicadas",
-		"juego", s.state.Game.ID, "rol", s.state.Role.String(), "reglas", len(desired.Rules))
+
+	// Se anota el CAMBIO, no la aplicación.
+	//
+	// Cada evento del motor recalcula y reaplica el conjunto entero, así que
+	// abrir una sala escribía cinco veces la misma línea en un segundo. Y una
+	// línea repetida es peor que ninguna: la que de verdad importa, la vez que
+	// el conjunto cambió porque entró alguien o se eligió un juego, queda
+	// enterrada entre cuatro que dicen lo mismo de antes.
+	//
+	// La firma se arma con `%v` sobre las reglas y no con un campo aparte:
+	// vienen ordenadas por nombre, y sus destinatarios por dirección, así que
+	// el mismo conjunto imprime siempre igual. Un hash sería lo mismo con más
+	// código.
+	if firma := fmt.Sprintf("%v", desired.Rules); firma != s.appliedRules {
+		s.appliedRules = firma
+		s.deps.Log.Info("cambiaron las reglas del firewall",
+			"juego", s.state.Game.ID, "rol", s.state.Role.String(), "reglas", len(desired.Rules))
+	}
 
 	// Y se programa una ronda del canario, que es la ÚNICA comprobación que sale
 	// a la red a ver si la compuerta contiene de verdad.

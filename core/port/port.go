@@ -69,6 +69,20 @@ type EnginePort interface {
 	// 2 y 22.
 	IssueCredential(ctx context.Context, req domain.CredentialRequest) (domain.Credential, error)
 	RevokeCredential(ctx context.Context, id domain.CredentialID) error
+
+	// ListCredentials devuelve las credenciales vivas SIN dirección virtual.
+	//
+	// El cero en `VirtualIP` no es un descuido del adaptador: el motor no
+	// conoce ese dato. La dirección la reparte el host en
+	// `Session.IssueCredentialFor` y no viaja en la orden de emisión, así que
+	// el motor solo puede contestar id y vencimiento.
+	//
+	// **Filtrar esta lista por IP no encuentra nunca a nadie**, y hacerlo costó
+	// una versión entera en la que ningún invitado podía entrar: el host
+	// pre-autorizaba el canal de control para una dirección cero, la regla de
+	// firewall no llegaba a existir, y el invitado se quedaba esperando en un
+	// `dial` que nadie contestaba. Quien necesite el lazo IP↔credencial lo tiene
+	// en la sesión, no acá.
 	ListCredentials(ctx context.Context) ([]domain.Credential, error)
 
 	// Restart vuelve a levantar el motor con la ÚLTIMA especificación con la

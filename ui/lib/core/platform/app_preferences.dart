@@ -39,6 +39,7 @@ class AppPreferences {
   static const String _verboseKey = 'verbose';
   static const String _windowWidthKey = 'window_width';
   static const String _windowHeightKey = 'window_height';
+  static const String _pendingUpdateKey = 'pending_update';
 
   final SharedPreferences _prefs;
 
@@ -107,6 +108,24 @@ class AppPreferences {
     if (w == null || h == null) return null;
     return Size(w, h);
   }
+
+  /// A published version newer than this build, found in an earlier run.
+  ///
+  /// Empty when there is none known. It is stored rather than asked for again
+  /// every start for one reason: **once the answer is yes it cannot change
+  /// back**. A version that was published stays published, so a second question
+  /// can only get the same answer, and the notice has to survive a restart or
+  /// it is a notice that only exists while the machine has network.
+  ///
+  /// What clears it is not a timer, it is arriving: the version stored stops
+  /// being newer than the one running, and the cubit drops it. See
+  /// `features/update`.
+  String get pendingUpdate => _prefs.getString(_pendingUpdateKey)?.trim() ?? '';
+
+  Future<void> setPendingUpdate(String version) async =>
+      _prefs.setString(_pendingUpdateKey, version.trim());
+
+  Future<void> clearPendingUpdate() async => _prefs.remove(_pendingUpdateKey);
 
   /// Remembers the window size, clamped to what the app can actually draw.
   ///

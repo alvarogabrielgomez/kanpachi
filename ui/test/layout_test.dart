@@ -12,8 +12,19 @@ import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/pages/shell_page.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/shell_bars.dart';
+import 'package:kanpachi_ui/features/update/domain/repositories/update_repository.dart';
+import 'package:kanpachi_ui/features/update/presentation/cubit/update_cubit.dart';
 
 import 'daemon_client_test.dart' show daemonTestConnector;
+
+/// Contesta que no hay versión nueva, sin salir a la red. Ver el mismo doble en
+/// `exposure_navigation_test.dart`.
+class _SinVersionNueva implements UpdateRepository {
+  const _SinVersionNueva();
+
+  @override
+  Future<String?> latestVersion() async => null;
+}
 
 /// El candado del layout: ninguna pantalla se desborda en ningún tamaño de
 /// ventana que la app permita.
@@ -274,6 +285,9 @@ class _Sujeto extends StatelessWidget {
       providers: <BlocProvider<dynamic>>[
         BlocProvider<ShellCubit>.value(value: shell),
         BlocProvider<SessionCubit>.value(value: session),
+        BlocProvider<UpdateCubit>(
+          create: (_) => UpdateCubit(const _SinVersionNueva()),
+        ),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,

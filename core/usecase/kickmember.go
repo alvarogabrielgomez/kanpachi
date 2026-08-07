@@ -44,7 +44,7 @@ func (s *Session) KickMember(ctx context.Context, ip netip.Addr) (domain.RoomSta
 		return domain.RoomState{}, ErrSelfKick
 	}
 
-	cred, err := s.credentialFor(ctx, ip)
+	cred, err := s.credentialFor(ip)
 	if err != nil {
 		return domain.RoomState{}, err
 	}
@@ -167,19 +167,26 @@ func (s *Session) forgetOldKicks(now time.Time) {
 
 // credentialFor busca la credencial emitida a una IP virtual.
 //
-// Se le pregunta al motor en vez de llevar un registro propio: el motor es
-// quien las emite y quien las revoca, y una segunda lista acá se
-// desincronizaría justo cuando importa, que es al reabrir una sala tras un
-// reinicio del host.
-func (s *Session) credentialFor(ctx context.Context, ip netip.Addr) (domain.Credential, error) {
-	creds, err := s.deps.Engine.ListCredentials(ctx)
-	if err != nil {
-		return domain.Credential{}, fmt.Errorf("consultando las credenciales emitidas: %w", err)
-	}
-	for _, c := range creds {
-		if c.VirtualIP == ip {
-			return c, nil
-		}
+// # Por qué la lleva la sesión y no se le pregunta al motor
+//
+// Porque **el motor no sabe a qué dirección fue una credencial.** Emite el
+// token y nada más: la dirección la elige el host acá al lado, en
+// [Session.IssueCredentialFor], y nunca baja. Su `ListCredentials` devuelve el
+// id y el vencimiento con la IP en CERO, así que buscar ahí por IP no
+// encontraba nunca, y eso rompía las dos cosas que dependen de este lazo:
+// expulsar contestaba que esa dirección no es de ningún miembro, y la
+// pre-autorización del canal de control no abría el puerto a nadie. Ver
+// [Session.authorizedControlIPsLocked].
+//
+// El precio es que el mapa vive en memoria: un host que reinicia el daemon y
+// retoma la sala pierde el lazo IP↔credencial de quien ya estaba dentro, y no
+// puede expulsarlo hasta que vuelva a entrar. Se paga a sabiendas, porque la
+// alternativa era un lazo que no existía.
+//
+// Asume el candado tomado.
+func (s *Session) credentialFor(ip netip.Addr) (domain.Credential, error) {
+	if c, ok := s.issued[ip]; ok {
+		return c, nil
 	}
 	return domain.Credential{}, fmt.Errorf("%w: no hay credencial emitida para %s", ErrNotAMember, ip)
 }
@@ -193,50 +200,41 @@ func (s *Session) credentialFor(ctx context.Context, ip netip.Addr) (domain.Cred
 // el puerto de control en cuanto se emite la credencial cierra la ventana.
 //
 // Asume el candado tomado.
-func (s *Session) authorizedControlIPsLocked(ctx context.Context) ([]netip.Addr, error) {
+func (s *Session) authorizedControlIPsLocked() []netip.Addr {
 	out := domain.MemberIPs(s.state.Peers)
 	if !s.state.IsHost() {
-		return out, nil
+		return out
 	}
 
-	creds, err := s.deps.Engine.ListCredentials(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("consultando credenciales para pre-autorizar: %w", err)
-	}
+	now := s.deps.Clock.Now()
+	s.forgetOldKicks(now)
 
 	seen := make(map[netip.Addr]bool, len(out))
 	for _, ip := range out {
 		seen[ip] = true
 	}
 
-	now := s.deps.Clock.Now()
-	s.forgetOldKicks(now)
-
-	for _, c := range creds {
-		if c.Expired(now) || seen[c.VirtualIP] {
+	for ip, c := range s.issued {
+		if c.Expired(now) || seen[ip] {
 			continue
 		}
-		if _, kicked := s.kicked[c.VirtualIP]; kicked {
+		if _, kicked := s.kicked[ip]; kicked {
 			continue
 		}
-		out = append(out, c.VirtualIP)
-		seen[c.VirtualIP] = true
+		out = append(out, ip)
+		seen[ip] = true
 	}
 
-	return out, nil
+	return out
 }
 
 // controlScope arma el alcance del oyente del host. Asume el candado tomado.
-func (s *Session) controlScope(ctx context.Context) (domain.ControlScope, error) {
-	members, err := s.authorizedControlIPsLocked(ctx)
-	if err != nil {
-		return domain.ControlScope{}, err
-	}
+func (s *Session) controlScope() domain.ControlScope {
 	return domain.ControlScope{
 		Lobby:   domain.RendezvousHostAddress,
 		Room:    s.state.LocalIP,
-		Members: members,
-	}, nil
+		Members: s.authorizedControlIPsLocked(),
+	}
 }
 
 // restrictControlChannel reduce el alcance del oyente a los miembros que
@@ -251,12 +249,7 @@ func (s *Session) controlScope(ctx context.Context) (domain.ControlScope, error)
 // cualquiera con el código, porque expulsar no es bloquear. Para que el
 // expulsado no vuelva, el host renueva el código, que es la otra operación.
 func (s *Session) restrictControlChannel(ctx context.Context) {
-	scope, err := s.controlScope(ctx)
-	if err != nil {
-		s.deps.Log.Error("no se pudo calcular el alcance del canal de control", "error", err)
-		return
-	}
-	if err := s.deps.Control.Serve(ctx, scope); err != nil {
+	if err := s.deps.Control.Serve(ctx, s.controlScope()); err != nil {
 		s.deps.Log.Error("no se pudo recortar el alcance del canal de la sala", "error", err)
 	}
 }
@@ -286,7 +279,7 @@ func (s *Session) onPeersChangedLocked(ctx context.Context) (domain.RoomState, e
 	if !s.state.Conn.InRoom() {
 		return s.snapshot(), nil
 	}
-	before := len(s.state.Peers)
+	antes := s.state.Peers
 	if err := s.refreshPeersLocked(ctx); err != nil {
 		return domain.RoomState{}, err
 	}
@@ -308,6 +301,37 @@ func (s *Session) onPeersChangedLocked(ctx context.Context) (domain.RoomState, e
 		// que su pantalla en sala arrancaría sin juego y sin nombre.
 		s.announceLocked(ctx)
 	}
-	s.deps.Log.Info("cambió la lista de miembros", "antes", before, "ahora", len(s.state.Peers))
+	s.logMemberDiffLocked(antes)
 	return s.snapshot(), nil
+}
+
+// logMemberDiffLocked anota QUIÉN entró y quién salió, y no anota nada cuando
+// no cambió nadie.
+//
+// El sondeo corre por cada evento del motor, y el motor los manda en ráfagas:
+// abrir una sala producía cinco líneas en un segundo diciendo "antes 1 ahora 1",
+// que es una lista de miembros que no cambió contada cinco veces. La pregunta
+// que alguien le hace de verdad al log es quién entró y cuándo, y para eso hace
+// falta el nombre, no el total.
+//
+// Asume el candado tomado.
+func (s *Session) logMemberDiffLocked(antes []domain.Peer) {
+	previos := make(map[netip.Addr]bool, len(antes))
+	for _, p := range antes {
+		previos[p.VirtualIP] = true
+	}
+	ahora := make(map[netip.Addr]bool, len(s.state.Peers))
+	for _, p := range s.state.Peers {
+		ahora[p.VirtualIP] = true
+		if !previos[p.VirtualIP] {
+			s.deps.Log.Info("entró a la sala",
+				"nombre", p.Name.String(), "ip", p.VirtualIP.String(), "camino", p.Path.String())
+		}
+	}
+	for _, p := range antes {
+		if !ahora[p.VirtualIP] {
+			s.deps.Log.Info("salió de la sala",
+				"nombre", p.Name.String(), "ip", p.VirtualIP.String())
+		}
+	}
 }

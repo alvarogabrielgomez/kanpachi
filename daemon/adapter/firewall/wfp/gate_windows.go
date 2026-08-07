@@ -606,9 +606,11 @@ func (g *Gate) sweep() error {
 			return fmt.Errorf("borrando la ranura %d: FwpmFilterDeleteByKey0 devolvió 0x%X", slot, c)
 		}
 	}
-	if removed > 0 {
-		g.log.Info("filtros de la compuerta barridos", "cantidad", removed)
-	}
+	// Cuántas ranuras se borraron no se anota. Barrer y reinstalar es cómo
+	// funciona cada aplicación de reglas, así que el número es el mismo siempre
+	// y sale varias veces por segundo mientras alguien entra. Lo que se anota
+	// es el acotado de la compuerta, que es el hecho que cambia.
+	_ = removed
 	return nil
 }
 

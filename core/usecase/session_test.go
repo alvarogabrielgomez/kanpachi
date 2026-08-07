@@ -187,6 +187,36 @@ func salaCreada(t *testing.T) *banco {
 	return b
 }
 
+// emiteCredencial pide una credencial por el camino de verdad, que es el único
+// que ata una dirección a un `CredentialID`.
+//
+// Antes los tests la fabricaban a mano dentro del motor falso, con su
+// `VirtualIP` puesta. **El adaptador real no puede devolver eso**: el motor no
+// sabe qué dirección lleva cada credencial, así que su lista viene con la IP en
+// cero. Con esa diferencia, ocho tests de expulsión pasaban en verde sobre un
+// producto en el que ni expulsar ni entrar funcionaban. Ver
+// [port.EnginePort.ListCredentials].
+//
+// Comprueba de paso que la dirección elegida sea `quiero`, que es la que el
+// test va a expulsar: sin eso, un reparto distinto fallaría más tarde y en otro
+// sitio.
+func emiteCredencial(t *testing.T, b *banco, nombre string, id domain.CredentialID, quiero netip.Addr) {
+	t.Helper()
+	b.motor.mu.Lock()
+	b.motor.credenciales = func() domain.Credential {
+		return domain.Credential{ID: id, Token: "token-del-motor"}
+	}
+	b.motor.mu.Unlock()
+
+	cred, err := b.sesión.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, nombre)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cred.VirtualIP != quiero {
+		t.Fatalf("el host asignó %s y el test expulsa a %s", cred.VirtualIP, quiero)
+	}
+}
+
 // TestElJuegoNoAbreNadaHastaQueHayaAlguien: RemoteAddresses son siempre los
 // miembros presentes y no existe forma de decir "cualquiera".
 func TestElJuegoNoAbreNadaHastaQueHayaAlguien(t *testing.T) {
@@ -558,7 +588,7 @@ func TestExpulsarRevocaYRecalcula(t *testing.T) {
 		{VirtualIP: self, Name: nick(t, "alvaro"), Host: true},
 		{VirtualIP: invitado, Name: nick(t, "humberto")},
 	}
-	b.motor.credentials = []domain.Credential{{ID: "cred-humberto", VirtualIP: invitado}}
+	emiteCredencial(t, b, "humberto", "cred-humberto", invitado)
 
 	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
@@ -606,7 +636,7 @@ func TestElRecorteDeMiembrosNoEsperaAlSiguienteSondeo(t *testing.T) {
 		{VirtualIP: self, Host: true},
 		{VirtualIP: invitado},
 	}
-	b.motor.credentials = []domain.Credential{{ID: "c", VirtualIP: invitado}}
+	emiteCredencial(t, b, "humberto", "c", invitado)
 	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
@@ -1117,12 +1147,10 @@ func TestEmitirCredencialNoRepiteDirecciones(t *testing.T) {
 			}
 		}
 		vistas = append(vistas, cred.VirtualIP)
-
-		// El motor todavía no reporta a nadie: lo único que impide el choque es
-		// la lista de credenciales emitidas.
-		b.motor.mu.Lock()
-		b.motor.credentials = append(b.motor.credentials, cred)
-		b.motor.mu.Unlock()
+		// Nadie entró todavía: el motor no reporta miembros, y su lista de
+		// credenciales no lleva direcciones. Así que lo único que puede evitar
+		// que la segunda vuelta reparta otra vez la misma dirección es el
+		// registro que la sesión escribió al emitir la primera.
 	}
 	if vistas[0] != netip.MustParseAddr(b.sesión.Status().Subnet.Addr().Next().Next().String()) {
 		t.Fatalf("la primera credencial no fue la .2: %s", vistas[0])
@@ -1206,7 +1234,7 @@ func TestElSondeoNoDevuelveAlExpulsado(t *testing.T) {
 	invitado := self.Next()
 
 	b.motor.peers = []domain.Peer{{VirtualIP: self}, {VirtualIP: invitado}}
-	b.motor.credentials = []domain.Credential{{ID: "c", VirtualIP: invitado}}
+	emiteCredencial(t, b, "humberto", "c", invitado)
 	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
@@ -1267,7 +1295,7 @@ func TestSiElFirewallFallaAlExpulsarElCanalYaSeRecortó(t *testing.T) {
 	invitado := self.Next()
 
 	b.motor.peers = []domain.Peer{{VirtualIP: self}, {VirtualIP: invitado}}
-	b.motor.credentials = []domain.Credential{{ID: "c", VirtualIP: invitado}}
+	emiteCredencial(t, b, "humberto", "c", invitado)
 	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
@@ -1793,7 +1821,7 @@ func TestElAvisoDeExpulsiónSaleANTESDeCortarle(t *testing.T) {
 	invitado := self.Next()
 
 	b.motor.peers = []domain.Peer{{VirtualIP: self}, {VirtualIP: invitado}}
-	b.motor.credentials = []domain.Credential{{ID: "c", VirtualIP: invitado}}
+	emiteCredencial(t, b, "humberto", "c", invitado)
 	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
@@ -1834,7 +1862,7 @@ func TestSiElAvisoFallaLaExpulsiónSigue(t *testing.T) {
 	invitado := self.Next()
 
 	b.motor.peers = []domain.Peer{{VirtualIP: self}, {VirtualIP: invitado}}
-	b.motor.credentials = []domain.Credential{{ID: "c", VirtualIP: invitado}}
+	emiteCredencial(t, b, "humberto", "c", invitado)
 	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
@@ -1957,7 +1985,7 @@ func TestExpulsarNoEsBloquear(t *testing.T) {
 	invitado := self.Next()
 
 	b.motor.peers = []domain.Peer{{VirtualIP: self}, {VirtualIP: invitado}}
-	b.motor.credentials = []domain.Credential{{ID: "c", VirtualIP: invitado}}
+	emiteCredencial(t, b, "humberto", "c", invitado)
 	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}

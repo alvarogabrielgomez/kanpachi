@@ -8,11 +8,31 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Added
+
+- Say in the status bar when a newer version is out, and open the download page when it is clicked
+- Warn on hover that installing it closes the room, which is what stopping the service does
+
+### Changed
+
+- Open the window at 888 × 565 the first time instead of 1000 × 555
+- Log what changed instead of what ran: who entered or left the room by name, and the firewall rules only when the set actually changed
+- Stop logging the router mapping query that no router answers, the network category that is never set, and every connection the window opens
+
+### Fixed
+
+- Let guests in: the host now opens the control channel to the address it just handed out, instead of to an address the engine never knew
+
 ## [0.1.6] - 2026-08-07
+
+### Added
+
+- Ask before replacing files when Kanpachi is running, saying that the open room will close for everyone ([d87bcdd](https://github.com/alvarogabrielgomez/kanpachi/commit/d87bcdd))
 
 ### Changed
 
 - Name the version on the download button, asked once an hour by the seed instead of by every visitor's browser ([777a3e7](https://github.com/alvarogabrielgomez/kanpachi/commit/777a3e7))
+- Serve the download page at `/download`, with `/descargar` still answering for the links already handed out ([d87bcdd](https://github.com/alvarogabrielgomez/kanpachi/commit/d87bcdd))
 
 ### Fixed
 

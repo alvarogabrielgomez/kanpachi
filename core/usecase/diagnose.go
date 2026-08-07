@@ -8,6 +8,16 @@ import (
 	"github.com/accentiostudios/kanpachi/core/domain"
 )
 
+// TamperRepairLimit es cuántas veces se reponen las reglas propias antes de
+// dejar de intentarlo.
+//
+// Tres distingue los dos casos que producen el mismo síntoma: el toque puntual
+// de alguien mirando la consola del firewall, que se arregla con una
+// reaplicación, y algo que las está quitando en bucle, normalmente un antivirus.
+// Contra lo segundo, insistir es pelearse a golpe de COM y eso no lo gana nadie:
+// lo que corresponde es decirlo.
+const TamperRepairLimit = 3
+
 // RefreshAlerts corre el módulo de exposición de la decisión 19 y publica el
 // resultado dentro del estado.
 //
@@ -23,16 +33,6 @@ import (
 // porque una comprobación que no contesta y un resultado limpio se ven idénticos
 // desde la pantalla: las dos pintan verde. La excepción es la consulta al router,
 // que falla en condiciones normales.
-// TamperRepairLimit es cuántas veces se reponen las reglas propias antes de
-// dejar de intentarlo.
-//
-// Tres distingue los dos casos que producen el mismo síntoma: el toque puntual
-// de alguien mirando la consola del firewall, que se arregla con una
-// reaplicación, y algo que las está quitando en bucle, normalmente un antivirus.
-// Contra lo segundo, insistir es pelearse a golpe de COM y eso no lo gana nadie:
-// lo que corresponde es decirlo.
-const TamperRepairLimit = 3
-
 func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 	var found []domain.Alert
 
@@ -72,16 +72,20 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 		medido = e
 	}
 
-	if mapeos, err := s.deps.Audit.RouterMappings(ctx); err != nil {
-		// Muchísimos routers no contestan al IGD, así que esto falla en
-		// condiciones normales y no vale ni un aviso al usuario.
-		//
-		// **Tampoco cuenta como auditoría caída**, y por lo mismo: una alerta
-		// encendida en la mayoría de las máquinas del mundo no informa de nada.
-		// Las otras dos comprobaciones son locales y solo fallan si algo está
-		// roto de verdad.
-		s.deps.Log.Info("el router no respondió a la consulta de mapeos", "detalle", err)
-	} else {
+	// La consulta al router es la única de las tres cuyo fallo se traga entero:
+	// ni alerta, ni línea de log.
+	//
+	// Muchísimos routers no contestan al IGD, así que falla en condiciones
+	// normales. Una alerta encendida en la mayoría de las máquinas del mundo no
+	// informa de nada, y una línea por minuto durante toda la vida del daemon
+	// diciendo que el mundo sigue igual es peor: entierra las que sí importan.
+	// Las otras dos comprobaciones son locales y solo fallan si algo está roto
+	// de verdad, por eso ellas sí cuentan como auditoría caída.
+	//
+	// Lo que se anota es el HALLAZGO, que es la respuesta rara y la que alguien
+	// quiere leer.
+	if mapeos, err := s.deps.Audit.RouterMappings(ctx); err == nil && len(mapeos) > 0 {
+		s.deps.Log.Info("el router publica puertos que no puso Kanpachi", "cantidad", len(mapeos))
 		for _, m := range mapeos {
 			// Kanpachi no lo puso y no lo va a quitar: el router del usuario no
 			// se toca nunca. Lo único que hace es decirlo.
@@ -123,7 +127,7 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 	// pantalla.
 	alteradas := false
 	if sePudoRevisar {
-		deseado, err := s.desiredRuleSetLocked(ctx)
+		deseado, err := s.desiredRuleSetLocked()
 		if err != nil {
 			// Sin poder calcular lo deseado no hay veredicto posible, y
 			// inventar uno sería peor que callarse. Es la misma doctrina que

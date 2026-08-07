@@ -149,11 +149,7 @@ func (s *Session) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
 	if err := s.deps.Firewall.BindRoom(ctx, saved.Subnet, domain.BindRoomAndLobby); err != nil {
 		return domain.RoomState{}, fmt.Errorf("acotando la contención a la sala anterior: %w", err)
 	}
-	scope, err := s.controlScope(ctx)
-	if err != nil {
-		return domain.RoomState{}, fmt.Errorf("preparando el alcance del canal de la sala: %w", err)
-	}
-	if err := s.deps.Control.Serve(ctx, scope); err != nil {
+	if err := s.deps.Control.Serve(ctx, s.controlScope()); err != nil {
 		return domain.RoomState{}, fmt.Errorf("abriendo el canal de la sala: %w", err)
 	}
 	if err := s.state.Transition(domain.StateConnected, "la sala anterior está levantada"); err != nil {

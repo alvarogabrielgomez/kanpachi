@@ -6,6 +6,9 @@ import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.da
 import 'package:kanpachi_ui/features/shell/domain/tray_presence.dart';
 import 'package:kanpachi_ui/features/shell/infra/windows_tray.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
+import 'package:kanpachi_ui/features/update/domain/repositories/update_repository.dart';
+import 'package:kanpachi_ui/features/update/infra/seed_update_repository.dart';
+import 'package:kanpachi_ui/features/update/presentation/cubit/update_cubit.dart';
 import 'package:kanpachi_ui/ioc/injector.dart';
 
 /// El registro de dependencias, en un solo sitio y con orden explícito.
@@ -22,6 +25,7 @@ abstract final class IocManager {
     }
     _registerSession(preferences);
     _registerShell();
+    _registerUpdate(preferences);
   }
 
   static void _registerSession(AppPreferences? preferences) {
@@ -50,6 +54,18 @@ abstract final class IocManager {
         // [AppPreferences.verbose].
         verbose: preferences?.verbose ?? false,
       ),
+    );
+  }
+
+  static void _registerUpdate(AppPreferences? preferences) {
+    final Injector i = Injector.instance;
+    i.registerLazySingleton<UpdateRepository>(SeedUpdateRepository.new);
+    // lazySingleton por el mismo motivo que la sesión: lo que sabe —que hay
+    // una versión nueva— es un hecho de la aplicación, no de una pantalla, y
+    // dos instancias serían dos respuestas a la misma pregunta, cada una
+    // gastando su propia petición.
+    i.registerLazySingleton<UpdateCubit>(
+      () => UpdateCubit(i.get<UpdateRepository>(), preferences: preferences),
     );
   }
 

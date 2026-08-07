@@ -15,6 +15,7 @@ import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/pages/shell_page.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/tray_bridge.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/window_size_memory.dart';
+import 'package:kanpachi_ui/features/update/presentation/cubit/update_cubit.dart';
 import 'package:kanpachi_ui/ioc/injector.dart';
 import 'package:kanpachi_ui/ioc/ioc_manager.dart';
 import 'package:window_manager/window_manager.dart';
@@ -236,6 +237,15 @@ class KanpachiApp extends StatelessWidget {
           // toda la vida del estado: lo que el daemon hiciera después no
           // llegaba nunca. Ver [SessionCubit.watchSession].
           create: (_) => Injector.instance.get<SessionCubit>()..watchSession(),
+        ),
+        BlocProvider<UpdateCubit>(
+          // La primera de las tres preguntas por si hay versión nueva; las
+          // otras dos las hace [ShellPage] al abrirse y al cerrarse una sala.
+          //
+          // Acá y no en el latido a propósito: es una petición a internet, y
+          // el latido corre cada dos segundos en la PC de alguien que está
+          // jugando. Ver [UpdateCubit].
+          create: (_) => Injector.instance.get<UpdateCubit>()..check(),
         ),
       ],
       // Por encima de la app y por debajo de los cubits: tiene que durar lo

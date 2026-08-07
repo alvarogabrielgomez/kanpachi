@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
@@ -18,6 +20,7 @@ import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.da
 import 'package:kanpachi_ui/features/settings/presentation/pages/settings_page.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/shell_bars.dart';
+import 'package:kanpachi_ui/features/update/presentation/cubit/update_cubit.dart';
 
 /// El marco de la aplicación: la ventana ES la app.
 ///
@@ -166,6 +169,12 @@ class _RoomFollower extends StatelessWidget {
           listener: (BuildContext context, SessionState state) {
             final ShellCubit shell = context.read<ShellCubit>();
             final AppScreen ahora = shell.state.screen;
+            // Dos de los tres momentos en que se pregunta por una versión
+            // nueva —abrir una sala y cerrarla—, y por eso cuelga del oyente
+            // del borde y no de cada uno por su lado: los dos son el mismo
+            // hecho visto desde los dos lados. El tercero es el arranque, en
+            // `main`. Ver [UpdateCubit] para por qué son tres y no un timer.
+            unawaited(context.read<UpdateCubit>().check());
             if (state.room != null) {
               if (_sinSala.contains(ahora)) shell.go(AppScreen.room);
               return;

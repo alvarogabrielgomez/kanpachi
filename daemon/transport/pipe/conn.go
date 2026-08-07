@@ -54,8 +54,15 @@ func (l *Listener) atender(ctx context.Context, conn net.Conn) {
 		}
 	}()
 
-	l.deps.Log.Info("conexión nueva en la API local")
-
+	// Abrir una conexión NO se anota, y ese silencio es deliberado.
+	//
+	// La pantalla abre una por cada pedido, y mientras narra los pasos de una
+	// operación pregunta cada 400 ms: dos líneas y media por segundo durante
+	// todo lo que dure crear o entrar a una sala, diciendo cada vez que el
+	// programa que está en la pantalla sigue ahí. Ninguna de esas líneas
+	// contesta ninguna pregunta, y juntas tapan las que sí. Lo que se anota es
+	// lo que se sale de lo normal: el que no saluda, el que manda de más, el
+	// que revienta.
 	srv := protocol.NewServer(l.deps.API, l.deps.Token, l.deps.Clock, l.deps.Log)
 	// El host es OPCIONAL: en modo consola no hay interfaz que lanzar ni
 	// servicio que reconfigurar, y el servidor ya sabe contestar que no está.
@@ -141,7 +148,8 @@ func (c *conPlazos) Write(p []byte) (int, error) {
 func (l *Listener) registraCorte(err error) {
 	switch {
 	case err == nil, errors.Is(err, io.EOF), errors.Is(err, net.ErrClosed):
-		l.deps.Log.Info("se cerró una conexión de la API local")
+		// El cierre limpio es el final esperado de cada pedido de la pantalla.
+		// No se anota, por lo mismo que no se anota la apertura.
 
 	case errors.Is(err, protocol.ErrTooLarge):
 		l.deps.Log.Warn("se cortó una conexión por mandar un mensaje por encima del tope",

@@ -126,27 +126,6 @@ func prefixOf(p *windows.IpAddressPrefix) (netip.Prefix, bool) {
 	return netip.Prefix{}, false
 }
 
-// setPrivateCategory asks the Network List Manager to file the network as
-// private.
-//
-// Best effort, always. An adapter with no gateway stays "unidentified" and
-// Windows puts it in Public, because NLA identifies a network by the gateway's
-// MAC address. Kanpachi tries and does not depend on succeeding, which is why
-// every firewall rule goes to all three profiles.
-//
-// The group-policy switch that treats every unidentified network as private is
-// deliberately NOT used: it would apply to any network NLA fails to identify,
-// including the user's main one, and that is weakening their whole firewall to
-// fix ours.
-func setPrivateCategory() error {
-	// Deliberately not implemented through COM yet. The honest reason is that
-	// the payoff is cosmetic here: the rules already cover all three profiles,
-	// so nothing about containment depends on this. Reporting it as impossible
-	// beats a silent nil that would read as "done".
-	return fmt.Errorf("marcar la red como privada todavía no está implementado, " +
-		"y no hace falta: las reglas se aplican a los tres perfiles")
-}
-
 // directPlayEnabled asks DISM whether the legacy component is installed.
 func directPlayEnabled(ctx context.Context) (bool, error) {
 	args := []string{"/online", "/get-featureinfo", "/featurename:DirectPlay", "/english"}

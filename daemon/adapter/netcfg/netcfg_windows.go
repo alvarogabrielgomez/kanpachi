@@ -85,16 +85,6 @@ func (c *Config) ApplyAdapter(ctx context.Context, want domain.AdapterState) err
 	añadir("rutas", c.syncRoutes(luid, wantedRoutes(want)))
 	añadir("política de prefijo", c.setPrefixPolicy(ctx, want.PreferIPv4))
 
-	if want.PrivateCategory {
-		// Best effort by design. An adapter with no gateway stays "unidentified"
-		// and Windows files it under Public, because NLA identifies a network by
-		// the gateway's MAC. Kanpachi tries and does NOT depend on succeeding:
-		// that is why every rule is written to all three profiles.
-		if err := setPrivateCategory(); err != nil {
-			c.log.Info("no se pudo marcar la red como privada, y no hace falta", "detalle", err)
-		}
-	}
-
 	if len(fallos) > 0 {
 		return fmt.Errorf("ajustando %s: %v", domain.AdapterName, fallos)
 	}

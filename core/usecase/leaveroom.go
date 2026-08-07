@@ -120,6 +120,18 @@ func (s *Session) leaveLocked(ctx context.Context, reason string, exit domain.Ex
 	s.sealedCard = nil
 	s.nick = domain.Nickname{}
 	s.kicked = nil
+	// Las credenciales mueren con la sala que las emitió, y esto NO es higiene.
+	//
+	// Sus direcciones son válidas, así que sobrevivir a la sala significa que la
+	// siguiente arrancaría abriéndole el canal de control a las IP de la
+	// anterior: [Session.authorizedControlIPsLocked] las agrega sin poder saber
+	// que son de otra sala, y [domain.ControlRules] solo descarta las
+	// inválidas. Se vacía en vez de anularse porque emitir escribe en el mapa
+	// sin comprobar, y un mapa nil ahí es un pánico.
+	clear(s.issued)
+	// Y la firma del último conjunto de reglas, para que la primera aplicación
+	// de la sala siguiente se anote aunque por casualidad pida lo mismo.
+	s.appliedRules = ""
 	s.announcedGame = ""
 	s.lastAnnounce = time.Time{}
 	s.lastPublish = time.Time{}

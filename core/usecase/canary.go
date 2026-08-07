@@ -173,7 +173,7 @@ func (s *Session) canaryPlanLocked(ctx context.Context, afterApply bool) (canary
 		return canaryPlan{}, false
 	}
 
-	desired, err := s.desiredRuleSetLocked(ctx)
+	desired, err := s.desiredRuleSetLocked()
 	if err != nil {
 		s.deps.Log.Warn("no se pudo calcular qué puertos esquivar para el canario", "error", err)
 		return canaryPlan{}, false

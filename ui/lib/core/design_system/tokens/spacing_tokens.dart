@@ -52,12 +52,17 @@ abstract final class AppSpacing {
   /// entre arranques, ver [AppPreferences.windowSize]. Esto es el punto de
   /// partida, no un tope ni una preferencia.
   ///
-  /// El ancho es el del diseño más el aire de los lados. El alto no sale del
-  /// diseño: sale de que una ventana que abre ocupando media pantalla es una
-  /// ventana que hay que encoger, y encogerla es lo que nadie hace. Cabe la
-  /// portada entera, y las pantallas largas hacen scroll, que es lo que hacen
-  /// igual en cualquier tamaño.
-  static const Size initialWindow = Size(1000, 555);
+  /// **Es más angosta que [contentMax], y a propósito.** El ancho de contenido
+  /// es un TOPE, no una medida a la que haya que llegar: por debajo de él las
+  /// pantallas se acomodan solas, que es lo que hacen igualmente en cualquier
+  /// ventana que no esté maximizada. Abrir a 940 y pico llenaba media pantalla
+  /// de un portátil para enseñar una portada con cuatro botones.
+  ///
+  /// El alto no sale del archivo de diseño: sale de que una ventana que abre
+  /// ocupando media pantalla es una ventana que hay que encoger, y encogerla
+  /// es lo que nadie hace. Cabe la portada entera, y las pantallas largas
+  /// hacen scroll, que es lo que hacen igual en cualquier tamaño.
+  static const Size initialWindow = Size(888, 565);
 
   static const double titleBarHeight = 44;
   static const double statusBarHeight = 38;
