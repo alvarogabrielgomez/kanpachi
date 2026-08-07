@@ -8,44 +8,60 @@ import 'package:kanpachi_ui/core/design_system/atoms/kanpachi_wordmark.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// La barra de título: logotipo, cuenta y los botones de ventana.
+///
+/// # Por qué el área de arrastre NO envuelve la barra entera
+///
+/// Envolvía, y costaba dos cosas a la vez. `DragToMoveArea` es un detector de
+/// arrastre, así que competía en la arena de gestos con el botón de cuenta que
+/// tenía debajo: un clic con el ratón moviéndose un píxel se lo llevaba el
+/// arrastre, la ventana daba un salto y el menú no se abría. Desde fuera se ve
+/// como "hay que acertarle", que es justo lo que se reportó.
+///
+/// Ahora el arrastre ocupa solo la franja vacía de la izquierda, y los
+/// controles son hermanos suyos. Lo que se pierde: arrastrar la ventana desde
+/// encima del nombre. Lo que se gana: que el nombre se pueda pulsar siempre. Un
+/// control dentro de una zona de arrastre es un control que a veces no
+/// responde, y eso no se arregla con más área.
 class ShellTitleBar extends StatelessWidget {
-  const ShellTitleBar({required this.nickname, super.key});
-
-  final String nickname;
+  const ShellTitleBar({super.key});
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    // Es el chrome de la ventana de verdad, no una barra dibujada: arrastrarla
-    // mueve la ventana y el doble clic la maximiza, como espera cualquiera que
-    // use Windows. Sin esto, esconder el marco nativo dejaría una ventana que
-    // no se puede mover.
-    return DragToMoveArea(
-      child: Container(
-        height: AppSpacing.titleBarHeight,
-        padding: const EdgeInsets.only(
-          left: AppSpacing.x3l,
-          right: AppSpacing.sm,
+    return Container(
+      height: AppSpacing.titleBarHeight,
+      decoration: BoxDecoration(
+        color: colors.surfaceSunken,
+        border: Border(
+          bottom: BorderSide(color: colors.border, width: AppStroke.hairline),
         ),
-        decoration: BoxDecoration(
-          color: colors.surfaceSunken,
-          border: Border(
-            bottom: BorderSide(color: colors.border, width: AppStroke.hairline),
+      ),
+      child: Row(
+        children: <Widget>[
+          // La franja de arrastre, que se queda con todo el hueco sobrante: es
+          // el chrome de la ventana de verdad, así que arrastrarla la mueve y
+          // el doble clic la maximiza, como espera cualquiera que use Windows.
+          const Expanded(
+            child: DragToMoveArea(
+              child: Padding(
+                padding: EdgeInsets.only(left: AppSpacing.x3l),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: KanpachiWordmark(height: 14, opacity: 0.85),
+                ),
+              ),
+            ),
           ),
-        ),
-        child: Row(
-          children: <Widget>[
-            const KanpachiWordmark(height: 14, opacity: 0.85),
-            const Spacer(),
-            _AccountButton(nickname: nickname),
-            const SizedBox(width: AppSpacing.md),
-            const _WindowButtons(),
-          ],
-        ),
+          const _AccountButton(),
+          const SizedBox(width: AppSpacing.md),
+          const _WindowButtons(),
+          const SizedBox(width: AppSpacing.sm),
+        ],
       ),
     );
   }
@@ -61,15 +77,19 @@ class ShellTitleBar extends StatelessWidget {
 /// que hay dentro hace falta para jugar, y un botón de ajustes en la primera
 /// pantalla dice lo contrario. Ver [SettingsScreen].
 class _AccountButton extends StatefulWidget {
-  const _AccountButton({required this.nickname});
-
-  final String nickname;
+  const _AccountButton();
 
   @override
   State<_AccountButton> createState() => _AccountButtonState();
 }
 
 class _AccountButtonState extends State<_AccountButton> {
+  /// Se marca al pasar por encima, igual que los botones de ventana de al lado.
+  ///
+  /// No es adorno: era lo único de la barra que se podía pulsar sin decirlo, y
+  /// un objetivo que no se anuncia se busca a tientas.
+  bool _hovered = false;
+
   /// El panel se dibuja en el Overlay de la raíz, no aquí.
   ///
   /// Colgado de la barra de título era inalcanzable. Un `RenderFlex` pinta a
@@ -87,9 +107,15 @@ class _AccountButtonState extends State<_AccountButton> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final ShellCubit shell = context.read<ShellCubit>();
-    final String initial = widget.nickname.isEmpty
+    // El nombre se toma de aquí y no baja como parámetro, para que un latido
+    // que no lo cambia no reconstruya la barra de título entera. Ver la
+    // cabecera de [ShellPage].
+    final String nickname = context.select<SessionCubit, String>(
+      (SessionCubit c) => c.state.nickname,
+    );
+    final String initial = nickname.isEmpty
         ? '?'
-        : widget.nickname.characters.first.toUpperCase();
+        : nickname.characters.first.toUpperCase();
 
     return BlocListener<ShellCubit, ShellState>(
       listenWhen: (ShellState a, ShellState b) =>
@@ -120,7 +146,7 @@ class _AccountButtonState extends State<_AccountButton> {
               targetAnchor: Alignment.bottomRight,
               followerAnchor: Alignment.topRight,
               offset: const Offset(0, 2),
-              child: _AccountMenu(nickname: widget.nickname),
+              child: _AccountMenu(nickname: nickname),
             ),
           ],
         ),
@@ -128,10 +154,29 @@ class _AccountButtonState extends State<_AccountButton> {
           link: _link,
           child: MouseRegion(
             cursor: SystemMouseCursors.click,
+            onEnter: (_) => setState(() => _hovered = true),
+            onExit: (_) => setState(() => _hovered = false),
             child: GestureDetector(
+              // **`opaque`, y esa palabra es media corrección.** Por omisión un
+              // `GestureDetector` difiere al hijo, así que solo respondían los
+              // píxeles PINTADOS: el círculo del avatar y las letras del
+              // nombre. Los huecos entre ellos, el relleno y la franja de
+              // arriba y abajo no eran el botón, aunque lo parecieran. Por eso
+              // había que apuntar.
+              behavior: HitTestBehavior.opaque,
               onTap: shell.toggleAccountMenu,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(4, 4, 9, 4),
+              child: AnimatedContainer(
+                duration: AppMotion.hover,
+                // Alto de la barra ENTERA. El objetivo llegaba a 30 px en una
+                // barra de 44, así que los 7 de arriba y los 7 de abajo caían
+                // fuera aunque el ratón estuviera encima del nombre.
+                height: AppSpacing.titleBarHeight,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                ),
+                decoration: BoxDecoration(
+                  color: _hovered ? colors.surface : Colors.transparent,
+                ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
@@ -155,7 +200,7 @@ class _AccountButtonState extends State<_AccountButton> {
                     ),
                     const SizedBox(width: 7),
                     Text(
-                      widget.nickname.isEmpty ? 'sin nombre' : widget.nickname,
+                      nickname.isEmpty ? 'sin nombre' : nickname,
                       style: context.type.labelSm.copyWith(color: colors.text),
                     ),
                   ],

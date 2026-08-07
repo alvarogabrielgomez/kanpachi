@@ -297,42 +297,43 @@ jobs:
 
             ${{ steps.notas.outputs.notas }}
 
-            ## Cliente · Windows 10 y 11, 64 bits
+            ## Client · Windows 10 and 11, 64-bit
 
             `kanpachi-setup.exe`
 
-            Se instala con **un solo UAC**, y ese es el único de la vida del
-            producto: ni al encender la PC ni al abrir la app se vuelve a pedir.
+            Installs with **one single UAC prompt**, and that is the only one in
+            the life of the product: neither booting the PC nor opening the app
+            asks again.
 
-            **Todavía no está firmado.** Windows va a enseñar el aviso de
-            SmartScreen al abrirlo; hay que pulsar "Más información" y "Ejecutar
-            de todas formas". La firma llega con el certificado de SignPath.
+            **Not signed yet.** Windows will show the SmartScreen warning when
+            you open it; press "More info" and "Run anyway". Signing arrives
+            with the SignPath certificate.
 
             ```
             SHA256  ${{ steps.sums.outputs.setup_sha }}
             ```
 
-            Motor compilado desde `alvarogabrielgomez/kanpachi-engine@${{ inputs.motor || 'main' }}`.
+            Engine built from `alvarogabrielgomez/kanpachi-engine@${{ inputs.motor || 'main' }}`.
 
-            ## Nodo de encuentro · Linux
+            ## Rendezvous node · Linux
 
             `kanpseed-linux-amd64`, `kanpseed-linux-arm64`, `index.html`
 
-            Sale del mismo tag que el cliente, así que las dos mitades del
-            producto llevan el mismo número. Instalar o actualizar:
+            Comes out of the same tag as the client, so both halves of the
+            product carry the same number. To install or upgrade:
 
             ```
             curl -fsSL https://raw.githubusercontent.com/alvarogabrielgomez/kanpachi/main/seed/install.sh | sudo sh
             ```
 
-            Sobre un seed ya instalado, también:
+            On a seed that is already installed, also:
 
             ```
             sudo kanpseed upgrade --check
             sudo kanpseed upgrade
             ```
 
-            Cada carga trae su manifiesto: `SHA256SUMS-windows` y
+            Each payload ships its own manifest: `SHA256SUMS-windows` and
             `SHA256SUMS-linux`.
 
       # Sin publicar, la corrida manual deja el instalador como artefacto. Es lo

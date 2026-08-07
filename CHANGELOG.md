@@ -10,11 +10,14 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Changed
 
+- Make the whole name and avatar area of the title bar open the account menu, instead of only the pixels it paints ([5e12246](https://github.com/alvarogabrielgomez/kanpachi/commit/5e12246))
+- Keep the window drag area off the title bar controls, so a click that moves a pixel opens the menu instead of dragging the window ([5e12246](https://github.com/alvarogabrielgomez/kanpachi/commit/5e12246))
 - Audit foreign firewall rules on four triggers instead of every two seconds: entering the room, changing game, somebody joining, and every two minutes ([3d31a5c](https://github.com/alvarogabrielgomez/kanpachi/commit/3d31a5c))
 
 ### Fixed
 
 - Stop dropping the service now and then: the heartbeat no longer overlaps itself nor queues behind the firewall sweep ([3d31a5c](https://github.com/alvarogabrielgomez/kanpachi/commit/3d31a5c))
+- Stop rebuilding the title bar and its window buttons thirty times a minute for pixels that did not change ([5e12246](https://github.com/alvarogabrielgomez/kanpachi/commit/5e12246))
 - Go back to the room, not to the home screen, when closing an invite link with a room open ([46bd095](https://github.com/alvarogabrielgomez/kanpachi/commit/46bd095))
 - Ask the daemon whether there is a room every time the home screen appears, instead of trusting the last thing known ([46bd095](https://github.com/alvarogabrielgomez/kanpachi/commit/46bd095))
 

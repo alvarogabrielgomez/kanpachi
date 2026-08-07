@@ -30,20 +30,33 @@ import 'package:kanpachi_ui/features/shell/presentation/widgets/shell_bars.dart'
 class ShellPage extends StatelessWidget {
   const ShellPage({super.key});
 
+  /// # Por qué acá no hay ni un `watch`, y sí tres `select`
+  ///
+  /// `watch` reconstruye con CUALQUIER cambio del estado, y el estado de la
+  /// sesión cambia cada dos segundos porque el latido lo reafirma. Con un
+  /// `watch` aquí, la barra de título entera —el nombre, los tres botones de
+  /// ventana, sus tooltips— se reconstruía treinta veces por minuto para
+  /// pintar exactamente lo mismo, y arrastraba con ella al cuerpo.
+  ///
+  /// Con `select` cada trozo se suscribe al VALOR que dibuja, y una barra que
+  /// dice lo mismo no se toca. Es lo que hace que pulsar un botón de ventana
+  /// responda cuando responde y no cuando le toca.
   @override
   Widget build(BuildContext context) {
-    final SessionState session = context.watch<SessionCubit>().state;
+    final String derecha = context.select<SessionCubit, String>(
+      (SessionCubit c) => _statusRight(c.state),
+    );
+    final bool daemonCaido = context.select<SessionCubit, bool>(
+      (SessionCubit c) => c.state.daemonDown,
+    );
 
     return Scaffold(
       backgroundColor: context.colors.surface,
       body: Column(
         children: <Widget>[
-          ShellTitleBar(nickname: session.nickname),
+          const ShellTitleBar(),
           const Expanded(child: _WindowBody()),
-          ShellStatusBar(
-            right: _statusRight(session),
-            daemonDown: session.daemonDown,
-          ),
+          ShellStatusBar(right: derecha, daemonDown: daemonCaido),
         ],
       ),
     );
@@ -69,8 +82,14 @@ class _WindowBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ShellState shell = context.watch<ShellCubit>().state;
-    final SessionState session = context.watch<SessionCubit>().state;
+    // Sin `watch` de nada: cada capa se suscribe a lo suyo.
+    //
+    // La pantalla activa ya se salvaba sola, y conviene saber por qué para no
+    // "arreglarla" de nuevo: [_CurrentScreen] devuelve widgets `const`, así que
+    // aunque este build corra, `Element.updateChild` ve el MISMO widget y se
+    // salta el subárbol entero. Lo que no se salvaba era la capa de diálogos,
+    // que recibía los dos estados por parámetro y por tanto era un widget nuevo
+    // en cada emisión.
 
     // `fit: expand` y no un `Positioned.fill` suelto. Un Stack se mide por sus
     // hijos NO posicionados, y cuando no hay diálogo la capa de diálogos es un
@@ -94,7 +113,7 @@ class _WindowBody extends StatelessWidget {
         // Dentro del marco y no como ruta aparte: los tres diálogos confirman
         // algo que cambia la sala que se ve por detrás, y dejarla visible tras
         // el velo es lo que da contexto a qué se está confirmando.
-        _DialogLayer(shell: shell, session: session),
+        const _DialogLayer(),
       ],
     );
   }
@@ -378,15 +397,32 @@ class _CurrentScreen extends StatelessWidget {
   }
 }
 
+/// Los diálogos, que casi siempre no son ninguno.
+///
+/// # Por qué lee el estado acá y no lo recibe
+///
+/// Recibiéndolo era un widget NUEVO en cada emisión de cualquiera de los dos
+/// cubits —treinta veces por minuto solo por el latido— para devolver el mismo
+/// `SizedBox.shrink()` que ya estaba puesto.
+///
+/// Y no basta con subirlo acá con un `watch`: eso suscribe al estado ENTERO,
+/// así que un cambio de miembros seguiría reconstruyendo la capa de diálogos
+/// sin diálogo abierto. Se suscribe a lo que decide —qué diálogo hay— y solo
+/// cuando hay uno se mira la sesión, que es cuando su contenido importa.
 class _DialogLayer extends StatelessWidget {
-  const _DialogLayer({required this.shell, required this.session});
-
-  final ShellState shell;
-  final SessionState session;
+  const _DialogLayer();
 
   @override
   Widget build(BuildContext context) {
-    return switch (shell.dialog) {
+    final AppDialog dialog = context.select<ShellCubit, AppDialog>(
+      (ShellCubit c) => c.state.dialog,
+    );
+    if (dialog == AppDialog.none) return const SizedBox.shrink();
+
+    final ShellState shell = context.watch<ShellCubit>().state;
+    final SessionState session = context.watch<SessionCubit>().state;
+
+    return switch (dialog) {
       AppDialog.none => const SizedBox.shrink(),
       AppDialog.confirmGame =>
         session.pendingGame == null
