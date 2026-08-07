@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.1.4] - 2026-08-07
+
 ### Changed
 
 - Draw the drifting shapes and the wordmark with a semitransparent colour instead of an `Opacity` layer, five offscreen buffers fewer per frame ([e380ae4](https://github.com/alvarogabrielgomez/kanpachi/commit/e380ae4))
@@ -66,6 +68,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.1.4]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.4
 [0.1.3]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.3
 [0.1.2]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.2
 [0.1.1]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.1
