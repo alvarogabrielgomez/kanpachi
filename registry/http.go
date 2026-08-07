@@ -30,11 +30,18 @@ type Server struct {
 	store   *Store
 	counter *Counter
 	page    *Page
+	release *Release
 	limiter *limiter
 }
 
 func NewServer(s *Store, c *Counter, p *Page) *Server {
-	return &Server{store: s, counter: c, page: p, limiter: newLimiter(30, time.Minute)}
+	return &Server{
+		store:   s,
+		counter: c,
+		page:    p,
+		release: NewRelease(),
+		limiter: newLimiter(30, time.Minute),
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -42,6 +49,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/rooms", s.limitado(s.emitir))
 	mux.HandleFunc("GET /api/i/{id}", s.limitado(s.resolver))
 	mux.HandleFunc("PUT /api/i/{id}", s.limitado(s.publicar))
+	mux.HandleFunc("GET /api/version", s.limitado(s.version))
 	mux.HandleFunc("GET /healthz", s.salud)
 	mux.HandleFunc("/", s.servirPagina)
 	return cabecerasSeguras(mux)
@@ -140,6 +148,25 @@ func (s *Server) vista(sala Room) map[string]any {
 	return v
 }
 
+// version dice cuál es la última versión publicada, para la página de descarga.
+//
+// **Omite el campo cuando no lo sabe, en vez de mandar una cadena vacía.** Son
+// dos cosas distintas y la página las trata distinto: sin campo se queda como
+// estaba, que es como está hoy y funciona; con un campo vacío tendría que
+// acordarse de comprobarlo, y ese olvido pinta "Última versión:" seguido de
+// nada. Mismo criterio que el contador de miembros en [Server.vista].
+//
+// Sin caché HTTP a propósito. Lo que evita el trabajo es la caché de una hora
+// que hay detrás; cachear también en el navegador solo añade una segunda
+// caducidad que contar, y la respuesta son treinta bytes.
+func (s *Server) version(w http.ResponseWriter, r *http.Request) {
+	out := map[string]any{}
+	if tag := s.release.Latest(); tag != "" {
+		out["client"] = tag
+	}
+	responder(w, http.StatusOK, out)
+}
+
 func (s *Server) salud(w http.ResponseWriter, r *http.Request) {
 	estado := map[string]any{"rooms": s.store.Len()}
 	codigo := http.StatusOK
@@ -186,7 +213,10 @@ func cabecerasSeguras(siguiente http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// La misma CSP del nginx.conf, servida por quien tiene la última
 		// palabra. connect-src 'self' y no 'none' porque la decisión 24
-		// autoriza exactamente una petición, la de este registro.
+		// autoriza las peticiones a ESTE registro, y a ningún otro origen.
+		// Son dos: resolver un invite ID, y preguntar la última versión para
+		// la página de descarga. La segunda existe precisamente para no abrir
+		// esto a `api.github.com`; ver [Release].
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "+
 				"connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'")

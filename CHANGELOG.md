@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Changed
+
+- Name the version on the download button, asked once an hour by the seed instead of by every visitor's browser ([PENDIENTE](https://github.com/alvarogabrielgomez/kanpachi/commit/PENDIENTE))
+
 ## [0.1.4] - 2026-08-07
 
 ### Changed

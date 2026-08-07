@@ -751,6 +751,37 @@
     nota.appendChild(enlace);
     nota.appendChild(document.createTextNode("."));
     show("sec-download");
+    versionEnElBoton();
+  }
+
+  // Le pregunta al seed cuál es la última versión y la escribe en el botón.
+  //
+  // # Por qué al seed y no a GitHub
+  //
+  // Preguntarle a `api.github.com` desde acá manda la IP de quien mira la
+  // página a un tercero, gasta la cuota de sesenta por hora DE ESA PERSONA, y
+  // obliga a abrir `connect-src` a un origen ajeno en la CSP, que está cerrada
+  // a `'self'` a propósito. El seed pregunta una vez por hora para todos.
+  //
+  // # Por qué es un añadido y no un requisito
+  //
+  // El botón ya dice lo que tiene que decir antes de esto, y la nota de abajo
+  // ya manda a la publicación, donde están la versión y el SHA256. Si el seed
+  // no contesta —página abierta desde el disco, registro caído, versión
+  // todavía sin resolver— no pasa nada: se queda el texto de siempre. Por eso
+  // el fallo se traga entero y no hay mensaje de error en ninguna rama.
+  function versionEnElBoton() {
+    fetch("/api/version", { cache: "no-store" })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        if (!data || typeof data.client !== "string" || !data.client) return;
+        // Solo si sigue siendo la pantalla de descarga: entre la petición y su
+        // respuesta el usuario pudo haber pegado un código.
+        var b = $("dl-button");
+        if (!b || $("sec-download").classList.contains("hidden")) return;
+        b.textContent = "Descargar " + data.client;
+      })
+      .catch(function () {});
   }
 
   function renderRoom(id) {
