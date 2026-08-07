@@ -103,18 +103,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             note:
                 'Lo poco que hay que decidir. Kanpachi funciona sin tocar nada '
                 'de acá.',
-            // **Vuelve a la sala si hay sala**, y no siempre a la portada.
+            // **Vuelve a donde se estaba**, que ya no se adivina acá.
             //
-            // Siempre a la portada era la mitad de un fallo que dejaba la app
-            // bloqueada: se salía de la sala en la pantalla y el daemon seguía
-            // dentro, así que crear otra contestaba que ya estabas en una. La
-            // otra mitad, que el estado ni siquiera sobrevivía, la arregla el
-            // latido. Esta mitad es que volver tiene que volver a donde
-            // estabas.
+            // Este destino estuvo escrito a mano dos veces y las dos se quedó
+            // corto. Primero era siempre la portada, y eso dejaba la app
+            // bloqueada: se salía de la sala en la pantalla mientras el daemon
+            // seguía dentro, así que crear otra contestaba que ya estabas en
+            // una. Después fue «la sala si hay sala», que acierta viniendo de
+            // la sala y falla viniendo del selector de juego o de un enlace.
+            // Adivinar el origen desde el destino no tiene arreglo: lo sabe el
+            // historial, y ahora hay uno.
             leading: AppBackButton(
-              onPressed: () => context.read<ShellCubit>().go(
-                session.hasRoom ? AppScreen.room : AppScreen.home,
-              ),
+              onPressed: () => context.read<ShellCubit>().back(),
             ),
           ),
           const SizedBox(height: AppSpacing.x7l),

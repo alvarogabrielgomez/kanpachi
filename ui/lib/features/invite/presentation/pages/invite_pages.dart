@@ -121,9 +121,15 @@ class InviteScreen extends StatelessWidget {
                   variant: AppButtonVariant.ghost,
                   height: 46,
                   textStyle: context.type.label.copyWith(fontSize: 14.5),
+                  // Cancelar un enlace devuelve a lo que se estaba haciendo, y
+                  // eso casi nunca es la portada: el enlace se pone delante
+                  // esté donde esté el usuario, así que el caso normal es un
+                  // host dentro de su sala al que le pasan un código. Mandarlo
+                  // a la portada era pedirle que eligiera entre su sala y una
+                  // pantalla que no pidió.
                   onPressed: () {
                     context.read<SessionCubit>().dismissInvite();
-                    shell.go(AppScreen.home);
+                    shell.back();
                   },
                 ),
               ),

@@ -224,10 +224,13 @@ class ConfirmCloseDialog extends StatelessWidget {
           AppModalActions(
             confirmLabel: 'Cerrar la sala',
             onCancel: shell.closeDialog,
+            // No navega: lo hace el oyente de la sala cuando la sala se va de
+            // verdad. Irse antes pintaba la portada con el daemon todavía
+            // dentro, y un cierre que falla dejaba la app en una portada que
+            // no acepta crear ni entrar.
             onConfirm: () {
               context.read<SessionCubit>().leave();
               shell.closeDialog();
-              shell.go(AppScreen.home);
             },
           ),
         ],

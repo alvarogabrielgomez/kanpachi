@@ -979,8 +979,10 @@ class _RoomMembers extends StatelessWidget {
               context.read<ShellCubit>().showDialog(AppDialog.confirmClose);
               return;
             }
+            // Sin navegar acá: cuando la sala se vaya de verdad, el oyente del
+            // marco lleva a la portada y poda el camino que llevaba a ella. Un
+            // «salir» que falla tiene que dejar al usuario en su sala.
             context.read<SessionCubit>().leave();
-            context.read<ShellCubit>().go(AppScreen.home);
           },
         ),
       ],

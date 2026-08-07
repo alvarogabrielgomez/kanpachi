@@ -56,6 +56,7 @@ enum GameArtMode { cover, list }
 class ShellState {
   const ShellState({
     this.screen = AppScreen.welcome,
+    this.history = const <AppScreen>[],
     this.dialog = AppDialog.none,
     this.themeMode = ThemeMode.system,
     this.density = AppDensity.balanced,
@@ -67,6 +68,17 @@ class ShellState {
   });
 
   final AppScreen screen;
+
+  /// Por dónde se pasó para llegar a [screen], de lo más viejo a lo más nuevo.
+  ///
+  /// Sin esto, la flecha de volver era un destino escrito a mano en cada
+  /// pantalla, y ese destino se equivocaba en cuanto se llegaba desde otro
+  /// sitio: un host dentro de su sala que abre un enlace de invitación pulsaba
+  /// «Cancelar» y aterrizaba en la portada, o sea que volver lo sacaba de la
+  /// sala en la que estaba. Volver es una operación sobre el CAMINO, no sobre
+  /// la pantalla, y por eso el camino tiene que existir.
+  final List<AppScreen> history;
+
   final AppDialog dialog;
   final ThemeMode themeMode;
   final AppDensity density;
@@ -87,6 +99,7 @@ class ShellState {
 
   ShellState copyWith({
     AppScreen? screen,
+    List<AppScreen>? history,
     AppDialog? dialog,
     ThemeMode? themeMode,
     AppDensity? density,
@@ -98,6 +111,7 @@ class ShellState {
     bool clearKickTarget = false,
   }) => ShellState(
     screen: screen ?? this.screen,
+    history: history ?? this.history,
     dialog: dialog ?? this.dialog,
     themeMode: themeMode ?? this.themeMode,
     density: density ?? this.density,
@@ -118,9 +132,78 @@ class ShellCubit extends Cubit<ShellState> {
   ShellCubit({AppScreen initial = AppScreen.welcome})
     : super(ShellState(screen: initial));
 
-  void go(AppScreen screen) => emit(
+  /// Cuántas pantallas se recuerdan hacia atrás.
+  ///
+  /// El tope existe porque nada poda un historial que crece durante una sesión
+  /// de horas. Diez es más de lo que cualquier camino real usa: la app tiene
+  /// once pantallas y [_apilado] desenrolla los ciclos en vez de apilarlos.
+  static const int _maxHistorial = 10;
+
+  void go(AppScreen screen) {
+    // Ir a donde ya se está no es navegar. Sin esto, el latido que reafirma la
+    // sala metería una copia de `room` detrás de `room`, y volver desde la
+    // siguiente pantalla se quedaría a mitad de camino.
+    if (screen == state.screen) {
+      emit(state.copyWith(dialog: AppDialog.none, accountMenuOpen: false));
+      return;
+    }
+    emit(
+      state.copyWith(
+        screen: screen,
+        history: _apilado(screen),
+        dialog: AppDialog.none,
+        accountMenuOpen: false,
+      ),
+    );
+  }
+
+  /// Vuelve a la pantalla anterior DE VERDAD.
+  ///
+  /// Antes cada flecha escribía su destino a mano, y ese destino solo acertaba
+  /// cuando se había llegado por el camino que quien la escribió tenía en la
+  /// cabeza. El caso que lo delató: host dentro de su sala, le llega un enlace
+  /// de invitación, la pantalla del enlace se pone delante, pulsa «Cancelar»
+  /// para no salirse de lo suyo, y la flecha lo dejaba en la portada.
+  ///
+  /// Sin historial se vuelve a la portada, que es el único sitio que siempre
+  /// existe. El suelo de `_visibleScreen` decide si con sala abierta esa
+  /// portada es habitable.
+  void back() {
+    final List<AppScreen> h = state.history;
+    if (h.isEmpty) {
+      emit(
+        state.copyWith(
+          screen: AppScreen.home,
+          dialog: AppDialog.none,
+          accountMenuOpen: false,
+        ),
+      );
+      return;
+    }
+    emit(
+      state.copyWith(
+        screen: h.last,
+        history: h.sublist(0, h.length - 1),
+        dialog: AppDialog.none,
+        accountMenuOpen: false,
+      ),
+    );
+  }
+
+  /// Se acabó la sala: a la portada, y el camino que llevaba a ella se borra.
+  ///
+  /// Podar es la mitad que importa. Un historial con `room` dentro después de
+  /// cerrar la sala hace que la siguiente flecha de volver apunte a una
+  /// pantalla que ya no se puede dibujar, y el suelo la rebota a la portada:
+  /// una flecha que no hace nada visible es peor que una que no está.
+  void leftRoom() => emit(
     state.copyWith(
-      screen: screen,
+      screen: AppScreen.home,
+      history: state.history
+          .where(
+            (AppScreen s) => s != AppScreen.room && s != AppScreen.exposure,
+          )
+          .toList(),
       dialog: AppDialog.none,
       accountMenuOpen: false,
     ),
@@ -130,11 +213,27 @@ class ShellCubit extends Cubit<ShellState> {
   void openGamePicker({required bool fromRoom}) => emit(
     state.copyWith(
       screen: AppScreen.gamePicker,
+      history: _apilado(AppScreen.gamePicker),
       dialog: AppDialog.none,
       pickerCameFromRoom: fromRoom,
       accountMenuOpen: false,
     ),
   );
+
+  /// El historial que deja navegar a [siguiente].
+  ///
+  /// Volver a una pantalla que ya está en el camino lo DESENROLLA hasta ella en
+  /// vez de apilar otra copia. Sin eso, sala → ajustes → sala → ajustes crece
+  /// sin fin y volver dos veces desde ahí devuelve a una sala que sigue siendo
+  /// la misma, que es un historial contando un viaje que nadie hizo.
+  List<AppScreen> _apilado(AppScreen siguiente) {
+    final int previo = state.history.indexOf(siguiente);
+    if (previo >= 0) return state.history.sublist(0, previo);
+
+    final List<AppScreen> h = <AppScreen>[...state.history, state.screen];
+    if (h.length <= _maxHistorial) return h;
+    return h.sublist(h.length - _maxHistorial);
+  }
 
   void showDialog(AppDialog dialog) => emit(state.copyWith(dialog: dialog));
 

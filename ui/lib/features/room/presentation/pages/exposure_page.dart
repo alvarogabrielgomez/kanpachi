@@ -51,7 +51,7 @@ class ExposureScreen extends StatelessWidget {
                 'aplicado. Las dos cosas pueden no coincidir, y esa diferencia '
                 'es lo que esta pantalla existe para enseñar.',
             leading: AppBackButton(
-              onPressed: () => context.read<ShellCubit>().go(AppScreen.room),
+              onPressed: () => context.read<ShellCubit>().back(),
             ),
           ),
           const SizedBox(height: AppSpacing.x4l),

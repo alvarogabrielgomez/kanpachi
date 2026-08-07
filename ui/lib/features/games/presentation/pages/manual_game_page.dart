@@ -96,9 +96,7 @@ class _ManualGameScreenState extends State<ManualGameScreen> {
                 'Para lo que no está en el catálogo. Kanpachi solo necesita '
                 'los puertos que el juego abre en tu PC.',
             noteMaxWidth: 520,
-            leading: AppBackButton(
-              onPressed: () => shell.go(AppScreen.catalog),
-            ),
+            leading: AppBackButton(onPressed: shell.back),
           ),
           const SizedBox(height: AppSpacing.x7l),
           // El `Align` no es decorativo: la Column padre estira a lo ancho con
@@ -120,7 +118,7 @@ class _ManualGameScreenState extends State<ManualGameScreen> {
                       _rules.removeAt(i).dispose();
                       if (_rules.isEmpty) _rules.add(_RuleDraft());
                     }),
-                    onCancel: () => shell.go(AppScreen.catalog),
+                    onCancel: shell.back,
                     onSave: _save,
                   );
                   final Widget preview = _Preview(

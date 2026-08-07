@@ -152,7 +152,7 @@ class _RoomFollower extends StatelessWidget {
               return;
             }
             if (ahora == AppScreen.room || ahora == AppScreen.exposure) {
-              shell.go(AppScreen.home);
+              shell.leftRoom();
             }
           },
         ),
@@ -173,9 +173,10 @@ class _RoomFollower extends StatelessWidget {
               return;
             }
             // Se fue el enlace sin haber entrado a nada: se vuelve de donde se
-            // vino. Con sala abierta el otro oyente ya manda.
+            // vino, que es lo que ya sabe el historial. Con sala abierta el
+            // otro oyente ya manda.
             if (shell.state.screen == AppScreen.invite && !state.hasRoom) {
-              shell.go(AppScreen.home);
+              shell.back();
             }
           },
         ),
@@ -223,6 +224,21 @@ AppScreen? _visibleScreen(ShellState shell, SessionState session) {
   // existe precisamente cuando todavía no se ha entrado a ninguna parte.
   if (shell.screen == AppScreen.invite) {
     return session.invite != null ? AppScreen.invite : AppScreen.home;
+  }
+  // **Con sala abierta, la portada no es un sitio donde se pueda estar.**
+  //
+  // La portada ofrece crear una sala y entrar a otra, y las dos contestan
+  // `busy` mientras haya una: es una pantalla entera cuyos botones no hacen
+  // nada, con la sala de quien la mira escondida detrás. Se llegaba a ella por
+  // varios caminos —una flecha de volver mal apuntada, cancelar un enlace, un
+  // «Cerrar la sala» que falló— y cada uno se arreglaba por su lado.
+  //
+  // Esto lo cierra en el único sitio que decide qué se ve: mientras el daemon
+  // diga que hay sala, la pantalla de la sala gana. Se comprueba DESPUÉS del
+  // enlace, que sí se ve con sala abierta y a propósito.
+  if (session.room != null &&
+      (shell.screen == AppScreen.home || shell.screen == AppScreen.welcome)) {
+    return AppScreen.room;
   }
   if (session.room == null &&
       (shell.screen == AppScreen.room || shell.screen == AppScreen.exposure)) {

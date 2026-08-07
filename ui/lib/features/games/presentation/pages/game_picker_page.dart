@@ -72,10 +72,7 @@ class _GamePickerScreenState extends State<GamePickerScreen> {
                       'puertos se abren.'
                 : 'Puedes crear la sala sin juego y elegirlo adentro, o abrir '
                       'uno de una vez.',
-            leading: AppBackButton(
-              onPressed: () =>
-                  shell.go(fromRoom ? AppScreen.room : AppScreen.home),
-            ),
+            leading: AppBackButton(onPressed: shell.back),
           ),
           const SizedBox(height: AppSpacing.x4l),
           // El buscador y el conmutador comparten fila, como en el diseño. El
@@ -256,9 +253,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     children: <Widget>[
                       ScreenHeader(
                         title: 'Biblioteca de juegos',
-                        leading: AppBackButton(
-                          onPressed: () => shell.go(AppScreen.gamePicker),
-                        ),
+                        leading: AppBackButton(onPressed: shell.back),
                         trailing: Text(
                           q.isEmpty
                               ? '${session.catalog.length} juegos'
