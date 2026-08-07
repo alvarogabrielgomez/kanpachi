@@ -216,7 +216,7 @@ begin
   try
     if not DetenerServicioInstalado() then
       Result := 'El servicio instalado de Kanpachi no termino de cerrarse en 120 segundos.' +
-        #13#10 + 'No se reemplazo ningun archivo. Vuelve a intentarlo.';
+        NewLine + 'No se reemplazo ningun archivo. Vuelve a intentarlo.';
   except
     Result := GetExceptionMessage;
   end;
