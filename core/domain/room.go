@@ -55,7 +55,8 @@ type Room struct {
 //
 // Es la frontera de entrada hostil del producto. No interpreta rutas, no
 // acepta argumentos, no sigue redirecciones y no adivina: cualquier cosa que
-// no calce exactamente con una de las seis formas se rechaza entera.
+// no calce con una de las seis formas —incluida la barra vacía con que Windows
+// canonicaliza el esquema propio— se rechaza entera.
 func ParseRoom(input string) (Room, error) {
 	// El tope va primero, antes de tocar el contenido.
 	if len(input) > MaxInputLen {
@@ -79,11 +80,22 @@ func ParseRoom(input string) (Room, error) {
 
 	// Los esquemas se quitan por delante. Se comparan en minúsculas porque un
 	// esquema es insensible a mayúsculas.
+	customScheme := false
 	for _, scheme := range []string{"kanpachi://", "https://", "http://"} {
 		if len(s) >= len(scheme) && strings.EqualFold(s[:len(scheme)], scheme) {
 			s = s[len(scheme):]
+			customScheme = scheme == "kanpachi://"
 			break
 		}
+	}
+
+	// Chromium/Windows convierte la autoridad sin ruta
+	// `kanpachi://A7K2M9QX#clave` en `kanpachi://A7K2M9QX/#clave` antes de
+	// entregársela al manejador registrado. Esa única barra no es una ruta: es
+	// la ruta vacía canonicalizada del URI. Solo se admite para nuestro esquema;
+	// en las formas HTTP una barra final sí forma parte de la ruta recibida.
+	if customScheme && strings.HasSuffix(s, "/") {
+		s = strings.TrimSuffix(s, "/")
 	}
 
 	hasAt := strings.Contains(s, "@")

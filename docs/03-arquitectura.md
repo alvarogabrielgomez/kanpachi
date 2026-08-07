@@ -678,9 +678,9 @@ Un solo campo en la UI, parser tolerante. Todas estas formas resuelven al mismo 
 | `https://kanpachi.accentio.dev/A7K2M9QX` | idem |
 | `kanpachi://A7K2M9QX` | el por defecto |
 
-La app **genera** el formato URL, que es el más autoexplicativo y sirve de landing de descarga para quien no tenga Kanpachi. La app **acepta** cualquiera de los seis. El usuario nunca tiene que saber cuál es el correcto.
+La app **genera** el formato URL, que es el más autoexplicativo y sirve de landing de descarga para quien no tenga Kanpachi. La app **acepta** cualquiera de los seis. El usuario nunca tiene que saber cuál es el correcto. En el esquema propio también acepta la barra final que Chromium/Windows agrega al canonicalizar una autoridad sin ruta: `kanpachi://A7K2M9QX/` es el mismo código, no una séptima forma ni una ruta libre.
 
-Un fragmento después del ID (`/A7K2M9QX#clave`) es enriquecimiento opcional: lleva la clave de la tarjeta de sala. La app lo ignora, le sirve para nada, el nombre de la sala lo recibe por el canal de control.
+Un fragmento después del ID (`/A7K2M9QX#clave`) es enriquecimiento opcional: lleva la clave de la tarjeta de sala. La app lo ignora, no le sirve para nada; el nombre de la sala lo recibe por el canal de control.
 
 **Un invite ID es local al seed que lo emitió.** El mismo ID en dos seeds son dos salas que no se conocen. Un ID pelado usa el seed por defecto, jamás el último usado.
 
@@ -721,7 +721,8 @@ El instalador registra el esquema `kanpachi://`. Se invoca desde dos sitios: un 
 Toda la cadena existía en piezas y no conectaba en ningún sitio: la página armaba el intent sin la clave de la tarjeta, el instalador registraba el manejador **sin `"%1"`**, de modo que Windows nunca pasaba la URL, y la pantalla de confirmación se alimentaba de dos cadenas de relleno. El enlace abría Kanpachi y el código había que pegarlo a mano.
 
 ```
-Chrome  kanpachi://A7K2M9QX#<clave de tarjeta>
+Chrome  kanpachi://A7K2M9QX/#<clave de tarjeta>
+  (la barra vacía la agrega al canonicalizar el URI)
    |
    v  HKLM\SOFTWARE\Classes\kanpachi\shell\open\command
 kanpachid.exe --show "%1"            el LANZADOR, sin elevar

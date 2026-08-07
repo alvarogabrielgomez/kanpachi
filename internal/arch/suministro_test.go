@@ -178,6 +178,39 @@ func TestElInstaladorActualizaUnServicioQueYaExiste(t *testing.T) {
 	}
 }
 
+// TestElDesinstaladorBorraLasPreferenciasDeLaUIInstalada.
+//
+// Flutter guarda fuera de Program Files: shared_preferences_windows usa el
+// Application Support de Windows, que path_provider resuelve a Roaming
+// AppData\CompanyName\ProductName. Sin una entrada explícita, reinstalar
+// conserva onboarding, nickname y ajustes aunque todos los binarios se hayan
+// eliminado correctamente.
+func TestElDesinstaladorBorraLasPreferenciasDeLaUIInstalada(t *testing.T) {
+	raw, err := os.ReadFile("../../installer/kanpachi.iss")
+	if err != nil {
+		t.Fatal(err)
+	}
+	iss := string(raw)
+
+	for _, obligatorio := range []string{
+		"procedure BorrarPreferenciasDeLaUI",
+		"ProfileListKey",
+		"shared_preferences.json",
+		"DeleteFile(Preferencias)",
+		"CurUninstallStep = usPostUninstall",
+	} {
+		if !strings.Contains(iss, obligatorio) {
+			t.Errorf("la limpieza de preferencias no contiene %q", obligatorio)
+		}
+	}
+	if strings.Contains(iss, "{userappdata}") {
+		t.Error("un instalador por máquina no debe confundir el perfil que autorizó UAC con quien ejecutó la UI")
+	}
+	if strings.Contains(iss, "DelTree(DirectorioPublisher") {
+		t.Error("el desinstalador borra todo Accentio Studios en vez del fichero exacto de Kanpachi")
+	}
+}
+
 // TestLosTresCanalesCoincidenEnGoYDart.
 //
 // Son dos ejecutables y dos lenguajes: un typo compila perfecto y se ve como

@@ -179,6 +179,49 @@ func TestParseRoomDescartaLaClaveDeTarjeta(t *testing.T) {
 	}
 }
 
+// TestParseRoomAceptaElURIQueEntregaWindows reproduce la cadena real que
+// Chromium le pasa al manejador registrado. La barra entre la autoridad y el
+// fragmento no estaba en el href de la página: el navegador canonicaliza así
+// una autoridad sin ruta antes de abrir `kanpachi://`.
+func TestParseRoomAceptaElURIQueEntregaWindows(t *testing.T) {
+	casos := []struct {
+		nombre  string
+		entrada string
+		seed    string
+	}{
+		{
+			nombre:  "seed por defecto con fragmento",
+			entrada: "kanpachi://AB4N548B/#z39-MCRbmvy94i8hoxe9O_yGveuMhObC5XiZKhde9Gw",
+			seed:    DefaultSeedHost,
+		},
+		{
+			nombre:  "seed por defecto sin fragmento",
+			entrada: "kanpachi://AB4N548B/",
+			seed:    DefaultSeedHost,
+		},
+		{
+			nombre:  "seed propio con fragmento",
+			entrada: "kanpachi://AB4N548B@seed.midominio.com/#clave",
+			seed:    "seed.midominio.com",
+		},
+	}
+
+	for _, caso := range casos {
+		t.Run(caso.nombre, func(t *testing.T) {
+			r, err := ParseRoom(caso.entrada)
+			if err != nil {
+				t.Fatalf("ParseRoom(%q) falló: %v", caso.entrada, err)
+			}
+			if r.InviteID.Raw() != "AB4N548B" {
+				t.Errorf("invite ID = %q, se esperaba AB4N548B", r.InviteID.Raw())
+			}
+			if r.Seed != caso.seed {
+				t.Errorf("seed = %q, se esperaba %q", r.Seed, caso.seed)
+			}
+		})
+	}
+}
+
 // TestParseRoomRechazaEntradaHostil cubre el canal kanpachi://, que queda
 // expuesto a toda la web. Nada de esto debe interpretarse.
 func TestParseRoomRechazaEntradaHostil(t *testing.T) {

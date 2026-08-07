@@ -98,6 +98,9 @@ Filename: "{sys}\sc.exe"; Parameters: "delete {#ServiceName}"; Flags: runhidden;
 Type: filesandordirs; Name: "{commonappdata}\{#AppName}"
 
 [Code]
+const
+  ProfileListKey = 'SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList';
+
 function Correr(const Exe, Params: string; var Codigo: Integer): Boolean;
 begin
   Result := Exec(Exe, Params, '', SW_HIDE, ewWaitUntilTerminated, Codigo);
@@ -313,4 +316,68 @@ begin
     'Si hay una sala abierta se cerrara, y los puertos que Kanpachi tenia ' +
     'bloqueados para protegerte volveran a su estado anterior.' + #13#10#13#10 +
     'Continuar?', mbConfirmation, MB_YESNO) = IDYES;
+end;
+
+procedure BorrarPreferenciasDeLaUI();
+var
+  Perfiles: TArrayOfString;
+  I: Integer;
+  Perfil, DirectorioApp, DirectorioPublisher, Preferencias: string;
+begin
+  { Flutter no guarda estas preferencias junto al ejecutable. En Windows,
+    shared_preferences usa path_provider.getApplicationSupportPath(), que
+    deriva Roaming AppData\CompanyName\ProductName desde VERSIONINFO.
+
+    No se usa la constante de AppData del usuario actual: este es un instalador
+    por maquina y quien autoriza
+    el UAC puede no ser quien ejecuto la UI. El desinstalador ya esta elevado,
+    asi que recorre los perfiles registrados y borra SOLO el JSON de Kanpachi.
+    Los directorios padre se quitan unicamente si quedaron vacios. }
+  if not RegGetSubkeyNames(HKLM64, ProfileListKey, Perfiles) then
+  begin
+    Log('No se pudo enumerar ProfileList; no se borraron las preferencias de la UI.');
+    Exit;
+  end;
+
+  for I := 0 to GetArrayLength(Perfiles) - 1 do
+  begin
+    if not RegQueryStringValue(HKLM64,
+      ProfileListKey + '\' + Perfiles[I], 'ProfileImagePath', Perfil) then
+    begin
+      Log('Un perfil registrado no tiene ProfileImagePath; se omite.');
+      Continue;
+    end;
+
+    { Los perfiles normales traen una ruta absoluta. Los perfiles de servicio
+      suelen usar estas dos variables; expandirlas evita construir una ruta
+      literal con signos de porcentaje. }
+    StringChange(Perfil, '%SystemDrive%', ExpandConstant('{sd}'));
+    StringChange(Perfil, '%SystemRoot%', ExpandConstant('{win}'));
+    if Pos('%', Perfil) > 0 then
+    begin
+      Log('ProfileImagePath contiene una variable desconocida; se omite por seguridad.');
+      Continue;
+    end;
+
+    DirectorioPublisher := AddBackslash(Perfil) +
+      'AppData\Roaming\{#AppPublisher}';
+    DirectorioApp := AddBackslash(DirectorioPublisher) + '{#AppName}';
+    Preferencias := AddBackslash(DirectorioApp) + 'shared_preferences.json';
+
+    if FileExists(Preferencias) then
+    begin
+      if DeleteFile(Preferencias) then
+        Log('Preferencias de la UI eliminadas de un perfil.')
+      else
+        Log('No se pudieron eliminar las preferencias de la UI de un perfil.');
+    end;
+    RemoveDir(DirectorioApp);
+    RemoveDir(DirectorioPublisher);
+  end;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usPostUninstall then
+    BorrarPreferenciasDeLaUI();
 end;

@@ -183,11 +183,11 @@ El daemon imprime el nombre del pipe y el token al arrancar. La segunda llamada 
 
 ## Desinstalación
 
-En orden: detener y borrar el servicio, purgar las reglas de **los dos grupos**, "Kanpachi" y "Kanpachi-base", eliminar el adaptador Wintun, borrar ProgramData, borrar Program Files. Criterio de calidad: instalar y desinstalar veinte veces seguidas en una VM sin dejar rastro.
+En orden: detener y borrar el servicio, purgar las reglas de **los dos grupos**, "Kanpachi" y "Kanpachi-base", eliminar el adaptador Wintun, borrar ProgramData, borrar Program Files y borrar `Roaming AppData\Accentio Studios\Kanpachi\shared_preferences.json`. Este último no vive junto al bundle: es donde `shared_preferences_windows` guarda nickname, onboarding, tamaño de ventana y ajustes mediante el Application Support de Windows. Criterio de calidad: instalar y desinstalar veinte veces seguidas en una VM sin dejar rastro.
 
 **El desinstalador es el único que borra los dos.** Es la razón por la que conviene que los nombres se parezcan, y también la trampa: la comparación va por igualdad exacta contra cada uno, jamás por prefijo contra "Kanpachi", porque el mismo atajo escrito dentro del daemon borraría la cuarentena en cada arranque.
 
-**Borrar la cuarentena es requisito de producto, no cortesía.** Dejar bloqueos explícitos sobre el 445 y el 3389 en toda la máquina con Kanpachi ya borrado deja al usuario sin compartir archivos ni Escritorio remoto, sin causa visible y sin nada que culpar. El desinstalador todavía no existe: está en `07-futuro.md` con su disparador.
+**Borrar la cuarentena es requisito de producto, no cortesía.** Dejar bloqueos explícitos sobre el 445 y el 3389 en toda la máquina con Kanpachi ya borrado deja al usuario sin compartir archivos ni Escritorio remoto, sin causa visible y sin nada que culpar. Por eso el desinstalador ejecuta la limpieza con el daemon todavía en disco y solo después elimina el servicio y los binarios.
 
 ### Hasta que exista, el comando de soporte
 
