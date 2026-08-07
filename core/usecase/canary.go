@@ -96,7 +96,7 @@ func (s *Session) CanaryDue() <-chan struct{} { return s.canaryDue }
 // UI esperando todo ese rato.
 func (s *Session) RunCanaryRound(ctx context.Context, afterApply bool) domain.CanaryCheck {
 	s.mu.Lock()
-	plan, ok := s.canaryPlanLocked(afterApply)
+	plan, ok := s.canaryPlanLocked(ctx, afterApply)
 	s.mu.Unlock()
 	if !ok {
 		return domain.CanaryCheck{}
@@ -142,7 +142,7 @@ func (s *Session) RunCanaryRound(ctx context.Context, afterApply bool) domain.Ca
 // nombre y no una condición compuesta, porque cada una se niega por su motivo.
 //
 // Asume el candado tomado.
-func (s *Session) canaryPlanLocked(afterApply bool) (canaryPlan, bool) {
+func (s *Session) canaryPlanLocked(ctx context.Context, afterApply bool) (canaryPlan, bool) {
 	switch {
 	case !s.state.Conn.InRoom():
 		// Sin sala no hay adaptador virtual que comprobar.
@@ -173,7 +173,7 @@ func (s *Session) canaryPlanLocked(afterApply bool) (canaryPlan, bool) {
 		return canaryPlan{}, false
 	}
 
-	desired, err := s.desiredRuleSetLocked()
+	desired, err := s.desiredRuleSetLocked(ctx)
 	if err != nil {
 		s.deps.Log.Warn("no se pudo calcular qué puertos esquivar para el canario", "error", err)
 		return canaryPlan{}, false

@@ -26,7 +26,7 @@ import (
 // la primera publicación de [NewSession].
 func (s *Session) Exposure(ctx context.Context) domain.ExposureReport {
 	s.mu.Lock()
-	desired, err := s.desiredRuleSetLocked()
+	desired, err := s.desiredRuleSetLocked(ctx)
 	// La compuerta solo se exige con sala abierta: sin adaptador virtual no hay
 	// dónde ponerla, y pedirla en reposo dejaría una alerta encendida sin sala,
 	// que es la forma más rápida de que el usuario aprenda a ignorar la

@@ -78,6 +78,14 @@ func (s *Session) IssueCredentialFor(ctx context.Context, req domain.CredentialR
 	cred.ExpiresAt = now.Add(CredentialTTL)
 
 	s.deps.Log.Info("credencial emitida", "nombre", req.Name.String(), "ip", ip.String())
+
+	// Pre-autorizamos el canal de control abriéndolo para esta IP de inmediato, en
+	// lugar de esperar a que el motor reporte a la persona como miembro activo.
+	if err := s.applyPolicy(ctx); err != nil {
+		s.deps.Log.Warn("no se pudo pre-autorizar el canal de control en el firewall", "error", err)
+	}
+	s.restrictControlChannel(ctx)
+
 	return cred, nil
 }
 

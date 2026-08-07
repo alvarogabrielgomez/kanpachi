@@ -176,7 +176,11 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 	// El canal de control SOLO escucha en la máquina del host. Los invitados
 	// marcan hacia afuera y no abren nada, así que su deny-all queda intacto.
 	s.deps.Progress.Step(domain.ScopeDaemon, "abriendo el canal de la sala")
-	if err := s.deps.Control.Serve(ctx, s.controlScope()); err != nil {
+	scope, err := s.controlScope(ctx)
+	if err != nil {
+		return domain.RoomState{}, fmt.Errorf("preparando el alcance del canal de la sala: %w", err)
+	}
+	if err := s.deps.Control.Serve(ctx, scope); err != nil {
 		return domain.RoomState{}, fmt.Errorf("abriendo el canal de la sala: %w", err)
 	}
 	s.deps.Progress.Step(domain.ScopeDaemon, "la sala está abierta")

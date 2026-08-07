@@ -123,7 +123,7 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 	// pantalla.
 	alteradas := false
 	if sePudoRevisar {
-		deseado, err := s.desiredRuleSetLocked()
+		deseado, err := s.desiredRuleSetLocked(ctx)
 		if err != nil {
 			// Sin poder calcular lo deseado no hay veredicto posible, y
 			// inventar uno sería peor que callarse. Es la misma doctrina que

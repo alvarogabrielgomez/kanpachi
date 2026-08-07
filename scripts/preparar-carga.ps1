@@ -32,7 +32,16 @@ param(
     [string]$Salida = "",
     # El motor viene del otro repositorio, y no se compila aca: es Rust, con su
     # propia cadena de herramientas. Vacio lo busca al lado de este repositorio.
-    [string]$Motor = ""
+    [string]$Motor = "",
+    # La version que se esta empaquetando, sin la "v". La escribe el workflow
+    # desde el tag; a mano queda en "dev".
+    #
+    # No es adorno: es lo unico con lo que la interfaz puede comparar la ultima
+    # version publicada para saber si la suya se quedo vieja. Y "dev" no es un
+    # relleno, es una respuesta: un build de desarrollo NO avisa de nuevas
+    # versiones, porque no hay nada sensato con lo que comparar y porque quien
+    # lo compilo no necesita que le digan que descargue un instalador.
+    [string]$Version = "dev"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -81,7 +90,9 @@ Paso "la interfaz"
 
 Push-Location (Join-Path $repo 'ui')
 try {
-    & flutter build windows --release 2>&1 | Select-Object -Last 3 | ForEach-Object { Nota $_ }
+    Nota "version $Version"
+    & flutter build windows --release "--dart-define=KANPACHI_VERSION=$Version" 2>&1 |
+        Select-Object -Last 3 | ForEach-Object { Nota $_ }
     if ($LASTEXITCODE -ne 0) {
         Mal "no compilo la interfaz"
         $fallos++

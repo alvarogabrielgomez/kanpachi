@@ -8,12 +8,15 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.1.5] - 2026-08-07
+
 ### Changed
 
 - Name the version on the download button, asked once an hour by the seed instead of by every visitor's browser ([777a3e7](https://github.com/alvarogabrielgomez/kanpachi/commit/777a3e7))
 
 ### Fixed
 
+- Pre-authorize the host's control channel port for unexpired credentials so guests don't time out while the network engine forms the P2P mesh
 - Land unit changes on `kanpseed upgrade` instead of needing a second command, by handing the second half to the binary just installed ([76fc320](https://github.com/alvarogabrielgomez/kanpachi/commit/76fc320))
 
 ## [0.1.4] - 2026-08-07

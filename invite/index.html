@@ -353,7 +353,7 @@
 
     <div class="cardfoot">
       <svg class="glyph" viewBox="0 0 202 51" role="img" aria-label="Kanpachi"><use href="#kp-word"/></svg>
-      <a href="/descargar">No lo tengo instalado</a>
+      <a href="/download">No lo tengo instalado</a>
     </div>
   </main>
 
@@ -363,7 +363,7 @@
     <h1 class="title sm" id="bad-title">Ese código no está completo</h1>
     <p class="lede" id="bad-lede"></p>
     <p class="partial hidden" id="bad-partial"></p>
-    <a class="primary" href="/descargar">Descargar Kanpachi</a>
+    <a class="primary" href="/download">Descargar Kanpachi</a>
     <div class="cardfoot" style="justify-content:center">
       <svg class="glyph" viewBox="0 0 202 51" role="img" aria-label="Kanpachi"><use href="#kp-word"/></svg>
     </div>
@@ -388,7 +388,7 @@
 
     <div class="rule"><span>o empieza aquí</span></div>
 
-    <a class="primary" id="get" href="/descargar">Descargar Kanpachi</a>
+    <a class="primary" id="get" href="/download">Descargar Kanpachi</a>
     <p class="note center" id="get-note"></p>
 
     <ul class="points">
@@ -412,7 +412,7 @@
     </div>
     <p class="lede" style="font-size:13px">Kanpachi todavía es solo para Windows. Copia el código y abre este enlace desde tu PC.</p>
     <button type="button" class="primary" id="nowin-copy">Copiar código</button>
-    <a class="escape" id="anyway" href="/descargar">Ábrelo igual en esta máquina</a>
+    <a class="escape" id="anyway" href="/download">Ábrelo igual en esta máquina</a>
     <div class="cardfoot" style="justify-content:center">
       <svg class="glyph" viewBox="0 0 202 51" role="img" aria-label="Kanpachi"><use href="#kp-word"/></svg>
     </div>
@@ -613,7 +613,15 @@
 
   if (preview) { renderPreview(preview); return; }
 
-  if (path === "descargar") { renderDownload(); return; }
+  // `/download`, en inglés como el resto de lo que se publica hacia fuera: el
+  // changelog, las notas de la release y los nombres de los ficheros. Es la
+  // dirección a la que apunta la app cuando avisa de que hay versión nueva.
+  //
+  // `/descargar` sigue contestando, y no es cortesía: es la que llevan los
+  // enlaces ya repartidos y los que hay impresos en docs/05 y docs/08. Una
+  // ruta vieja que deja de resolver convierte un enlace que alguien guardó en
+  // la portada, sin decirle que se equivocó de sitio. Cuesta una comparación.
+  if (path === "download" || path === "descargar") { renderDownload(); return; }
 
   if (path === "") { renderHome(); return; }
 

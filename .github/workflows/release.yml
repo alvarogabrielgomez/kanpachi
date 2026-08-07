@@ -183,7 +183,8 @@ jobs:
         run: |
           .\scripts\preparar-carga.ps1 `
             -Salida "$env:GITHUB_WORKSPACE\dist\carga" `
-            -Motor  "$env:GITHUB_WORKSPACE\motor\target\release\kanpachi-engine.exe"
+            -Motor  "$env:GITHUB_WORKSPACE\motor\target\release\kanpachi-engine.exe" `
+            -Version "$env:VERSION"
 
       - name: Inno Setup
         run: choco install innosetup --no-progress -y

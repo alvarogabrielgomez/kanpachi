@@ -213,10 +213,47 @@ begin
   Result := False;
 end;
 
+{ Avisa de lo unico que este instalador hace y no se puede deshacer.
+
+  Actualizar detiene el servicio, y detenerlo CIERRA la sala que hubiera
+  abierta: se cierran los puertos, se revierten las reglas del firewall y el
+  motor cae con el Job. Es lo que tiene que pasar —no se reemplaza el binario
+  de un daemon vivo— pero hasta ahora no lo decia nada en pantalla, y quien
+  actualiza en mitad de una partida se entera cuando los demas se caen.
+
+  Solo lo pregunta cuando el servicio esta CORRIENDO, o sea cuando hay algo
+  que perder. Una instalacion nueva, o una sobre un Kanpachi ya detenido, no
+  ve este dialogo: un clic de mas en el caso en que la advertencia no aplica
+  es como una advertencia deja de leerse.
+
+  El dialogo de Inno que cierra la interfaz —el de CloseApplications, que esta
+  en "yes" por omision— no cubre esto: nombra ficheros en uso, no dice que la
+  sala se va a cerrar, y el daemon ni siquiera aparece ahi porque a este lo
+  detenemos nosotros antes. }
+function ConfirmarQueSeCierraLaSala(): Boolean;
+begin
+  Result := True;
+  if not ServicioExiste() then
+    Exit;
+  if ServicioEstaDetenido() then
+    Exit;
+
+  Result := MsgBox('Kanpachi esta corriendo y hay que detenerlo para reemplazar sus archivos.' + #13#10#13#10 +
+    'Si tienes una sala abierta, se va a cerrar para todos: se cierran los puertos del juego y ' +
+    'los demas pierden la conexion. Una partida en curso se corta.' + #13#10#13#10 +
+    'Vuelve a abrir la sala cuando termine la instalacion.' + #13#10#13#10 +
+    'Continuar?', mbConfirmation, MB_OKCANCEL) = IDOK;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   Result := '';
   try
+    if not ConfirmarQueSeCierraLaSala() then
+    begin
+      Result := 'Instalacion cancelada. No se reemplazo ningun archivo y la sala sigue abierta.';
+      Exit;
+    end;
     if not DetenerServicioInstalado() then
       Result := 'El servicio instalado de Kanpachi no termino de cerrarse en 120 segundos.' +
         ' No se reemplazo ningun archivo. Vuelve a intentarlo.';

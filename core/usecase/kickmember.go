@@ -184,13 +184,59 @@ func (s *Session) credentialFor(ctx context.Context, ip netip.Addr) (domain.Cred
 	return domain.Credential{}, fmt.Errorf("%w: no hay credencial emitida para %s", ErrNotAMember, ip)
 }
 
+// authorizedControlIPsLocked junta las IPs de los miembros presentes con las
+// de quienes acaban de recibir una credencial y todavía no entraron a la red.
+//
+// Es lo que evita la condición de carrera: si la autorización esperara a que el
+// motor reporte a la persona como miembro activo de la malla P2P, el primer
+// intento de conexión del invitado rebotaría contra el firewall. Pre-autorizar
+// el puerto de control en cuanto se emite la credencial cierra la ventana.
+//
+// Asume el candado tomado.
+func (s *Session) authorizedControlIPsLocked(ctx context.Context) ([]netip.Addr, error) {
+	out := domain.MemberIPs(s.state.Peers)
+	if !s.state.IsHost() {
+		return out, nil
+	}
+
+	creds, err := s.deps.Engine.ListCredentials(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("consultando credenciales para pre-autorizar: %w", err)
+	}
+
+	seen := make(map[netip.Addr]bool, len(out))
+	for _, ip := range out {
+		seen[ip] = true
+	}
+
+	now := s.deps.Clock.Now()
+	s.forgetOldKicks(now)
+
+	for _, c := range creds {
+		if c.Expired(now) || seen[c.VirtualIP] {
+			continue
+		}
+		if _, kicked := s.kicked[c.VirtualIP]; kicked {
+			continue
+		}
+		out = append(out, c.VirtualIP)
+		seen[c.VirtualIP] = true
+	}
+
+	return out, nil
+}
+
 // controlScope arma el alcance del oyente del host. Asume el candado tomado.
-func (s *Session) controlScope() domain.ControlScope {
+func (s *Session) controlScope(ctx context.Context) (domain.ControlScope, error) {
+	members, err := s.authorizedControlIPsLocked(ctx)
+	if err != nil {
+		return domain.ControlScope{}, err
+	}
 	return domain.ControlScope{
 		Lobby:   domain.RendezvousHostAddress,
 		Room:    s.state.LocalIP,
-		Members: domain.MemberIPs(s.state.Peers),
-	}
+		Members: members,
+	}, nil
 }
 
 // restrictControlChannel reduce el alcance del oyente a los miembros que
@@ -205,7 +251,12 @@ func (s *Session) controlScope() domain.ControlScope {
 // cualquiera con el código, porque expulsar no es bloquear. Para que el
 // expulsado no vuelva, el host renueva el código, que es la otra operación.
 func (s *Session) restrictControlChannel(ctx context.Context) {
-	if err := s.deps.Control.Serve(ctx, s.controlScope()); err != nil {
+	scope, err := s.controlScope(ctx)
+	if err != nil {
+		s.deps.Log.Error("no se pudo calcular el alcance del canal de control", "error", err)
+		return
+	}
+	if err := s.deps.Control.Serve(ctx, scope); err != nil {
 		s.deps.Log.Error("no se pudo recortar el alcance del canal de la sala", "error", err)
 	}
 }

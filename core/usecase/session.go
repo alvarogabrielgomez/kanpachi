@@ -543,7 +543,7 @@ func (s *Session) planSubnet(ctx context.Context) (domain.AddressPlan, error) {
 //
 // Asume el candado tomado.
 func (s *Session) applyPolicy(ctx context.Context) error {
-	desired, err := s.desiredRuleSetLocked()
+	desired, err := s.desiredRuleSetLocked(ctx)
 	if err != nil {
 		return err
 	}
@@ -558,7 +558,7 @@ func (s *Session) applyPolicy(ctx context.Context) error {
 // pidió, en vez de una segunda versión del cálculo que puede separarse.
 //
 // Asume el candado tomado.
-func (s *Session) desiredRuleSetLocked() (domain.RuleSet, error) {
+func (s *Session) desiredRuleSetLocked(ctx context.Context) (domain.RuleSet, error) {
 	desired, err := domain.BuildRuleSet(
 		s.state.Game,
 		s.state.Role,
@@ -578,11 +578,15 @@ func (s *Session) desiredRuleSetLocked() (domain.RuleSet, error) {
 	// consecuencia buena y gratis: expulsar lo cierra en el firewall, y no solo
 	// en la lista del oyente.
 	if s.state.Conn.InRoom() {
+		ips, err := s.authorizedControlIPsLocked(ctx)
+		if err != nil {
+			return domain.RuleSet{}, err
+		}
 		canal, err := domain.ControlRules(
 			s.state.Role,
-			s.controlScope().Lobby,
+			domain.RendezvousHostAddress,
 			s.state.LocalIP,
-			domain.MemberIPs(s.state.Peers),
+			ips,
 		)
 		if err != nil {
 			return domain.RuleSet{}, err
