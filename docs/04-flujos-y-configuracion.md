@@ -105,6 +105,12 @@ Se publica **por tag y solo por tag**. No hay CI en cada push ni en cada pull re
 
 Actualizar no es intercambiar el binario. El seed son cinco cosas que tienen que estar de acuerdo: el binario, la página que sirve, los binarios de EasyTier, las units de systemd y los procesos vivos. `upgrade` hace las cinco, en ese orden, y espera a que el registro responda antes de darse por bueno. Cambiar solo la primera deja una máquina que anuncia una versión y se comporta como otra, y ese desajuste no da error: da un droplet que "va raro".
 
+**Y la segunda mitad la hace el binario NUEVO, que es lo que faltaba.** El pin de EasyTier y el texto de las units son constantes compiladas, así que el proceso que corre `upgrade` —lanzado antes del reemplazo— las lleva de la versión anterior: haciéndolo él mismo escribía la configuración vieja sobre el binario nuevo. Un arreglo que vive en la unit no llegaba nunca en su propia versión.
+
+**Costó un despliegue, el 2026-08-07.** Se agregó `--secure-mode true` a la unit del motor, se publicó, se corrió `upgrade` en el droplet, y la unit quedó sin la bandera: el seed anunciaba la versión con el arreglo y seguía rechazando a todos los invitados. El apaño fue `kanpseed init` a mano, que sí corre con el binario nuevo, y de ahí salió la creencia de que actualizar el seed eran dos comandos.
+
+Ahora `upgrade` reemplaza el binario y la página, y **le cede el resto a `kanpseed reconfigure` ejecutando el binario que acaba de poner**. Un comando, como decía la documentación que era. `reconfigure` queda además disponible a mano: no instala nada ni pregunta nada, lee la configuración que ya hay y devuelve las units a lo que esta versión dice, útil si alguien editó una a mano.
+
 El pin de EasyTier viaja dentro del binario nuevo, así que subirlo en un release llega al droplet por esta vía. Para que eso funcione, `/usr/local/lib/kanpachi/easytier.version` guarda qué versión quedó instalada: antes "ya están" se contestaba mirando solo si los archivos existían, de modo que subir el pin no reemplazaba nada.
 
 **El nombre del instalador no lleva la versión.** `kanpachi-setup.exe`, a secas, y eso es lo que hace que `releases/latest/download/kanpachi-setup.exe` sea una URL permanente: GitHub la redirige a la publicación más nueva, así que la página de descarga se actualiza sola al publicar un tag. Con el nombre versionado habría que editar la página en cada publicación, y la página que se edita a mano es la que se queda vieja. La versión viaja dentro del ejecutable, en su `VersionInfo`, y en el título de la publicación.
@@ -231,7 +237,8 @@ Un solo binario, `kanpseed`. Se llama así y no `kanpachi` porque ese nombre que
 | Comando | Para qué |
 |---|---|
 | `kanpseed init` | instala y configura todo. Idempotente: repetirlo conserva los puertos |
-| `kanpseed upgrade` | se pone en la última versión publicada y reinicia. `--check` solo mira |
+| `kanpseed upgrade` | se pone en la última versión publicada y reinicia. `--check` solo mira. Un comando y no dos: la parte que depende del código nuevo la corre el binario nuevo |
+| `kanpseed reconfigure` | reescribe las units como las quiere esta versión y reinicia. Lo llama `upgrade` por dentro |
 | `kanpseed doctor` | revisa archivos, servicios, puertos, RPC y salud, y dice qué hacer con cada fallo |
 | `kanpseed config` | muestra o cambia puertos y dominio, reescribe las units y reinicia |
 | `kanpseed nginx` | repite el bloque del proxy, para no tener que recordar el puerto |

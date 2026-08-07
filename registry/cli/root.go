@@ -32,6 +32,8 @@ func Ejecutar(args []string) int {
 		err = cmdNginx(args[1:])
 	case "upgrade":
 		err = cmdUpgrade(args[1:])
+	case "reconfigure":
+		err = cmdReconfigure(args[1:])
 	case "uninstall":
 		err = cmdUninstall(args[1:])
 	case "version", "--version", "-v":
@@ -67,6 +69,9 @@ Comandos que ejecuta una persona:
               --check muestra si hay una nueva sin instalar nada
   doctor      revisa que todo esté como debe, y dice qué falta
   config      muestra o cambia los puertos, y reescribe los servicios
+  reconfigure reescribe los servicios como los quiere esta versión, y
+              reinicia. Lo hace 'upgrade' por dentro; a mano sirve para
+              deshacer una unit editada
   nginx       repite el bloque que hay que pegar en el proxy inverso
   uninstall   quita los servicios y los binarios
 

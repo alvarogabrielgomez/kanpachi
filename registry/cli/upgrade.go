@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -80,14 +81,17 @@ func cmdUpgrade(args []string) error {
 	// Se actualiza una instalación, no se hace una. Sin config no se sabe en qué
 	// puerto vive el registro, y adivinarlo movería el servicio por debajo del
 	// proxy inverso de la máquina.
-	cfg, err := setup.Cargar()
-	if errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("no hay ningún seed instalado en esta máquina (falta %s).\n"+
-			"  Para instalarlo por primera vez:\n"+
-			"  curl -fsSL https://raw.githubusercontent.com/%s/main/seed/install.sh | sudo sh",
-			setup.RutaConfig(), selfupdate.Repo)
-	}
-	if err != nil {
+	//
+	// Se comprueba y se descarta: quien la USA es `reconfigure`, ya con el
+	// binario nuevo. Acá sirve para negarse temprano, antes de bajar nada, en
+	// vez de descubrirlo con el binario ya reemplazado.
+	if _, err := setup.Cargar(); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("no hay ningún seed instalado en esta máquina (falta %s).\n"+
+				"  Para instalarlo por primera vez:\n"+
+				"  curl -fsSL https://raw.githubusercontent.com/%s/main/seed/install.sh | sudo sh",
+				setup.RutaConfig(), selfupdate.Repo)
+		}
 		return err
 	}
 
@@ -129,8 +133,93 @@ func cmdUpgrade(args []string) error {
 	}
 	ok("página de invitación en %s", pagina)
 
-	// El pin de EasyTier viaja dentro del binario nuevo, así que esto puede
-	// descubrir que la versión fijada cambió y traerse el motor nuevo.
+	// **A partir de acá manda el binario NUEVO, y eso es la mitad del comando.**
+	//
+	// Lo que falta —el motor de EasyTier, las units, el reinicio— se decide con
+	// código que acaba de cambiar: el pin de EasyTier y el texto de las units
+	// son constantes COMPILADAS. Este proceso lleva las de la versión anterior,
+	// porque se lanzó antes del reemplazo de arriba, así que haciéndolo él
+	// mismo escribe la configuración vieja sobre el binario nuevo.
+	//
+	// No es teórico y costó un despliegue: `--secure-mode true` se agregó a la
+	// unit del motor, se publicó, se corrió `upgrade` en el droplet, y la unit
+	// quedó sin la bandera. La máquina anunciaba la versión con el arreglo y se
+	// comportaba como la de antes, que es exactamente el desajuste que la
+	// cabecera de este comando dice que existe para evitar.
+	//
+	// Se le cede el trabajo a `reconfigure`, ejecutando el binario recién
+	// puesto. Un proceso hijo y no `syscall.Exec` porque esto compila también
+	// en Windows, donde ese `Exec` no existe: acá se prueba, en Linux se corre.
+	if err := cederA(destino, *noRestart); err != nil {
+		return err
+	}
+
+	seccion("Listo")
+	tenue("  el seed corre %s", tag)
+	codigo("kanpseed doctor")
+	fmt.Println()
+	return nil
+}
+
+// cederA le pasa el resto del trabajo al binario que se acaba de instalar.
+//
+// La salida del hijo va directa a la de este proceso, así que quien mira la
+// terminal ve una sola actualización y no dos programas hablando.
+func cederA(binario string, noRestart bool) error {
+	args := []string{"reconfigure"}
+	if noRestart {
+		args = append(args, "--no-restart")
+	}
+	cmd := exec.Command(binario, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("la configuración con el binario nuevo falló: %w", err)
+	}
+	return nil
+}
+
+// cmdReconfigure deja la máquina como dice el binario que lo ejecuta.
+//
+// # Para qué existe uno separado de `init`
+//
+// `init` INSTALA: elige puertos si faltan, pregunta el dominio, se copia a sí
+// mismo a `/usr/local/bin`. Sirve para esto de rebote y por eso se venía
+// usando, con el efecto de que actualizar el seed eran dos comandos y el
+// segundo había que saberlo. Esto no instala nada: lee la configuración que ya
+// hay, escribe lo que de ella se deriva, y reinicia.
+//
+// Lo llama `upgrade` por dentro, y queda disponible a mano para el caso en que
+// alguien edite una unit y quiera devolverla a lo que el binario dice.
+func cmdReconfigure(args []string) error {
+	fs := flag.NewFlagSet("reconfigure", flag.ContinueOnError)
+	noRestart := fs.Bool("no-restart", false, "no reiniciar los servicios al terminar")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if err := requiereLinux(); err != nil {
+		return err
+	}
+	if err := requiereRoot("reconfigure"); err != nil {
+		return err
+	}
+
+	cfg, err := setup.Cargar()
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("no hay ningún seed instalado en esta máquina (falta %s).\n"+
+			"  Para instalarlo por primera vez:\n"+
+			"  curl -fsSL https://raw.githubusercontent.com/%s/main/seed/install.sh | sudo sh",
+			setup.RutaConfig(), selfupdate.Repo)
+	}
+	if err != nil {
+		return err
+	}
+
+	seccion("Configurando")
+
+	// El pin de EasyTier es una constante de ESTE binario, así que acá sí
+	// descubre que la versión fijada cambió y se trae el motor nuevo.
 	descargado, err := setup.InstalarEasyTier(setup.DirLib, func(m string) { tenue("  %s", m) })
 	if err != nil {
 		return err
@@ -142,9 +231,10 @@ func cmdUpgrade(args []string) error {
 	}
 
 	// Reescribir las units importa tanto como el binario: un arreglo que vive
-	// en la unit (un límite, una directiva de aislamiento) no llega por
-	// intercambiar el ejecutable, y sin esto la máquina se quedaría con el
-	// fallo arreglado en el código y presente en la configuración.
+	// en la unit (un límite, una directiva de aislamiento, una bandera del
+	// motor) no llega por intercambiar el ejecutable, y sin esto la máquina se
+	// quedaría con el fallo arreglado en el código y presente en la
+	// configuración.
 	cambiadas, err := setup.EscribirUnits(cfg)
 	if err != nil {
 		return err
@@ -174,11 +264,6 @@ func cmdUpgrade(args []string) error {
 	}
 	ok("el registro responde en 127.0.0.1:%d", cfg.PuertoRegistro)
 	ok("el motor escucha en el %d, TCP y UDP", cfg.PuertoMotor)
-
-	seccion("Listo")
-	tenue("  el seed corre %s", tag)
-	codigo("kanpseed doctor")
-	fmt.Println()
 	return nil
 }
 
