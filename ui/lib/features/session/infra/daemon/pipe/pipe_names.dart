@@ -8,7 +8,15 @@ import 'dart:io';
 abstract final class PipeNames {
   /// The production name, which is what the service listens on.
   static const String production =
-      r'\\.\pipe\ProtectedPrefix\Administrators\kanpachi';
+      r'\\.\pipe\ProtectedPrefix\Administrators\kanpachi-installed';
+
+  /// The product that runs from a portable folder has its own daemon.
+  ///
+  /// Sharing [production] made one complete product attach to the other: the
+  /// UI read the token beside its own executable and sent it to the other
+  /// daemon, which correctly rejected it as unauthorized.
+  static const String portable =
+      r'\\.\pipe\ProtectedPrefix\Administrators\kanpachi-portable';
 
   /// The `--console` name, which is what a development daemon listens on.
   ///
@@ -27,6 +35,31 @@ abstract final class PipeNames {
   ///     flutter run -d windows --dart-define=KANPACHI_CONSOLE_PIPE=true
   static const bool _console = bool.fromEnvironment('KANPACHI_CONSOLE_PIPE');
 
+  /// Selects the channel from product identity, with development first.
+  static String nameFor({required bool console, required bool portable}) {
+    if (console) return PipeNames.console;
+    return portable ? PipeNames.portable : production;
+  }
+
+  /// Selects the named event that owns the UI for this product.
+  ///
+  /// The event is session-local, while this suffix separates installed,
+  /// portable and console inside that session.
+  static String instanceNameFor({
+    required bool console,
+    required bool portable,
+  }) {
+    final String product = console
+        ? 'console'
+        : (portable ? 'portable' : 'installed');
+    return 'Local\\Kanpachi-UI-$product-instancia-unica';
+  }
+
+  static bool get isPortable {
+    final String beside = File(Platform.resolvedExecutable).parent.path;
+    return File('$beside\\$portableMarker').existsSync();
+  }
+
   /// Which name this build talks to.
   ///
   /// **It used to default to [console], and that was a real bug rather than a
@@ -35,7 +68,11 @@ abstract final class PipeNames {
   /// The day the service got wired, the app went on knocking at a door with
   /// nobody behind it: the daemon was running, the tray was up, and every
   /// screen said there was no service. Found by running it, not by reading it.
-  static const String defaultName = _console ? console : production;
+  static String get defaultName =>
+      nameFor(console: _console, portable: isPortable);
+
+  static String get defaultInstanceName =>
+      instanceNameFor(console: _console, portable: isPortable);
 
   /// The file holding the local API token.
   static const String tokenFile = 'api.token';
@@ -70,7 +107,7 @@ abstract final class PipeNames {
   /// wins has to be the one this executable was launched from.
   static String get dataDir {
     final String junto = File(Platform.resolvedExecutable).parent.path;
-    if (File('$junto\\$portableMarker').existsSync()) {
+    if (isPortable) {
       return '$junto\\$portableData';
     }
     final String programData =

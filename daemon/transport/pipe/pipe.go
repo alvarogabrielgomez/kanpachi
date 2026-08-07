@@ -58,7 +58,16 @@ import (
 //
 // Conectarse es otra cosa y sí funciona sin privilegios: el prefijo restringe
 // quién CREA el nombre, y quién puede abrirlo lo dice [SecurityDescriptor].
-const Name = `\\.\pipe\ProtectedPrefix\Administrators\kanpachi`
+const Name = `\\.\pipe\ProtectedPrefix\Administrators\kanpachi-installed`
+
+// PortableName es el canal del producto portable.
+//
+// No puede compartir [Name]. Instalado y portable son dos productos completos
+// que pueden convivir en la misma máquina, cada uno con su daemon, sus datos y
+// su interfaz. Compartir el pipe hacía que el primero que arrancara secuestrara
+// al lanzador del otro y que una UI leyera el token de su carpeta contra el
+// daemon ajeno.
+const PortableName = `\\.\pipe\ProtectedPrefix\Administrators\kanpachi-portable`
 
 // ConsoleName es el del modo desarrollo, y es OTRO a propósito.
 //

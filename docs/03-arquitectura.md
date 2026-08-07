@@ -126,7 +126,7 @@ El aviso lleva el PID, si el proceso ya estaba en un job, y su código de salida
 
 El lanzador es el **default** cuando el proceso no lo arrancó el Administrador de servicios: quien encuentre este binario en Program Files y lo ejecute obtiene un Kanpachi corriendo, jamás un segundo daemon compitiendo con el que ya hay. Correr el daemon a mano hay que pedirlo con `--console` o con `--daemon`.
 
-`--daemon` solo vale dentro de una carpeta portable y eso se comprueba antes de montar nada. Sin esa comprobación, esa bandera en una máquina con Kanpachi instalado sería un segundo daemon peleándose con el servicio por el mismo nombre de pipe.
+`--daemon` solo vale dentro de una carpeta portable y eso se comprueba antes de montar nada. Además, cada producto tiene su canal: `kanpachi-installed`, `kanpachi-portable` y `kanpachi-console`, todos bajo el prefijo protegido. Portable e instalado pueden correr a la vez sin robarse el lanzador, el token ni la ventana.
 
 **Lo primero que hace el lanzador es preguntar si ya hay daemon, y lo pregunta por el pipe.** Podría preguntárselo al Administrador de servicios, que es más directo, y sería un mecanismo más que mantener: el pipe es a la vez la detección y la entrega. Si contesta, ya hay por dónde mandarle la orden de mostrarse; si no hay nadie, `CreateFile` falla al instante, que es justo el caso que tiene que ser rápido. Y se corrige solo: si la sonda falla porque el daemon está a mitad de arrancar, el arranque siguiente devuelve `ERROR_SERVICE_ALREADY_RUNNING` y se vuelve al pipe. Ninguna rama termina en dos daemons.
 
@@ -173,7 +173,7 @@ Lo que la define es un fichero vacío junto al binario, `kanpachi.portable`. Con
 
 **Es un fichero y no una bandera porque la pregunta la tienen que contestar igual tres procesos que no comparten línea de comandos**: el lanzador, que arranca de un doble clic sin argumentos; el daemon, que nace después; y la interfaz de Flutter, que es otro ejecutable entero. Una bandera habría que acordarse de pasarla en los tres, y el olvido es silencioso: el daemon escribiría su token al lado del binario y la interfaz lo buscaría en ProgramData, con el síntoma de "no hay servicio" delante de un servicio corriendo. Ese fallo exacto ya ocurrió cuatro veces en este repositorio con el nombre del pipe. Con un fichero, ser portable es una propiedad de la CARPETA, y quien la copia se la lleva.
 
-Todo lo demás es idéntico: el mismo pipe de producción bajo el prefijo protegido, el mismo saludo con token, la misma cuarentena de base, el mismo motor, el mismo job que se lleva la interfaz por delante. Portable no es un modo degradado.
+Todo lo demás es idéntico: la misma disciplina de pipe bajo el prefijo protegido, el mismo saludo con token, la misma cuarentena de base, el mismo motor, el mismo job que se lleva la interfaz por delante. El NOMBRE del pipe y el evento de instancia única son distintos a propósito: portable no es una ventana alternativa del instalado, es otro producto completo que puede convivir con él. Portable no es un modo degradado.
 
 Lo que cuesta, y se dice entero:
 
@@ -943,7 +943,7 @@ La interfaz solo sondea esto **en compilaciones de depuración**. No es por secr
 
 #### Lo que está medido, y no argumentado
 
-El nombre vive bajo `\\.\pipe\ProtectedPrefix\Administrators\kanpachi`. Cualquier proceso del usuario puede crear `\\.\pipe\kanpachi` y quedarse con el nombre antes que el servicio, y ahí la defensa sería ganar una carrera, que se pierde el día que el arranque va lento. Bajo el prefijo protegido no puede, y no porque lo comprobemos nosotros: **arrancar el daemon sin elevar falla con "Access is denied" al crear el nombre.** El modo consola usa otro nombre, porque con el mismo un proceso sin privilegios ocuparía el de producción arrancando nuestro propio binario con `--console`.
+Los nombres viven bajo `\\.\pipe\ProtectedPrefix\Administrators\`: `kanpachi-installed`, `kanpachi-portable` y `kanpachi-console`. Cualquier proceso del usuario podría crear el equivalente sin ese prefijo y quedarse con el nombre antes que el daemon; ahí la defensa sería ganar una carrera, que se pierde el día que el arranque va lento. Bajo el prefijo protegido no puede, y no porque lo comprobemos nosotros: **arrancar el daemon sin elevar falla con "Access is denied" al crear el nombre.** Los tres nombres son distintos porque instalado, portable y desarrollo son dueños distintos y pueden coexistir.
 
 El descriptor es `D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x12019b;;;IU)`. Al usuario interactivo se le da leer, escribir y sincronizar, **jamás `GENERIC_ALL`**, y la razón se comprobó sola: con el daemon corriendo como usuario normal, el pipe se crea y la primera conexión falla al aceptar, porque aceptar exige crear la instancia SIGUIENTE del pipe y eso el usuario no puede. Que es el punto entero, ya que crear instancias es cómo se secuestraría la conexión de la UI. Como SYSTEM sí tiene permiso y atiende normal. Probar a mano exige, por lo tanto, una consola elevada.
 

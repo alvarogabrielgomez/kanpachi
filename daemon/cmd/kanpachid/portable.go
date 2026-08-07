@@ -37,9 +37,9 @@ import (
 //
 // # Lo que NO cambia
 //
-// Todo lo demás. Mismo pipe de producción bajo el prefijo protegido, mismo
-// saludo con token, misma cuarentena, mismo motor. Portable no es un modo
-// degradado: es el mismo daemon con los datos en otro sitio y sin SCM detrás.
+// Todo lo demás. Pipe PROPIO bajo el mismo prefijo protegido, mismo saludo con
+// token, misma cuarentena, mismo motor. Portable no es un modo degradado: es el
+// mismo producto con dueño, datos y ciclo de vida independientes del instalado.
 const (
 	// PortableMarker es el fichero cuya presencia junto al binario convierte la
 	// carpeta en un Kanpachi portable. Su contenido no se lee.

@@ -8,6 +8,7 @@ import 'package:kanpachi_ui/features/session/infra/daemon/daemon_client.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_codec.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_connector.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_transport.dart';
+import 'package:kanpachi_ui/features/session/infra/daemon/pipe/pipe_names.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/status_mapper.dart';
 
 typedef DaemonTestResponder =
@@ -123,6 +124,36 @@ DaemonConnector daemonTestConnector(DaemonTestResponder responder) =>
     );
 
 void main() {
+  group('el producto elige su propio canal', () {
+    test('instalado, portable y consola no se pisan', () {
+      expect(
+        PipeNames.nameFor(console: false, portable: false),
+        PipeNames.production,
+      );
+      expect(
+        PipeNames.nameFor(console: false, portable: true),
+        PipeNames.portable,
+      );
+      expect(
+        PipeNames.nameFor(console: true, portable: true),
+        PipeNames.console,
+      );
+      expect(<String>{
+        PipeNames.production,
+        PipeNames.portable,
+        PipeNames.console,
+      }, hasLength(3));
+    });
+
+    test('cada producto reclama una instancia de UI distinta', () {
+      expect(<String>{
+        PipeNames.instanceNameFor(console: false, portable: false),
+        PipeNames.instanceNameFor(console: false, portable: true),
+        PipeNames.instanceNameFor(console: true, portable: true),
+      }, hasLength(3));
+    });
+  });
+
   group('el saludo', () {
     test('va primero y lleva el token', () async {
       final _TransporteFalso t = _TransporteFalso();

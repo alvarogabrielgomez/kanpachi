@@ -47,20 +47,24 @@ func TestSinDescriptorNoSeEscucha(t *testing.T) {
 	}
 }
 
-func TestElNombreDeProduccionVaBajoElPrefijoProtegido(t *testing.T) {
+func TestCadaProductoTieneSuNombreBajoElPrefijoProtegido(t *testing.T) {
 	// Es lo que hace imposible el squatting en vez de defenderlo con una
 	// carrera: bajo este prefijo, un proceso sin elevar recibe ERROR_ACCESS_DENIED
 	// al intentar crear el nombre. Medido a mano en Windows.
 	const prefijo = `\\.\pipe\ProtectedPrefix\Administrators\`
 
-	for _, n := range []string{Name, ConsoleName} {
+	nombres := []string{Name, PortableName, ConsoleName}
+	for _, n := range nombres {
 		if !strings.HasPrefix(n, prefijo) {
 			t.Errorf("el nombre %q no va bajo %q", n, prefijo)
 		}
 	}
-	if Name == ConsoleName {
-		t.Error("el modo consola comparte nombre con producción: arrancar el binario " +
-			"real con --console ocuparía el nombre de producción sin escribir un okupa")
+	for i, a := range nombres {
+		for _, b := range nombres[i+1:] {
+			if a == b {
+				t.Errorf("dos productos comparten el pipe %q: instalado, portable y consola tienen que coexistir", a)
+			}
+		}
 	}
 }
 

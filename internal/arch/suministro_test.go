@@ -152,3 +152,58 @@ func TestElPinDelMotorEstáTambiénEnLosDocs(t *testing.T) {
 		}
 	}
 }
+
+// TestElInstaladorActualizaUnServicioQueYaExiste.
+//
+// `sc create` no actualiza nada: si el servicio quedó de una prueba anterior,
+// devuelve que ya existe y conserva su binPath y su start type. Fue exactamente
+// como un instalador correcto terminó lanzando `C:\kt\carga\kanpachid.exe` en
+// vez del binario recién copiado a Program Files.
+func TestElInstaladorActualizaUnServicioQueYaExiste(t *testing.T) {
+	raw, err := os.ReadFile("../../installer/kanpachi.iss")
+	if err != nil {
+		t.Fatal(err)
+	}
+	iss := string(raw)
+
+	for _, obligatorio := range []string{
+		"function PrepareToInstall",
+		"config {#ServiceName} binPath=",
+		"start= delayed-auto",
+		"obj= LocalSystem",
+	} {
+		if !strings.Contains(iss, obligatorio) {
+			t.Errorf("el instalador no contiene %q", obligatorio)
+		}
+	}
+}
+
+// TestLosTresCanalesCoincidenEnGoYDart.
+//
+// Son dos ejecutables y dos lenguajes: un typo compila perfecto y se ve como
+// "no hay servicio" aunque ambos procesos estén sanos. Los tres nombres son
+// distintos para que instalado, portable y consola puedan coexistir.
+func TestLosTresCanalesCoincidenEnGoYDart(t *testing.T) {
+	goSource, err := os.ReadFile("../../daemon/transport/pipe/pipe.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dartSource, err := os.ReadFile("../../ui/lib/features/session/infra/daemon/pipe/pipe_names.dart")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	goText, dartText := string(goSource), string(dartSource)
+	for _, nombre := range []string{
+		`\\.\pipe\ProtectedPrefix\Administrators\kanpachi-installed`,
+		`\\.\pipe\ProtectedPrefix\Administrators\kanpachi-portable`,
+		`\\.\pipe\ProtectedPrefix\Administrators\kanpachi-console`,
+	} {
+		if !strings.Contains(goText, nombre) {
+			t.Errorf("Go no declara el canal %q", nombre)
+		}
+		if !strings.Contains(dartText, nombre) {
+			t.Errorf("Dart no declara el canal %q", nombre)
+		}
+	}
+}

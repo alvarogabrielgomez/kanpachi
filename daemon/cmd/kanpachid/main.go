@@ -333,12 +333,14 @@ func correr(consola, suelto, mostrar bool, datos, nombre, enlace string) error {
 	}
 
 	// **El daemon de una carpeta portable.** Mismo cableado que el servicio y
-	// mismo pipe de producción; lo único que cambia es quién sostiene el
-	// proceso, que acá es nadie: vive hasta que lo apaguen.
+	// canal PROPIO; quién sostiene el proceso es nadie: vive hasta que lo
+	// apaguen. El nombre distinto es lo que permite que portable e instalado
+	// funcionen a la vez sin robarse lanzadores, tokens ni ventanas.
 	//
 	// Se exige el marcador y no basta con la bandera. Sin esa comprobación,
-	// `kanpachid.exe --daemon` en una máquina con Kanpachi instalado sería un
-	// segundo daemon peleándose por el mismo nombre de pipe con el servicio.
+	// `kanpachid.exe --daemon` fuera de una carpeta portable tomaría datos y
+	// ciclo de vida que no le pertenecen. El marcador decide juntos el pipe, el
+	// token, los datos y la instancia de interfaz.
 	if suelto {
 		if !portable {
 			return fmt.Errorf("--daemon solo vale en una carpeta portable, " +
@@ -348,7 +350,7 @@ func correr(consola, suelto, mostrar bool, datos, nombre, enlace string) error {
 		ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer parar()
 
-		b, err := arrancar(ctx, datos, pipe.Name, false, mostrar, enlace)
+		b, err := arrancar(ctx, datos, pipe.PortableName, false, mostrar, enlace)
 		if err != nil {
 			return err
 		}

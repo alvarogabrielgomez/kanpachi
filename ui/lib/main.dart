@@ -9,6 +9,7 @@ import 'package:kanpachi_ui/core/platform/single_instance.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/density_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
+import 'package:kanpachi_ui/features/session/infra/daemon/pipe/pipe_names.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/pages/shell_page.dart';
@@ -40,7 +41,10 @@ Future<void> main(List<String> args) async {
   // Pasa de verdad y no es un caso raro: es cómo el daemon abre la ventana
   // cuando alguien hace doble clic en el acceso directo con Kanpachi ya
   // corriendo, y es cómo va a entrar un enlace `kanpachi://`.
-  final bool onlyOne = SingleInstance.claim(onShowRequested: _traerAlFrente);
+  final bool onlyOne = SingleInstance.claim(
+    eventName: PipeNames.defaultInstanceName,
+    onShowRequested: _traerAlFrente,
+  );
   if (!onlyOne) {
     exit(0);
   }

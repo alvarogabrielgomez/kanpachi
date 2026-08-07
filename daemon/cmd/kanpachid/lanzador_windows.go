@@ -19,9 +19,16 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/transport/pipe"
 )
 
-// marcarPipe abre el pipe de producción, o falla rápido si no hay nadie.
+// marcarPipe abre el canal del producto al que pertenece ESTE ejecutable.
+//
+// El marcador portable vive junto al binario, así que la decisión no depende
+// de argumentos que una de las tres rutas de arranque pueda olvidar.
 func marcarPipe(plazo time.Duration) (net.Conn, error) {
-	return winio.DialPipe(pipe.Name, &plazo)
+	nombre := pipe.Name
+	if esPortable() {
+		nombre = pipe.PortableName
+	}
+	return winio.DialPipe(nombre, &plazo)
 }
 
 // ArrancarServicio le pide al Administrador de servicios que levante el daemon.

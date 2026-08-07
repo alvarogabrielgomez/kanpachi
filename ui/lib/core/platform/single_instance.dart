@@ -36,9 +36,6 @@ import 'package:win32/win32.dart';
 /// desaparece solo. El siguiente arranque vuelve a ser el primero, sin dejar
 /// nada que limpiar. Un fichero de bloqueo tendría justo el problema contrario.
 abstract final class SingleInstance {
-  /// El nombre del evento. `Local\` lo hace por sesión.
-  static const String _eventName = r'Local\Kanpachi-UI-instancia-unica';
-
   /// Reclama ser la única instancia.
   ///
   /// Devuelve `true` si esta es la primera. Devuelve `false` si ya había otra,
@@ -47,10 +44,13 @@ abstract final class SingleInstance {
   ///
   /// [onShowRequested] solo se llama en la primera, cada vez que otro proceso
   /// pide que la ventana se vea.
-  static bool claim({required void Function() onShowRequested}) {
+  static bool claim({
+    required String eventName,
+    required void Function() onShowRequested,
+  }) {
     // Reservado y liberado con el MISMO asignador, dicho en voz alta: mezclar
     // los dos funciona todos los días y corrompe el montón el día malo.
-    final Pointer<Utf16> nombre = _eventName.toNativeUtf16(allocator: malloc);
+    final Pointer<Utf16> nombre = eventName.toNativeUtf16(allocator: malloc);
     try {
       // Manual y sin señalar. Manual porque quien espera lo rearma a mano tras
       // atenderlo, y con automático dos avisos muy seguidos podrían colapsarse

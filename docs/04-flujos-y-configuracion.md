@@ -38,7 +38,7 @@ Nota de rol: "host" es quien corre el servidor del juego. Cualquier miembro pued
 1. Manifiesto `requireAdministrator`: el único UAC de la vida del producto.
 2. Copia a `Program Files\Kanpachi\`: daemon, UI, `wintun.dll`, y `builtin.json`, que va suelto al lado del ejecutable del daemon y no en un subdirectorio.
 3. Crea `ProgramData\Kanpachi\` con ACL: escritura solo SYSTEM y Administradores.
-4. Registra el servicio `kanpachi-daemon`, arranque automático retrasado.
+4. Registra o actualiza el servicio `kanpachi-daemon`, siempre apuntando al `kanpachid.exe` recién copiado en Program Files, como LocalSystem y con arranque automático retrasado. Antes de reemplazar archivos detiene ESE servicio y espera hasta 120 segundos; no busca ni detiene carpetas portables.
 5. Política de recuperación del servicio: reiniciar a los 5 s, 10 s, 30 s.
 
    **Y le concede al usuario interactivo `SERVICE_START`, `SERVICE_STOP` y `SERVICE_QUERY_STATUS` sobre este servicio**, con `sc sdset`. Sin esa concesión, hacer doble clic en el acceso directo con Kanpachi cerrado pediría UAC, y el producto promete un solo UAC en toda su vida. Es una concesión mínima y acotada: el usuario puede arrancar y detener este servicio, nada más, y no gana ningún permiso sobre los demás del sistema.
@@ -67,7 +67,7 @@ Distribución silenciosa para el grupo: `kanpachi-setup.exe /VERYSILENT /NORESTA
 Son dos piezas y su estado es distinto:
 
 - **La carga**, `scripts/preparar-carga.ps1`. Compila el daemon con `-trimpath` y `-H windowsgui`, la interfaz en release con su bundle entero, copia `builtin.json`, `Packet.dll`, `wintun.dll` y `WinDivert64.sys`, trae el motor del otro repositorio, y deja un `SHA256SUMS`. **Medido**: 21 ficheros, 72 MB, antes de que entrara el `.sys`. Ojo con de dónde salen esos tres ficheros de `third_party\easytier`: están en `.gitignore` por tamaño, así que en un runner limpio no existen y el workflow los baja del release oficial de EasyTier antes de llamar a este script.
-- **El instalador**, `installer/kanpachi.iss`, para Inno Setup 6. **Escrito y sin medir**: en la máquina de desarrollo no hay Inno Setup, así que nunca se compiló ni se ejecutó. El criterio de aceptación sigue siendo el de arriba, instalar y desinstalar veinte veces en una VM sin dejar rastro.
+- **El instalador**, `installer/kanpachi.iss`, para Inno Setup 6. **Compilado y ejecutado de verdad.** La primera instalación pública, `v0.1.1`, encontró un servicio previo que apuntaba a `C:\kt\carga`: `sc create` devolvió que ya existía y el script ignoró el código, así que conservó la ruta y el arranque manual. Ahora `sc config` impone ruta, cuenta y tipo en cada instalación y cada comando obligatorio corta el setup si falla. El criterio completo sigue siendo instalar y desinstalar veinte veces en una VM sin dejar rastro.
 - **La publicación**, `.github/workflows/release.yml`. Es quien corre las dos piezas de arriba de verdad, en un runner de Windows, con Inno Setup instalado ahí mismo.
 
 Nada de `-ldflags "-s -w"`: quitar los símbolos dispara falsos positivos de Defender sobre binarios de Go, y el binario que se firma tiene que ser el que se probó. Mismo criterio que `release-seed.yml`.

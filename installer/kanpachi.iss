@@ -3,9 +3,8 @@
 ;   .\scripts\preparar-carga.ps1 -Salida .\dist\carga
 ;   ISCC.exe /DCarga=".\dist\carga" installer\kanpachi.iss
 ;
-; Sin medir: esta maquina no tiene Inno Setup. El criterio de aceptacion sigue
-; siendo el de docs/04: instalar y desinstalar veinte veces en una VM sin dejar
-; rastro.
+; El criterio de aceptacion completo sigue siendo el de docs/04: instalar y
+; desinstalar veinte veces en una VM sin dejar rastro.
 
 #define AppName        "Kanpachi"
 #ifndef AppVersion
@@ -104,34 +103,153 @@ begin
   Result := Exec(Exe, Params, '', SW_HIDE, ewWaitUntilTerminated, Codigo);
 end;
 
+procedure CorrerObligatorio(const Exe, Params, Accion: string);
+var
+  Codigo: Integer;
+begin
+  if not Correr(Exe, Params, Codigo) then
+    RaiseException(Accion + ': no se pudo ejecutar ' + Exe + ': ' +
+      SysErrorMessage(Codigo));
+  if Codigo <> 0 then
+    RaiseException(Accion + ': ' + Exe + ' termino con codigo ' +
+      IntToStr(Codigo));
+end;
+
 function SysExe(const Nombre: string): string;
 begin
   Result := ExpandConstant('{sys}\') + Nombre;
 end;
 
-procedure RegistrarServicio();
+function ServicioExiste(): Boolean;
 var
   Codigo: Integer;
+begin
+  if not Correr(SysExe('sc.exe'), 'query {#ServiceName}', Codigo) then
+    RaiseException('No se pudo consultar el servicio de Kanpachi: ' +
+      SysErrorMessage(Codigo));
+
+  if Codigo = 0 then
+    Result := True
+  else if Codigo = 1060 then
+    Result := False
+  else
+    RaiseException('Consultar el servicio de Kanpachi termino con codigo ' +
+      IntToStr(Codigo));
+end;
+
+function ContieneEstadoDetenido(const Lineas: TArrayOfString): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 0 to GetArrayLength(Lineas) - 1 do
+    if Pos(': 1 ', Lineas[I]) > 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+function ServicioEstaDetenido(): Boolean;
+var
+  Codigo: Integer;
+  Salida: TExecOutput;
+begin
+  if not ExecAndCaptureOutput(SysExe('sc.exe'), 'query {#ServiceName}', '',
+    SW_SHOWNORMAL, ewWaitUntilTerminated, Codigo, Salida) then
+    RaiseException('No se pudo consultar el estado del servicio de Kanpachi: ' +
+      SysErrorMessage(Codigo));
+
+  if Codigo = 1060 then
+  begin
+    Result := True;
+    Exit;
+  end;
+  if Codigo <> 0 then
+    RaiseException('Consultar el estado del servicio de Kanpachi termino con codigo ' +
+      IntToStr(Codigo));
+
+  Result := ContieneEstadoDetenido(Salida.StdOut);
+end;
+
+function DetenerServicioInstalado(): Boolean;
+var
+  Codigo, Intento: Integer;
+begin
+  if not ServicioExiste() then
+  begin
+    Result := True;
+    Exit;
+  end;
+
+  if ServicioEstaDetenido() then
+  begin
+    Result := True;
+    Exit;
+  end;
+
+  { `sc stop` solo manda la orden. El daemon puede tardar mientras cierra una
+    sala y restaura el firewall, asi que se espera el estado 1 (STOPPED) antes
+    de reemplazar su ejecutable. No se mata ningun proceso portable. }
+  if not Correr(SysExe('sc.exe'), 'stop {#ServiceName}', Codigo) then
+    RaiseException('No se pudo pedir que se detuviera el servicio de Kanpachi: ' +
+      SysErrorMessage(Codigo));
+  if Codigo <> 0 then
+    RaiseException('Detener el servicio de Kanpachi termino con codigo ' +
+      IntToStr(Codigo));
+
+  for Intento := 1 to 480 do
+  begin
+    if ServicioEstaDetenido() then
+    begin
+      Result := True;
+      Exit;
+    end;
+    Sleep(250);
+  end;
+  Result := False;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  try
+    if not DetenerServicioInstalado() then
+      Result := 'El servicio instalado de Kanpachi no termino de cerrarse en 120 segundos.' +
+        #13#10 + 'No se reemplazo ningun archivo. Vuelve a intentarlo.';
+  except
+    Result := GetExceptionMessage;
+  end;
+end;
+
+procedure RegistrarServicio();
+var
   Bin: string;
 begin
   Bin := ExpandConstant('{app}\{#DaemonExe}');
 
-  { delayed-auto: un servicio que toca el firewall y levanta un adaptador no
-    tiene que competir con el arranque de Windows. Nadie juega en el segundo
-    cero. Los espacios tras los "=" son sintaxis de sc.exe. }
-  Correr(SysExe('sc.exe'),
-    'create {#ServiceName} binPath= "' + Bin + '" start= delayed-auto DisplayName= "Kanpachi"',
-    Codigo);
+  { `create` NO actualiza un servicio existente. Se crea solo cuando falta y
+    despues `config` impone SIEMPRE la ruta recien instalada, la cuenta y el
+    arranque. Esto repara tambien servicios dejados por builds de desarrollo.
+    Los espacios tras los "=" son sintaxis obligatoria de sc.exe. }
+  if not ServicioExiste() then
+    CorrerObligatorio(SysExe('sc.exe'),
+      'create {#ServiceName} binPath= "' + Bin + '" type= own start= delayed-auto obj= LocalSystem DisplayName= "Kanpachi"',
+      'Creando el servicio de Kanpachi');
 
-  Correr(SysExe('sc.exe'),
+  CorrerObligatorio(SysExe('sc.exe'),
+    'config {#ServiceName} binPath= "' + Bin + '" type= own start= delayed-auto obj= LocalSystem DisplayName= "Kanpachi"',
+    'Actualizando el servicio de Kanpachi');
+
+  CorrerObligatorio(SysExe('sc.exe'),
     'description {#ServiceName} "Abre y cierra los puertos de tus partidas en LAN, y los vuelve a cerrar al salir."',
-    Codigo);
+    'Escribiendo la descripcion del servicio');
 
   { Reintentar a los 5 s, 10 s y 30 s. Si el daemon se cae, la sala se cae con
     el: volver solo es la diferencia entre partida interrumpida y perdida. }
-  Correr(SysExe('sc.exe'),
+  CorrerObligatorio(SysExe('sc.exe'),
     'failure {#ServiceName} reset= 86400 actions= restart/5000/restart/10000/restart/30000',
-    Codigo);
+    'Configurando la recuperacion del servicio');
 
   { La concesion minima, y lo que mantiene la promesa de un solo UAC: con el
     daemon parado, el acceso directo tiene que poder arrancar el servicio.
@@ -141,14 +259,14 @@ begin
     (arrancar) y WP (detener). Lo demas se escribe igual porque sdset REEMPLAZA
     el descriptor entero. No se concede CCDC ni WD/WO: el usuario no puede
     reconfigurar ni borrar el servicio. }
-  Correr(SysExe('sc.exe'),
+  CorrerObligatorio(SysExe('sc.exe'),
     'sdset {#ServiceName} ' +
     'D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)' +
     '(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)' +
     '(A;;CCLCSWRPWPLOCRRC;;;IU)' +
     '(A;;CCLCSWLOCRRC;;;SU)' +
     'S:(AU;FA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)',
-    Codigo);
+    'Concediendo el arranque del servicio al usuario');
 end;
 
 { ProgramData\Kanpachi con su ACL propia.

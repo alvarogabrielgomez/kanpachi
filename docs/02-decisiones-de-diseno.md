@@ -1364,8 +1364,12 @@ Solo el instalador no alcanzaba para el caso que motivó esto, que es mandarle K
 | UAC | uno, al instalar | uno por arranque |
 | Datos | ProgramData con ACL del instalador | junto al binario, con los permisos de donde esté la carpeta |
 | Arranque con Windows | sí | no |
+| Pipe | `kanpachi-installed` | `kanpachi-portable` |
+| Instancia de UI | `Kanpachi-UI-installed-*` | `Kanpachi-UI-portable-*` |
 
 El UAC por arranque es consecuencia directa de no haber instalado nada: el permiso de arrancar el servicio se lo concede el instalador al usuario con `sc sdset`, y una carpeta copiada no concedió nada. Se acepta porque el portable no reemplaza al instalador, lo acompaña: es para probar y para repartir, no para el amigo que va a jugar todas las semanas.
+
+**La separación de canal y ventana salió de un fallo medido en `v0.1.1`.** Había una UI portable viva y se instaló Kanpachi. Los dos usaban el mismo pipe y el mismo evento `Local\Kanpachi-UI-instancia-unica`: la UI instalada nacía, encontraba a la portable y se cerraba; la portable se traía al frente, leía SU token y lo mandaba al daemon instalado, que lo rechazaba correctamente. El watchdog vio cuatro muertes rápidas y apagó el servicio. La solución no es matar el portable desde el instalador —eso mezclaría los productos— sino que cada uno tenga canal, token e instancia propios.
 
 ### El daemon portable no es SYSTEM, y eso rompió lo que nadie esperaba
 
