@@ -63,6 +63,8 @@ Cómo se escribe una entrada:
 - **En imperativo y desde la máquina**: `accept`, `keep`, `stop`, `remove`. Es lo que hace la versión nueva, no lo que hiciste tú.
 - **Se entiende sin la categoría encima.** Alguien leyendo solo esa línea tiene que saber qué le cambió.
 - **Termina con el enlace a su commit.** Si el cambio vive en `kanpachi-engine`, se enlaza ahí y se dice.
+
+  **Un commit no puede contener su propio hash**, así que el enlace no puede quedar puesto en el mismo commit que la entrada. El orden que funciona es: se escribe la entrada con el cambio, se hace el commit, y el hash se rellena en el commit siguiente, antes de empujar. Enmendar no sirve, y probarlo cuesta una vuelta: enmendar cambia el hash otra vez, así que el enlace recién puesto vuelve a apuntar a un commit que ya no existe.
 - **Cuenta el efecto, no la implementación.** "Acepta a los invitados en el seed" y no "agrega `--secure-mode` a la unit".
 - Categorías y su orden: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`.
 
