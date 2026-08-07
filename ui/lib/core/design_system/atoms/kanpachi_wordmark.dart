@@ -23,15 +23,20 @@ class KanpachiWordmark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Opacity(
-      opacity: opacity,
-      child: SvgPicture.asset(
-        'assets/logo/kanpachi_wordmark.svg',
-        height: height,
-        width: height * _aspect,
-        colorFilter: ColorFilter.mode(context.colors.text, BlendMode.srcIn),
-        semanticsLabel: 'Kanpachi',
+    // El apagado va dentro del tinte que ya se aplica, y no en un `Opacity`
+    // envolviéndolo. El SVG es monocromo y se tiñe con `srcIn`, así que un
+    // color con alfa da exactamente el mismo píxel, sin la capa fuera de
+    // pantalla que `Opacity` obliga a crear. Vive en la barra de título, o
+    // sea en lo que se repinta cada vez que algo de la barra cambia.
+    return SvgPicture.asset(
+      'assets/logo/kanpachi_wordmark.svg',
+      height: height,
+      width: height * _aspect,
+      colorFilter: ColorFilter.mode(
+        context.colors.text.withValues(alpha: opacity),
+        BlendMode.srcIn,
       ),
+      semanticsLabel: 'Kanpachi',
     );
   }
 }

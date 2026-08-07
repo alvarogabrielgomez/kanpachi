@@ -10,6 +10,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Changed
 
+- Draw the drifting shapes and the wordmark with a semitransparent colour instead of an `Opacity` layer, five offscreen buffers fewer per frame ([PENDIENTE](https://github.com/alvarogabrielgomez/kanpachi/commit/PENDIENTE))
 - Make the whole name and avatar area of the title bar open the account menu, instead of only the pixels it paints ([025c936](https://github.com/alvarogabrielgomez/kanpachi/commit/025c936))
 - Keep the window drag area off the title bar controls, so a click that moves a pixel opens the menu instead of dragging the window ([025c936](https://github.com/alvarogabrielgomez/kanpachi/commit/025c936))
 - Audit foreign firewall rules on four triggers instead of every two seconds: entering the room, changing game, somebody joining, and every two minutes ([3d31a5c](https://github.com/alvarogabrielgomez/kanpachi/commit/3d31a5c))

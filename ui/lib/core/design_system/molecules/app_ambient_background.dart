@@ -217,15 +217,25 @@ class _Blob extends StatelessWidget {
             ),
           );
         },
-        child: Opacity(
-          opacity: opacity,
-          child: Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(borderRadius),
-            ),
+        // **El alfa va en el COLOR, no en un `Opacity` alrededor.**
+        //
+        // Es la regla que la documentación de Flutter da con estas palabras:
+        // en vez de envolver formas simples en `Opacity`, dibujarlas con un
+        // color semitransparente. `Opacity` empuja una capa fuera de pantalla,
+        // y acá eso pasaba CUATRO veces por fotograma, porque las manchas se
+        // mueven: es el caso que la propia documentación señala como el peor
+        // ("particularly in animations").
+        //
+        // Sale idéntico en pantalla. Cada mancha llevaba su propio `Opacity`,
+        // así que nunca hubo opacidad de GRUPO que preservar: el alfa por
+        // forma compone igual, y dos manchas que se solapen se ven como se
+        // veían.
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: color.a * opacity),
+            borderRadius: BorderRadius.circular(borderRadius),
           ),
         ),
       ),
