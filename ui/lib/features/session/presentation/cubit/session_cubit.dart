@@ -280,11 +280,27 @@ class SessionCubit extends Cubit<SessionState> {
   /// normal cuando el daemon se está reiniciando, y lo que se hace con él es
   /// marcar que no hay servicio, que es exactamente lo que la barra de estado
   /// tiene que decir en ese momento.
+  /// Si hay un latido en vuelo. Ver [_beat].
+  bool _latiendo = false;
+
   Future<void> _beat() async {
     // Mientras se crea o se entra, el estado lo manda la operación en curso.
     // Un latido que llegara en medio pintaría la sala a medio abrir, o la
     // borraría porque todavía no existe.
     if (isClosed || state.isWaiting) return;
+
+    // **Un latido no se solapa con el anterior.**
+    //
+    // El temporizador dispara cada dos segundos sin mirar si el anterior
+    // terminó, y cada latido son tres peticiones POR EL MISMO canal, que el
+    // daemon atiende de a una. Con una llamada lenta —el barrido del firewall
+    // lo era— el segundo latido se encolaba detrás del primero, el tercero
+    // detrás del segundo, y la cola ya no bajaba: las peticiones empezaban a
+    // reventar su plazo de diez segundos y la app pintaba "sin servicio" con el
+    // daemon perfectamente vivo. Saltarse un tick es gratis; encolarlo cuesta
+    // la conexión.
+    if (_latiendo) return;
+    _latiendo = true;
     try {
       final Room? sala = await _repository.currentRoom();
       final HealthReport salud = await _repository.health();
@@ -323,6 +339,11 @@ class SessionCubit extends Cubit<SessionState> {
       if (state.catalog.isEmpty) unawaited(loadCatalog());
     } on Object {
       if (!isClosed) emit(state.copyWith(daemonDown: true));
+    } finally {
+      // En `finally` y no al final del `try`: el `return` de arriba cuando el
+      // cubit se cierra saldría por encima, y dejar la bandera puesta apagaría
+      // el latido para siempre.
+      _latiendo = false;
     }
   }
 
@@ -617,6 +638,19 @@ class SessionCubit extends Cubit<SessionState> {
 
   /// Marca los puertos del host DESDE esta máquina.
   Future<ProbeReport> probeHost() => _repository.probeHost();
+
+  /// Vuelve a auditar las reglas ajenas del firewall, ahora.
+  ///
+  /// Lo llama la pantalla de la sala al aparecer, que es cuando ese aviso se
+  /// lee. Fuera de eso la auditoría se repite sola cada dos minutos, al cambiar
+  /// de juego y al entrar alguien nuevo: barre el almacén de reglas ENTERO de
+  /// Windows, así que repetirla con el latido costaba CPU en las máquinas
+  /// viejas, tenía la forma que un antivirus marca, y ahogaba el único canal
+  /// que hay con el daemon.
+  Future<void> recheckForeignRules() async {
+    _repository.recheckForeignRules();
+    await refresh();
+  }
 
   /// Vuelve a preguntar por los avisos y por la Protección Kanpachi.
   ///

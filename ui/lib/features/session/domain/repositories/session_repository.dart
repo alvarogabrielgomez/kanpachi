@@ -59,6 +59,14 @@ abstract interface class SessionRepository {
   /// está. Lo que se desactive se restaura al salir de la sala.
   Future<Room> resolveForeignRule(Room room, {required bool disable});
 
+  /// Pide que la próxima sala traiga las reglas ajenas recién auditadas.
+  ///
+  /// La auditoría barre el almacén de reglas ENTERO del firewall de Windows
+  /// —mil y pico reglas, otras tantas llamadas COM—, así que no se repite con
+  /// cada vistazo a la sala: se repite cuando algo pudo cambiarla. Esto es el
+  /// disparador de "alguien acaba de abrir la pantalla donde se lee el aviso".
+  void recheckForeignRules();
+
   Future<void> leaveRoom(Room room);
 
   /// La sala tal como el daemon la ve AHORA, o null si no hay ninguna.

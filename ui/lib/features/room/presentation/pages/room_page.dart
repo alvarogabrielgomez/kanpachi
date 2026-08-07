@@ -46,19 +46,20 @@ class _RoomScreenState extends State<RoomScreen> {
   @override
   void initState() {
     super.initState();
-    // Al ENTRAR se vuelve a preguntar, y esa es media política de refresco del
-    // producto. La otra media es el botón del encabezado.
+    // Al ENTRAR se vuelve a preguntar, **y esta es la única pantalla que pide
+    // además la auditoría del firewall**.
     //
-    // No hay temporizador en ninguna capa, por decisión: el daemon no empuja
-    // nada, así que lo único que existe es preguntar, y preguntar solo cuando
-    // alguien mira. La consecuencia se acepta a sabiendas: entre un refresco y
-    // el siguiente, quién está dentro y por dónde llega puede haber cambiado.
+    // Quién está dentro lo trae el latido cada dos segundos, y es barato. La
+    // auditoría de reglas ajenas no lo es: barre el almacén de reglas entero de
+    // Windows por COM, así que se pide donde su aviso se lee y no sesenta veces
+    // por minuto en todas partes. Los otros tres disparadores viven en el
+    // repositorio, que es quien sabe si cambió el juego o si entró alguien.
     //
     // Va tras el primer fotograma porque emitir estado durante el montaje del
     // widget es pedirle a Flutter que reconstruya algo que todavía se está
     // construyendo.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<SessionCubit>().refresh();
+      if (mounted) context.read<SessionCubit>().recheckForeignRules();
     });
   }
 

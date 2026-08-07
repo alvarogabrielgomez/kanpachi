@@ -34,9 +34,14 @@ import 'package:kanpachi_ui/features/session/infra/daemon/daemon_methods.dart';
 /// petición y respuesta puro, así que quien decide cuándo volver a preguntar es
 /// la pantalla.
 class PipeSessionRepository implements SessionRepository {
-  PipeSessionRepository(this._connector);
+  PipeSessionRepository(this._connector, {DateTime Function()? now})
+    : _now = now ?? DateTime.now;
 
   final DaemonConnector _connector;
+
+  /// El reloj de la caché de reglas ajenas. Inyectable para poder medir su
+  /// caducidad sin esperarla.
+  final DateTime Function() _now;
 
   /// El catálogo, para poder resolver el id que manda el cable.
   List<Game> _catalogo = const <Game>[];
@@ -48,6 +53,25 @@ class PipeSessionRepository implements SessionRepository {
   /// mandó, y quedarse solo con lo que la pantalla muestra la haría
   /// irreconstruible.
   List<Map<String, Object?>> _ajenas = const <Map<String, Object?>>[];
+
+  /// Lo que la última auditoría dejó pegado a la sala, para volver a pegarlo
+  /// sin repetir el barrido.
+  ForeignRuleState _estadoAjenas = ForeignRuleState.none;
+  RuleClass _claseAjenas = RuleClass.game;
+  String? _programaAjeno;
+
+  /// Con qué se calculó lo anterior: cuándo, para qué juego, y con quiénes
+  /// dentro. Los tres son disparadores; ver [_hayQueBarrer].
+  DateTime? _barridoEn;
+  String? _barridoDelJuego;
+  Set<String> _barridoConMiembros = const <String>{};
+
+  /// Cada cuánto se repite el barrido cuando no pasa nada más.
+  ///
+  /// Dos minutos, y el número lo puso el usuario mirando su parque de
+  /// máquinas. Antes esto corría con el latido, o sea SESENTA veces por cada
+  /// una de estas.
+  static const Duration _cadenciaAjenas = Duration(minutes: 2);
 
   // ---------------------------------------------------------------- catálogo
 
@@ -216,20 +240,39 @@ class PipeSessionRepository implements SessionRepository {
     }
   }
 
+  /// Resuelve el aviso, y deja la caché diciendo lo mismo que la pantalla.
+  ///
+  /// Lo decidido acá se sabe sin preguntar: dejarla puesta es `kept` y
+  /// desactivarla es `disabled`, y en los dos casos el almacén de reglas acaba
+  /// de quedar como este código dice. Volver a barrer para enterarse de lo que
+  /// uno mismo hizo sería pagar mil llamadas COM por una respuesta conocida, y
+  /// además pisaría la decisión del usuario con un `none` a los dos segundos.
   @override
   Future<Room> resolveForeignRule(Room room, {required bool disable}) async {
     if (!disable) {
       _ajenas = const <Map<String, Object?>>[];
+      _recuerda(ForeignRuleState.kept);
       return room.copyWith(foreignRule: ForeignRuleState.kept);
     }
     if (_ajenas.isEmpty) {
+      _recuerda(ForeignRuleState.none);
       return room.copyWith(foreignRule: ForeignRuleState.none);
     }
     await _mapa(DaemonMethods.suspendForeignRules, <String, Object?>{
       'rules': _ajenas,
     });
     _ajenas = const <Map<String, Object?>>[];
+    _recuerda(ForeignRuleState.disabled);
     return room.copyWith(foreignRule: ForeignRuleState.disabled);
+  }
+
+  /// Fija el estado resuelto y estira el plazo, sin tocar los otros
+  /// disparadores: cambiar de juego o que entre alguien siguen barriendo.
+  void _recuerda(ForeignRuleState estado) {
+    _estadoAjenas = estado;
+    _claseAjenas = RuleClass.game;
+    _programaAjeno = null;
+    _barridoEn = _now();
   }
 
   @override
@@ -347,13 +390,50 @@ class PipeSessionRepository implements SessionRepository {
     return Room.fromJson(json, game: juego);
   }
 
-  /// Pregunta por las reglas ajenas del juego activo y las pega a la sala.
+  /// Pega a la sala lo que dijo la última auditoría, barriendo solo si toca.
+  ///
+  /// # Por qué esto NO va con el latido
+  ///
+  /// Iba, y era el trabajo más caro de la app con diferencia. El barrido le
+  /// pide al almacén de reglas del Firewall de Windows TODAS las reglas de la
+  /// máquina y las recorre buscando el ejecutable del juego y las herramientas
+  /// de control remoto: **1009 reglas revisadas, medido en una máquina de
+  /// verdad**, y cada revisión es una ristra de llamadas COM al servicio del
+  /// firewall. Corriendo cada dos segundos, eso es medio millón de llamadas por
+  /// cada veinte minutos de sala.
+  ///
+  /// Cuesta de tres formas distintas, y las tres importan:
+  ///
+  ///  - **CPU en máquinas viejas**, que es donde se juega a esto.
+  ///  - **Un antivirus mirando**: un proceso que enumera el almacén de reglas
+  ///    del firewall sin parar tiene la forma exacta de lo que un antivirus
+  ///    está entrenado para marcar.
+  ///  - **El canal con el daemon**, que es uno solo y se atiende de a una
+  ///    petición. Un barrido lento encola detrás lo barato —`status`, el
+  ///    enlace pendiente— hasta que revientan su plazo de diez segundos, y la
+  ///    app pinta "sin servicio" con el daemon perfectamente vivo. Medido:
+  ///    barridos de hasta 5,9 s con la máquina en reposo.
+  ///
+  /// # Y por qué se puede espaciar sin perder el aviso
+  ///
+  /// Porque estas reglas **no cambian solas**. Aparecen cuando alguien instala
+  /// un juego o cuando el juego se registra en el firewall, y desaparecen
+  /// cuando alguien las borra. Son actos de una persona, no eventos de red.
+  /// Preguntarlo treinta veces por minuto era releer algo que cambia una vez
+  /// por semana.
   Future<Room> _conReglasAjenas(Room sala) async {
     final Game? juego = sala.game;
     if (juego == null) {
       _ajenas = const <Map<String, Object?>>[];
+      _olvidarBarrido();
       return sala.copyWith(foreignRule: ForeignRuleState.none);
     }
+
+    final Set<String> miembros = <String>{
+      for (final Member m in sala.members) m.address,
+    };
+
+    if (!_hayQueBarrer(juego.id, miembros)) return _pegado(sala);
 
     final List<Object?> crudo = await _lista(
       DaemonMethods.foreignRules,
@@ -363,8 +443,15 @@ class PipeSessionRepository implements SessionRepository {
       for (final Object? r in crudo)
         if (r is Map<String, Object?>) r,
     ];
+    _barridoEn = _now();
+    _barridoDelJuego = juego.id;
+    _barridoConMiembros = miembros;
+
     if (_ajenas.isEmpty) {
-      return sala.copyWith(foreignRule: ForeignRuleState.none);
+      _estadoAjenas = ForeignRuleState.none;
+      _claseAjenas = RuleClass.game;
+      _programaAjeno = null;
+      return _pegado(sala);
     }
 
     // La que manda es la que bloquea, y si ninguna bloquea la primera. La
@@ -374,12 +461,56 @@ class PipeSessionRepository implements SessionRepository {
       (Map<String, Object?> r) => r['blocking'] == true,
       orElse: () => _ajenas.first,
     );
-    return sala.copyWith(
-      foreignRule: ForeignRuleState.open,
-      foreignRuleClass: RuleClass.fromWire(peor['class'] as String?),
-      foreignRuleProgram: peor['executable'] as String?,
-    );
+    _estadoAjenas = ForeignRuleState.open;
+    _claseAjenas = RuleClass.fromWire(peor['class'] as String?);
+    _programaAjeno = peor['executable'] as String?;
+    return _pegado(sala);
   }
+
+  /// La sala con lo que se sabe de las reglas ajenas, sin preguntar nada.
+  Room _pegado(Room sala) => sala.copyWith(
+    foreignRule: _estadoAjenas,
+    foreignRuleClass: _claseAjenas,
+    foreignRuleProgram: _programaAjeno,
+  );
+
+  /// Los cuatro disparadores, y ninguno más.
+  ///
+  /// Tres son sucesos y el cuarto es la red que los cubre a todos. Cambiar de
+  /// juego cambia qué ejecutable se busca, así que lo anterior deja de
+  /// significar nada. Que entre alguien nuevo es el momento en que una regla
+  /// abierta pasa de ser un dato a ser una puerta con alguien delante. Y entrar
+  /// a la pantalla de la sala es cuando el aviso se mira, que es lo que lo hace
+  /// valer.
+  bool _hayQueBarrer(String juego, Set<String> miembros) {
+    final DateTime? ultimo = _barridoEn;
+    if (ultimo == null) return true;
+    if (_barridoDelJuego != juego) return true;
+    // Solo quien LLEGÓ. Que alguien se vaya no abre ninguna regla, y barrer al
+    // salir cada miembro convertiría una sala que se vacía en una ráfaga de
+    // barridos.
+    if (miembros.any((String m) => !_barridoConMiembros.contains(m))) {
+      return true;
+    }
+    return _now().difference(ultimo) >= _cadenciaAjenas;
+  }
+
+  void _olvidarBarrido() {
+    _barridoEn = null;
+    _barridoDelJuego = null;
+    _barridoConMiembros = const <String>{};
+    _estadoAjenas = ForeignRuleState.none;
+    _claseAjenas = RuleClass.game;
+    _programaAjeno = null;
+  }
+
+  /// Tira lo sabido para que el siguiente vistazo a la sala vuelva a barrer.
+  ///
+  /// Lo llama la pantalla de la sala al aparecer. Es un método y no un barrido
+  /// directo porque quien arma la sala es [currentRoom], y tener dos sitios
+  /// que barren sería tener dos cachés.
+  @override
+  void recheckForeignRules() => _olvidarBarrido();
 
   Future<Map<String, Object?>> _mapa(
     String metodo, [
