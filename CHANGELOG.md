@@ -1,66 +1,66 @@
 # Changelog
 
-Lo que cambió en cada versión de Kanpachi, para quien lo usa.
+What changed in each release of Kanpachi, for the person using it.
 
-El formato es [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y las versiones son [SemVer](https://semver.org/lang/es/). Cómo se mantiene, y por qué se mantiene así, está en [docs/CLAUDE.md](docs/CLAUDE.md): **una línea por entrada, en imperativo, con el enlace a su commit**, y escrita en el mismo commit que el cambio.
+The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow [SemVer](https://semver.org/). How it is kept, and why it is kept that way, is in [docs/CLAUDE.md](docs/CLAUDE.md): **one line per entry, imperative mood, linking its own commit**, written in the same commit as the change.
 
-Esto cuenta lo que le pasa a la persona que juega. El porqué de cada decisión vive en `docs/02-decisiones-de-diseno.md`, y el detalle mecánico en el mensaje del commit enlazado.
+This file is in English, like commit messages and release notes, because a release body quotes it verbatim. The design reasoning lives in `docs/02-decisiones-de-diseno.md`, in Spanish, and the mechanical detail lives in the commit each entry links.
 
 ## Unreleased
 
 ### Changed
 
-- Audita las reglas ajenas del firewall en cuatro momentos y no cada dos segundos: al entrar a la sala, al cambiar de juego, al entrar alguien nuevo, y cada dos minutos ([3d31a5c](https://github.com/alvarogabrielgomez/kanpachi/commit/3d31a5c))
+- Audit foreign firewall rules on four triggers instead of every two seconds: entering the room, changing game, somebody joining, and every two minutes ([3d31a5c](https://github.com/alvarogabrielgomez/kanpachi/commit/3d31a5c))
 
 ### Fixed
 
-- Deja de perder el servicio a ratos: el latido ya no se solapa consigo mismo ni encola tras el barrido del firewall ([3d31a5c](https://github.com/alvarogabrielgomez/kanpachi/commit/3d31a5c))
-- Lleva a la sala en vez de a la portada al cerrar un enlace de invitación con una sala abierta ([46bd095](https://github.com/alvarogabrielgomez/kanpachi/commit/46bd095))
-- Pregunta al daemon si hay sala cada vez que aparece la portada, en vez de fiarse de lo último que supo ([46bd095](https://github.com/alvarogabrielgomez/kanpachi/commit/46bd095))
+- Stop dropping the service now and then: the heartbeat no longer overlaps itself nor queues behind the firewall sweep ([3d31a5c](https://github.com/alvarogabrielgomez/kanpachi/commit/3d31a5c))
+- Go back to the room, not to the home screen, when closing an invite link with a room open ([46bd095](https://github.com/alvarogabrielgomez/kanpachi/commit/46bd095))
+- Ask the daemon whether there is a room every time the home screen appears, instead of trusting the last thing known ([46bd095](https://github.com/alvarogabrielgomez/kanpachi/commit/46bd095))
 
 ## [0.1.3] - 2026-08-07
 
 ### Fixed
 
-- Acepta a los invitados en el seed: sin modo seguro, una credencial se rechazaba en el primer paquete y ninguna sala pasaba de una persona ([c64a2cb](https://github.com/alvarogabrielgomez/kanpachi/commit/c64a2cb))
-- Conecta al invitado con el host de forma directa, en vez de relevarlo todo por el servidor ([c6dfadc](https://github.com/alvarogabrielgomez/kanpachi-engine/commit/c6dfadc), en `kanpachi-engine`)
-- Devuelve la flecha de volver a la pantalla anterior de verdad, en vez de a la portada ([0be74b9](https://github.com/alvarogabrielgomez/kanpachi/commit/0be74b9))
-- Impide quedarse en la portada con una sala abierta, que hacía parecer que no había ninguna ([0be74b9](https://github.com/alvarogabrielgomez/kanpachi/commit/0be74b9))
-- Deja al usuario en su sala cuando salir de ella falla, en vez de mandarlo a una portada que no acepta nada ([0be74b9](https://github.com/alvarogabrielgomez/kanpachi/commit/0be74b9))
+- Let guests in at the seed: without secure mode a credential was refused on its first packet, and no room ever held more than one person ([c64a2cb](https://github.com/alvarogabrielgomez/kanpachi/commit/c64a2cb))
+- Connect a guest to the host directly, instead of relaying every packet through the server ([c6dfadc](https://github.com/alvarogabrielgomez/kanpachi-engine/commit/c6dfadc), in `kanpachi-engine`)
+- Send the back arrow to the previous screen for real, instead of to the home screen ([0be74b9](https://github.com/alvarogabrielgomez/kanpachi/commit/0be74b9))
+- Keep the home screen out of reach while a room is open, which made it look like there was none ([0be74b9](https://github.com/alvarogabrielgomez/kanpachi/commit/0be74b9))
+- Leave the user in their room when leaving it fails, instead of on a home screen that accepts nothing ([0be74b9](https://github.com/alvarogabrielgomez/kanpachi/commit/0be74b9))
 
 ## [0.1.2] - 2026-08-07
 
 ### Fixed
 
-- Separa el Kanpachi instalado del portable: cada uno con su canal, su token y su ventana ([8dec62f](https://github.com/alvarogabrielgomez/kanpachi/commit/8dec62f))
-- Acepta los enlaces de invitación tal como los entrega Windows, con la barra final que añade el navegador ([6436de1](https://github.com/alvarogabrielgomez/kanpachi/commit/6436de1))
-- Borra las preferencias de la interfaz al desinstalar, que Flutter guarda fuera de Program Files ([6436de1](https://github.com/alvarogabrielgomez/kanpachi/commit/6436de1))
-- Termina el aviso del instalador cuando el servicio no se deja detener ([6d3e85e](https://github.com/alvarogabrielgomez/kanpachi/commit/6d3e85e), [0e69580](https://github.com/alvarogabrielgomez/kanpachi/commit/0e69580))
+- Keep an installed Kanpachi apart from a portable one: each with its own channel, token and window ([8dec62f](https://github.com/alvarogabrielgomez/kanpachi/commit/8dec62f))
+- Accept invite links exactly as Windows hands them over, with the trailing slash the browser adds ([6436de1](https://github.com/alvarogabrielgomez/kanpachi/commit/6436de1))
+- Remove the interface preferences on uninstall, which Flutter stores outside Program Files ([6436de1](https://github.com/alvarogabrielgomez/kanpachi/commit/6436de1))
+- Finish the installer message for a service that will not stop ([6d3e85e](https://github.com/alvarogabrielgomez/kanpachi/commit/6d3e85e), [0e69580](https://github.com/alvarogabrielgomez/kanpachi/commit/0e69580))
 
 ## [0.1.1] - 2026-08-06
 
 ### Added
 
-- Ofrece reabrir la sala que quedó del arranque anterior, en vez de perderla ([7af511e](https://github.com/alvarogabrielgomez/kanpachi/commit/7af511e))
+- Offer to reopen the room left over from the previous start, instead of losing it ([7af511e](https://github.com/alvarogabrielgomez/kanpachi/commit/7af511e))
 
 ### Fixed
 
-- Conserva las salas registradas al recargar la página del seed ([3c67f5b](https://github.com/alvarogabrielgomez/kanpachi/commit/3c67f5b))
-- Publica el instalador también cuando el release se crea desde la web de GitHub ([981bead](https://github.com/alvarogabrielgomez/kanpachi/commit/981bead))
+- Keep every registered room when the seed page is reloaded ([3c67f5b](https://github.com/alvarogabrielgomez/kanpachi/commit/3c67f5b))
+- Publish the installer also when the release is created from the GitHub web ([981bead](https://github.com/alvarogabrielgomez/kanpachi/commit/981bead))
 
 ## [0.1.0] - 2026-08-06
 
-Primera versión publicada.
+First published version.
 
 ### Added
 
-- Crea una sala, reparte su código y abre solo los puertos del juego elegido ([c81c0bf](https://github.com/alvarogabrielgomez/kanpachi/commit/c81c0bf))
-- Entra a una sala pegando el código, o abriendo un enlace `kanpachi://` desde el navegador ([7a8539e](https://github.com/alvarogabrielgomez/kanpachi/commit/7a8539e))
-- Enseña lo que tu PC tiene abierto, medido en el sistema y no leído de lo que Kanpachi cree ([7a47467](https://github.com/alvarogabrielgomez/kanpachi/commit/7a47467))
-- Deja cancelar la espera de una sala, deshaciendo lo que alcanzó a hacer ([8dbd9e4](https://github.com/alvarogabrielgomez/kanpachi/commit/8dbd9e4))
-- Trae una carpeta portable, que se copia y se ejecuta sin instalar nada ([250b3d5](https://github.com/alvarogabrielgomez/kanpachi/commit/250b3d5))
-- Recuerda tu nombre y el tamaño de la ventana ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
-- Publica el instalador firmando cada versión con un tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
+- Create a room, hand out its code, and open only the ports of the chosen game ([c81c0bf](https://github.com/alvarogabrielgomez/kanpachi/commit/c81c0bf))
+- Join a room by pasting the code, or by opening a `kanpachi://` link from the browser ([7a8539e](https://github.com/alvarogabrielgomez/kanpachi/commit/7a8539e))
+- Show what your PC has open, measured on the system instead of read back from what Kanpachi believes ([7a47467](https://github.com/alvarogabrielgomez/kanpachi/commit/7a47467))
+- Cancel the wait for a room, undoing whatever it got as far as ([8dbd9e4](https://github.com/alvarogabrielgomez/kanpachi/commit/8dbd9e4))
+- Ship a portable folder that copies and runs without installing anything ([250b3d5](https://github.com/alvarogabrielgomez/kanpachi/commit/250b3d5))
+- Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
+- Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
 [0.1.3]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.3
 [0.1.2]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.2

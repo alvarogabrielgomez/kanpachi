@@ -51,18 +51,20 @@ Reglas de escritura:
 
 ### El changelog
 
-`CHANGELOG.md`, en la raíz. Formato [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/), versiones [SemVer](https://semver.org/lang/es/).
+`CHANGELOG.md`, en la raíz. Formato [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versiones [SemVer](https://semver.org/).
+
+**Se escribe en INGLÉS**, a diferencia de los ocho documentos y de los textos de la app. Es la misma excepción que los mensajes de commit, y acá tiene un motivo mecánico además del de estilo: **el cuerpo de cada publicación cita su tramo tal cual**, así que el idioma del changelog es el idioma del release.
 
 **Toca escribir entrada cuando alguien lo nota usando Kanpachi.** Un arreglo, una función, un texto que cambia, algo que deja de estar. No entran los refactors, los tests, los guardianes, ni los cambios de documentación: eso ya vive en el mensaje del commit, y meterlo acá convierte el changelog en un `git log` peor escrito.
 
 Cómo se escribe una entrada:
 
 - **Una línea. Una sola.** Sin sub-viñetas y sin párrafo debajo. Lo que no entra en una línea va en el mensaje del commit, que es lo que la entrada enlaza.
-- **En imperativo y desde la máquina**: "acepta", "deja", "impide", "borra". Es lo que hace la versión nueva, no lo que hiciste tú.
+- **En imperativo y desde la máquina**: `accept`, `keep`, `stop`, `remove`. Es lo que hace la versión nueva, no lo que hiciste tú.
 - **Se entiende sin la categoría encima.** Alguien leyendo solo esa línea tiene que saber qué le cambió.
 - **Termina con el enlace a su commit.** Si el cambio vive en `kanpachi-engine`, se enlaza ahí y se dice.
 - **Cuenta el efecto, no la implementación.** "Acepta a los invitados en el seed" y no "agrega `--secure-mode` a la unit".
-- Categorías y su orden: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`. En inglés, que es como las nombra el formato; las entradas van en español.
+- Categorías y su orden: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`.
 
 **Va en `Unreleased`, en el MISMO commit que el cambio.** Igual que el resto de los documentos, y por el mismo motivo: lo que se deja para el momento de etiquetar es lo que se olvida justo entonces. Al cortar versión, `Unreleased` pasa a ser `## [X.Y.Z] - AAAA-MM-DD` con su enlace al release, y se abre una `Unreleased` vacía.
 
