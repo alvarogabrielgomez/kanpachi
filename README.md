@@ -123,6 +123,7 @@ flowchart LR
 
 This section is intentionally short and points to auditable sources.
 
+- What changed in each release: [CHANGELOG.md](CHANGELOG.md)
 - Security promise and scope: [kanpachi-protection.md](kanpachi-protection.md)
 - Architecture and process boundaries: [docs/03-arquitectura.md](docs/03-arquitectura.md)
 - Engine behavior and non-listening model: [kanpachi-engine README](https://github.com/alvarogabrielgomez/kanpachi-engine)

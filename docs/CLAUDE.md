@@ -23,6 +23,8 @@ Está en `docs/`. Son la fuente de verdad del diseño, no notas sueltas. Los sie
 | `07-futuro.md` | Qué se difirió, qué lo activaría, qué se descartó | Proponer una función nueva |
 | `08-plan-de-adaptadores.md` | El plan vivo de los adaptadores, con lo medido y lo que falta | Ponerte a escribir un adaptador |
 
+Fuera de `docs/` hay uno más: **`CHANGELOG.md`** en la raíz, que cuenta qué cambió en cada versión para quien usa Kanpachi. Los ocho de arriba explican el diseño; ese cuenta la historia. Cómo se mantiene está abajo.
+
 **Antes de proponer algo que parezca obvio, busca en `02` y `07`.** Muchas ideas razonables ya se evaluaron y se descartaron con motivo: detección de ejecución de juegos, MSIX y Microsoft Store, habilitar Compartir archivos, exit node, compartir archivos, chat. Si vas a reabrir una, hazlo citando la decisión y el argumento nuevo.
 
 ## Mantener los documentos al día
@@ -38,6 +40,7 @@ Está en `docs/`. Son la fuente de verdad del diseño, no notas sueltas. Los sie
 | El esquema de perfiles o el flujo del catálogo | `06` |
 | Algo que decides posponer o no hacer | `07`, con su disparador |
 | Un principio o una parte del producto | `01` |
+| **Cualquier cosa que una persona note al usar Kanpachi** | **`CHANGELOG.md`**, en `Unreleased` |
 
 Reglas de escritura:
 
@@ -45,6 +48,23 @@ Reglas de escritura:
 - Cuando una decisión nueva invalide una vieja, corrige la vieja. No dejes dos versiones conviviendo.
 - Cuando algo se descarte, escribe **por qué**, no solo que se descartó. El propósito es que nadie lo reabra sin argumento nuevo.
 - Español, sin conjunciones adversativas (`pero`, `sin embargo`, `aunque`, `sino`), sin guiones largos como conectores. Usa comas.
+
+### El changelog
+
+`CHANGELOG.md`, en la raíz. Formato [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/), versiones [SemVer](https://semver.org/lang/es/).
+
+**Toca escribir entrada cuando alguien lo nota usando Kanpachi.** Un arreglo, una función, un texto que cambia, algo que deja de estar. No entran los refactors, los tests, los guardianes, ni los cambios de documentación: eso ya vive en el mensaje del commit, y meterlo acá convierte el changelog en un `git log` peor escrito.
+
+Cómo se escribe una entrada:
+
+- **Una línea. Una sola.** Sin sub-viñetas y sin párrafo debajo. Lo que no entra en una línea va en el mensaje del commit, que es lo que la entrada enlaza.
+- **En imperativo y desde la máquina**: "acepta", "deja", "impide", "borra". Es lo que hace la versión nueva, no lo que hiciste tú.
+- **Se entiende sin la categoría encima.** Alguien leyendo solo esa línea tiene que saber qué le cambió.
+- **Termina con el enlace a su commit.** Si el cambio vive en `kanpachi-engine`, se enlaza ahí y se dice.
+- **Cuenta el efecto, no la implementación.** "Acepta a los invitados en el seed" y no "agrega `--secure-mode` a la unit".
+- Categorías y su orden: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`. En inglés, que es como las nombra el formato; las entradas van en español.
+
+**Va en `Unreleased`, en el MISMO commit que el cambio.** Igual que el resto de los documentos, y por el mismo motivo: lo que se deja para el momento de etiquetar es lo que se olvida justo entonces. Al cortar versión, `Unreleased` pasa a ser `## [X.Y.Z] - AAAA-MM-DD` con su enlace al release, y se abre una `Unreleased` vacía.
 
 ## Invariantes que no se negocian
 
