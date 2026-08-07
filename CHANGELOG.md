@@ -8,7 +8,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
-## [0.1.5] - 2026-08-07
+## [0.1.6] - 2026-08-07
 
 ### Changed
 
