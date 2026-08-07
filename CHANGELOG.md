@@ -10,7 +10,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Changed
 
-- Name the version on the download button, asked once an hour by the seed instead of by every visitor's browser ([PENDIENTE](https://github.com/alvarogabrielgomez/kanpachi/commit/PENDIENTE))
+- Name the version on the download button, asked once an hour by the seed instead of by every visitor's browser ([777a3e7](https://github.com/alvarogabrielgomez/kanpachi/commit/777a3e7))
 
 ## [0.1.4] - 2026-08-07
 
