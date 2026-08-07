@@ -7,6 +7,7 @@ The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versi
 This file is in English, like commit messages and release notes, because a release body quotes it verbatim. The design reasoning lives in `docs/02-decisiones-de-diseno.md`, in Spanish, and the mechanical detail lives in the commit each entry links.
 
 ## Unreleased
+## [0.1.7] - 2026-08-07
 
 ### Added
 
