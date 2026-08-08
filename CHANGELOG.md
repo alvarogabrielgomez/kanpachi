@@ -13,7 +13,7 @@ This file is in English, like commit messages and release notes, because a relea
 ### Fixed
 
 - Connect guests through relays by enabling secure mode on the host and lobby ([c6dfadc](https://github.com/alvarogabrielgomez/kanpachi-engine/commit/c6dfadc), in `kanpachi-engine`)
-- Retry the initial room control connection while the relay establishes its encrypted session
+- Retry the initial room control connection while the relay establishes its encrypted session ([638b0f3](https://github.com/alvarogabrielgomez/kanpachi/commit/638b0f3))
 
 ## [0.1.7] - 2026-08-07
 
