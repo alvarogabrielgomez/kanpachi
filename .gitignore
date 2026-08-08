@@ -13,6 +13,13 @@
 # lleva 11 MB de kanpseed al repositorio.
 /dist/
 
+# Las herramientas de medición ARMADAS, con el motor y sus DLL al lado. Las
+# construye `scripts/build_test_tools.ps1`, o sea que esto es el resultado y no
+# la receta. `*.exe` y `*.dll` ya tapaban cuatro de los ficheros y dejaban
+# fuera `WinDivert64.sys` y el directorio de datos, que lleva dentro la
+# `identity.key` de la máquina.
+/testTools/
+
 # Binarios de EasyTier v2.6.4, descargados del release oficial.
 # No se versionan (~80 MB). El pin y el hash viven en docs/02, decisión 1.
 # OJO: no llamar a esta carpeta "vendor", Go la reserva para el vendoring.

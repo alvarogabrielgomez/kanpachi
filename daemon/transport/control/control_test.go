@@ -23,6 +23,69 @@ func TestElCanalSatisfaceElPuerto(t *testing.T) {
 	var _ port.ControlChannel = (*Channel)(nil)
 }
 
+func TestDialWithRetryReintentaTrasElPrimerFallo(t *testing.T) {
+	want := errors.New("el relay todavía está negociando")
+	var calls int
+
+	client, server := net.Pipe()
+	t.Cleanup(func() {
+		_ = client.Close()
+		_ = server.Close()
+	})
+
+	conn, err := dialWithRetry(
+		context.Background(),
+		netip.AddrPortFrom(ipHost, domain.ControlPort),
+		2,
+		time.Second,
+		0,
+		func(ctx context.Context, _ netip.AddrPort) (net.Conn, error) {
+			calls++
+			if _, ok := ctx.Deadline(); !ok {
+				t.Fatal("el intento no tuvo plazo propio")
+			}
+			if calls == 1 {
+				return nil, want
+			}
+			return client, nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conn != client {
+		t.Fatal("no devolvió la conexión del segundo intento")
+	}
+	if calls != 2 {
+		t.Fatalf("intentos = %d, se esperaban 2", calls)
+	}
+}
+
+func TestDialWithRetryRespetaLaCancelación(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var calls int
+	_, err := dialWithRetry(
+		ctx,
+		netip.AddrPortFrom(ipHost, domain.ControlPort),
+		2,
+		time.Second,
+		time.Hour,
+		func(context.Context, netip.AddrPort) (net.Conn, error) {
+			calls++
+			cancel()
+			return nil, errors.New("el relay todavía está negociando")
+		},
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, se esperaba context.Canceled", err)
+	}
+	if calls != 1 {
+		t.Fatalf("intentos = %d, se esperaba 1", calls)
+	}
+}
+
 // TestServirSinEmisorNoAceptaNada: aceptar conexiones para no poder
 // contestarlas es peor que no escuchar.
 func TestServirSinEmisorNoAceptaNada(t *testing.T) {

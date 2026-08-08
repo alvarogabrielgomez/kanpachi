@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"io"
 	"net/netip"
+	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -454,6 +456,27 @@ func (s *Session) Status() domain.RoomState {
 	return s.snapshot()
 }
 
+// IssuedAddresses son las direcciones que este host repartió, ordenadas.
+//
+// Existe para poder CONTRASTAR: el hueco del canal de control de la sala se
+// calcula desde esta misma lista, así que una dirección emitida que no aparece
+// entre los destinatarios de la regla es un invitado que se va a quedar
+// esperando en un dial que nadie contesta. Ese es exactamente el fallo de la
+// v0.1.6, y sin las dos listas juntas no se distingue de una sala recién
+// abierta a la que todavía no entró nadie.
+//
+// Vacía en un invitado, que no emite ninguna.
+func (s *Session) IssuedAddresses() []netip.Addr {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]netip.Addr, 0, len(s.issued))
+	for ip := range s.issued {
+		out = append(out, ip)
+	}
+	slices.SortFunc(out, func(a, b netip.Addr) int { return a.Compare(b) })
+	return out
+}
+
 // snapshot copia lo que se puede mutar desde fuera y publica el resultado para
 // que Status no tenga que tomar el candado.
 //
@@ -618,6 +641,15 @@ func (s *Session) desiredRuleSetLocked() (domain.RuleSet, error) {
 	return desired, nil
 }
 
+// rango pinta un par de puertos como lo escribiría una persona. Solo para el
+// log: un `57623-57623` se lee dos veces antes de entender que es uno solo.
+func rango(desde, hasta uint16) string {
+	if desde == hasta {
+		return strconv.Itoa(int(desde))
+	}
+	return strconv.Itoa(int(desde)) + "-" + strconv.Itoa(int(hasta))
+}
+
 func (s *Session) applyRuleSetLocked(ctx context.Context, desired domain.RuleSet) error {
 	if err := s.deps.Firewall.Apply(ctx, desired); err != nil {
 		return fmt.Errorf("aplicando las reglas de firewall: %w", err)
@@ -643,6 +675,23 @@ func (s *Session) applyRuleSetLocked(ctx context.Context, desired domain.RuleSet
 		s.appliedRules = firma
 		s.deps.Log.Info("cambiaron las reglas del firewall",
 			"juego", s.state.Game.ID, "rol", s.state.Role.String(), "reglas", len(desired.Rules))
+		// Y CADA regla, con a quién abre.
+		//
+		// El número solo no sirve, y eso está medido: la v0.1.6 escribía
+		// `reglas 1` cada vez que el host emitía una credencial, y esa línea es
+		// compatible con las dos realidades opuestas. Con la regla de la sala
+		// puesta hay sala; sin ella nadie puede entrar y el invitado se queda en
+		// un `dial` que nadie contesta. Distinguirlas costó horas de leer código
+		// porque el log decía lo mismo en los dos casos.
+		//
+		// Lo que hace falta para no repetirlo es el DESTINATARIO: una regla del
+		// canal de control con `remote` vacío es exactamente el fallo, y se ve de
+		// un vistazo.
+		for _, r := range desired.Rules {
+			s.deps.Log.Info("  regla", "nombre", r.Name, "proto", r.Proto.String(),
+				"puertos", rango(r.From, r.To), "local", r.Local.String(),
+				"remotos", r.Remote, "redes", r.Nets)
+		}
 	}
 
 	// Y se programa una ronda del canario, que es la ÚNICA comprobación que sale

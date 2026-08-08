@@ -29,6 +29,19 @@ var reconnect = []time.Duration{
 	30 * time.Second,
 }
 
+// initialRoomDialAttempts es cuántas veces se intenta abrir el canal de la
+// sala al entrar. El primer SYN puede disparar el handshake del relay de la
+// red overlay y perderse antes de que el camino de datos esté listo.
+const initialRoomDialAttempts = 2
+
+// initialRoomDialWait limita cada intento inicial y deja que el relay termine
+// su handshake antes del siguiente. Son plazos de la conexión inicial; la
+// reconexión de una sesión ya establecida usa [reconnect].
+const (
+	initialRoomDialWait  = 5 * time.Second
+	initialRoomRetryWait = 2 * time.Second
+)
+
 // Dial conecta con el host. Reemplaza la conexión anterior.
 //
 // El invitado marca hacia afuera y no abre ningún puerto, así que su deny-all
@@ -68,7 +81,7 @@ func (c *Channel) Dial(ctx context.Context, host netip.Addr) error {
 		anterior.stop()
 	}
 
-	conn, err := c.dial(ctx, cli.at)
+	conn, err := c.dialInitial(ctx, cli.at, cli.puerta)
 	if err != nil {
 		cli.stop()
 		c.mu.Lock()
@@ -85,6 +98,63 @@ func (c *Channel) Dial(ctx context.Context, host netip.Addr) error {
 	}
 	go cli.read(conn)
 	return nil
+}
+
+// dialInitial abre la conexión que inicia una conversación de control.
+//
+// La puerta del vestíbulo se intenta una vez: no hay una transición de red
+// previa que pueda estar preparando un relay. Al entrar a una sala, en cambio,
+// el primer paquete puede activar el handshake del relay de EasyTier. Se hace
+// un segundo intento con un plazo propio y acotado, en vez de dejar que TCP
+// espere el timeout largo del sistema operativo.
+func (c *Channel) dialInitial(ctx context.Context, at netip.AddrPort, puerta bool) (net.Conn, error) {
+	if puerta {
+		return c.dial(ctx, at)
+	}
+	return dialWithRetry(ctx, at, initialRoomDialAttempts, initialRoomDialWait,
+		initialRoomRetryWait, c.dial)
+}
+
+// dialWithRetry marca con un presupuesto por intento y una pausa cancelable.
+//
+// El contexto padre conserva la autoridad: cancelar el ingreso corta el
+// marcado o la espera y no inicia otro intento. El último error del marcador
+// se devuelve sin ocultarlo para que el caso de uso pueda diagnosticarlo.
+func dialWithRetry(
+	ctx context.Context,
+	at netip.AddrPort,
+	attempts int,
+	attemptWait time.Duration,
+	retryWait time.Duration,
+	dial func(context.Context, netip.AddrPort) (net.Conn, error),
+) (net.Conn, error) {
+	var last error
+	for attempt := 0; attempt < attempts; attempt++ {
+		attemptCtx, cancel := context.WithTimeout(ctx, attemptWait)
+		conn, err := dial(attemptCtx, at)
+		cancel()
+		if err == nil {
+			return conn, nil
+		}
+		last = err
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if attempt == attempts-1 {
+			break
+		}
+
+		timer := time.NewTimer(retryWait)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return nil, ctx.Err()
+		}
+	}
+	return nil, last
 }
 
 // RequestCredential es el paso 5 del canje: se pide por la puerta y la respuesta

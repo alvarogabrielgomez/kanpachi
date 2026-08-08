@@ -7,6 +7,14 @@ The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versi
 This file is in English, like commit messages and release notes, because a release body quotes it verbatim. The design reasoning lives in `docs/02-decisiones-de-diseno.md`, in Spanish, and the mechanical detail lives in the commit each entry links.
 
 ## Unreleased
+
+## [0.1.8] - 2026-08-08
+
+### Fixed
+
+- Connect guests through relays by enabling secure mode on the host and lobby ([c6dfadc](https://github.com/alvarogabrielgomez/kanpachi-engine/commit/c6dfadc), in `kanpachi-engine`)
+- Retry the initial room control connection while the relay establishes its encrypted session
+
 ## [0.1.7] - 2026-08-07
 
 ### Added
@@ -100,6 +108,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.1.8]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.8
 [0.1.4]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.4
 [0.1.3]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.3
 [0.1.2]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.2

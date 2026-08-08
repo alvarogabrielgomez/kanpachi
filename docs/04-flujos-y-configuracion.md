@@ -304,6 +304,49 @@ Checklist del droplet:
 6. **Convive con producción.** El droplet corre Vaultwarden, Logto, el blog y varias bases de datos, con el disco al 87% y poca RAM libre. Por eso los límites de memoria y CPU no son opcionales, y por eso el seed vive en su propia red de contenedores sin ver a los demás.
 7. **Endurecimiento futuro:** con público, limitar qué redes puede relevar con `--relay-network-whitelist`, poner techo con `--foreign-relay-bps-limit`, y mover el relay de datos a un VPS dedicado.
 
+## Las herramientas de medición
+
+Viven en `internal/`, no se distribuyen con el instalador y el producto no las puede importar. Son seis sondas de un solo asunto (`fwprobe`, `engineprobe`, `netcfgprobe`, `dirprobe`, `watchprobe`, `kanpctl`) más dos que se usan juntas y conviene leer como una sola cosa.
+
+### `roomprobe`: la sala entera, sin daemon ni instalador
+
+Levanta la sesión de verdad, con los dieciséis puertos cableados igual que `daemon/cmd/kanpachid` y el mismo supervisor. Ofrece un menú para crear sala, entrar, expulsar, cerrar, salir y volver a la última, y una vista que se redibuja sola con los miembros, los plazos y el canario.
+
+**No abre puertos de juego y no lleva catálogo**, a propósito: lo que mide es la sala, o sea la red cifrada, el canal de control, la compuerta y los adaptadores.
+
+**El log es el entregable.** `roomprobe.log` queda junto al ejecutable y lleva tres cosas que el log del daemon no tenía:
+
+- Los pasos del diario de cada operación. Es la misma narración que la pantalla enseña en "ver detalles", que antes no salía del proceso: el ingreso a una sala son doce pasos, y el último que aparece es dónde se atascó.
+- Las reglas de firewall **con su destinatario**, y no solo cuántas. Un `reglas 1` es compatible con dos realidades opuestas; un `remotos []` en la regla de la sala es el fallo de la v0.1.6 de un vistazo.
+- Un volcado a demanda, con la tecla `d`, que junta adaptadores leídos del sistema, miembros con su camino, huecos con `puesto` sí o no, NAT, RTT a los seeds y los plazos corriendo.
+
+Se niega a arrancar con el servicio `kanpachi-daemon` vivo, salvo con `-force`: construir la sesión llama a `PurgeOwned`, o sea que le borra las reglas al daemon instalado con la sala de alguien abierta detrás.
+
+### `roombundle`: lo mismo, en un fichero que se manda por chat
+
+`roomprobe.exe` no se vale por sí mismo. Necesita al lado el motor, `wintun.dll` para crear el adaptador y `Packet.dll`, que el motor importa de forma dura. Pedirle a alguien que mantenga cinco ficheros juntos para ayudar diez minutos no funciona.
+
+`roombundle` los empotra con `go:embed`, se eleva una sola vez, los suelta en una carpeta temporal, corre roomprobe esperándolo, y borra la carpeta al terminar. Un `.exe` de unos 49 MB.
+
+Cuatro decisiones que sostienen que funcione:
+
+1. **Se eleva ANTES de extraer.** roomprobe se auto-eleva si no tiene permisos: la copia sin privilegios lanza una elevada y muere en el acto. Un bundle que corriera roomprobe sin estar elevado vería terminar al proceso en un segundo y borraría la carpeta con la copia elevada trabajando dentro.
+2. **La carga va detrás de la etiqueta de compilación `bundle`.** `go:embed` solo empotra lo que esté dentro del directorio del paquete, así que el script copia los cinco a `internal/roombundle/carga/` justo antes de compilar y los borra después. Sin la etiqueta el binario compila y se niega a correr diciendo por qué, en vez de producir un bundle vacío que falla recién en la máquina de otra persona.
+3. **El log y los datos quedan junto al bundle, no en el temporal.** roomprobe los pone junto a SU ejecutable, que aquí vive en la carpeta que se borra al salir, así que el bundle le pasa `-log` y `-data` apuntando a su propio directorio. Sin eso la limpieza destruiría el log justo cuando alguien lo iba a mandar, y `last-room.json` moriría en cada corrida dejando "volver a la última sala" sin funcionar nunca. La última línea que se ve al cerrar es la ruta del log.
+4. **La limpieza tiene tres pasos.** `wintun.dll` y `WinDivert64.sys` quedan tomados por el kernel unos instantes después de que roomprobe termine, así que el primer borrado falla sin que pase nada malo: se reintenta unos segundos, después se apunta con `MoveFileEx(..., MOVEFILE_DELAY_UNTIL_REBOOT)` para que Windows lo borre en el próximo arranque, y si ni eso, se dice la ruta.
+
+**Va sin firmar**, así que SmartScreen lo recibe con "Editor desconocido" y Defender puede quejarse: un ejecutable que suelta otros ejecutables y un driver en el temporal y pide administrador tiene, literalmente, la forma de un dropper. Quien lo reciba pulsa "Más información" y "Ejecutar de todas formas". Lo único que quita ese aviso es un certificado de firma de código. Es el mismo problema que el del instalador, ver `07-futuro.md`.
+
+### Cómo se arman
+
+```powershell
+scripts\build_test_tools.ps1 -SinPreguntar
+```
+
+No hace falta consola elevada: solo compila y copia. Deja todo en `testTools\`, que está en `.gitignore`. El script corre además `GOOS=linux go vet ./internal/...` antes de nada, que es la puerta del CI: `roomprobe` la rompió una vez importando `x/sys/windows` sin etiqueta de compilación, y descubrirlo acá cuesta cuatro segundos en vez de un push.
+
+Ninguna de las dos se compila con `-ldflags="-s -w"`, por lo mismo que el resto del proyecto.
+
 ## Diagnóstico cuando algo falla
 
 Botón **Copiar reporte** en la UI. Genera texto sin datos sensibles: versión, Windows, tipo de NAT, UDP bloqueado o no, RTT a semillas, estado de cada peer. Se pega en el grupo y quien ayuda ve el problema sin veinte preguntas de ida y vuelta.

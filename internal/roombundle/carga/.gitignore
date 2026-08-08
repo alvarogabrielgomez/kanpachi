@@ -1,0 +1,9 @@
+# Aquí es donde `scripts/build_test_tools.ps1` deja los cinco ficheros justo
+# antes de compilar con `-tags bundle`, porque `go:embed` solo puede empotrar
+# cosas que estén DENTRO del directorio de su paquete: no acepta `../`.
+#
+# Son 48 MB de binarios compilados, o sea el resultado y no la receta. Se
+# ignoran todos y se versiona solo este fichero, que es lo que mantiene el
+# directorio existiendo en un clon recién hecho.
+*
+!.gitignore

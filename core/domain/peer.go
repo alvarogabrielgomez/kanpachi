@@ -59,7 +59,19 @@ type NetCheck struct {
 	// NATKind sale del motor: cone, symmetric, cgnat, y demás.
 	NATKind    string
 	UDPBlocked bool
-	SeedRTT    map[string]time.Duration
+
+	// SeedRTT llega SIEMPRE VACÍO hoy, y no significa que ningún seed conteste.
+	//
+	// El motor no lo cuenta: su respuesta de diagnóstico lleva NAT, UDP,
+	// direcciones públicas, dirección virtual y MTU, y nada del seed. El
+	// adaptador rellena lo que hay, así que este mapa nunca se puebla. **Es un
+	// campo a la espera de que el motor lo mande, no una medición.**
+	//
+	// Está dicho acá porque el mapa vacío se lee como "ningún seed contestó", y
+	// una sonda lo dio por bueno y acusó de caído a un seed sano. Quien quiera
+	// la respuesta de verdad la mide él: resolver el nombre y abrir un TCP al
+	// puerto del seed es la misma prueba que haría el motor.
+	SeedRTT map[string]time.Duration
 
 	// MTU efectivo del camino, sondeado con ping de no fragmentar. Existe
 	// porque el síntoma de un MTU mal puesto es cruel para un juego: el túnel

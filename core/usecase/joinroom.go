@@ -160,6 +160,14 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 	// la presencia del host quedaría clavada en lo que se puso al entrar y el
 	// contador no arrancaría nunca.
 	if err := s.deps.Control.Dial(ctx, domain.HostAddress(cred.Subnet)); err != nil {
+		// Se anota QUIÉN veía el motor en ese instante. La tabla OSPF sirve para
+		// separar que la sala nunca formó una ruta de que la ruta existe pero su
+		// plano de datos todavía no responde; no prueba que el SYN haya llegado.
+		//
+		// Se pregunta al motor y no a `s.state.Peers`, que en este punto sigue
+		// teniendo lo de antes de entrar: los miembros se refrescan más abajo,
+		// después de esta misma línea que falló.
+		s.logMeshOnDialFailureLocked(ctx, domain.HostAddress(cred.Subnet))
 		return domain.RoomState{}, fmt.Errorf(
 			"se entró a la sala y el canal con el host no levantó: %w", err)
 	}
@@ -307,6 +315,51 @@ func (s *Session) exchangeForCredential(ctx context.Context, nick domain.Nicknam
 		return domain.Credential{}, fmt.Errorf("el host asignó su propia dirección, %s", cred.VirtualIP)
 	}
 	return cred, nil
+}
+
+// logMeshOnDialFailureLocked anota quién veía el motor cuando el marcado al
+// host falló.
+//
+// **No devuelve error y no puede cambiar nada.** Es lo último que se hace antes
+// de deshacer un ingreso que ya falló, y un fallo acá solo puede empeorar el
+// mensaje que el usuario va a recibir.
+//
+// Asume el candado tomado.
+func (s *Session) logMeshOnDialFailureLocked(ctx context.Context, host netip.Addr) {
+	peers, err := s.deps.Engine.Peers(ctx)
+	if err != nil {
+		s.deps.Log.Warn("no se pudo preguntar al motor quién hay en la sala justo tras fallar el canal",
+			"error", err)
+		return
+	}
+
+	var hostPeer *domain.Peer
+	for _, p := range peers {
+		if p.Self {
+			continue
+		}
+		s.deps.Log.Info("  la red de la sala tenía a este par al fallar el canal",
+			"ip", p.VirtualIP.String(), "nombre", p.Name.String(),
+			"camino", p.Path.String(), "rtt", p.RTT.String(), "host", p.Host)
+		if p.VirtualIP == host {
+			peer := p
+			hostPeer = &peer
+		}
+	}
+	if hostPeer != nil {
+		s.deps.Log.Warn("el motor conoce una ruta al host, pero el canal no levantó: "+
+			"la ruta no prueba que el plano de datos haya entregado el SYN; revisar la sesión relay, el listener y el firewall",
+			"host", host.String(), "camino", hostPeer.Path.String(), "rtt", hostPeer.RTT.String())
+		if hostPeer.RTT <= 0 {
+			s.deps.Log.Warn("el rtt del host es 0: todavía no hay una medición de ida y vuelta; "+
+				"la ruta OSPF puede existir mientras el handshake del relay sigue sin completar",
+				"host", host.String())
+		}
+		return
+	}
+	s.deps.Log.Warn("el motor NO veía al host: la red cifrada de la sala no llegó a "+
+		"formarse, y el firewall no tiene nada que ver con esto",
+		"host", host.String(), "pares-vistos", len(peers))
 }
 
 // checkSubnetAgainstLocal rechaza una subred de sala que pise algo de esta
