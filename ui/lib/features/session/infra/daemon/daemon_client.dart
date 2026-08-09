@@ -138,21 +138,30 @@ class DaemonClient {
     final Completer<DaemonResponse> espera = Completer<DaemonResponse>();
     _esperando[id] = espera;
 
-    // **El plazo se arma ANTES de escribir, y eso cierra una carrera medida.**
+    // **El plazo se arma ANTES de escribir, y se le pone un oyente en el acto.**
     //
     // Entre registrar el completer y llegar a esperarlo hay un `await` sobre la
-    // escritura. Si el daemon cortaba justo ahí, [_matarTodo] completaba con un
-    // error un futuro que todavía no tenía a nadie escuchando, y eso es un error
-    // asíncrono huérfano: sube hasta la zona de `main()` y queda anotado como un
-    // fallo de la interfaz que nadie pidió. Con la traza VACÍA, además, porque
-    // `completeError` sin traza deja `StackTrace.empty`. Es exactamente la línea
-    // que apareció en `kanpachi-ui.log` antes de cada caída del 2026-08-09.
+    // escritura. Si el daemon corta justo ahí, [_matarTodo] completa con un
+    // error un futuro que todavía no tiene a nadie escuchando, y eso es un error
+    // asíncrono HUÉRFANO: sube hasta la zona de `main()` y queda anotado como un
+    // fallo de la interfaz que nadie pidió.
+    //
+    // **Armar el plazo antes NO alcanza, y eso costó una vuelta entera.** Mueve
+    // el huérfano en vez de quitarlo: el que se queda sin oyente pasa a ser el
+    // futuro que devuelve `timeout`, porque a ese nadie lo espera hasta después
+    // de la escritura. Medido el 2026-08-09 a las 17:50 y ocho veces más, con la
+    // traza apuntando a `_matarTodo` desde el `onDone` del transporte.
+    //
+    // Lo que lo cierra es el oyente de abajo. Marca el futuro como observado
+    // desde ya, y `await` más abajo agrega un segundo oyente que recibe lo
+    // mismo: un `Future` admite varios, y basta con que UNO llegue a tiempo.
     //
     // De paso el plazo pasa a cubrir también la escritura, que es lo correcto:
     // el plazo es del MÉTODO, y escribir es parte del método. Antes una
     // escritura que no volviera se quedaba esperando sin plazo ninguno.
     final Duration plazo = _timeoutFor(method);
     final Future<DaemonResponse> respuestaFutura = espera.future.timeout(plazo);
+    unawaited(respuestaFutura.then<void>((_) {}, onError: (Object _) {}));
 
     try {
       await transport.send(
@@ -160,9 +169,6 @@ class DaemonClient {
       );
     } on Object catch (e) {
       _esperando.remove(id);
-      // Sacado del mapa ya no lo completa nadie, y su plazo sí va a vencer. Sin
-      // esto, ese vencimiento sería el mismo error huérfano por la otra puerta.
-      respuestaFutura.ignore();
       throw DaemonUnreachable(
         'no se pudo escribir al daemon: $e',
         kind: DaemonUnreachableKind.writeFailed,
