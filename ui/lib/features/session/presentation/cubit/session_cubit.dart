@@ -158,7 +158,9 @@ class SessionCubit extends Cubit<SessionState> {
   /// of seconds to notice: leaving the spinner up meanwhile makes the button
   /// look broken and invites a second press.
   Future<void> cancelPending() async {
-    if (!state.isWaiting) return;
+    // [SessionState.canCancelWait] y no `isWaiting`: salir de una sala también
+    // es una espera y no se puede cortar. Ver ese getter.
+    if (!state.canCancelWait) return;
     // Remembered so the failure this produces can be swallowed. The daemon
     // answers a cancelled operation with an error, correctly, and putting a
     // red notice on screen over a button the person just pressed is noise.
@@ -511,12 +513,24 @@ class SessionCubit extends Cubit<SessionState> {
     });
   }
 
+  /// Renueva el código de la sala.
+  ///
+  /// Lleva bandera propia, y no es cosmético: por dentro habla con el registro
+  /// del seed, que es la única operación de la sala que depende de internet, y
+  /// su plazo son treinta segundos. Sin nada que lo diga, el botón parece
+  /// muerto y se vuelve a pulsar, que son dos rotaciones seguidas: la segunda
+  /// mata el código que la primera acaba de repartir.
+  ///
+  /// La bandera baja pase lo que pase. Dejada arriba tras un fallo, el botón
+  /// se queda apagado para siempre y la única salida sería reiniciar.
   Future<void> renewCode() async {
     final Room? current = state.room;
-    if (current == null) return;
+    if (current == null || state.isRenewingCode) return;
+    emit(state.copyWith(code: CodeWork.renewing));
     await _try(FailedAction.rotateInviteCode, () async {
       emit(state.copyWith(room: await _repository.renewCode(current)));
     });
+    if (!isClosed) emit(state.copyWith(code: CodeWork.none));
   }
 
   /// Reabre la sala que quedó del arranque anterior.
@@ -582,10 +596,35 @@ class SessionCubit extends Cubit<SessionState> {
   /// live, invites a second attempt at something that may have half happened.
   /// The failure is shown, the screen goes home, and the next refresh brings
   /// back the truth if the room really is still open.
+  ///
+  /// # Por qué lleva fase, igual que crear y entrar
+  ///
+  /// Porque tarda lo mismo y por lo mismo. Por dentro cierra los puertos,
+  /// restaura las reglas ajenas que se hubieran suspendido, suelta la
+  /// compuerta, revierte los ajustes del adaptador, cierra el canal y baja la
+  /// red cifrada, que es esperar a que otro proceso termine. Sin fase, la
+  /// pantalla de la sala se quedaba quieta con los botones vivos varios
+  /// segundos: se ve exactamente igual que un botón que no hizo nada, y lo que
+  /// invita es a pulsarlo otra vez.
+  ///
+  /// La fase la decide el ROL, y el daemon narra con la misma distinción: al
+  /// host se le cierra la sala para todos, y decirle "saliendo" mentiría por
+  /// omisión sobre lo que les pasa a los demás.
   Future<void> leave() async {
     final Room? current = state.room;
     if (current != null) {
+      emit(
+        state.copyWith(
+          phase: current.selfIsHost
+              ? SessionPhase.closing
+              : SessionPhase.leaving,
+          clearFailure: true,
+        ),
+      );
+      // Solo quien pidió que se lo narren paga el sondeo, igual que al abrir.
+      _watchProgress();
       await _try(FailedAction.leaveRoom, () => _repository.leaveRoom(current));
+      _stopWatching();
     }
     if (isClosed) return;
     emit(

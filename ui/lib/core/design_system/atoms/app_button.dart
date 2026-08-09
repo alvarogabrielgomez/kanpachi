@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_spinner.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
@@ -53,6 +54,7 @@ class AppButton extends StatefulWidget {
     this.textStyle,
     this.emphasis = false,
     this.icon,
+    this.busy = false,
     super.key,
   });
 
@@ -90,6 +92,19 @@ class AppButton extends StatefulWidget {
 
   final Widget? icon;
 
+  /// La acción de este botón está en marcha: rueda en vez de icono, y apagado.
+  ///
+  /// **Apagado además de girar, y esa mitad es la que importa.** Una rueda que
+  /// gira sobre un botón que se sigue pudiendo pulsar invita a pulsarlo otra
+  /// vez, que es mandarle al daemon la misma orden dos veces. Es el mismo
+  /// argumento por el que la sala se pone en gris mientras se aplica un juego,
+  /// llevado al tamaño de un botón: lo que tarda un segundo no merece apagar
+  /// una pantalla entera, y merece decir que está pasando.
+  ///
+  /// La rueda ocupa el sitio del icono a propósito. Reemplazar el TEXTO haría
+  /// que el botón cambiara de ancho al pulsarlo, y con él la fila entera.
+  final bool busy;
+
   @override
   State<AppButton> createState() => _AppButtonState();
 }
@@ -117,7 +132,7 @@ class _AppButtonState extends State<AppButton> {
 
   bool get _hasRelief => widget.variant == AppButtonVariant.primary && _enabled;
 
-  bool get _enabled => widget.onPressed != null;
+  bool get _enabled => widget.onPressed != null && !widget.busy;
 
   @override
   Widget build(BuildContext context) {
@@ -185,7 +200,7 @@ class _AppButtonState extends State<AppButton> {
         onTapDown: _enabled ? (_) => setState(() => _pressed = true) : null,
         onTapUp: _enabled ? (_) => setState(() => _pressed = false) : null,
         onTapCancel: _enabled ? () => setState(() => _pressed = false) : null,
-        onTap: widget.onPressed,
+        onTap: _enabled ? widget.onPressed : null,
         child: AnimatedContainer(
           duration: AppMotion.press,
           curve: AppMotion.standard,
@@ -223,7 +238,12 @@ class _AppButtonState extends State<AppButton> {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
-              if (widget.icon != null) ...<Widget>[
+              // La rueda gana al icono: son el mismo sitio, y mientras la
+              // acción corre lo que hay que decir es que está corriendo.
+              if (widget.busy) ...<Widget>[
+                const AppSpinner(size: 13, stroke: 2),
+                const SizedBox(width: AppSpacing.sm),
+              ] else if (widget.icon != null) ...<Widget>[
                 IconTheme(
                   data: IconThemeData(color: foreground, size: 14),
                   child: widget.icon!,

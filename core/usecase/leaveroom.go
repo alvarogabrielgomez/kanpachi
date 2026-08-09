@@ -22,6 +22,27 @@ func (s *Session) LeaveRoom(ctx context.Context) domain.RoomState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// El diario, **solo si de verdad hay sala de la que salir**.
+	//
+	// La guarda no es celo: salir es idempotente y lo llaman tres sitios, así
+	// que sin ella un `LeaveRoom` sobre nada abriría un diario vacío y pisaría
+	// el de la operación anterior. Eso destruye justo lo que la pantalla enseña
+	// en "ver detalles" del fallo que acaba de ocurrir, y el caso es de verdad:
+	// una sala que no abre deja al usuario apretando el botón de salir.
+	//
+	// Cierra siempre y sin error, porque `LeaveRoom` no devuelve ninguno: salir
+	// termina fuera de la sala pase lo que pase. Lo que falle por dentro lo
+	// anota el paso que lo intentaba, que es donde se puede leer cuál fue.
+	if s.state.Conn.InRoom() {
+		op := "salir de la sala"
+		if s.state.IsHost() {
+			op = "cerrar la sala"
+		}
+		s.deps.Progress.Begin(op)
+		defer s.deps.Progress.End(nil)
+		s.deps.Progress.Step(domain.ScopeDaemon, "recibida la orden de "+op)
+	}
+
 	// Si el que sale es el host, la sala se termina para todos. Avisar cuesta
 	// un mensaje y le ahorra a cada invitado los veinte minutos del contador
 	// mirando una sala que ya no existe.
@@ -29,11 +50,13 @@ func (s *Session) LeaveRoom(ctx context.Context) domain.RoomState {
 	// Va antes del teardown por lo mismo que el aviso de expulsión: después no
 	// hay canal por donde mandarlo.
 	if s.state.IsHost() && s.state.Conn.InRoom() {
+		s.deps.Progress.Step(domain.ScopeDaemon, "avisando a los miembros de que la sala se cierra")
 		if err := s.deps.Control.Notify(ctx, netip.Addr{}, domain.RoomNotice{
 			Kind:   domain.NoticeRoomClosed,
 			Reason: "el host cerró la sala",
 		}); err != nil {
 			s.deps.Log.Warn("no se pudo avisar del cierre de la sala", "error", err)
+			s.deps.Progress.Step(domain.ScopeDaemon, "no se pudo avisar a los miembros, se sigue igual")
 		}
 	}
 	s.leaveLocked(ctx, "el usuario salió de la sala", domain.ExitUser)
@@ -41,7 +64,9 @@ func (s *Session) LeaveRoom(ctx context.Context) domain.RoomState {
 	// no cubre este momento: exige sala para juzgar, corre por temporizador, y
 	// si el daemon se apaga justo después de salir, que es lo que la gente hace
 	// al terminar de jugar, nadie vuelve a medir nunca.
+	s.deps.Progress.Step(domain.ScopeFirewall, "comprobando que no quedó ningún puerto abierto")
 	s.verifyClosedLocked(ctx)
+	s.deps.Progress.Step(domain.ScopeDaemon, "fuera de la sala")
 	return s.snapshot()
 }
 

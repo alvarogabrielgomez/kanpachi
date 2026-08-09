@@ -190,12 +190,17 @@ class _NicknameScreenState extends State<NicknameScreen> {
   }
 }
 
-/// Las dos esperas: creando la sala y buscándola.
+/// Las cuatro esperas: creando la sala, buscándola, saliendo y cerrándola.
 ///
 /// Dicen qué está pasando y, sobre todo, qué NO está pasando todavía — que no
 /// hay ningún puerto abierto, que el tráfico del juego no pasa por el
 /// servidor. Es el momento en que alguien se pregunta qué acaba de autorizar,
 /// y contestarlo ahí vale más que en cualquier ayuda.
+///
+/// Las dos salidas están acá por lo mismo que las dos entradas, y no por
+/// simetría: tardan lo que tarda bajar la red cifrada, y sin ellas la pantalla
+/// de la sala se quedaba quieta con los botones vivos. Se distinguen de las
+/// otras dos en que NO se pueden cancelar, ver [SessionState.canCancelWait].
 class ProgressScreen extends StatelessWidget {
   const ProgressScreen({
     required this.title,
@@ -209,6 +214,32 @@ class ProgressScreen extends StatelessWidget {
       note =
           'Levantando la red de la sala y generando el código. Todavía no '
           'hay ningún puerto abierto.';
+
+  /// La salida de un invitado.
+  ///
+  /// El texto dice lo que se está DESHACIENDO, que es lo que alguien quiere
+  /// saber al salir: si quedó algo abierto. Es la misma pregunta que la espera
+  /// de creación contesta por el otro lado, y la respuesta tiene que llegar
+  /// mientras se espera, no después.
+  const ProgressScreen.leaving({super.key})
+    : title = 'Saliendo de la sala…',
+      note =
+          'Cerrando los puertos que se abrieron, devolviendo las reglas que '
+          'se habían suspendido y bajando la red de la sala.',
+      onCancel = null;
+
+  /// El cierre de la sala propia.
+  ///
+  /// Separada de [ProgressScreen.leaving] por el texto: al host se le cierra
+  /// la sala para todos, y decir "saliendo" mentiría por omisión sobre lo que
+  /// les pasa a los demás. Es la misma distinción que hace el botón que la
+  /// dispara.
+  const ProgressScreen.closing({super.key})
+    : title = 'Cerrando la sala…',
+      note =
+          'Avisando a los miembros, cerrando los puertos que se abrieron, '
+          'devolviendo las reglas que se habían suspendido y bajando la red.',
+      onCancel = null;
 
   final String title;
   final String note;

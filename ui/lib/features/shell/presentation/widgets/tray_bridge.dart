@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:kanpachi_ui/core/platform/app_log.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
@@ -123,6 +124,11 @@ class _TrayBridgeState extends State<TrayBridge> with WindowListener {
   /// interfaz y contesta que no puede, y ahí cerrar la ventana es exactamente
   /// lo que el usuario pidió.
   Future<void> _cerrarDeVerdad() async {
+    // **Antes de pedirlo, no después.** Lo de abajo probablemente no termine:
+    // el daemon se lleva este proceso en cuanto atiende la orden. Anotado acá,
+    // la última línea del registro dice que el cierre fue pedido, que es lo que
+    // separa una salida limpia de una caída.
+    AppLog.info('salir de Kanpachi: se le pide el apagado al daemon');
     if (mounted) await context.read<SessionCubit>().quitKanpachi();
     await _bandeja.stop();
     await windowManager.setPreventClose(false);

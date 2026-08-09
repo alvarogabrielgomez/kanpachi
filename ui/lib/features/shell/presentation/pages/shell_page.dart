@@ -360,16 +360,23 @@ class _CurrentScreen extends StatelessWidget {
         context.read<ShellCubit>().go(AppScreen.home);
       }
 
-      if (session.phase == SessionPhase.creating) {
-        return ProgressScreen.creating(onCancel: cancelar);
-      }
-      return ProgressScreen(
-        title: 'Buscando la sala…',
-        note:
-            'Presentando tu equipo con los demás miembros. El tráfico del '
-            'juego nunca pasa por el servidor.',
-        onCancel: cancelar,
-      );
+      // **Las dos salidas van SIN botón de cancelar, y no es un olvido.**
+      // Cortar un desmontaje a la mitad deja exactamente el estado que salir
+      // existe para deshacer: reglas puestas para una sala que ya no está. Ver
+      // [SessionState.canCancelWait]. Duran segundos, y el panel de pasos dice
+      // en cuál va.
+      return switch (session.phase) {
+        SessionPhase.creating => ProgressScreen.creating(onCancel: cancelar),
+        SessionPhase.joining => ProgressScreen(
+          title: 'Buscando la sala…',
+          note:
+              'Presentando tu equipo con los demás miembros. El tráfico del '
+              'juego nunca pasa por el servidor.',
+          onCancel: cancelar,
+        ),
+        SessionPhase.closing => const ProgressScreen.closing(),
+        _ => const ProgressScreen.leaving(),
+      };
     }
 
     // **Three screens need a room, and without one they are a dead end.**

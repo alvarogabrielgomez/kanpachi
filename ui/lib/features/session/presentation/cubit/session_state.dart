@@ -18,6 +18,22 @@ enum SessionPhase {
   /// Buscando una sala ajena y presentando el equipo con sus miembros.
   joining,
 
+  /// Saliendo de una sala ajena, como invitado.
+  ///
+  /// Es una espera igual que las de arriba y por el mismo motivo: por dentro
+  /// cierra puertos, restaura reglas ajenas, revierte los ajustes del adaptador
+  /// y baja la red cifrada, que es esperar a que otro proceso termine. Sin
+  /// fase, el botón se quedaba pulsado y la pantalla quieta varios segundos.
+  leaving,
+
+  /// Cerrando la sala propia, como host.
+  ///
+  /// Separada de [leaving] por el texto y nada más: al host se le cierra la
+  /// sala para todos, y decirle "saliendo" mentiría por omisión sobre lo que
+  /// le pasa a los demás. Es la misma distinción que ya hace el botón que la
+  /// dispara. Por dentro son la misma operación.
+  closing,
+
   /// Dentro de una sala.
   inRoom,
 }
@@ -50,6 +66,18 @@ enum RoomWork {
 /// enum, pulsar el botón de la alarma dejaría la pantalla entera en gris.
 enum ProtectionWork { none, reapplying }
 
+/// Qué se está haciendo con el código de la sala.
+///
+/// Aparte de [RoomWork] por el mismo argumento que [ProtectionWork]: renovar
+/// el código no cambia los puertos ni los miembros, así que meterlo en aquel
+/// enum dejaría la columna entera de la sala en gris con su tarjeta de
+/// "aplicando" encima, para una operación que solo cambia un texto.
+///
+/// Lo que sí tiene que hacer es apagar SU botón: renovar da un código nuevo y
+/// mata el anterior, y mandarlo dos veces por un botón que parecía muerto
+/// invalida el que se acaba de repartir.
+enum CodeWork { none, renewing }
+
 @immutable
 class SessionState {
   const SessionState({
@@ -62,6 +90,7 @@ class SessionState {
     this.nickname = '',
     this.health = const HealthReport.unknown(),
     this.protection = ProtectionWork.none,
+    this.code = CodeWork.none,
     this.refreshing = false,
     this.daemonDown = false,
     this.failure,
@@ -94,6 +123,9 @@ class SessionState {
 
   /// Si se está reponiendo la protección ahora mismo.
   final ProtectionWork protection;
+
+  /// Si se está renovando el código de la sala ahora mismo. Ver [CodeWork].
+  final CodeWork code;
 
   /// Si se está volviendo a preguntar por la sala y la salud.
   ///
@@ -155,16 +187,33 @@ class SessionState {
 
   bool get hasRoom => room != null;
 
-  /// Whether a long operation is in flight: creating a room or joining one.
+  /// Whether a long operation is in flight and the window is on hold.
   ///
-  /// The two together, because everything that reads this treats them the
-  /// same: they are the two waits with a Cancel button, and the two the daemon
-  /// can be asked to cut short.
+  /// The four together, because everything that reads this treats them the
+  /// same: the wait screen wins over whatever was on show, and the heartbeat
+  /// stands down so it cannot repaint a room that is half open or half gone.
+  ///
+  /// **Cancelling is NOT part of this**, see [canCancelWait]. Widening this
+  /// getter is how a teardown would get a Cancel button.
   bool get isWaiting =>
+      phase == SessionPhase.creating ||
+      phase == SessionPhase.joining ||
+      phase == SessionPhase.leaving ||
+      phase == SessionPhase.closing;
+
+  /// Whether the wait in flight is one the daemon can be asked to cut short.
+  ///
+  /// Only the two that BUILD something. A teardown has no sensible cancel: the
+  /// ports are already closing and the engine is already coming down, so
+  /// stopping halfway leaves exactly the state that leaving exists to undo —
+  /// rules up for a room that is gone. The way out of this wait is to let it
+  /// finish, which is seconds.
+  bool get canCancelWait =>
       phase == SessionPhase.creating || phase == SessionPhase.joining;
 
   bool get isBusy => work != RoomWork.none;
   bool get isReapplying => protection == ProtectionWork.reapplying;
+  bool get isRenewingCode => code == CodeWork.renewing;
   bool get isRefreshing => refreshing;
 
   SessionState copyWith({
@@ -179,6 +228,7 @@ class SessionState {
     String? nickname,
     HealthReport? health,
     ProtectionWork? protection,
+    CodeWork? code,
     bool? refreshing,
     bool? daemonDown,
     ActionFailure? failure,
@@ -200,6 +250,7 @@ class SessionState {
     nickname: nickname ?? this.nickname,
     health: health ?? this.health,
     protection: protection ?? this.protection,
+    code: code ?? this.code,
     refreshing: refreshing ?? this.refreshing,
     daemonDown: daemonDown ?? this.daemonDown,
     failure: clearFailure ? null : (failure ?? this.failure),

@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/theme/app_theme.dart';
+import 'package:kanpachi_ui/core/platform/app_log.dart';
 import 'package:kanpachi_ui/core/platform/app_preferences.dart';
 import 'package:kanpachi_ui/core/platform/single_instance.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/density_tokens.dart';
@@ -32,7 +34,72 @@ import 'package:window_manager/window_manager.dart';
 /// la otra produce una interfaz que no se abre nunca.
 const String kShowFlag = '--show';
 
-Future<void> main(List<String> args) async {
+/// La bandera con la que el daemon dice dónde dejar el registro.
+///
+/// Es un CONTRATO con `daemon/adapter/uihost`, que la escribe en `launch`. Se
+/// llama igual que la del daemon y significa lo mismo: la carpeta, no el
+/// archivo. Ver [AppLog.open] para por qué se recibe en vez de deducirse.
+const String kLogFlag = '--log';
+
+void main(List<String> args) {
+  // **Todo dentro de la zona, empezando por `ensureInitialized`.**
+  //
+  // No es orden decorativo: Flutter exige que el binding se inicialice en la
+  // MISMA zona en la que después corre `runApp`, y avisa con un "Zone mismatch"
+  // si no. Inicializarlo fuera y entrar acá solo para `runApp` es el error que
+  // parece natural.
+  runZonedGuarded<Future<void>>(
+    () async {
+      AppLog.open(dir: _dirDelLog(args), fallback: PipeNames.dataDir);
+
+      // **El arranque también se anota, no solo los errores.** Un registro que
+      // solo tiene fallos no distingue "se cerró sola" de "no llegó a
+      // arrancar", que es exactamente la pregunta que hay abierta sobre esta
+      // ventana. Y es la primera línea que se escribe, así que también prueba
+      // que el archivo se puede escribir.
+      AppLog.info(
+        'la interfaz arrancó',
+        'pid $pid portable ${PipeNames.isPortable} '
+            'argumentos ${args.join(' ')}',
+      );
+
+      // Los errores del framework: los que Flutter atrapa al construir, medir o
+      // pintar. No pasan por la zona, así que sin esto no quedan en ningún
+      // sitio con un binario gráfico.
+      FlutterError.onError = (FlutterErrorDetails details) {
+        AppLog.error('framework', details.exception, details.stack);
+        FlutterError.presentError(details);
+      };
+
+      // Y lo que se le escapa a la zona, que es lo que llega desde el motor:
+      // callbacks de la plataforma y errores de un `Future` sin dueño.
+      // Contestar `true` significa "ya lo conté", y aun así se sigue.
+      PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+        AppLog.error('plataforma', error, stack);
+        return true;
+      };
+
+      await _arrancar(args);
+    },
+    (Object error, StackTrace stack) {
+      AppLog.error('zona', error, stack);
+    },
+  );
+}
+
+/// La carpeta que pidió el daemon, o null si nadie dijo nada.
+///
+/// Formato `--log <carpeta>`, con la carpeta en el argumento siguiente. Sin
+/// valor detrás, la bandera se ignora: es lo que pasa si alguien la escribe a
+/// mano, y no vale la pena tumbar la ventana por eso.
+String? _dirDelLog(List<String> args) {
+  final int i = args.indexOf(kLogFlag);
+  if (i < 0 || i + 1 >= args.length) return null;
+  final String dir = args[i + 1].trim();
+  return dir.isEmpty ? null : dir;
+}
+
+Future<void> _arrancar(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // **Antes que nada.** Si ya hay un Kanpachi corriendo, este proceso solo
@@ -47,6 +114,9 @@ Future<void> main(List<String> args) async {
     onShowRequested: _traerAlFrente,
   );
   if (!onlyOne) {
+    // Se anota porque si no, este cierre se lee como una muerte: el registro
+    // tendría un arranque sin nada detrás, que es la forma de un fallo.
+    AppLog.info('ya había otra ventana, esta le avisó y se va');
     exit(0);
   }
 
@@ -55,9 +125,17 @@ Future<void> main(List<String> args) async {
   // It has to be read here and not later: it decides which screen opens. Read
   // after the first frame, onboarding would flash and then disappear, which is
   // worse than showing it.
-  final AppPreferences preferences = await AppPreferences.open();
+  //
+  // A portable copy narrates by default. See [AppPreferences.verbose] for why,
+  // and note this is the marker on disk answering, not a build flag: one
+  // `kanpachiui.exe` serves both the installed product and the portable bundle.
+  final AppPreferences preferences = await AppPreferences.open(
+    defaultVerbose: kDebugMode || PipeNames.isPortable,
+  );
 
-  IocManager.register(preferences: preferences);
+  // El marcador se lee ACÁ, una vez, y baja por el registro de dependencias.
+  // La pantalla que lo necesita vive en presentación y no puede importar infra.
+  IocManager.register(preferences: preferences, portable: PipeNames.isPortable);
   await _prepareWindow(
     silent: await _shouldStayQuiet(args),
     size: preferences.windowSize ?? AppSpacing.initialWindow,

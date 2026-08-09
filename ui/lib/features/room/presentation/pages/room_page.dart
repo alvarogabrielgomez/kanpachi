@@ -236,23 +236,38 @@ class _RoomHeaderState extends State<_RoomHeader> {
                       ),
                       value: room.link,
                     ),
-                  if (room.selfIsHost)
-                    AppButton(
-                      label: 'Renovar código',
-                      variant: AppButtonVariant.ghost,
-                      height: 36,
-                      horizontalPadding: AppSpacing.x3l,
-                      textStyle: context.type.labelSm,
-                      onPressed: () => context.read<ShellCubit>().showDialog(
-                        AppDialog.confirmRenew,
-                      ),
-                    ),
+                  if (room.selfIsHost) const _RenewCodeButton(),
                 ],
               ),
             ),
           ],
         );
       },
+    );
+  }
+}
+
+/// «Renovar código», con su rueda mientras el registro contesta.
+///
+/// En su propia clase, y `const`, para que mire la sesión por su cuenta: la
+/// cabecera de la sala donde vive se dibuja una vez y no tiene por qué
+/// reconstruirse dos veces por segundo. Ver [AppButton.busy] para por qué el
+/// botón se apaga además de girar.
+class _RenewCodeButton extends StatelessWidget {
+  const _RenewCodeButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final bool renovando = context.watch<SessionCubit>().state.isRenewingCode;
+    return AppButton(
+      label: renovando ? 'Renovando…' : 'Renovar código',
+      variant: AppButtonVariant.ghost,
+      height: 36,
+      horizontalPadding: AppSpacing.x3l,
+      textStyle: context.type.labelSm,
+      busy: renovando,
+      onPressed: () =>
+          context.read<ShellCubit>().showDialog(AppDialog.confirmRenew),
     );
   }
 }
