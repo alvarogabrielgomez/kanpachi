@@ -16,9 +16,13 @@ import (
 // la diferencia importa: lo que protege esos archivos es la ACL del padre, y un
 // subdirectorio la HEREDA. El que no se puede crear es el de arriba, que no
 // tiene de quién heredarla.
+//
+// Estuvo un rato junto al ejecutable, para que quien tiene que mandar el log
+// no tuviera que destapar una carpeta oculta en el Explorador. Se volvió acá a
+// pedido: el directorio de datos es del daemon, y el de instalación no.
 const (
 	LogDir  = "logs"
-	LogFile = "kanpachid.log"
+	LogFile = "kanpachi.log"
 )
 
 // maxLogBytes es cuándo se rota.
@@ -35,7 +39,7 @@ func (logConsola) Info(msg string, kv ...any)  { fmt.Println("info ", msg, kv) }
 func (logConsola) Warn(msg string, kv ...any)  { fmt.Println("aviso", msg, kv) }
 func (logConsola) Error(msg string, kv ...any) { fmt.Println("error", msg, kv) }
 
-// logArchivo escribe en `ProgramData\Kanpachi\kanpachid.log`.
+// logArchivo escribe en `ProgramData\Kanpachi\logs\kanpachi.log`.
 //
 // # Por qué existe
 //
@@ -70,11 +74,17 @@ type logArchivo struct {
 	// preguntarle al sistema en cada línea: `Stat` por línea es una syscall por
 	// línea para responder algo que ya sabemos.
 	escritos int64
+	// pánicos dice si la salida de errores del proceso está capturada acá. Se
+	// guarda porque la captura hay que REHACERLA en cada rotación.
+	pánicos bool
 }
 
 // nuevoLogArchivo abre el log. Nunca devuelve error: ver el tipo.
-func nuevoLogArchivo(dir string) *logArchivo {
-	carpeta := filepath.Join(dir, LogDir)
+//
+// Recibe la carpeta FINAL, ya resuelta, y no el directorio de datos: quién
+// decide dónde va el log es [carpetaDelLog], que es el único sitio donde
+// conviven las dos respuestas posibles.
+func nuevoLogArchivo(carpeta string) *logArchivo {
 	// Si no se puede crear, `abrir` va a fallar y las líneas se van a tirar.
 	// Quedarse sin daemon por no poder escribir un log sería cambiar un
 	// problema de diagnóstico por uno de producto.
@@ -82,6 +92,27 @@ func nuevoLogArchivo(dir string) *logArchivo {
 	l := &logArchivo{ruta: filepath.Join(carpeta, LogFile)}
 	l.abrir()
 	return l
+}
+
+// carpetaDelLog decide dónde se escribe, y hay exactamente dos respuestas.
+//
+// Sin `--log`, el subdirectorio de siempre dentro del directorio de datos. Con
+// `--log`, esa carpeta TAL CUAL, sin colgarle `logs\` debajo: quien la pasa ya
+// eligió, y agregarle estructura a la carpeta que alguien nombró es esconderle
+// el archivo.
+//
+// # Para qué existe la bandera
+//
+// Para el bundle portable. Ese suelta todo en una carpeta temporal que borra al
+// salir, así que el log moriría con ella justo cuando alguien lo iba a mandar
+// por chat. Con esto, el bundle apunta el log a la carpeta desde donde lo
+// ejecutaron, que es la única que quien lo corrió sabe encontrar. Es lo mismo
+// que `roombundle` ya hace con `roomprobe`.
+func carpetaDelLog(datos, pedida string) string {
+	if pedida != "" {
+		return pedida
+	}
+	return filepath.Join(datos, LogDir)
 }
 
 // bom es la marca de orden de bytes de UTF-8.
@@ -113,6 +144,42 @@ func (l *logArchivo) abrir() {
 		}
 	}
 	l.f = f
+	// Después de asignar `f`, y en cada apertura: rotar cierra el archivo y abre
+	// otro, así que la captura hay que rehacerla o el pánico siguiente iría a un
+	// handle cerrado.
+	l.recapturarPánicos()
+}
+
+// CapturarPánicos manda la salida de errores del proceso a este archivo.
+//
+// Es opcional y no automático porque en modo consola la salida de errores ya
+// tiene dueño —la terminal de quien está mirando— y robársela dejaría a esa
+// persona sin ver lo que pasa.
+//
+// Ver [redirigirStderr] para qué se captura y por qué hace falta.
+func (l *logArchivo) CapturarPánicos() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.pánicos = true
+	return l.capturarLocked()
+}
+
+// recapturarPánicos rehace la captura tras reabrir. Con el candado tomado, o
+// antes de que nadie más lo vea.
+func (l *logArchivo) recapturarPánicos() {
+	if !l.pánicos {
+		return
+	}
+	// El error se traga: si no se puede recapturar, lo que se pierde es la traza
+	// del pánico siguiente, y abortar el log entero por eso sería peor.
+	_ = l.capturarLocked()
+}
+
+func (l *logArchivo) capturarLocked() error {
+	if l.f == nil {
+		return nil
+	}
+	return redirigirStderr(l.f)
 }
 
 func (l *logArchivo) Info(msg string, kv ...any)  { l.escribir("info ", msg, kv) }

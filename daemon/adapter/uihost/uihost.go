@@ -21,6 +21,11 @@
 // desde el Administrador de tareas, se lleva la UI por delante. No hay camino
 // de apagado lo bastante sucio como para dejar un túnel sin cara.
 //
+// **Hay un caso en que el job no la puede meter dentro**, y es el bundle
+// portable: la UI nace en un job ajeno y a un proceso que ya está en uno no se
+// le puede meter en otro. Ahí la invariante la sostiene código de cierre, que
+// es peor y es lo único que hay. Ver [Host.closeHandles].
+//
 // Y de paso desaparece un problema. Detectar que a la UI la mataron
 // necesitaría que ella declarara su PID en el saludo; siendo el padre, el
 // daemon tiene su handle desde que nace y lo único que hace es esperar sobre él.
@@ -51,6 +56,28 @@ type Deps struct {
 	// abriéndose sola encima de lo que estuvieras haciendo al encender la PC.
 	ShowFlag string
 
+	// LogDir es dónde la interfaz deja SU log, y viaja en la línea de comandos.
+	//
+	// **Se le DICE, y eso va contra la doctrina del marcador** que defiende
+	// `ui/lib/features/session/infra/daemon/pipe/pipe_names.dart`: los dos lados
+	// deducen del disco en vez de contárselo, para que nada se pierda por el
+	// camino en una sola dirección. La regla sigue en pie para lo que deduce, y
+	// esto es otra pregunta.
+	//
+	// El marcador contesta "qué producto soy", que los dos pueden mirar. Esto
+	// contesta "desde qué carpeta me abrieron", que la interfaz NO puede
+	// deducir: en el bundle portable su ejecutable vive en un directorio
+	// temporal que se borra al salir, así que un log deducido junto a ella
+	// muere justo cuando alguien lo iba a mandar. La carpeta la sabe solo el
+	// bundle, y ya se la pasa al daemon por la misma vía, con `--log`.
+	//
+	// Vacío significa "que lo deduzca", que es lo correcto en el producto
+	// instalado: ahí el directorio de datos es de ProgramData y no se borra.
+	//
+	// Llega por argv a un proceso SIN elevar, así que lo peor que consigue
+	// alguien pasándola a mano es escribir donde ya podía escribir.
+	LogDir string
+
 	// OnGiveUp se llama cuando la interfaz se cae una y otra vez y ya no se
 	// intenta más. Lo correcto entonces es apagar todo, porque un daemon vivo
 	// sin forma de mostrarse es justo lo que la invariante prohíbe.
@@ -78,6 +105,32 @@ const (
 	relaunchGrace = 1500 * time.Millisecond
 )
 
+// relanzador cuenta caídas RÁPIDAS SEGUIDAS de la interfaz.
+//
+// Vive aparte del vigilante, y en un fichero sin `//go:build windows`, porque
+// es la única vía del programa por la que la muerte de un HIJO apaga al PADRE:
+// pasado el tope, `OnGiveUp` cierra el daemon entero, y con él la sala, la red
+// virtual y el firewall. Una regla con esa consecuencia tiene que poder
+// comprobarse sin arrancar un proceso ni estar en Windows.
+//
+// Al revés no existe: el daemon no tiene ningún camino que lo cierre porque el
+// MOTOR se muera. El watchdog reintenta y, si se rinde, cierra la SALA y sigue
+// vivo. Ver `supervisor.rendirse`.
+type relanzador struct{ seguidas int }
+
+// murió registra una muerte de una interfaz que vivió `vivió`.
+//
+// Devuelve qué número de intento es y si hay que rendirse. El orden importa: la
+// vida larga limpia la cuenta ANTES de sumar, así que una interfaz que aguantó
+// y se cerró vuelve a tener las tres oportunidades enteras.
+func (r *relanzador) murió(vivió time.Duration) (intento int, rendirse bool) {
+	if vivió > quickDeath {
+		r.seguidas = 0
+	}
+	r.seguidas++
+	return r.seguidas, r.seguidas > maxRelaunches
+}
+
 // Host lanza la interfaz y la mantiene viva mientras el daemon lo esté.
 type Host struct {
 	deps Deps
@@ -88,6 +141,13 @@ type Host struct {
 	// proc es el handle del proceso persistente, el que lleva la bandeja. Cero
 	// cuando no hay ninguno vivo.
 	proc uintptr
+	// heldByJob dice si a ESE proceso lo sujeta [Host.job].
+	//
+	// Falso cuando `AssignProcessToJobObject` no pudo, que es lo que pasa
+	// SIEMPRE en el bundle portable: la interfaz nace dentro de un job que no
+	// es nuestro y a un proceso que ya está en uno no se le puede meter en
+	// otro. Ver [Host.closeHandles], que es donde la diferencia se paga.
+	heldByJob bool
 
 	stop chan struct{}
 	// wake despierta la espera del vigilante sin cerrar handles debajo suyo.
@@ -168,11 +228,12 @@ func (h *Host) Show() error {
 // so. See the implementation for why a plain MessageBox does not work here.
 func Warn(text string) { avisarEnSesión("Kanpachi", text) }
 
-// Close cierra el job, y con él se va la interfaz.
+// Close se lleva a la interfaz por delante.
 //
 // Es IDEMPOTENTE y no espera a nadie: lo llama el camino de apagado, que no
-// puede quedarse colgado. Cerrar el job es lo que mata a la interfaz, y lo hace
-// el kernel.
+// puede quedarse colgado. Lo normal es que la mate el kernel al cerrar el job;
+// cuando la interfaz quedó fuera del job hay que matarla a mano, y eso lo
+// resuelve [Host.closeHandles].
 func (h *Host) Close() error {
 	h.once.Do(func() {
 		close(h.stop)

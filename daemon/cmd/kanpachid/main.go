@@ -60,6 +60,10 @@ func main() {
 	suelto := flag.Bool("daemon", false,
 		"correr el daemon en este proceso, sin servicio. Solo en una carpeta portable")
 	datos := flag.String("data", "", "directorio de datos. Vacío usa ProgramData\\Kanpachi")
+	// Aparte de `--data` a propósito: el bundle portable manda los datos a una
+	// carpeta temporal que borra al salir, y el log NO puede morir con ella. Ver
+	// [carpetaDelLog].
+	dirLog := flag.String("log", "", "carpeta del log. Vacío usa <datos>\\"+LogDir)
 	// El nombre del pipe se puede cambiar SOLO en modo consola, y existe por una
 	// razón concreta: el de producción vive bajo ProtectedPrefix\Administrators,
 	// que Windows no deja crear sin elevar. Sin esta bandera, probar el saludo,
@@ -94,7 +98,7 @@ func main() {
 		*mostrar = true
 	}
 
-	if err := correr(*consola, *suelto, *mostrar, *datos, *nombre, enlace); err != nil {
+	if err := correr(*consola, *suelto, *mostrar, *datos, *dirLog, *nombre, enlace); err != nil {
 		fmt.Fprintln(os.Stderr, "kanpachid:", err)
 		// Y en una ventana si no hay consola, que es el caso del doble clic.
 		// Sin esto, un acceso directo que falla no hace nada visible. Ver
@@ -271,9 +275,10 @@ func enlaceDe(args []string) string {
 	return ""
 }
 
-func correr(consola, suelto, mostrar bool, datos, nombre, enlace string) error {
+func correr(consola, suelto, mostrar bool, datos, dirLog, nombre, enlace string) error {
 	portable := esPortable()
 	datos = dirDeDatos(datos)
+	carpetaLog := carpetaDelLog(datos, dirLog)
 
 	if _, err := os.Stat(datos); err != nil {
 		// **En una carpeta portable se crea, y en el producto instalado no.**
@@ -324,7 +329,7 @@ func correr(consola, suelto, mostrar bool, datos, nombre, enlace string) error {
 			// El enlace viaja por los MISMOS argumentos del servicio, que es la
 			// única vía que el SCM tiene de pasar algo. El lanzador lo pone ahí
 			// cuando no hay daemon todavía: ver [abrir].
-			b, err := arrancar(ctx, datos, pipe.Name, false, tiene(args, ArgShow), enlaceDe(args))
+			b, err := arrancar(ctx, datos, carpetaLog, pipe.Name, false, tiene(args, ArgShow), enlaceDe(args))
 			if err != nil {
 				return nil, nil, err
 			}
@@ -350,7 +355,7 @@ func correr(consola, suelto, mostrar bool, datos, nombre, enlace string) error {
 		ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer parar()
 
-		b, err := arrancar(ctx, datos, pipe.PortableName, false, mostrar, enlace)
+		b, err := arrancar(ctx, datos, carpetaLog, pipe.PortableName, false, mostrar, enlace)
 		if err != nil {
 			return err
 		}
@@ -379,7 +384,7 @@ func correr(consola, suelto, mostrar bool, datos, nombre, enlace string) error {
 	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer parar()
 
-	b, err := arrancar(ctx, datos, nombre, consola, false, enlace)
+	b, err := arrancar(ctx, datos, carpetaLog, nombre, consola, false, enlace)
 	if err != nil {
 		return err
 	}
@@ -405,7 +410,7 @@ func correr(consola, suelto, mostrar bool, datos, nombre, enlace string) error {
 // `defer` correría el cierre justo cuando acaba de arrancar. Los cierres se
 // apuntan en orden y se corren al revés a mano, en dos sitios: si el arranque
 // falla a mitad, y dentro de `shutdown`.
-func arrancar(ctx context.Context, datos, nombre string, consola, mostrarUI bool, invitación string) (*booted, error) {
+func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mostrarUI bool, invitación string) (*booted, error) {
 	// **Un servicio no tiene salida estándar.** En consola quien mira es una
 	// persona con una terminal delante; como servicio, todo lo que se imprima se
 	// pierde y un arranque fallido queda sin una sola línea que lo explique. Ver
@@ -413,8 +418,17 @@ func arrancar(ctx context.Context, datos, nombre string, consola, mostrarUI bool
 	var log port.Logger = logConsola{}
 	var cierres []func()
 	if !consola {
-		archivo := nuevoLogArchivo(datos)
+		archivo := nuevoLogArchivo(carpetaLog)
 		log = archivo
+		// La salida de errores del proceso va al mismo archivo, y con ella la
+		// traza de un pánico. Sin esto el daemon puede morirse sin dejar una
+		// línea: ya pasó, y lo único que quedó fue el "terminated unexpectedly"
+		// del registro de eventos de Windows. Ver [redirigirStderr].
+		//
+		// No se aborta si falla: se pierde la traza del pánico, no el daemon.
+		if err := archivo.CapturarPánicos(); err != nil {
+			log.Warn("no se pudo capturar la salida de errores, un pánico no dejaría traza", "error", err)
+		}
 		// El último en cerrarse, o sea el primero de la lista: los cierres
 		// corren al revés, y lo que se apaga por el camino tiene que poder
 		// dejarlo escrito.
@@ -492,6 +506,11 @@ func arrancar(ctx context.Context, datos, nombre string, consola, mostrarUI bool
 			// ruta que alguien pueda influir es escalada de privilegios.
 			Exe:      filepath.Join(dirDelBinario(), uiExeName),
 			ShowFlag: uiShowFlag,
+			// La misma carpeta donde este daemon deja SU log, para que los dos
+			// se lean juntos. La interfaz se cae sola y hasta ahora no dejaba
+			// nada; ver [uihost.Deps.LogDir] para por qué se le dice en vez de
+			// dejar que la deduzca.
+			LogDir: carpetaLog,
 			// Si la interfaz no arranca ni a la tercera, se apaga todo. Un
 			// daemon vivo sin forma de mostrarse es justo lo que la invariante
 			// de `docs/03` prohíbe.
@@ -535,11 +554,15 @@ func arrancar(ctx context.Context, datos, nombre string, consola, mostrarUI bool
 	// Diary of long op. Made HERE and not inside the session because the
 	// ADAPTERS write to it too: only engine adapter knows engine process just
 	// started, or that virtual adapter took twelve seconds to get its address.
-	diary := usecase.NewJournal(relojReal{})
+	diary := usecase.NewJournal(relojReal{}, log)
 
 	motor, err := kanpachiengine.New(kanpachiengine.Deps{
-		Exe:      filepath.Join(dirDelBinario(), "kanpachi-engine.exe"),
-		Log:      log,
+		Exe: filepath.Join(dirDelBinario(), "kanpachi-engine.exe"),
+		Log: log,
+		// El motor escribe su propio log en la MISMA carpeta que este daemon,
+		// que en el bundle portable es la de quien lo ejecutó y no el temporal
+		// que se borra al salir. Ver `carpetaDelLog`.
+		LogDir:   carpetaLog,
 		Progress: diary,
 	})
 	if err != nil {
@@ -609,6 +632,22 @@ func arrancar(ctx context.Context, datos, nombre string, consola, mostrarUI bool
 	if err != nil {
 		return abortar(err)
 	}
+
+	// El vigía de la malla, que hasta ahora solo tenía `roomprobe`.
+	//
+	// Le pregunta al MOTOR quién hay en la red de la sala, y anota cada cambio.
+	// Es el único dato que separa dos fallos que desde fuera se ven idénticos y
+	// se arreglan al revés: "el firewall no deja pasar" y "todavía no hay
+	// camino". Va por la tubería del motor, así que sigue vivo mientras la
+	// sesión tiene el candado tomado, que es justo cuando hace falta.
+	//
+	// Sin esto, el 2026-08-08 pasó lo siguiente: un host tuvo un invitado dentro
+	// veinte minutos, el invitado veía dos miembros, el host veía uno, y en
+	// ninguno de los dos logs quedó una sola línea que lo dijera. Se dedujo por
+	// omisión —ningún `entró a la sala`, las reglas quietas en dos— en vez de
+	// leerse.
+	vigía := &supervisor.VigiaDeMalla{Motor: motor, Log: log}
+	go vigía.Correr(ctx)
 
 	// El token rota una vez por vida del proceso y se borra en TODO camino de
 	// salida: uno que sobreviva al proceso no abre nada y solo es un secreto

@@ -151,6 +151,13 @@ func (h *Host) launch(show, persistent bool) error {
 	if show {
 		línea += " " + h.deps.ShowFlag
 	}
+	// La carpeta del log, entrecomillada por lo mismo que el ejecutable: el
+	// camino portable la deja en la carpeta desde donde alguien abrió el
+	// bundle, que perfectamente puede ser `C:\Users\...\Mis descargas`. Ver
+	// [Deps.LogDir] para por qué se dice en vez de deducirse.
+	if h.deps.LogDir != "" {
+		línea += ` --log "` + h.deps.LogDir + `"`
+	}
 
 	exe, err := windows.UTF16PtrFromString(h.deps.Exe)
 	if err != nil {
@@ -232,25 +239,31 @@ func (h *Host) launch(show, persistent bool) error {
 	// Al job ANTES de cualquier otra cosa, y con el proceso todavía sin
 	// ejecutar nada. Si el daemon muriera entre el arranque y esta línea,
 	// quedaría una interfaz suelta.
+	heldByJob := true
 	if err := windows.AssignProcessToJobObject(windows.Handle(h.job), pi.Process); err != nil {
 		// **No se mata la interfaz por esto.** Antes sí, y el precio era
 		// absurdo: la ventana no arrancaba, el vigilante lo contaba como caída,
 		// y a la tercera Kanpachi se apagaba entero, con la sala dentro. Todo
 		// por no poder meter en un job un proceso que YA está en uno.
 		//
-		// Y estando en el job del padre, la invariante se sostiene igual: ese
-		// job es el de este daemon, así que la interfaz muere con él lo mismo.
-		// Lo que se pierde es poder matarla cerrando ESTE job, que es una vía
-		// de las dos.
+		// **Lo que NO se puede dar por sentado es que el job del padre supla al
+		// nuestro.** Esto decía que sí, con el argumento de que ese job es el
+		// de este daemon. Medido el 2026-08-09 con el bundle portable, es
+		// falso: `internal/kanpachibundle` no crea ningún job, así que el que
+		// hay es ambiente, lo puso Windows al elevar, y nadie controla lo que
+		// pasa al cerrarlo. El daemon terminaba, el bundle borraba su carpeta
+		// temporal, y `kanpachiui.exe` seguía corriendo desde una carpeta que
+		// ya no existía. Por eso se anota, y el cierre la mata a mano.
 		//
 		// El diagnóstico va dentro del aviso porque hace falta: `Access is
 		// denied` a secas tiene tres causas con arreglos distintos —el proceso
 		// ya murió, ya está en otro job, o al job le falta el permiso— y sin
 		// estos datos no se distinguen. Costó una sesión mirando el sitio
 		// equivocado.
+		heldByJob = false
 		var salida uint32 = 0xFFFFFFFF
 		_ = windows.GetExitCodeProcess(pi.Process, &salida)
-		h.deps.Log.Warn("la interfaz no entró en el job propio, sigue igual",
+		h.deps.Log.Warn("la interfaz no entró en el job propio, se la mata a mano al cerrar",
 			"error", err, "pid", pi.ProcessId,
 			"ya estaba en un job", enAlgúnJob(pi.Process),
 			"código de salida", fmt.Sprintf("0x%X", salida))
@@ -276,6 +289,7 @@ func (h *Host) launch(show, persistent bool) error {
 	h.mu.Lock()
 	anterior := h.proc
 	h.proc = uintptr(pi.Process)
+	h.heldByJob = heldByJob
 	h.mu.Unlock()
 	if anterior != 0 {
 		_ = windows.CloseHandle(windows.Handle(anterior))
@@ -289,7 +303,7 @@ func (h *Host) launch(show, persistent bool) error {
 func (h *Host) watch() {
 	defer h.watching.Done()
 
-	caídas := 0
+	var caídas relanzador
 	for {
 		h.mu.Lock()
 		proc := h.proc
@@ -313,16 +327,29 @@ func (h *Host) watch() {
 		default:
 		}
 
+		// CÓMO murió, no solo que murió.
+		//
+		// Sin esto, "se cerró sin avisar" cubre dos cosas opuestas: alguien que
+		// cerró la ventana, que es un `0`, y un crash nativo, que es un
+		// `0xC0000005` y familia. Son el mismo texto en el log y arreglos
+		// distintos, y la interfaz se cayó ocho veces entre dos máquinas el
+		// 2026-08-08 sin que quedara registrado de cuál se trataba.
+		//
+		// Es el mismo patrón que ya usa el diagnóstico de `AssignProcessToJob`
+		// unas líneas más arriba. Se lee ACÁ, con el proceso ya terminado, así
+		// que `STILL_ACTIVE` no puede salir.
+		vivió := time.Since(desde)
+		var salida uint32 = 0xFFFFFFFF
+		_ = windows.GetExitCodeProcess(windows.Handle(proc), &salida)
+
 		// Una interfaz que vivió un rato y se cerró es un caso normal, así que
 		// el contador vuelve a cero. Lo que se persigue son las caídas rápidas
-		// en cadena, que es como se ve algo que no arranca.
-		if time.Since(desde) > quickDeath {
-			caídas = 0
-		}
-		caídas++
-		if caídas > maxRelaunches {
+		// en cadena, que es como se ve algo que no arranca. Ver [relanzador].
+		intento, rendirse := caídas.murió(vivió)
+		if rendirse {
 			h.deps.Log.Error("la interfaz se cayó demasiadas veces seguidas y no se relanza más",
-				"intentos", caídas)
+				"intentos", intento, "código de salida", fmt.Sprintf("0x%X", salida),
+				"vivió", vivió.Round(time.Millisecond).String())
 			Warn("Kanpachi va a cerrarse porque no consigue mantener su ventana abierta.\n\n" +
 				"Se abrió y se cerró sola tres veces seguidas, así que se deja de " +
 				"intentar. Al cerrarse, Kanpachi cierra también la sala y todo lo " +
@@ -334,7 +361,9 @@ func (h *Host) watch() {
 			return
 		}
 
-		h.deps.Log.Warn("la interfaz se cerró sin avisar, se relanza en silencio", "intento", caídas)
+		h.deps.Log.Warn("la interfaz se cerró sin avisar, se relanza en silencio",
+			"intento", intento, "código de salida", fmt.Sprintf("0x%X", salida),
+			"vivió", vivió.Round(time.Millisecond).String())
 
 		// Un respiro antes de relanzar. La interfaz que acaba de morir puede
 		// tener cosas suyas todavía sin soltar —el evento de instancia única
@@ -359,7 +388,7 @@ func (h *Host) watch() {
 			// motivo legítimo para rendirse es el mismo que para una caída: que
 			// pase una y otra vez, y de eso ya se ocupa el contador de arriba.
 			h.deps.Log.Error("no se pudo relanzar la interfaz, se reintenta",
-				"error", err, "intento", caídas)
+				"error", err, "intento", intento)
 			continue
 		}
 	}
@@ -373,13 +402,27 @@ func (h *Host) signalWake() {
 }
 
 // closeHandles suelta el job, y con él se va la interfaz.
+//
+// # El caso en que el job no alcanza
+//
+// Cerrar el job mata a lo que el job sujeta, y la interfaz puede no estar
+// dentro: ver el aviso de `AssignProcessToJobObject` en [Host.launch]. Ahí hay
+// que matarla explícitamente, y esto es lo único que la mata.
+//
+// `TerminateProcess` y no un cierre pedido por las buenas, por lo mismo que el
+// job usa `KILL_ON_JOB_CLOSE`: este camino corre en el apagado y no puede
+// esperar a que una ventana conteste. Al proceso de la interfaz no le queda
+// nada que guardar, sus preferencias se escriben cuando cambian.
 func (h *Host) closeHandles() {
 	h.mu.Lock()
-	proc, job, wake := h.proc, h.job, h.wake
-	h.proc, h.job, h.wake = 0, 0, 0
+	proc, job, wake, heldByJob := h.proc, h.job, h.wake, h.heldByJob
+	h.proc, h.job, h.wake, h.heldByJob = 0, 0, 0, false
 	h.mu.Unlock()
 
 	if proc != 0 {
+		if !heldByJob {
+			_ = windows.TerminateProcess(windows.Handle(proc), 0)
+		}
 		_ = windows.CloseHandle(windows.Handle(proc))
 	}
 	// El job AL FINAL: cerrarlo es lo que mata a la interfaz.

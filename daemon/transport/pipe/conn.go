@@ -78,18 +78,55 @@ func (l *Listener) atender(ctx context.Context, conn net.Conn) {
 	terminado := make(chan struct{})
 	defer close(terminado)
 
+	// # El interbloqueo que el BUCLE arregla, medido con el bundle portable
+	//
+	// Esto era un `select` suelto, sin bucle, y por eso vigilaba solo cinco
+	// segundos. Pasado `HelloWait`, la rama del plazo se elegía, veía que la
+	// conexión SÍ había saludado, no hacía nada, y la goroutine TERMINABA. A
+	// partir de ahí nadie miraba `cerrando` ni `ctx` por esa conexión.
+	//
+	// Como cerrar la conexión es la única forma de desbloquear el `Read` de
+	// abajo, el apagado se quedaba esperando: `Listener.Close` hace `wg.Wait()`,
+	// y una conversación sin vigilante no se entera de nada hasta `IdleWait`,
+	// que son diez minutos.
+	//
+	// Y quien pide el apagado es la propia interfaz, por una de estas
+	// conexiones, así que la que colgaba era siempre la que llevaba más de cinco
+	// segundos abierta, o sea todas las de una sesión de verdad. Medido el
+	// 2026-08-08: tres apagados dejaron `apagando el daemon` en el log y ninguno
+	// llegó a `el daemon se apagó`. El daemon quedaba vivo, y con él el
+	// ejecutable del bundle que lo espera, así que "salir de Kanpachi" no
+	// cerraba nada.
+	//
+	// **Por qué los tests no lo vieron:** `TestCerrarNoSeCuelgaConConexiones\
+	// Abiertas` cierra a los pocos milisegundos de saludar, o sea DENTRO de los
+	// cinco segundos en que el vigilante todavía existía. Medía el caso que
+	// funcionaba.
 	go func() {
-		select {
-		case <-terminado:
-		case <-time.After(HelloWait):
-			if !srv.Greeted() {
-				l.deps.Log.Warn("se cortó una conexión que no saludó a tiempo", "plazo", HelloWait)
+		// Un temporizador y no `time.After` en el bucle: ahí dentro, cada vuelta
+		// armaría uno nuevo y el plazo del saludo no vencería jamás.
+		saludo := time.NewTimer(HelloWait)
+		defer saludo.Stop()
+		for {
+			select {
+			case <-terminado:
+				return
+			case <-saludo.C:
+				if !srv.Greeted() {
+					l.deps.Log.Warn("se cortó una conexión que no saludó a tiempo", "plazo", HelloWait)
+					_ = conn.Close()
+					return
+				}
+				// Saludó a tiempo: el plazo del saludo ya cumplió y no vuelve a
+				// armarse. Lo que sigue vigilando es el cierre, que es lo que
+				// antes se perdía acá.
+			case <-l.cerrando:
 				_ = conn.Close()
+				return
+			case <-ctx.Done():
+				_ = conn.Close()
+				return
 			}
-		case <-l.cerrando:
-			_ = conn.Close()
-		case <-ctx.Done():
-			_ = conn.Close()
 		}
 	}()
 

@@ -201,6 +201,43 @@ func TestCerrarNoSeCuelgaConConexionesAbiertas(t *testing.T) {
 	}
 }
 
+// TestCerrarNoSeCuelgaConUnaConexiónVIEJA es el de arriba pasado el plazo del
+// saludo, y es el que encontró el fallo de verdad.
+//
+// El de arriba cierra a los pocos milisegundos, o sea mientras el vigilante de
+// la conexión todavía existe, y por eso pasaba con el fallo puesto. Pasado
+// `HelloWait`, ese vigilante terminaba y la conexión se quedaba sin nadie que
+// la cerrara al apagar: `Close` esperaba hasta `IdleWait`, diez minutos.
+//
+// Es la forma que tiene una conexión de verdad. La interfaz abre la suya al
+// arrancar y pide el apagado minutos u horas después, así que la que colgaba
+// era siempre esta.
+//
+// **Tarda cinco segundos a propósito**: el plazo es una constante de
+// compilación, y hacerla inyectable para ahorrar esos segundos sería dejar que
+// una prueba cambie un tope de producción. Es el precio de medir esto de verdad.
+func TestCerrarNoSeCuelgaConUnaConexiónVIEJA(t *testing.T) {
+	b := nuevoBanco(t)
+	c := b.marca(t)
+	b.saluda(t, c)
+
+	// Justo pasado el plazo del saludo, que es cuando el vigilante decidía si
+	// seguía haciendo falta.
+	time.Sleep(HelloWait + 200*time.Millisecond)
+
+	hecho := make(chan struct{})
+	go func() {
+		_ = b.ln.Close()
+		close(hecho)
+	}()
+
+	select {
+	case <-hecho:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Close se colgó con una conexión que ya había pasado el plazo del saludo")
+	}
+}
+
 func TestCerrarDosVecesNoRompe(t *testing.T) {
 	// Lo llama el camino de error del arranque, que puede correr antes de que se
 	// haya abierto nada.

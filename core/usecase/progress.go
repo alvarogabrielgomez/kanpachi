@@ -35,6 +35,23 @@ const maxSteps = 64
 // mirar.
 type Journal struct {
 	clock port.Clock
+	// log es a dónde va CADA paso, además de al informe que lee la pantalla.
+	//
+	// # Por qué el diario escribe al log, si son dos cosas distintas
+	//
+	// Porque la pantalla solo enseña el diario de la operación EN CURSO, y lo
+	// que hace falta para diagnosticar es el de la que ya falló, en la máquina
+	// de otra persona, dentro de un archivo que se pueda mandar por chat.
+	//
+	// Esto lo tenía `roomprobe` y no lo tenía el producto, y esa diferencia
+	// estaba mal por sí sola: obligaba a pedirle a alguien que corriera OTRA
+	// herramienta para conseguir lo que el binario que ya tiene corriendo
+	// debería estar anotando. Al vivir acá, lo heredan los tres —instalado,
+	// portable y roomprobe— sin que ninguno tenga que acordarse.
+	//
+	// Nil vale: se sustituye por un sumidero mudo en [NewJournal]. Los tests
+	// del diario no quieren un log.
+	log port.Logger
 
 	mu      sync.Mutex
 	op      string
@@ -52,7 +69,23 @@ type Journal struct {
 }
 
 // NewJournal arma el diario.
-func NewJournal(clock port.Clock) *Journal { return &Journal{clock: clock} }
+//
+// El log puede ser nil, y entonces el diario solo alimenta a la pantalla. Los
+// tres binarios del producto le pasan el suyo.
+func NewJournal(clock port.Clock, log port.Logger) *Journal {
+	if log == nil {
+		log = sinLog{}
+	}
+	return &Journal{clock: clock, log: log}
+}
+
+// sinLog evita comprobar nil en cada paso, que es la comprobación que un día
+// falta en el camino nuevo.
+type sinLog struct{}
+
+func (sinLog) Info(string, ...any)  {}
+func (sinLog) Warn(string, ...any)  {}
+func (sinLog) Error(string, ...any) {}
 
 // Begin abre una operación y descarta la anterior.
 func (j *Journal) Begin(op string) {
@@ -69,6 +102,10 @@ func (j *Journal) Begin(op string) {
 	j.running = true
 	j.failure = ""
 	j.dropped = 0
+	// Fuera del candado no se puede: `op` ya está puesto y el log no vuelve
+	// acá. Escribir dentro es lo que garantiza que el orden de las líneas sea
+	// el orden real de los pasos.
+	j.log.Info("=== " + op + " ===")
 }
 
 // Step anota un paso. Cumple [port.ProgressSink].
@@ -101,6 +138,12 @@ func (j *Journal) Step(scope domain.ProgressScope, text string) {
 		Text:  text,
 		Since: now.Sub(j.started),
 	})
+	// El `desde` es la mitad de lo que sirve: un paso que tardó treinta
+	// segundos y uno que tardó cinco milisegundos se leen igual sin él, y el
+	// que tardó es donde está el problema.
+	j.log.Info("  paso",
+		"desde", now.Sub(j.started).Round(time.Millisecond).String(),
+		"quién", string(scope), "qué", text)
 }
 
 // Stepf es [Journal.Step] con formato.
@@ -125,8 +168,17 @@ func (j *Journal) End(err error) {
 	}
 	j.running = false
 	j.ended = now
+	tardó := now.Sub(j.started).Round(time.Millisecond).String()
 	if err != nil {
 		j.failure = err.Error()
+		// Error y no Info: es la línea que alguien va a buscar con la vista
+		// cuando le manden el archivo.
+		j.log.Error("=== "+j.op+": FALLÓ ===", "tardó", tardó, "error", err)
+	} else {
+		j.log.Info("=== "+j.op+": listo ===", "tardó", tardó)
+	}
+	if j.dropped > 0 {
+		j.log.Warn("  el diario tiró pasos del medio por el tope", "cantidad", j.dropped)
 	}
 }
 

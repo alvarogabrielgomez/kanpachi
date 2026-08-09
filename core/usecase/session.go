@@ -360,7 +360,7 @@ func NewSession(ctx context.Context, d Deps) (*Session, error) {
 		return nil, err
 	}
 	if d.Progress == nil {
-		d.Progress = NewJournal(d.Clock)
+		d.Progress = NewJournal(d.Clock, d.Log)
 	}
 	// `issued` se crea acá y no perezosamente como `kicked` o `verificables`,
 	// porque emitir una credencial escribe en él sin comprobar: en nil, la
@@ -740,11 +740,24 @@ func (s *Session) ReapplyAdapter(ctx context.Context) error { return s.applyAdap
 // abortar en el primero dejaría lo demás sin deshacer y no hay un segundo
 // intento después de salir de la sala.
 func (s *Session) teardown(ctx context.Context) {
+	// **Los pasos van acá y no en quien llama, y eso es lo que los hace ciertos.**
+	//
+	// Este cuerpo lo comparten las cinco salidas: el usuario, la expulsión, el
+	// cierre del host, los dos cortes automáticos y el apagado del daemon.
+	// Narrarlo desde `LeaveRoom` habría descrito lo que el código de al lado
+	// pretende hacer; narrarlo desde aquí describe lo que se hizo.
+	//
+	// Sin diario abierto, [Journal.Step] los ignora, así que los caminos que no
+	// vienen de una orden del usuario no pagan nada por estar instrumentados.
+	s.deps.Progress.Step(domain.ScopeFirewall, "cerrando los puertos del juego")
 	if err := s.deps.Firewall.Apply(ctx, domain.RuleSet{}); err != nil {
 		s.deps.Log.Error("no se pudieron cerrar los puertos al salir", "error", err)
+		s.deps.Progress.Step(domain.ScopeFirewall, "no se pudieron cerrar los puertos: "+err.Error())
 	}
+	s.deps.Progress.Step(domain.ScopeFirewall, "restaurando las reglas ajenas que se habían suspendido")
 	if err := s.deps.Firewall.RestoreForeign(ctx); err != nil {
 		s.deps.Log.Error("no se pudieron restaurar las reglas ajenas", "error", err)
+		s.deps.Progress.Step(domain.ScopeFirewall, "no se pudieron restaurar las reglas ajenas: "+err.Error())
 	}
 	// La compuerta se suelta DESPUÉS de cerrar los puertos, y ese orden es el
 	// mismo argumento de arriba llevado a la otra capa: al revés quedaría un
@@ -753,14 +766,25 @@ func (s *Session) teardown(ctx context.Context) {
 	// Soltarla no es dejar los filtros puestos: el `Apply` con el conjunto vacío
 	// de dos líneas más arriba ya barrió las ranuras.
 	s.deps.Firewall.UnbindRoom()
+	s.deps.Progress.Step(domain.ScopeFirewall, "soltada la compuerta")
+
+	s.deps.Progress.Step(domain.ScopeNetwork, "revirtiendo los ajustes del adaptador")
 	if err := s.deps.NetCfg.RevertTweaks(ctx); err != nil {
 		s.deps.Log.Error("no se pudieron revertir los ajustes del adaptador", "error", err)
+		s.deps.Progress.Step(domain.ScopeNetwork, "no se pudieron revertir los ajustes: "+err.Error())
 	}
+	s.deps.Progress.Step(domain.ScopeDaemon, "cerrando el canal de la sala")
 	if err := s.deps.Control.Close(); err != nil {
 		s.deps.Log.Error("no se pudo cerrar el canal de control", "error", err)
+		s.deps.Progress.Step(domain.ScopeDaemon, "no se pudo cerrar el canal: "+err.Error())
 	}
+	// El último y el que más tarda: bajar la red virtual es esperar a que otro
+	// proceso termine. Es el paso en el que se queda la pantalla cuando alguien
+	// se pregunta si esto se colgó.
+	s.deps.Progress.Step(domain.ScopeEngine, "bajando la red cifrada")
 	if err := s.deps.Engine.Leave(ctx); err != nil {
 		s.deps.Log.Error("el motor no salió limpio", "error", err)
+		s.deps.Progress.Step(domain.ScopeEngine, "el motor no salió limpio: "+err.Error())
 	}
 }
 
