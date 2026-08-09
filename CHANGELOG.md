@@ -8,28 +8,30 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.1.9] - 2026-08-09
+
 ### Added
 
-- Ship Kanpachi portable as a single `kanpachi-portable.exe` that needs no install: one UAC prompt, no service, no autostart entry, and nothing left behind but its log
-- Keep the panic traceback of a crashing daemon, which used to be discarded because a service has no standard error
-- Write what the engine says to `kanpachi-engine.log`, beside the daemon's own log, where it used to be thrown away (in `kanpachi-engine`)
-- Write what the window says to `kanpachi-ui.log`, so a window that closes by itself leaves a reason behind
-- Offer the portable version from the download page, under the installer button
-- Say what is happening while a room is being left or closed, step by step, instead of leaving the room screen still
+- Ship Kanpachi portable as a single `kanpachi-portable.exe` that needs no install: one UAC prompt, no service, no autostart entry, and nothing left behind but its log ([814ca1f](https://github.com/alvarogabrielgomez/kanpachi/commit/814ca1f))
+- Keep the panic traceback of a crashing daemon, which used to be discarded because a service has no standard error ([b56c553](https://github.com/alvarogabrielgomez/kanpachi/commit/b56c553))
+- Write what the engine says to `kanpachi-engine.log`, beside the daemon's own log, where it used to be thrown away ([8d4e137](https://github.com/alvarogabrielgomez/kanpachi-engine/commit/8d4e137), in `kanpachi-engine`)
+- Write what the window says to `kanpachi-ui.log`, so a window that closes by itself leaves a reason behind ([b56c553](https://github.com/alvarogabrielgomez/kanpachi/commit/b56c553))
+- Offer the portable version from the download page, under the installer button ([c7551cd](https://github.com/alvarogabrielgomez/kanpachi/commit/c7551cd))
+- Say what is happening while a room is being left or closed, step by step, instead of leaving the room screen still ([27da918](https://github.com/alvarogabrielgomez/kanpachi/commit/27da918))
 
 ### Changed
 
-- Name the daemon log `kanpachi.log`, and let `--log` put it in a chosen folder
-- Hide the "start with Windows" setting in a portable copy, where no service exists to start
-- Start a portable copy with the step-by-step narration already on
-- Spin the "Renovar código" button while the registry answers, and refuse a second press that would kill the code the first one just handed out
+- Name the daemon log `kanpachi.log`, and let `--log` put it in a chosen folder ([b56c553](https://github.com/alvarogabrielgomez/kanpachi/commit/b56c553))
+- Hide the "start with Windows" setting in a portable copy, where no service exists to start ([814ca1f](https://github.com/alvarogabrielgomez/kanpachi/commit/814ca1f))
+- Start a portable copy with the step-by-step narration already on ([814ca1f](https://github.com/alvarogabrielgomez/kanpachi/commit/814ca1f))
+- Spin the "Renovar código" button while the registry answers, and refuse a second press that would kill the code the first one just handed out ([27da918](https://github.com/alvarogabrielgomez/kanpachi/commit/27da918))
 
 ### Fixed
 
-- Shut the daemon down when the window asks, instead of leaving it running for ten more minutes
-- Let a guest who left a room join it again, which used to fail on every attempt after the first (in `kanpachi-engine`)
-- Open a new room right after closing one, instead of leaving the previous one fighting for the adapter (in `kanpachi-engine`)
-- Close a portable Kanpachi whole when you quit it, instead of leaving its window running with nothing behind it
+- Shut the daemon down when the window asks, instead of leaving it running for ten more minutes ([b56c553](https://github.com/alvarogabrielgomez/kanpachi/commit/b56c553))
+- Let a guest who left a room join it again, which used to fail on every attempt after the first ([81bd22c](https://github.com/alvarogabrielgomez/kanpachi/commit/81bd22c), with [8d4e137](https://github.com/alvarogabrielgomez/kanpachi-engine/commit/8d4e137) in `kanpachi-engine`)
+- Open a new room right after closing one, instead of leaving the previous one fighting for the adapter ([8d4e137](https://github.com/alvarogabrielgomez/kanpachi-engine/commit/8d4e137), in `kanpachi-engine`)
+- Close a portable Kanpachi whole when you quit it, instead of leaving its window running with nothing behind it ([b56c553](https://github.com/alvarogabrielgomez/kanpachi/commit/b56c553))
 
 ## [0.1.8] - 2026-08-08
 
@@ -131,6 +133,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.1.9]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.9
 [0.1.8]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.8
 [0.1.4]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.4
 [0.1.3]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.3
