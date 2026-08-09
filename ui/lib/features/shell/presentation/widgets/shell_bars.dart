@@ -172,9 +172,7 @@ class _AccountButtonState extends State<_AccountButton> {
                 // barra de 44, así que los 7 de arriba y los 7 de abajo caían
                 // fuera aunque el ratón estuviera encima del nombre.
                 height: AppSpacing.titleBarHeight,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.md,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
                 decoration: BoxDecoration(
                   color: _hovered ? colors.surface : Colors.transparent,
                 ),

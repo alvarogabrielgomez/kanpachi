@@ -37,7 +37,14 @@ abstract final class SystemBrowser {
       // The documented success test, and it really is this odd: ShellExecute
       // returns a fake HINSTANCE, and anything at or below 32 is an error code
       // rather than a handle.
-      return ShellExecute(null, null, ancho, null, null, SW_SHOWNORMAL).address >
+      return ShellExecute(
+            null,
+            null,
+            ancho,
+            null,
+            null,
+            SW_SHOWNORMAL,
+          ).address >
           32;
     } finally {
       malloc.free(ancho);
