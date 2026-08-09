@@ -109,7 +109,11 @@ Dos banderas que no estaban, y las dos vienen de un fallo medido en la carpeta p
 - **`CREATE_SUSPENDED`.** Sin ella el proceso arranca corriendo y hace lo primero de todo su comprobación de instancia única: si ya hay una, avisa y se mata. A un proceso que ya terminó no se le puede meter en un job. De paso, suspendido es lo que hace cierta la promesa de que el job queda puesto antes de que la interfaz ejecute una sola instrucción.
 - **`CREATE_BREAKAWAY_FROM_JOB`.** Un hijo nace dentro del job de su padre, y a un proceso que YA está en un job no se le puede meter en otro. Medido con `IsProcessInJob`, que contestaba que sí antes de intentarlo. Pasa cuando al daemon lo levanta algo que vive en un job, o sea la consola de una carpeta portable. La bandera es una PETICIÓN: si el job del padre no deja salirse, `CreateProcess` falla y se reintenta sin ella.
 
-**Y si aun así no entra en el job propio, se sigue igual, con un aviso.** Antes se mataba la interfaz recién creada, que es cómo un tropiezo al abrir una ventana acababa costando la partida de cuatro personas. La invariante se sostiene sin el job propio: el proceso nació dentro del job del daemon, así que muere con él lo mismo. Lo que se pierde es una de las dos vías para matarlo, no la garantía.
+**Y si aun así no entra en el job propio, se sigue igual, con un aviso.** Antes se mataba la interfaz recién creada, que es cómo un tropiezo al abrir una ventana acababa costando la partida de cuatro personas.
+
+**Lo que NO se puede dar por sentado es que el job del padre supla al propio.** Esto decía que sí, con el argumento de que el proceso nació dentro del job del daemon y muere con él lo mismo. Es falso en el bundle portable, y está medido el 2026-08-09: `internal/kanpachibundle` no crea ningún job, solo lanza el daemon y espera, así que el job que hay lo puso Windows al elevar y nadie controla qué pasa al cerrarlo. El síntoma era exacto: al salir por "Salir de Kanpachi", el daemon terminaba, el bundle borraba su carpeta temporal, y `kanpachiui.exe` seguía en la lista de procesos corriendo desde una carpeta que ya no existía.
+
+Así que el daemon **anota si el job la sujeta**, y al cerrar mata a mano a la que quedó fuera. El job sigue siendo el camino primario, porque el kernel lo cumple pase lo que pase; matarla explícitamente es código de cierre, o sea justo lo que un `TerminateProcess` desde el Administrador de tareas se salta. Con las dos vías, la única forma de dejar una interfaz suelta es matar el daemon a lo bruto en portable, que es peor que lo que había y sigue siendo mejor que lo que se creía.
 
 El aviso lleva el PID, si el proceso ya estaba en un job, y su código de salida. Hace falta: `Access is denied` a secas tiene tres causas con arreglos distintos, y sin esos datos no se distinguen.
 
@@ -122,7 +126,7 @@ El aviso lleva el PID, si el proceso ya estaba en un job, y su código de salida
 | `kanpachid.exe` | el Administrador de servicios | **es** el daemon |
 | `kanpachid.exe --show` | el acceso directo, el enlace `kanpachi://` | **lanzador**: deja el daemon corriendo y la ventana a la vista |
 | `kanpachid.exe --console` | quien programa | daemon de consola, con otro nombre de pipe |
-| `kanpachid.exe --daemon` | el propio lanzador, en una carpeta portable | **es** el daemon, sin Administrador de servicios detrás |
+| `kanpachid.exe --daemon` | el propio lanzador, en una carpeta portable, o el bundle portable | **es** el daemon, sin Administrador de servicios detrás |
 
 El lanzador es el **default** cuando el proceso no lo arrancó el Administrador de servicios: quien encuentre este binario en Program Files y lo ejecute obtiene un Kanpachi corriendo, jamás un segundo daemon compitiendo con el que ya hay. Correr el daemon a mano hay que pedirlo con `--console` o con `--daemon`.
 
@@ -190,13 +194,66 @@ El UAC por arranque es la consecuencia directa de no haber instalado nada: el pe
 
 La carpeta la arma `scripts\kanpachi-portable.ps1`, que compila las dos mitades, copia el catálogo y las DLL, escribe el marcador y arranca. Ver `04-flujos-y-configuracion.md`.
 
+#### El bundle: esa misma carpeta dentro de un solo ejecutable
+
+Una carpeta portable funciona y **no se puede mandar por chat**. Son quince archivos que hay que mantener juntos: el daemon, la interfaz con todo su bundle de Flutter —su DLL, sus plugins y su `data\`—, el motor, las DLL y el marcador. Un ZIP descomprimido a medias, o alguien que arrastra solo el `.exe` que reconoce, es una carpeta que no arranca y un "no me anda" sin ninguna pista.
+
+`kanpachi-portable.exe` empotra esa carpeta entera con `go:embed`, la suelta en un directorio temporal, corre `kanpachid --daemon --show` y borra el temporal al salir. Unos 78 MB. Lo arma `scripts\build_portable_bundle.ps1`, y lo que empotra es la salida de `kanpachi-portable.ps1`, o sea la MISMA receta que se usa a mano: no hay dos listas de archivos que se puedan desincronizar, por lo mismo que el instalador copia `{#Carga}\*` en vez de enumerar.
+
+Lo que lo hace funcionar, y qué pasa si falta:
+
+- **Eleva el manifiesto, no el código.** El `.syso` del paquete lleva `requireAdministrator`, así que Windows eleva el proceso ANTES de que arranque. La alternativa —arrancar sin permisos y relanzarse elevado— deja DOS procesos, y con ellos dos ventanas y dos iconos en la barra de tareas. El relanzado sigue ahí como red de seguridad para un binario construido sin el `.syso`.
+- **Un solo UAC en toda la sesión.** El daemon hereda el token elevado, y lanza el motor con un `exec.Command` normal, que lo hereda también. Abrir una sala no vuelve a preguntar nada.
+- **Sin consola.** Se enlaza con `-H windowsgui`. Con consola quedaba una ventana negra abierta durante toda la sesión de juego y un segundo icono en la barra, que hace parecer que Kanpachi se abrió dos veces. Lo que se pierde son los mensajes de progreso; un fallo sale por un cuadro de diálogo, con la ruta del log dentro.
+- **El log al lado del ejecutable, los datos en el temporal.** Es la única asimetría y es deliberada. El log viaja con `--log` porque el temporal se borra al salir y ese archivo es lo que se pide cuando algo falla. Los datos se quedan donde están porque la interfaz deduce SU directorio de datos de dónde está ella —el temporal—, y pasárselo por otra vía es exactamente el fallo silencioso que el marcador existe para impedir. El precio: `identity.key` y `last-room.json` mueren en cada corrida, así que "volver a la última sala" no cruza de una a otra.
+- **El motor se comprueba antes de empaquetar.** El script elige el más reciente de los sitios donde queda compilado y **se planta** si el binario es más viejo que el código del motor, con una verificación cruzada por SHA256 entre el que eligió y el que acabó dentro. No es celo de más: la primera versión apuntaba a una ruta fija con un motor de tres días antes, sin el commit que hace que el host acepte a los invitados a los que él mismo dio credencial. Un motor viejo ahí dentro no se descubre acá, se descubre en la máquina de la otra persona.
+
 ### Dónde queda escrito lo que el daemon dice
 
 **Un servicio no tiene salida estándar**, y este binario es gráfico, así que tampoco tiene consola a la que reengancharse. Corriendo como servicio, todo lo que el daemon imprimiera se perdería, y un arranque fallido quedaría como un servicio que se detuvo solo, sin una línea que diga por qué, ni en pantalla ni en disco.
 
-Por eso todo modo que no sea consola manda el log a `logs\kanpachid.log` dentro del directorio de datos, con rotación por tamaño a los 2 MB y una sola copia anterior. Eso cubre al servicio y también al daemon de una carpeta portable, que tampoco tiene consola. En modo consola sigue yendo a la salida estándar, que es donde está mirando quien programa.
+Por eso todo modo que no sea consola manda el log a `logs\kanpachi.log` dentro del directorio de datos, con rotación por tamaño a los 2 MB y una sola copia anterior. Eso cubre al servicio y también al daemon de una carpeta portable, que tampoco tiene consola. En modo consola sigue yendo a la salida estándar, que es donde está mirando quien programa.
+
+La carpeta se puede mover con `--log`, y existe por un caso concreto: el bundle portable manda los datos a un directorio temporal que borra al salir, y el log no puede morir con él. Con la bandera, la carpeta que se pasa se usa **tal cual**, sin colgarle `logs\` debajo: quien la nombra ya eligió.
 
 No va al Visor de eventos, que sería lo idiomático: exigiría registrar una fuente en el instalador, y si esa fuente falta cada línea se convierte en "no se encuentra la descripción del ID de evento". Un archivo de texto al lado de los otros datos lo abre cualquiera, se pega en un reporte de fallo, y ya está protegido por la ACL que el instalador le puso al directorio.
+
+#### La traza de un pánico va al mismo archivo, y antes se perdía entera
+
+El log de arriba solo recoge lo que el daemon decide escribir. **Un pánico de Go no pasa por ahí**: el runtime lo escribe por la salida de errores del proceso, y un binario `-H windowsgui` corriendo como servicio no tiene ninguna. `GetStdHandle(STD_ERROR_HANDLE)` devuelve un handle inválido y la traza se escribe en la nada.
+
+Lo que eso produce es un daemon que **se muere sin dejar una sola línea**. Medido el 2026-08-08: el registro de eventos de Windows anotó dos veces `Event 7031, "The Kanpachi service terminated unexpectedly"`, con el servicio reiniciándose solo a los 5 y a los 10 segundos por sus `FAILURE_ACTIONS`, y `kanpachi.log` no tiene nada entre la última línea normal y el arranque siguiente. Desde fuera se ve como que la interfaz "perdió el servicio" y como que "la ventana se cerró sola" — las dos cosas son el job del daemon llevándose a sus hijos, no causas.
+
+El arranque en modo servicio apunta ahora la salida de errores del proceso a ese mismo archivo, con `SetStdHandle` más `os.Stderr`. Las dos mitades hacen falta: la primera es la que lee el runtime para un pánico, la segunda es a donde escribe el código normal, incluido el `cmd.Stderr` del motor, que hasta ahora también se tiraba.
+
+**Que `SetStdHandle` alcance hubo que medirlo, no suponerlo.** Si el runtime cacheara el handle al arrancar, cambiarlo después no serviría de nada y haría falta otro mecanismo entero. Se comprobó con un binario `-H windowsgui` que hace `SetStdHandle` a un archivo y entra en pánico: el archivo queda con `panic:` y su goroutine, y el proceso sale con código 2. La captura se rehace en cada rotación, porque rotar cierra el archivo y abre otro; hacerla una sola vez al arrancar dejaría el handle apuntando a uno cerrado, y el pánico que importa —el de un daemon que lleva días arriba— se perdería igual.
+
+#### El motor escribe el suyo, y su consola va apagada a propósito
+
+`kanpachi-engine.log`, en la misma carpeta, escrito por el motor. Lo enciende `log_dir` en la parte común de cada orden de arranque, que es el mismo directorio que el daemon usa para el suyo, por el mismo motivo que existe `--log`: en el bundle el motor vive en un temporal que se borra al salir.
+
+**No se escribió un subscriber nuevo.** EasyTier ya trae el suyo, en `easytier/src/common/log.rs`, con filtros por nivel y capa de archivo, y el `TomlConfigLoader` ya tiene `console_logger` y `file_logger`. Se configura, no se reimplementa.
+
+Tres cosas que hay que saber, y ninguna es obvia:
+
+- **El nivel de consola va en `off`, escrito explícito.** El logger de consola de EasyTier manda `WARN` y peor a la salida de errores, y todo lo demás —`INFO`, `DEBUG`, `TRACE`— a la **salida estándar**. Y la salida estándar del motor es el protocolo, una línea JSON por mensaje. Encenderlo con el default corrompe el canal de órdenes. Va escrito en falso aunque el default ya lo esté, que es la regla que el propio motor declara para toda capacidad prohibida.
+- **Se inicializa una vez por PROCESO, no por instancia.** `init` usa `try_init`, y el host levanta dos redes, la sala y el vestíbulo. Llamarlo por instancia falla en la segunda.
+- **Son dos archivos y no uno.** El motor es otro proceso, con su propia rotación. Juntarlos exigiría que le mandara sus líneas al daemon por el mismo canal por el que recibe órdenes, y ese canal es lo primero que se cae cuando el motor está en problemas.
+
+#### La interfaz también, y ahí ninguna vía del sistema servía
+
+`kanpachi-ui.log`, otra vez en la misma carpeta, escrito desde Dart. La interfaz se moría sola y no dejaba nada: medido el 2026-08-09 con el bundle corriendo doce horas, **dieciocho muertes**, una cada veinte a noventa minutos, y de cada una solo quedaba la línea del daemon diciendo que la relanzaba.
+
+Un binario de Flutter para Windows no tiene dónde contarlo, y las dos vías obvias están cerradas, las dos comprobadas:
+
+- **Heredar la salida de errores desde el daemon no se puede.** El daemon vive en la sesión 0 y la interfaz en la del usuario, y los handles no se heredan entre sesiones. Es el `false` de `CreateProcessAsUser`.
+- **Redirigir los streams del runner de C++ tampoco.** `flutter_windows.dll` enlaza su propio CRT, así que un `freopen_s` en el runner no toca los del motor de Flutter. Para eso existe `FlutterDesktopResyncOutputStreams`, y esa API está cableada a `CONOUT$`: llamarla después de redirigir a un archivo deshace la redirección.
+
+Así que se escribe desde Dart, con `runZonedGuarded` para lo asíncrono, `FlutterError.onError` para los errores del framework y `PlatformDispatcher.instance.onError` para lo que se le escapa a la zona. Se anotan **también el arranque y el cierre limpio**: un registro que solo tiene errores no distingue "se cerró sola" de "no llegó a arrancar", que era justo la pregunta.
+
+**La carpeta se la dice el daemon, con `--log`, y eso es una excepción a la doctrina del marcador.** El marcador contesta "qué producto soy", y los dos lados lo deducen del disco. Esta es otra pregunta: "desde qué carpeta me abrieron" NO es deducible por la interfaz, porque en el bundle su ejecutable está en el temporal. La sabe solo el bundle, y ya se la pasa al daemon por esta misma vía. Sin bandera se cae al directorio de datos, y si ahí no se puede escribir, a `%LOCALAPPDATA%\Kanpachi`: el daemon es SYSTEM y la interfaz no, y el permiso que `ProgramData` hereda a sus subcarpetas deja a los usuarios crear carpetas y no crear archivos.
+
+**Lo que este archivo NO ve:** un fallo nativo, del motor de Flutter, de un plugin o del driver de vídeo, no pasa por Dart. Esa mitad la cubre el código de salida que el daemon anota al ver morir el proceso, que separa una salida limpia de un `0xC0000005`.
 
 ### El latido: la interfaz pregunta sin parar
 
@@ -954,6 +1011,18 @@ Pasar el descriptor vacío es un error y no una opción: el descriptor por defec
 
 **Un pánico atendiendo una conexión no se lleva el daemon.** Sin ese recover, cualquier ruta de la API que reviente mata el proceso, y con él la sala: puertos cerrados, motor caído y la partida de todos al suelo porque una pantalla pidió algo raro. Lo encontró un test con la API a medio implementar, que es la forma exacta que tiene el daemon mientras queden adaptadores provisionales.
 
+##### Cada conversación tiene un vigilante, y tiene que durar lo que la conversación
+
+Cerrar la conexión es la ÚNICA forma de desbloquear un `Read` en curso: no existe cancelar una lectura sin cerrar el descriptor. Por eso cada conversación lleva al lado una goroutine que mira el plazo del saludo, el cierre del oyente y el contexto, y cierra la conexión cuando toca. El bucle de abajo no puede vigilarse a sí mismo porque está bloqueado leyendo.
+
+**Ese vigilante duraba cinco segundos, y eso colgaba el apagado entero.** Era un `select` suelto: pasado `HelloWait`, la rama del plazo se elegía, veía que la conexión sí había saludado, no hacía nada y la goroutine terminaba. A partir de ahí nadie miraba el cierre por esa conexión, así que `Listener.Close` —que espera a las conversaciones en curso— se quedaba esperando hasta los diez minutos de ocio.
+
+Lo que lo convertía en interbloqueo es de dónde viene la orden de apagar: **la pide la interfaz por una de esas conexiones**. El daemon esperaba a que se cerrara la conexión de la UI; la UI moría cuando el daemon cerrara su Job Object; y el Job se cierra después de que el apagado termine.
+
+Medido el 2026-08-08 con el bundle portable: tres apagados dejaron `apagando el daemon` en el log y **ninguno** llegó a `el daemon se apagó`. El daemon quedaba vivo y con él el ejecutable del bundle que lo espera, así que "salir de Kanpachi" no cerraba nada.
+
+**Los tests no lo veían porque medían el caso que funcionaba.** El que había cerraba a los pocos milisegundos de saludar, o sea dentro de los cinco segundos en que el vigilante todavía existía. El nuevo espera a pasar ese plazo antes de cerrar, que es la forma que tiene toda conexión de verdad: la interfaz abre la suya al arrancar y pide el apagado minutos después. Tarda cinco segundos a propósito, porque el plazo es una constante de compilación y hacerla inyectable sería dejar que una prueba mueva un tope de producción.
+
 #### El cliente, del lado de Flutter
 
 Vive en `ui/lib/features/session/infra/daemon/` y repite la misma separación: `daemon_codec.dart` es el enmarcado y los mensajes, `daemon_client.dart` es la conversación, y `daemon_transport.dart` es una interfaz de tres métodos. Con eso, el saludo, la correlación y los plazos se prueban enteros sobre un transporte de memoria, sin pipe, sin daemon y sin Windows.
@@ -1036,6 +1105,16 @@ Tres operaciones **no** vienen del named pipe, y las tres las llama el superviso
 Sobre la primera: La llama el adaptador del canal de control cuando alguien toca la puerta del vestíbulo. Vive en los casos de uso y no en el adaptador porque todo lo que decide es política: si esta máquina puede emitir, qué dirección le toca al que entra, cuánto vale la credencial y qué se le cuenta de la red. El motor pone el token, que es lo único que no se decide acá y tiene que ser así, porque revocarlo es lo que corta la sesión.
 
 **Las direcciones se reparten mirando dos listas, no una:** los peers conectados y las credenciales emitidas todavía vigentes. Solo los peers repartiría la misma dirección a dos personas que entran a la vez, que es exactamente lo que pasa cuando alguien manda el código al grupo y los tres lo pegan al mismo tiempo.
+
+#### Y esa dirección viaja hasta el motor del invitado, con prefijo
+
+`guestRequest` le manda al motor el nombre de la red, el secreto de la credencial **y la dirección**, en el campo `ipv4` de `GuestArgs`. `config::guest` la fija con `set_ipv4` y apaga el DHCP, igual que ya hacían el host y el vestíbulo. Va con prefijo, `10.99.77.2/24` y no `10.99.77.2`: el motor la parsea a un `Ipv4Inet`, y sin prefijo el error que devuelve es literalmente *"is not an address with a prefix"*. La arma `guestAddress` en `spec.go`, con la dirección de la credencial y los bits de la subred de la sala.
+
+**Antes el motor la elegía solo, y eso rompía la reconexión.** El DHCP de EasyTier toma la primera libre de la subred mirando los peers que ve (`instance.rs`, `dhcp_inet.network().iter().find(...)`), o sea `.2` cuando el único presente es el host, mientras el daemon del invitado esperaba la que dice la credencial y a los 30 s daba la red por rota. Los dos números coinciden mientras nadie se reconecte: cuando alguien sale y vuelve, el host pasa a `.3`, porque su `.2` sigue reservada las 24 h de `CredentialTTL`, y el motor seguía dando `.2`. A partir del primer fallo fallaban todos los reintentos, con el número del host subiendo y el del motor clavado.
+
+Medido el 2026-08-08 con la sala `10.99.29.0/24`: la credencial decía `10.99.29.9` y el adaptador tomó `10.99.29.2`, o sea la novena credencial emitida contra el mismo `.2` de siempre. Del lado del que ya estaba dentro se veía lo contrario y confirmaba el diagnóstico: el mismo miembro aparecía SIEMPRE como `.3` en cada reconexión, porque el DHCP era estable y el que se movía era el contador del host.
+
+Queda escrito porque explica una decisión que de otro modo parece de más: el host reparte mirando dos listas y el motor obedece, en vez de dejar que el motor reparta. Y queda una asimetría real, que **solo el host libera direcciones**: `clear(s.issued)` vive en `leaveroom.go` y en ningún otro sitio salvo reiniciar el daemon. Con la dirección fijada eso ya no bloquea a nadie, sigue significando que el contador de un host que no cierra la sala nunca baja.
 
 `Status()` es el único canal por el que la UI se entera de las alertas del módulo de exposición. No hay notificación aparte ni evento especial: el módulo publica su último resultado y `Status()` lo arrastra, así que una alerta nunca puede bloquear ni retrasar una respuesta.
 
@@ -2026,12 +2105,15 @@ ProgramData\Kanpachi\
   last-room.json             SOLO EN INVITADOS: código, seed, nombre de la sala y nick.
                              Jamás la credencial ni la identidad de la red real
   suspended-rules.json       reglas ajenas desactivadas y su estado previo
-  easytier-credentials.json  el --credential-file del motor
-  logs\kanpachid.log         lo que el daemon dice. En todo modo salvo consola, que
-                             va a la salida estándar, que es donde mira quien
-                             programa. Rotación por tamaño a los 2 MB, con UNA copia
-                             anterior en kanpachid.log.1
+  logs\kanpachi.log          lo que el daemon dice, Y la traza de un pánico, que
+                             antes se perdía. En todo modo salvo consola, que va a
+                             la salida estándar, que es donde mira quien programa.
+                             Rotación por tamaño a los 2 MB, con UNA copia anterior
+                             en kanpachi.log.1. La carpeta se mueve con --log
+  logs\kanpachi-engine.log   lo que dice el motor, escrito por él. Ver abajo
 ```
+
+**No hay ningún fichero de credenciales del motor**, y lo hubo escrito acá por error: `config.rs` llama a `set_credential_file(None)` y el README del motor promete que las credenciales viven en memoria y no tocan el disco. La credencial de un invitado se le pasa al motor en su orden de arranque y muere con el proceso.
 
 En una carpeta portable el árbol de la derecha es el mismo, colgando de `kanpachi-data\` junto al binario en vez de `ProgramData\Kanpachi`. Lo decide un fichero, `kanpachi.portable`; ver el modelo de procesos.
 

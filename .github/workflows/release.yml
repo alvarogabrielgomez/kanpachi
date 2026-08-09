@@ -201,6 +201,33 @@ jobs:
             "installer\kanpachi.iss"
           if ($LASTEXITCODE -ne 0) { throw "ISCC salio con $LASTEXITCODE" }
 
+      # **El portable sale del MISMO tag que el instalador**, y por eso se arma
+      # acá y no en un workflow aparte. Son dos formas de repartir el mismo
+      # producto: si se publicaran por separado, un amigo con el portable y otro
+      # con el instalado estarían en versiones distintas sin nada que lo diga, y
+      # el protocolo entre el daemon y el motor decodifica estricto.
+      #
+      # El motor se pasa EXPLÍCITO, el mismo que acaba de compilarse arriba. El
+      # script sabe elegir el más reciente por su cuenta y acá no hay nada entre
+      # lo que elegir; lo que sí hace igual es la verificación cruzada por
+      # SHA256 entre el que se le nombró y el que acabó dentro del bundle.
+      #
+      # Su comprobación de "el motor no es más viejo que su código" no corre acá,
+      # porque busca el repositorio del motor como hermano de este y en el runner
+      # está en `motor\`. No hace falta: se compiló en este mismo trabajo, tres
+      # pasos más arriba, así que no puede ser viejo.
+      #
+      # Lo que cuesta: la interfaz de Flutter se compila DOS veces en release,
+      # una para la carga del instalador y otra para el bundle. Son un par de
+      # minutos, y a cambio las dos salidas usan la misma receta que se usa a
+      # mano, sin una tercera lista de ficheros que mantener.
+      - name: Armar el portable
+        shell: pwsh
+        run: |
+          .\scripts\build_portable_bundle.ps1 `
+            -Salida "$env:GITHUB_WORKSPACE\dist\kanpachi-portable.exe" `
+            -Motor  "$env:GITHUB_WORKSPACE\motor\target\release\kanpachi-engine.exe"
+
       - name: Sumas
         id: sums
         shell: pwsh
@@ -212,11 +239,25 @@ jobs:
           # de Linux, que publica `release-seed.yml` en paralelo. Con los dos
           # llamándose `SHA256SUMS`, el último en subir pisaba al otro y dejaba
           # a `install.sh` verificando binarios que no salían en el archivo.
-          $f = Get-Item "$env:GITHUB_WORKSPACE\dist\kanpachi-setup.exe"
-          $h = (Get-FileHash -Algorithm SHA256 $f.FullName).Hash.ToLower()
-          "$h  kanpachi-setup.exe" | Out-File -FilePath "$env:GITHUB_WORKSPACE\dist\SHA256SUMS-windows" -Encoding ascii
+          #
+          # Los DOS ejecutables de Windows van en el mismo archivo: son la misma
+          # carga repartida de dos formas, y quien verifique uno tiene que poder
+          # verificar el otro sin buscar en otro sitio.
+          function Suma($nombre) {
+            $f = Get-Item "$env:GITHUB_WORKSPACE\dist\$nombre"
+            return (Get-FileHash -Algorithm SHA256 $f.FullName).Hash.ToLower()
+          }
+          $setup    = Suma 'kanpachi-setup.exe'
+          $portable = Suma 'kanpachi-portable.exe'
+
+          @(
+            "$setup  kanpachi-setup.exe"
+            "$portable  kanpachi-portable.exe"
+          ) | Out-File -FilePath "$env:GITHUB_WORKSPACE\dist\SHA256SUMS-windows" -Encoding ascii
           Get-Content "$env:GITHUB_WORKSPACE\dist\SHA256SUMS-windows"
-          "setup_sha=$h" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+          "setup_sha=$setup"       | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "portable_sha=$portable" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       # El tramo del CHANGELOG que le toca a esta versión, para el cuerpo de la
       # publicación.
@@ -292,6 +333,7 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             dist/kanpachi-setup.exe
+            dist/kanpachi-portable.exe
             dist/SHA256SUMS-windows
           body: |
             ## What changed
@@ -312,6 +354,26 @@ jobs:
 
             ```
             SHA256  ${{ steps.sums.outputs.setup_sha }}
+            ```
+
+            ### Or run it without installing
+
+            `kanpachi-portable.exe`
+
+            The same product in a single file: double click, accept one UAC
+            prompt, and Kanpachi opens. **It installs nothing** — no service, no
+            autostart entry, no shortcuts, no ProgramData. The only thing it
+            leaves behind is its log, beside the executable, which is what to
+            send when something goes wrong.
+
+            What it costs, said plainly: one UAC prompt per run instead of one
+            per lifetime, it does not start with Windows, and it forgets its
+            identity between runs, so "back to the last room" does not carry
+            over. Use it to try Kanpachi out or to help somebody debug; install
+            it to play regularly.
+
+            ```
+            SHA256  ${{ steps.sums.outputs.portable_sha }}
             ```
 
             Engine built from `alvarogabrielgomez/kanpachi-engine@${{ inputs.motor || 'main' }}`.
@@ -347,4 +409,5 @@ jobs:
           name: kanpachi-setup
           path: |
             dist/kanpachi-setup.exe
+            dist/kanpachi-portable.exe
             dist/SHA256SUMS-windows

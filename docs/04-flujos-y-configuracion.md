@@ -100,7 +100,7 @@ Se publica **por tag y solo por tag**. No hay CI en cada push ni en cada pull re
 
 | Workflow | Qué publica | Qué corre antes |
 |---|---|---|
-| `release.yml` | `kanpachi-setup.exe` y `SHA256SUMS-windows` | `./core/...`, `./internal/arch/...`, `flutter analyze` y `flutter test` |
+| `release.yml` | `kanpachi-setup.exe`, `kanpachi-portable.exe` y `SHA256SUMS-windows` | `./core/...`, `./internal/arch/...`, `flutter analyze` y `flutter test` |
 | `release-seed.yml` | `kanpseed` para amd64 y arm64, `index.html`, y `SHA256SUMS-linux` | `./core/...`, `./registry/...` y `./internal/arch/...` |
 
 `internal/arch` entra en los dos porque los dos publican algo que esos guardianes atan: el cliente y la página comparten el alfabeto del invite ID y la forma de la URL, escritos dos veces en dos lenguajes.
@@ -127,7 +127,11 @@ Ahora `upgrade` reemplaza el binario y la página, y **le cede el resto a `kanps
 
 El pin de EasyTier viaja dentro del binario nuevo, así que subirlo en un release llega al droplet por esta vía. Para que eso funcione, `/usr/local/lib/kanpachi/easytier.version` guarda qué versión quedó instalada: antes "ya están" se contestaba mirando solo si los archivos existían, de modo que subir el pin no reemplazaba nada.
 
-**El nombre del instalador no lleva la versión.** `kanpachi-setup.exe`, a secas, y eso es lo que hace que `releases/latest/download/kanpachi-setup.exe` sea una URL permanente: GitHub la redirige a la publicación más nueva, así que la página de descarga se actualiza sola al publicar un tag. Con el nombre versionado habría que editar la página en cada publicación, y la página que se edita a mano es la que se queda vieja. La versión viaja dentro del ejecutable, en su `VersionInfo`, y en el título de la publicación.
+**El nombre del instalador no lleva la versión.** `kanpachi-setup.exe`, a secas, y eso es lo que hace que `releases/latest/download/kanpachi-setup.exe` sea una URL permanente: GitHub la redirige a la publicación más nueva, así que la página de descarga se actualiza sola al publicar un tag. Con el nombre versionado habría que editar la página en cada publicación, y la página que se edita a mano es la que se queda vieja. La versión viaja dentro del ejecutable, en su `VersionInfo`, y en el título de la publicación. Vale igual para `kanpachi-portable.exe`.
+
+**El portable sale del MISMO tag y del mismo trabajo que el instalador**, con `scripts\build_portable_bundle.ps1` y el motor que se acaba de compilar unos pasos antes, pasado explícito. Son dos formas de repartir el mismo producto: publicarlas por separado dejaría a un amigo con el portable y a otro con el instalado en versiones distintas sin nada que lo diga, y el protocolo entre el daemon y el motor decodifica estricto, así que esa diferencia no es cosmética.
+
+Lo que cuesta y se dice: la interfaz de Flutter se compila **dos veces en release** dentro del mismo trabajo, una para la carga del instalador y otra para el bundle. Son un par de minutos, y a cambio las dos salidas usan la misma receta que se usa a mano, sin una tercera lista de ficheros que mantener sincronizada. La comprobación de "el motor no es más viejo que su código" no corre en el runner, porque busca el repositorio del motor como hermano de este y ahí está en `motor\`; no hace falta, porque se compiló en ese mismo trabajo.
 
 **El motor se compila dentro del workflow**, desde su propio repositorio. No se baja de una publicación suya porque todavía no tiene ninguna: ese repositorio solo compila en cada push. El ref con el que se compiló queda escrito en el cuerpo de la publicación, y eso es lo que hace reconstruible un instalador: sin él, "la versión 0.1.0" no dice con qué motor se armó.
 
@@ -314,11 +318,14 @@ Levanta la sesión de verdad, con los dieciséis puertos cableados igual que `da
 
 **No abre puertos de juego y no lleva catálogo**, a propósito: lo que mide es la sala, o sea la red cifrada, el canal de control, la compuerta y los adaptadores.
 
-**El log es el entregable.** `roomprobe.log` queda junto al ejecutable y lleva tres cosas que el log del daemon no tenía:
+**El log es el entregable.** `roomprobe.log` queda junto al ejecutable.
 
-- Los pasos del diario de cada operación. Es la misma narración que la pantalla enseña en "ver detalles", que antes no salía del proceso: el ingreso a una sala son doce pasos, y el último que aparece es dónde se atascó.
-- Las reglas de firewall **con su destinatario**, y no solo cuántas. Un `reglas 1` es compatible con dos realidades opuestas; un `remotos []` en la regla de la sala es el fallo de la v0.1.6 de un vistazo.
-- Un volcado a demanda, con la tecla `d`, que junta adaptadores leídos del sistema, miembros con su camino, huecos con `puesto` sí o no, NAT, RTT a los seeds y los plazos corriendo.
+**Lo que roomprobe anotaba y el daemon no, se movió al daemon.** Una sonda que registra más que el producto miente sobre el producto: lo que se diagnostica con ella no se puede diagnosticar en la máquina de quien tiene el fallo. Así que los pasos del diario de cada operación viven en `core/usecase`, y las reglas de firewall salen **con su destinatario** desde el mismo sitio que las escribe. Los dos los tienen ahora las tres formas de correr Kanpachi: instalada, portable y roomprobe.
+
+- **Los pasos del diario** son la misma narración que la pantalla enseña en "ver detalles", que antes no salía del proceso: el ingreso a una sala son doce pasos, y el último que aparece es dónde se atascó.
+- **Las reglas con su destinatario**, y no solo cuántas. Un `reglas 1` es compatible con dos realidades opuestas; un `remotos []` en la regla de la sala es el fallo de la v0.1.6 de un vistazo.
+
+Queda **una sola cosa que es de roomprobe y de nadie más**, y es por lo que sigue existiendo: un volcado a demanda, con la tecla `d`, que junta adaptadores leídos del sistema, miembros con su camino, huecos con `puesto` sí o no, NAT, RTT a los seeds y los plazos corriendo. Pide un teclado delante, así que no tiene forma en un servicio.
 
 Se niega a arrancar con el servicio `kanpachi-daemon` vivo, salvo con `-force`: construir la sesión llama a `PurgeOwned`, o sea que le borra las reglas al daemon instalado con la sala de alguien abierta detrás.
 
@@ -337,11 +344,30 @@ Cuatro decisiones que sostienen que funcione:
 
 **Va sin firmar**, así que SmartScreen lo recibe con "Editor desconocido" y Defender puede quejarse: un ejecutable que suelta otros ejecutables y un driver en el temporal y pide administrador tiene, literalmente, la forma de un dropper. Quien lo reciba pulsa "Más información" y "Ejecutar de todas formas". Lo único que quita ese aviso es un certificado de firma de código. Es el mismo problema que el del instalador, ver `07-futuro.md`.
 
+### `kanpachi-portable`: el PRODUCTO en un fichero que se manda por chat
+
+Lo mismo que `roombundle`, con el producto entero en vez de la sonda: el daemon, la interfaz con todo su bundle de Flutter, el motor, las DLL y el marcador. Unos 78 MB. Del otro lado es doble clic, un UAC, y Kanpachi abierto — **sin instalar nada**: ni servicio, ni arranque con Windows, ni accesos directos, ni ProgramData.
+
+Lo que empotra es la salida de `kanpachi-portable.ps1 -NoArrancar`, o sea la carpeta portable de verdad. Una sola receta, no dos que se desincronizan, por el mismo motivo por el que el instalador copia `{#Carga}\*` en vez de enumerar los veintitantos ficheros de Flutter.
+
+Cinco diferencias con `roombundle`, todas medidas:
+
+1. **Extrae recursivo.** `roombundle` escribe cinco ficheros sueltos; acá hay que preservar `data\flutter_assets\` con sus subdirectorios, y el `go:embed` lleva `all:` porque el patrón normal se salta lo que empieza por `.` o `_`, que dentro de los assets de Flutter existe. Aplanar o perder assets da una interfaz que abre en blanco.
+2. **Eleva el manifiesto, no el código.** El `.syso` lleva `requireAdministrator`, así que eleva Windows antes de arrancar. La versión anterior arrancaba sin permisos y se relanzaba: quedaban dos procesos, dos ventanas de consola y dos iconos en la barra de tareas. Se vio al abrirlo.
+3. **Sin consola**, enlazado con `-H windowsgui`. La ventana de `roombundle` tiene sentido porque su hijo dura lo que dura una prueba; acá el hijo dura toda la sesión de juego. Un fallo sale por un cuadro de diálogo con la ruta del log dentro.
+4. **Solo el log viaja al lado del bundle, los datos no.** `roombundle` manda los dos con `-log` y `-data`. Acá `-data` rompería el contrato del marcador: la interfaz deduce su directorio de datos de dónde está ella, que es el temporal. El precio es que `identity.key` y `last-room.json` mueren en cada corrida.
+5. **Comprueba que el motor no esté viejo.** Elige el más reciente de los sitios donde queda compilado, se planta si el binario es anterior al código del motor, y verifica por SHA256 que el que acabó dentro sea el que eligió. La primera versión empaquetó un motor de tres días antes, sin el arreglo de secure mode: el producto habría salido roto y sin nada que lo dijera.
+
+**Va sin firmar**, con el mismo aviso de SmartScreen que `roombundle` y por el mismo motivo.
+
 ### Cómo se arman
 
 ```powershell
-scripts\build_test_tools.ps1 -SinPreguntar
+scripts\build_test_tools.ps1 -SinPreguntar     # roomprobe.exe y roombundle.exe en testTools\
+scripts\build_portable_bundle.ps1              # dist\kanpachi-portable.exe
 ```
+
+El segundo acepta `-RecompilarMotor` para compilar el motor desde su repositorio antes de empaquetar, y `-Motor` para forzar una ruta. Las dos pasan igual por la comprobación de antigüedad.
 
 No hace falta consola elevada: solo compila y copia. Deja todo en `testTools\`, que está en `.gitignore`. El script corre además `GOOS=linux go vet ./internal/...` antes de nada, que es la puerta del CI: `roomprobe` la rompió una vez importando `x/sys/windows` sin etiqueta de compilación, y descubrirlo acá cuesta cuatro segundos en vez de un push.
 

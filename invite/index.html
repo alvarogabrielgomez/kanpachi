@@ -424,6 +424,13 @@
     <h1 class="title" id="dl-title">Descargar Kanpachi</h1>
     <p class="lede" id="dl-sub"></p>
     <a class="primary" id="dl-button" href="#"></a>
+    <!--
+      La versión portable, debajo y en pequeño a propósito. Lo que casi todo el
+      mundo quiere es el instalador, y ofrecer dos descargas del mismo peso
+      obliga a elegir antes de saber la diferencia. Acá está para quien la
+      busca: probarlo sin instalar nada, o ayudar a alguien a diagnosticar.
+    -->
+    <a class="escape" id="dl-portable" href="#">o descarga la versión portable, sin instalar nada</a>
     <p class="note center" id="dl-note"></p>
   </main>
 </div>
@@ -479,6 +486,10 @@
   // página sin tocarla.
   var REPO = "https://github.com/alvarogabrielgomez/kanpachi";
   var SETUP = REPO + "/releases/latest/download/kanpachi-setup.exe";
+  // El mismo mecanismo de URL permanente, y por el mismo motivo: el nombre del
+  // fichero no lleva la versión, así que publicar un tag actualiza esta página
+  // sin tocarla. Sale del MISMO release que el instalador.
+  var PORTABLE = REPO + "/releases/latest/download/kanpachi-portable.exe";
   var RELEASES = REPO + "/releases/latest";
 
   var $ = function (id) { return document.getElementById(id); };
@@ -745,6 +756,7 @@
     var b = $("dl-button");
     b.textContent = "Descargar la última versión";
     b.setAttribute("href", SETUP);
+    $("dl-portable").setAttribute("href", PORTABLE);
     // El hash NO se escribe acá. Esta página no lo puede saber sin que alguien
     // la edite en cada publicación, y un hash desactualizado es peor que
     // ninguno: verificar contra él daría por manipulado un instalador bueno.
