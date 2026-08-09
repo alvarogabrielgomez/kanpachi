@@ -283,10 +283,26 @@ class WindowsPipeTransport implements DaemonTransport {
     // the app on exit. If the grace runs out the kill below is the fallback,
     // and a worker still inside a native call takes the process down with the
     // handle leaked, which is strictly better than corrupting it.
+    // **Que la gracia se agote se ANOTA, y era el único camino mudo que queda.**
+    //
+    // Es el instante exacto que el párrafo de arriba describe como aceptable, y
+    // aceptarlo a ciegas no sirve: si esto sale, un worker se quedó dentro de
+    // una llamada nativa mientras el handle se cerraba debajo suyo, y `kill` no
+    // puede interrumpirlo. A partir de ahí hay un proceso vivo con un zombi
+    // apuntando a un handle cerrado, y el valor de un handle cerrado lo REUSA
+    // Windows para lo siguiente que se abra: la conexión siguiente.
+    //
+    // O sea que si el fallo del 2026-08-09 es este, esta línea sale JUSTO ANTES
+    // de la conexión que después muere sin motivo. Sin anotarlo no hay forma de
+    // saberlo, porque las dos mitades pasan en sitios distintos y con minutos
+    // de diferencia.
     if (_lector != null || _escritor != null) {
       await _ambosFuera.future.timeout(
         const Duration(seconds: 3),
-        onTimeout: () {},
+        onTimeout: () => AppLog.info(
+          'se acabó la gracia de cierre del canal',
+          'despedidas $_despedidas de 2, se mata a los workers como estén',
+        ),
       );
     }
 
