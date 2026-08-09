@@ -52,9 +52,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// no mande dos cambios de configuración del servicio.
   bool _ocupado = true;
 
+  /// Si esto es una copia portable, en cuyo caso el arranque con Windows NO
+  /// EXISTE como pregunta.
+  ///
+  /// No es un ajuste escondido ni uno deshabilitado: en una carpeta portable no
+  /// hay servicio registrado, así que no hay nada que Windows pueda levantar al
+  /// encender. Un interruptor apagado y gris diría que la opción existe y que
+  /// hoy no se puede, que son dos cosas falsas.
+  ///
+  /// Sale del marcador en disco y no de una bandera de compilación, igual que
+  /// el pipe y el directorio de datos: así un solo `kanpachiui.exe` sirve para
+  /// el producto instalado y para el bundle portable, sin dos builds que se
+  /// puedan cruzar.
+  ///
+  /// **Llega por el estado del marco y no se lee acá.** Quien conoce el
+  /// marcador es `PipeNames`, que vive en infra, y una pantalla que importa
+  /// infra rompe el candado de `import_purity_test`. Lo pregunta `main()`, que
+  /// ya lo necesitaba para otra cosa, y baja por el registro de dependencias.
+  /// Ver [ShellState.portable].
+  late final bool _portable;
+
   @override
   void initState() {
     super.initState();
+    // `read` y no `watch`: es un hecho de la máquina que no cambia mientras la
+    // ventana vive, así que no hay a qué suscribirse.
+    _portable = context.read<ShellCubit>().state.portable;
+    // En portable no se pregunta nada: no hay servicio del que leer el
+    // arranque, y preguntarlo dejaría un fallo en pantalla que no es un fallo.
+    if (_portable) {
+      _ocupado = false;
+      return;
+    }
     // Se pregunta al ENTRAR y no se guarda en ningún sitio: el dueño de esta
     // respuesta es el Administrador de servicios, y entre una visita y la
     // siguiente pudo cambiarla cualquiera desde services.msc.
@@ -118,30 +147,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: AppSpacing.x7l),
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                const AppKicker('Este equipo'),
-                const SizedBox(height: AppSpacing.x5l),
-                AppSwitchRow(
-                  title: 'Arrancar Kanpachi con Windows',
-                  note: _notaArranque,
-                  value: _autostart ?? false,
-                  enabled: !_ocupado && _autostart != null,
-                  onChanged: (bool v) => _preguntar(enabled: v),
-                ),
-                if (_fallo != null) ...<Widget>[
-                  const SizedBox(height: AppSpacing.xl),
-                  SelectableText(
-                    _fallo!,
-                    style: context.type.monoSm.copyWith(color: colors.warn),
+          // La tarjeta ENTERA, y no solo el interruptor: en portable «Este
+          // equipo» se quedaría con un título y nada debajo. Ver [_portable].
+          if (!_portable) ...<Widget>[
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  const AppKicker('Este equipo'),
+                  const SizedBox(height: AppSpacing.x5l),
+                  AppSwitchRow(
+                    title: 'Arrancar Kanpachi con Windows',
+                    note: _notaArranque,
+                    value: _autostart ?? false,
+                    enabled: !_ocupado && _autostart != null,
+                    onChanged: (bool v) => _preguntar(enabled: v),
                   ),
+                  if (_fallo != null) ...<Widget>[
+                    const SizedBox(height: AppSpacing.xl),
+                    SelectableText(
+                      _fallo!,
+                      style: context.type.monoSm.copyWith(color: colors.warn),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.x4l),
+            const SizedBox(height: AppSpacing.x4l),
+          ],
           AppCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,

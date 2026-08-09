@@ -131,9 +131,11 @@ func correr(op opciones) error {
 	}
 	apuntar(func() { _ = cerrarFw() })
 
-	diario := usecase.NewJournal(relojReal{})
+	diario := usecase.NewJournal(relojReal{}, log)
 
-	motor, err := kanpachiengine.New(kanpachiengine.Deps{Exe: motorExe, Log: log, Progress: diario})
+	motor, err := kanpachiengine.New(kanpachiengine.Deps{
+		Exe: motorExe, Log: log, LogDir: op.dirLog, Progress: diario,
+	})
 	if err != nil {
 		return fmt.Errorf("preparando el motor: %w", err)
 	}
@@ -181,14 +183,17 @@ func correr(op opciones) error {
 	canal.Attach(sesion)
 	apuntar(func() { _ = canal.Close() })
 
-	// El espejo del diario: es lo que mete en el log los pasos de cada
-	// operación, que es la mitad del valor de esta herramienta.
-	espejo := &espejoDiario{s: sesion, log: log}
-	go espejo.correr(ctxRaiz)
+	// Los pasos de cada operación NO se copian acá: los escribe el propio
+	// `usecase.Journal`, así que salen igual en el log del daemon instalado y
+	// del portable. Antes vivían en esta herramienta, y eso obligaba a correr
+	// roomprobe para conseguir lo que el binario de producción ya debería estar
+	// anotando.
 
-	// El vigía de la malla: la otra mitad, y la que faltaba. Ver [espejoMalla].
-	vigia := &espejoMalla{motor: motor, log: log}
-	go vigia.correr(ctxRaiz)
+	// El vigía de la malla vive en `daemon/service/supervisor`, no acá: es el
+	// dato que contesta "¿los dos motores llegaron a verse?", y pedirle a
+	// alguien que corra otra herramienta para conseguirlo era el problema.
+	vigia := &supervisor.VigiaDeMalla{Motor: motor, Log: log}
+	go vigia.Correr(ctxRaiz)
 
 	bucle, err := supervisor.New(supervisor.Deps{
 		Room: sesion, Engine: motor, Control: canal, System: eventos, Log: log,

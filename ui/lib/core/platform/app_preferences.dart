@@ -33,7 +33,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// they disagreed the app would either ask again for a name it already has or
 /// skip a step that never happened.
 class AppPreferences {
-  const AppPreferences._(this._prefs);
+  const AppPreferences._(this._prefs, this._defaultVerbose);
 
   static const String _nicknameKey = 'nickname';
   static const String _verboseKey = 'verbose';
@@ -43,9 +43,19 @@ class AppPreferences {
 
   final SharedPreferences _prefs;
 
+  /// What [verbose] answers while nobody has chosen. See that getter.
+  final bool _defaultVerbose;
+
   /// Opens the store. Call once, before the first frame.
-  static Future<AppPreferences> open() async =>
-      AppPreferences._(await SharedPreferences.getInstance());
+  ///
+  /// `defaultVerbose` is decided by the caller and not read here on purpose:
+  /// it depends on whether this is a portable copy, and that question belongs
+  /// to `PipeNames`, which lives a layer out. This file must not reach into a
+  /// feature to answer it.
+  static Future<AppPreferences> open({
+    bool defaultVerbose = kDebugMode,
+  }) async =>
+      AppPreferences._(await SharedPreferences.getInstance(), defaultVerbose);
 
   /// The name you are seen by, or empty if there is none yet.
   String get nickname => _prefs.getString(_nicknameKey)?.trim() ?? '';
@@ -82,7 +92,13 @@ class AppPreferences {
   /// with the setting on it opens a second connection to the daemon and asks
   /// for the diary a couple of times a second while a room is opening. Off, it
   /// asks for nothing.
-  bool get verbose => _prefs.getBool(_verboseKey) ?? kDebugMode;
+  /// A portable copy starts with it ON, and that is the third case rather than
+  /// an exception. A portable Kanpachi is what somebody runs when the installed
+  /// one is not an option — a friend trying it for ten minutes, or a machine
+  /// where something is wrong — and in both the steps ARE the reason it is
+  /// being run. It is still a default: the settings screen overrides it and
+  /// the choice is remembered.
+  bool get verbose => _prefs.getBool(_verboseKey) ?? _defaultVerbose;
 
   Future<void> setVerbose({required bool enabled}) async =>
       _prefs.setBool(_verboseKey, enabled);

@@ -64,6 +64,7 @@ class ShellState {
     this.ambient = true,
     this.accountMenuOpen = false,
     this.pickerCameFromRoom = false,
+    this.portable = false,
     this.kickTarget,
   });
 
@@ -95,6 +96,20 @@ class ShellState {
   /// que cambiar el de una sala que ya existe y tiene gente dentro.
   final bool pickerCameFromRoom;
 
+  /// Si esta copia de Kanpachi es la portable.
+  ///
+  /// **Llega inyectado y no se lee acá**, y eso no es ceremonia: la respuesta
+  /// vive en un marcador en disco que conoce `PipeNames`, que es infra, y una
+  /// pantalla que importa infra rompe el candado de `import_purity_test`. Lo
+  /// resuelve `main()`, que ya lo pregunta para otra cosa, y lo entrega al
+  /// registrar el cubit.
+  ///
+  /// Es un hecho de la MÁQUINA y no del estado: no cambia mientras la ventana
+  /// vive, así que nace con el cubit y nadie lo escribe después. Lo usa la
+  /// pantalla de configuración para no ofrecer «abrir con Windows», que en
+  /// portable no tiene servicio que arrancar.
+  final bool portable;
+
   final Member? kickTarget;
 
   ShellState copyWith({
@@ -110,6 +125,7 @@ class ShellState {
     Member? kickTarget,
     bool clearKickTarget = false,
   }) => ShellState(
+    portable: portable,
     screen: screen ?? this.screen,
     history: history ?? this.history,
     dialog: dialog ?? this.dialog,
@@ -129,8 +145,8 @@ class ShellState {
 /// la sesión la manda el daemon y sobrevive a que se cierre la ventana; esto
 /// es de la ventana y sólo de la ventana.
 class ShellCubit extends Cubit<ShellState> {
-  ShellCubit({AppScreen initial = AppScreen.welcome})
-    : super(ShellState(screen: initial));
+  ShellCubit({AppScreen initial = AppScreen.welcome, bool portable = false})
+    : super(ShellState(screen: initial, portable: portable));
 
   /// Cuántas pantallas se recuerdan hacia atrás.
   ///

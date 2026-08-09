@@ -342,5 +342,5 @@ else {
     Nota 'Windows va a pedir permiso de administrador: lo pide el daemon portable'
     Start-Process -FilePath $daemonExe -ArgumentList '--show'
     Bien 'Kanpachi arrancando'
-    Nota "el log del daemon queda en $datos\logs\kanpachid.log"
+    Nota "el log del daemon queda en $datos\logs\kanpachi.log"
 }

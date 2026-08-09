@@ -16,7 +16,14 @@ import 'package:kanpachi_ui/ioc/injector.dart';
 /// Corre una vez en `main()`. El orden importa: lo que depende de otro va
 /// después.
 abstract final class IocManager {
-  static void register({Injector? injector, AppPreferences? preferences}) {
+  /// `portable` lo resuelve `main()` y llega hasta acá en vez de leerse abajo:
+  /// la respuesta vive en un marcador en disco que conoce infra, y la capa de
+  /// presentación no puede importar infra. Ver [ShellState.portable].
+  static void register({
+    Injector? injector,
+    AppPreferences? preferences,
+    bool portable = false,
+  }) {
     Injector.instance = injector ?? GetItInjector();
     if (preferences != null) {
       Injector.instance.registerLazySingleton<AppPreferences>(
@@ -24,7 +31,7 @@ abstract final class IocManager {
       );
     }
     _registerSession(preferences);
-    _registerShell();
+    _registerShell(portable);
     _registerUpdate(preferences);
   }
 
@@ -69,9 +76,9 @@ abstract final class IocManager {
     );
   }
 
-  static void _registerShell() {
+  static void _registerShell(bool portable) {
     final Injector i = Injector.instance;
-    i.registerLazySingleton<ShellCubit>(ShellCubit.new);
+    i.registerLazySingleton<ShellCubit>(() => ShellCubit(portable: portable));
     // Detrás del contrato para que los tests de widget no toquen la bandeja
     // del sistema: un test que planta un icono de verdad lo deja puesto
     // cuando falla.
