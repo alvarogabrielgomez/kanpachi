@@ -69,6 +69,13 @@ type commonArgs struct {
 	Hostname string   `json:"hostname"`
 	Peers    []string `json:"peers"`
 	MTU      *uint32  `json:"mtu,omitempty"`
+	// LogDir es dónde el motor escribe su propio log.
+	//
+	// Se OMITE cuando está vacío, y el motor lo lee como "no escribas nada",
+	// que es como se comportaba hasta ahora. Va por el protocolo y no por el
+	// entorno porque el entorno del hijo se pasa VACÍO a propósito: cada
+	// bandera de EasyTier tiene gemela por variable de entorno.
+	LogDir string `json:"log_dir,omitempty"`
 }
 
 type hostArgs struct {
@@ -89,6 +96,9 @@ type guestArgs struct {
 	Common           commonArgs `json:"common"`
 	NetworkName      string     `json:"network_name"`
 	CredentialSecret string     `json:"credential_secret"`
+	// IPv4 va CON prefijo, igual que en host y en el vestíbulo. Ver
+	// [guestAddress].
+	IPv4 string `json:"ipv4"`
 }
 
 type issueArgs struct {
@@ -235,7 +245,7 @@ const SeedPort = 11010
 // El secreto de la red real viaja acá dentro y en ningún otro sitio. No entra
 // en el argv, que es legible con el Administrador de tareas por cualquier
 // usuario de la máquina, y no vuelve a `core`.
-func hostRequest(id uint64, spec domain.HostSpec, uris []string) request {
+func hostRequest(id uint64, spec domain.HostSpec, uris []string, dirLog string) request {
 	return request{
 		ID: id,
 		Cmd: command{Host: &hostArgs{
@@ -243,6 +253,7 @@ func hostRequest(id uint64, spec domain.HostSpec, uris []string) request {
 				DevName:  RoomDevice,
 				Hostname: spec.Name.String(),
 				Peers:    uris,
+				LogDir:   dirLog,
 			},
 			NetworkName:   spec.RealNetworkName(),
 			NetworkSecret: engineSecret(spec.NetworkSecret),
@@ -256,7 +267,7 @@ func hostRequest(id uint64, spec domain.HostSpec, uris []string) request {
 // Va con su propio adaptador porque es OTRA red, no un modo de la sala. El
 // invitado tiene que poder soltar el vestíbulo y quedarse en la sala, y con una
 // sola red eso sería imposible de expresar.
-func lobbyRequest(id uint64, spec domain.RendezvousSpec, uris []string) request {
+func lobbyRequest(id uint64, spec domain.RendezvousSpec, uris []string, dirLog string) request {
 	return request{
 		ID: id,
 		Cmd: command{JoinRendezvous: &lobbyArgs{
@@ -264,6 +275,7 @@ func lobbyRequest(id uint64, spec domain.RendezvousSpec, uris []string) request 
 				DevName:  LobbyDevice,
 				Hostname: spec.Name.String(),
 				Peers:    uris,
+				LogDir:   dirLog,
 			},
 			NetworkName:   spec.Rendezvous.NetworkName(),
 			NetworkSecret: spec.Rendezvous.EngineSecret(),
@@ -282,7 +294,7 @@ func lobbyRequest(id uint64, spec domain.RendezvousSpec, uris []string) request 
 // Tampoco lleva el `credential_id`, aunque el daemon lo tenga. El motor
 // identifica al nodo por la clave pública que deriva del secreto, así que un id
 // sería un campo que se manda y se ignora.
-func guestRequest(id uint64, spec domain.GuestSpec, uris []string) request {
+func guestRequest(id uint64, spec domain.GuestSpec, uris []string, dirLog string) request {
 	return request{
 		ID: id,
 		Cmd: command{Join: &guestArgs{
@@ -290,11 +302,27 @@ func guestRequest(id uint64, spec domain.GuestSpec, uris []string) request {
 				DevName:  RoomDevice,
 				Hostname: spec.Name.String(),
 				Peers:    uris,
+				LogDir:   dirLog,
 			},
 			NetworkName:      spec.Credential.NetworkName,
 			CredentialSecret: spec.Credential.Token,
+			IPv4:             guestAddress(spec.Credential.VirtualIP, spec.Credential.Subnet),
 		}},
 	}
+}
+
+// guestAddress es la dirección del invitado CON el prefijo de la sala.
+//
+// Con prefijo y no pelada: al otro lado se parsea a un `Ipv4Inet`, que es una
+// dirección Y una red, y su error lo dice con esas palabras —"is not an address
+// with a prefix"—. Una dirección sola hace fallar la orden entera.
+//
+// La subred sale de la CREDENCIAL y no del estado de la sesión, por lo mismo
+// que la dirección: las dos las decidió el host, viajan juntas en la credencial,
+// y separarlas sería poder mezclar la subred de una sala con la dirección de
+// otra.
+func guestAddress(ip netip.Addr, subnet netip.Prefix) string {
+	return netip.PrefixFrom(ip, subnet.Bits()).String()
 }
 
 // hostAddress es la primera dirección utilizable de la subred de la sala.

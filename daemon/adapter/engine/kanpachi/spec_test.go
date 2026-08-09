@@ -23,7 +23,7 @@ func TestTheHostRequestCarriesTheRealNetworkAndNoSeedName(t *testing.T) {
 		Name:          nick(t, "Alvaro"),
 		Subnet:        netip.MustParsePrefix("100.64.7.0/24"),
 	}
-	req := hostRequest(1, spec, []string{"tcp://203.0.113.9:11010"})
+	req := hostRequest(1, spec, []string{"tcp://203.0.113.9:11010"}, "")
 
 	if req.Cmd.Host == nil {
 		t.Fatal("la orden no es un host")
@@ -60,7 +60,7 @@ func TestTheGuestRequestCarriesNoNetworkSecret(t *testing.T) {
 		},
 		Name: nick(t, "Gabriel"),
 	}
-	req := guestRequest(2, spec, []string{"tcp://203.0.113.9:11010"})
+	req := guestRequest(2, spec, []string{"tcp://203.0.113.9:11010"}, "")
 
 	if req.Cmd.Join == nil {
 		t.Fatal("la orden no es un join")
@@ -99,7 +99,7 @@ func TestTheLobbyGoesOnItsOwnAdapter(t *testing.T) {
 		Address:    domain.RendezvousHostAddress,
 		Name:       nick(t, "Alvaro"),
 	}
-	req := lobbyRequest(3, spec, []string{"tcp://203.0.113.9:11010"})
+	req := lobbyRequest(3, spec, []string{"tcp://203.0.113.9:11010"}, "")
 
 	if req.Cmd.JoinRendezvous == nil {
 		t.Fatal("la orden no es un join_rendezvous")

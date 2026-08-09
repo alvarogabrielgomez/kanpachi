@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
@@ -334,4 +336,51 @@ func (s *Session) logMemberDiffLocked(antes []domain.Peer) {
 				"nombre", p.Name.String(), "ip", p.VirtualIP.String())
 		}
 	}
+	s.logInvitadosQueNoLleganLocked(ahora)
+}
+
+// logInvitadosQueNoLleganLocked anota a quién le dimos credencial y no aparece.
+//
+// # El fallo que esto hace legible
+//
+// El host tiene las dos listas —a quién le emitió credencial y a quién ve el
+// motor— y hasta ahora nadie las comparaba. El 2026-08-08 un host tuvo un
+// invitado dentro veinte minutos: el invitado veía dos miembros, el host veía
+// uno, y **ninguno de los dos logs lo decía**. Se dedujo por omisión, mirando
+// que nunca apareciera un `entró a la sala` y que las reglas del firewall se
+// quedaran en dos.
+//
+// No es cosmético. La lista de miembros es de donde salen las reglas de juego:
+// sin miembros no se abre ni un puerto hacia el invitado, así que este silencio
+// tapaba que la sala no servía para jugar.
+//
+// # Por qué solo cuando hay discrepancia
+//
+// Porque esto corre en cada sondeo de miembros, y el motor los dispara en
+// ráfagas. Una línea por sondeo diciendo que todo está bien sería el ruido que
+// tapa lo que sí importa. Sin discrepancia, silencio.
+//
+// Asume el candado tomado.
+func (s *Session) logInvitadosQueNoLleganLocked(presentes map[netip.Addr]bool) {
+	if !s.state.IsHost() || len(s.issued) == 0 {
+		return
+	}
+	ahora := s.deps.Clock.Now()
+
+	faltan := make([]string, 0, len(s.issued))
+	for ip, c := range s.issued {
+		// Una credencial vencida ya no autoriza a nadie, así que su ausencia no
+		// es noticia: quien la tenía se fue hace rato y esto no es un fallo.
+		if c.Expired(ahora) || presentes[ip] {
+			continue
+		}
+		faltan = append(faltan, c.Name.String()+" "+ip.String())
+	}
+	if len(faltan) == 0 {
+		return
+	}
+	sort.Strings(faltan)
+	s.deps.Log.Warn("hay credenciales emitidas que el motor no ve en la sala",
+		"cuántas", len(faltan), "quiénes", strings.Join(faltan, ", "),
+		"miembros que sí ve", len(presentes))
 }

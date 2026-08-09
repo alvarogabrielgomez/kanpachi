@@ -61,6 +61,15 @@ type Deps struct {
 	// ninguno de estos adaptadores existe.
 	Addrs func(adapter string) ([]netip.Addr, error)
 
+	// LogDir es dónde el MOTOR escribe su propio log, y viaja en cada orden de
+	// arranque.
+	//
+	// Vacío significa que no escribe nada, que es como se comportó hasta ahora.
+	// Se le dice desde acá porque el motor no puede deducirlo: en el bundle
+	// portable vive en un directorio temporal que se borra al salir, así que un
+	// log junto a su ejecutable moriría justo cuando alguien lo iba a mandar.
+	LogDir string
+
 	// Progress es el diario de la operación en curso, cuando la hay.
 	//
 	// Lo escribe este adaptador porque es el único que sabe dos cosas que
@@ -454,7 +463,7 @@ func (e *Engine) HostNetwork(ctx context.Context, spec domain.HostSpec) error {
 	if err != nil {
 		return err
 	}
-	if err := e.startCall(ctx, func(id uint64) request { return hostRequest(id, spec, uris) }); err != nil {
+	if err := e.startCall(ctx, func(id uint64) request { return hostRequest(id, spec, uris, e.deps.LogDir) }); err != nil {
 		return err
 	}
 	return e.awaitAddress(ctx, RoomDevice, domain.HostAddress(spec.Subnet))
@@ -472,11 +481,11 @@ func (e *Engine) JoinRendezvous(ctx context.Context, spec domain.RendezvousSpec)
 	if err != nil {
 		return err
 	}
-	if _, err := e.call(ctx, func(id uint64) request { return lobbyRequest(id, spec, uris) }); err != nil {
+	if _, err := e.call(ctx, func(id uint64) request { return lobbyRequest(id, spec, uris, e.deps.LogDir) }); err != nil {
 		return err
 	}
 	e.mu.Lock()
-	req := lobbyRequest(0, spec, uris)
+	req := lobbyRequest(0, spec, uris, e.deps.LogDir)
 	e.lastLobby = &req
 	e.mu.Unlock()
 	// La del vestíbulo es la que se midió fallando: el canal de control liga
@@ -526,12 +535,17 @@ func (e *Engine) JoinWithCredential(ctx context.Context, spec domain.GuestSpec) 
 	if err != nil {
 		return err
 	}
-	if err := e.startCall(ctx, func(id uint64) request { return guestRequest(id, spec, uris) }); err != nil {
+	if err := e.startCall(ctx, func(id uint64) request { return guestRequest(id, spec, uris, e.deps.LogDir) }); err != nil {
 		return err
 	}
-	// La dirección del invitado la asignó el host dentro de la credencial, y el
-	// motor la toma por DHCP de la red. Esperarla es lo que hace que marcar al
-	// host no salga desde una interfaz que aún no tiene IP.
+	// La dirección del invitado la asignó el host dentro de la credencial, y
+	// ahora se le MANDA al motor. Esperarla es lo que hace que marcar al host no
+	// salga desde una interfaz que aún no tiene IP.
+	//
+	// Este comentario decía "y el motor la toma por DHCP de la red", afirmando
+	// las dos cosas a la vez. Eran dos algoritmos calculando lo mismo por
+	// separado, y coincidían solo mientras nadie se reconectara. Ver
+	// `guestAddress` y el `set_dhcp(false)` del motor.
 	return e.awaitAddress(ctx, RoomDevice, spec.Credential.VirtualIP)
 }
 
