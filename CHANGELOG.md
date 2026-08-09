@@ -11,6 +11,8 @@ This file is in English, like commit messages and release notes, because a relea
 ### Fixed
 
 - Reconnect to the daemon after it drops an idle link, instead of leaving the window frozen on what it last knew
+- Name the engine log `kanpachi-engine.log`, which shipped with no extension at all and left Windows asking what to open it with (in `kanpachi-engine`)
+- Keep more of the engine log before it wraps, which at two megabytes rolled over mid-session (in `kanpachi-engine`)
 
 ## [0.1.9] - 2026-08-09
 

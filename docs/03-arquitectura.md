@@ -240,6 +240,10 @@ Tres cosas que hay que saber, y ninguna es obvia:
 - **Se inicializa una vez por PROCESO, no por instancia.** `init` usa `try_init`, y el host levanta dos redes, la sala y el vestíbulo. Llamarlo por instancia falla en la segunda.
 - **Son dos archivos y no uno.** El motor es otro proceso, con su propia rotación. Juntarlos exigiría que le mandara sus líneas al daemon por el mismo canal por el que recibe órdenes, y ese canal es lo primero que se cae cuando el motor está en problemas.
 
+**Rota a los 8 MB y guarda dos copias, más que el del daemon**, porque se llena mucho más rápido: EasyTier anota una línea INFO por cada paquete de multidifusión que no sabe encaminar, y una máquina con Windows emite SSDP y mDNS todo el tiempo. Medido el 2026-08-09: 266 KB en quince minutos, cerca de un megabyte por hora. A 2 MB daba la vuelta a mitad de la sesión que alguien está tratando de explicar.
+
+**Ese ruido NO se filtra**, y hay dos motivos. EasyTier parsea el nivel con `unwrap()` sobre un `LevelFilter`, así que solo admite un nivel pelado y una directiva de `EnvFilter` como `easytier::peers::peer_manager=warn` haría entrar en pánico al motor en vez de acotar nada. Y callar ese módulo entero se llevaría por delante las líneas de encaminamiento de peers, que son justo con lo que se diagnostica un host que no ve a su invitado.
+
 #### La interfaz también, y ahí ninguna vía del sistema servía
 
 `kanpachi-ui.log`, otra vez en la misma carpeta, escrito desde Dart. La interfaz se moría sola y no dejaba nada: medido el 2026-08-09 con el bundle corriendo doce horas, **dieciocho muertes**, una cada veinte a noventa minutos, y de cada una solo quedaba la línea del daemon diciendo que la relanzaba.
