@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:kanpachi_ui/core/platform/app_log.dart';
 import 'package:kanpachi_ui/features/session/domain/daemon_failure.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_transport.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/pipe/pipe_names.dart';
@@ -200,6 +201,26 @@ class WindowsPipeTransport implements DaemonTransport {
         _despedidas++;
         if (_despedidas >= 2 && !_ambosFuera.isCompleted) {
           _ambosFuera.complete();
+        }
+        // **El error de Windows se ANOTA, y antes se tiraba.**
+        //
+        // Ese entero es lo único que distingue por qué se acabó el canal, y sin
+        // él lo que la app cuenta arriba es «el daemon cerró la conexión», que
+        // es una interpretación y no un hecho. Medido el 2026-08-09: la ventana
+        // dijo eso doce veces y el log del daemon no tiene NI UN corte de
+        // conexión en toda la sesión, así que quien se rompió fue este lado.
+        //
+        // Los que importan y qué significan: 109 `ERROR_BROKEN_PIPE` es que el
+        // otro extremo se fue de verdad, 0 es un cierre limpio o cero bytes, 6
+        // `ERROR_INVALID_HANDLE` es que el handle dejó de ser válido debajo
+        // nuestro, y cualquier otro apunta al camino superpuesto.
+        final int porQue = m[1]! as int;
+        if (!_cerrando || porQue != 0) {
+          AppLog.info(
+            'el canal con el daemon se acabó',
+            'error de Windows $porQue cerrando $_cerrando '
+                'despedidas $_despedidas',
+          );
         }
         // The reader hanging up is how the death of the daemon arrives. Closing
         // the stream lands in DaemonClient's onDone, which breaks every pending
