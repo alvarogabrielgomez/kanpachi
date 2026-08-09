@@ -95,6 +95,24 @@ void pipeReader(PipeWorkerConfig cfg) {
   waits[1] = stop;
 
   int motivo = 0;
+  // Si la cancelación la pedimos NOSOTROS, que es el camino de parada de abajo.
+  //
+  // **Sin esta bandera, `ERROR_OPERATION_ABORTED` se daba por propio siempre**,
+  // y eso tapaba la única prueba del fallo que se está persiguiendo: Windows
+  // cancela la E/S pendiente de un hilo cuando ese hilo termina, textual en la
+  // documentación de `ExitThread` —«all pending I/O initiated by the thread that
+  // is not associated with a completion port is canceled»—, y esta E/S va con
+  // evento y no con puerto de finalización. Un isolate de Dart no tiene hilo
+  // propio garantizado: corre sobre el pool de la VM.
+  //
+  // O sea que un aborto que NO pedimos significa que el hilo que lanzó la
+  // lectura se fue, y eso se ve desde fuera como un canal que se muere solo sin
+  // que el daemon haya cerrado nada. Que es exactamente lo medido el
+  // 2026-08-09: doce veces, y cero cortes del lado del daemon.
+  bool abortoPropio = false;
+  // El hilo que lanza la primera lectura, para poder comparar con el de la
+  // última. Si cambian, la migración está probada y no hay que deducirla.
+  final int hiloAlEmpezar = GetCurrentThreadId();
   try {
     while (true) {
       // ReadFile puts the event in the non-signalled state itself before it
@@ -124,6 +142,7 @@ void pipeReader(PipeWorkerConfig cfg) {
         // Either the owner asked to stop, or the wait itself failed. Both end
         // the same way, and the pending read has to be reaped before anybody
         // frees the OVERLAPPED or closes the handle.
+        abortoPropio = true;
         CancelIoEx(pipe, ov);
         GetOverlappedResult(pipe, ov, moved, true);
         break;
@@ -172,11 +191,18 @@ void pipeReader(PipeWorkerConfig cfg) {
       ..free(waits);
   }
 
-  // ERROR_OPERATION_ABORTED is what our own CancelIoEx leaves behind, so it is
-  // the normal close and never an error. Reporting it would turn every clean
-  // shutdown into a failure on screen.
-  if (motivo == ERROR_OPERATION_ABORTED) motivo = 0;
-  cfg.toOwner.send(<Object?>[PipeMsg.closed, motivo]);
+  // **Solo se traga el aborto que pedimos nosotros**, y esa distinción es la
+  // prueba. Antes se tragaba cualquiera, con el argumento de que
+  // `ERROR_OPERATION_ABORTED` solo lo deja nuestro `CancelIoEx`. Es falso: lo
+  // deja también Windows al terminar el hilo que lanzó la lectura, y esta E/S
+  // va con evento y no con puerto de finalización. Ver [abortoPropio].
+  if (abortoPropio && motivo == ERROR_OPERATION_ABORTED) motivo = 0;
+  cfg.toOwner.send(<Object?>[
+    PipeMsg.closed,
+    motivo,
+    hiloAlEmpezar,
+    GetCurrentThreadId(),
+  ]);
 }
 
 /// Writes whatever the owner sends, one message at a time.

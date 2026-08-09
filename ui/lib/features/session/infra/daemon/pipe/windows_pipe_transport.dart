@@ -215,11 +215,19 @@ class WindowsPipeTransport implements DaemonTransport {
         // `ERROR_INVALID_HANDLE` es que el handle dejó de ser válido debajo
         // nuestro, y cualquier otro apunta al camino superpuesto.
         final int porQue = m[1]! as int;
+        // Los hilos los manda solo el lector, que es quien tiene la lectura
+        // pendiente. `995` es `ERROR_OPERATION_ABORTED` y acá ya significa un
+        // aborto que NO pedimos: o sea que el hilo que lanzó la lectura se fue,
+        // y Windows canceló su E/S al terminarlo. Si además los dos números de
+        // hilo no coinciden, está probado en vez de deducido.
+        final String hilos = m.length > 3
+            ? ' hilo al empezar ${m[2]} al acabar ${m[3]}'
+            : '';
         if (!_cerrando || porQue != 0) {
           AppLog.info(
             'el canal con el daemon se acabó',
             'error de Windows $porQue cerrando $_cerrando '
-                'despedidas $_despedidas',
+                'despedidas $_despedidas$hilos',
           );
         }
         // The reader hanging up is how the death of the daemon arrives. Closing
