@@ -63,9 +63,28 @@ class DaemonConnector {
   /// A live client. Concurrent callers share one opening instead of racing to
   /// open several: the daemon only accepts eight connections and the screens
   /// ask at the same time.
+  ///
+  /// **Se comprueba que el memorizado siga vivo**, y esa comprobación faltaba.
+  /// El caso que la exige es el normal, no el raro: el daemon corta a los diez
+  /// minutos de silencio, y sin esto el conector seguía entregando el cliente
+  /// muerto para siempre. La ventana quedaba congelada con el estado de antes
+  /// dibujado, sin decir nada, hasta que el proceso se caía. Medido el
+  /// 2026-08-09, diecisiete minutos así.
+  ///
+  /// Se pregunta acá en vez de que el cliente avise, para que no haya un
+  /// callback que alguien pueda olvidarse de cablear: quien memoriza es quien
+  /// tiene que dudar de lo que memorizó.
   Future<DaemonClient> client() {
     final DaemonClient? actual = _vivo;
-    if (actual != null) return Future<DaemonClient>.value(actual);
+    if (actual != null && !actual.isDead) {
+      return Future<DaemonClient>.value(actual);
+    }
+    if (actual != null) {
+      _vivo = null;
+      // Idempotente: el propio cliente ya se cerró al morir. Está por si acaso
+      // llega acá por otro camino, y porque soltar handles dos veces no cuesta.
+      unawaited(actual.close());
+    }
     return _abriendo ??= _abrir();
   }
 

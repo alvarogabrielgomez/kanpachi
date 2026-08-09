@@ -137,6 +137,20 @@ void pipeReader(PipeWorkerConfig cfg) {
       );
       if (!hecho.value) {
         motivo = hecho.error;
+        // **ERROR_IO_INCOMPLETE no es un fallo: es "el kernel todavía es dueño
+        // de este OVERLAPPED".** Salir sin más lo dejaba libre en el `finally`
+        // de abajo, con una lectura viva apuntando a esos 32 bytes. Cuando esa
+        // lectura termina, el kernel escribe su estado en memoria que ya es de
+        // otro, y eso revienta MÁS TARDE y EN OTRO SITIO. Es la forma exacta de
+        // los 0xC0000005 que se midieron el 2026-08-09.
+        //
+        // Se cobra la operación antes de irse, igual que en el camino de parada
+        // unas líneas más arriba: cancelar y esperar de verdad al resultado es
+        // lo único que garantiza que nadie más toque este puntero.
+        if (motivo == ERROR_IO_INCOMPLETE) {
+          CancelIoEx(pipe, ov);
+          GetOverlappedResult(pipe, ov, moved, true);
+        }
         break;
       }
 
@@ -256,6 +270,14 @@ void pipeWriter(PipeWorkerConfig cfg) {
         false,
       );
       if (!hecho.value) {
+        // Lo mismo que en el lector, y acá es peor: este `ov` NO se libera al
+        // salir, se REUTILIZA en la escritura siguiente. Dejar una operación
+        // viva encima significa que la próxima `WriteFile` pisa un OVERLAPPED
+        // que el kernel todavía está usando.
+        if (hecho.error == ERROR_IO_INCOMPLETE) {
+          CancelIoEx(pipe, ov);
+          GetOverlappedResult(pipe, ov, moved, true);
+        }
         cfg.toOwner.send(<Object?>[
           PipeMsg.fail,
           seq,

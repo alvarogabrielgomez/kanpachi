@@ -51,6 +51,16 @@ class DaemonClient {
   int _siguienteId = 0;
   bool _saludado = false;
   bool _cerrado = false;
+  bool _muerto = false;
+
+  /// Si esta conversación ya no sirve para nada.
+  ///
+  /// Lo mira [DaemonConnector], que memoriza el cliente vivo: sin esto seguía
+  /// entregando el mismo cadáver, y la ventana se quedaba **congelada sin
+  /// decirlo**. Medido el 2026-08-09: el daemon cortó por silencio, la interfaz
+  /// lo supo a las 15:31:26, y estuvo diecisiete minutos en pantalla sin hablar
+  /// con nadie, con el estado de antes dibujado, hasta que el proceso se cayó.
+  bool get isDead => _muerto || _cerrado;
 
   /// Abre el transporte, arranca la escucha y saluda. Idempotente: saludar dos
   /// veces no manda dos saludos ni abre dos veces.
@@ -62,11 +72,9 @@ class DaemonClient {
     _sub = transport.incoming.listen(
       _onBytes,
       onError: (Object e) =>
-          _matarTodo('el transporte falló: $e', DaemonUnreachableKind.linkLost),
-      onDone: () => _matarTodo(
-        'el daemon cerró la conexión',
-        DaemonUnreachableKind.linkLost,
-      ),
+          _morir('el transporte falló: $e', DaemonUnreachableKind.linkLost),
+      onDone: () =>
+          _morir('el daemon cerró la conexión', DaemonUnreachableKind.linkLost),
     );
 
     await _send(DaemonMethods.hello, <String, Object?>{'token': token});
@@ -130,22 +138,40 @@ class DaemonClient {
     final Completer<DaemonResponse> espera = Completer<DaemonResponse>();
     _esperando[id] = espera;
 
+    // **El plazo se arma ANTES de escribir, y eso cierra una carrera medida.**
+    //
+    // Entre registrar el completer y llegar a esperarlo hay un `await` sobre la
+    // escritura. Si el daemon cortaba justo ahí, [_matarTodo] completaba con un
+    // error un futuro que todavía no tenía a nadie escuchando, y eso es un error
+    // asíncrono huérfano: sube hasta la zona de `main()` y queda anotado como un
+    // fallo de la interfaz que nadie pidió. Con la traza VACÍA, además, porque
+    // `completeError` sin traza deja `StackTrace.empty`. Es exactamente la línea
+    // que apareció en `kanpachi-ui.log` antes de cada caída del 2026-08-09.
+    //
+    // De paso el plazo pasa a cubrir también la escritura, que es lo correcto:
+    // el plazo es del MÉTODO, y escribir es parte del método. Antes una
+    // escritura que no volviera se quedaba esperando sin plazo ninguno.
+    final Duration plazo = _timeoutFor(method);
+    final Future<DaemonResponse> respuestaFutura = espera.future.timeout(plazo);
+
     try {
       await transport.send(
         _codec.encode(DaemonRequest(id: id, method: method, params: params)),
       );
     } on Object catch (e) {
       _esperando.remove(id);
+      // Sacado del mapa ya no lo completa nadie, y su plazo sí va a vencer. Sin
+      // esto, ese vencimiento sería el mismo error huérfano por la otra puerta.
+      respuestaFutura.ignore();
       throw DaemonUnreachable(
         'no se pudo escribir al daemon: $e',
         kind: DaemonUnreachableKind.writeFailed,
       );
     }
 
-    final Duration plazo = _timeoutFor(method);
     final DaemonResponse respuesta;
     try {
-      respuesta = await espera.future.timeout(plazo);
+      respuesta = await respuestaFutura;
     } on TimeoutException {
       // Se saca del mapa: si contesta tarde, la respuesta llega a un completer
       // que ya nadie mira y completarlo dos veces sería un error de estado.
@@ -167,7 +193,7 @@ class DaemonClient {
       respuestas = _codec.feed(bytes);
     } on DaemonProtocolError catch (e) {
       // Un flujo que dejó de tener forma no se puede recuperar leyendo más.
-      _matarTodo(e.reason, DaemonUnreachableKind.linkLost);
+      _morir(e.reason, DaemonUnreachableKind.linkLost);
       return;
     }
 
@@ -181,7 +207,7 @@ class DaemonClient {
       // byte stream is out of step and reading more means taking half a message
       // for a whole one.
       if (r.id == 0) {
-        _matarTodo(
+        _morir(
           'el daemon contestó sin poder decir a qué petición: '
           '${r.error?.code ?? "sobre ilegible"}',
           DaemonUnreachableKind.linkLost,
@@ -196,6 +222,25 @@ class DaemonClient {
     }
   }
 
+  /// La conversación se acabó: se rompen las esperas Y se suelta todo.
+  ///
+  /// # Por qué no basta con romper las esperas
+  ///
+  /// Porque eso era lo único que se hacía, y dejaba **la mitad del apagado sin
+  /// hacer**. El cliente seguía pareciendo vivo, así que el conector seguía
+  /// entregándolo; el transporte no se cerraba, así que se quedaban en pie el
+  /// isolate que escribe, sus cuatro reservas nativas, el handle del pipe y el
+  /// evento de parada. Uno de cada por cada corte, y el daemon corta cada diez
+  /// minutos de silencio, que es el caso NORMAL de esta app.
+  ///
+  /// Cerrar desde acá es reentrante a propósito: [close] vuelve a llamar a
+  /// [_matarTodo], y para entonces ya no queda nadie esperando.
+  void _morir(String motivo, DaemonUnreachableKind kind) {
+    _muerto = true;
+    _matarTodo(motivo, kind);
+    unawaited(close());
+  }
+
   /// Rompe todas las esperas con el mismo motivo.
   ///
   /// Sin esto, que el daemon muera deja cada `await` colgado hasta su plazo, y
@@ -206,9 +251,18 @@ class DaemonClient {
         List<Completer<DaemonResponse>>.of(_esperando.values);
     _esperando.clear();
 
+    // **Con traza, y esa traza es el entregable.**
+    //
+    // `completeError` sin ella deja `StackTrace.empty`, y un error así que se
+    // escape hasta la zona de `main()` queda anotado como `traza []`: se sabe
+    // QUÉ falló y no se sabe quién lo estaba esperando. Pasó de verdad, dos
+    // veces, en el `kanpachi-ui.log` del 2026-08-09, y el camino no se pudo
+    // reconstruir leyendo el código. Tomada acá apunta a quien rompió la
+    // espera, que es la mitad que faltaba.
+    final StackTrace desde = StackTrace.current;
     for (final Completer<DaemonResponse> c in pendientes) {
       if (!c.isCompleted) {
-        c.completeError(DaemonUnreachable(motivo, kind: kind));
+        c.completeError(DaemonUnreachable(motivo, kind: kind), desde);
       }
     }
   }

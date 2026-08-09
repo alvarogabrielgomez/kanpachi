@@ -184,6 +184,9 @@ class WindowsPipeTransport implements DaemonTransport {
       case PipeMsg.ack:
         _escrituras.remove(m[1]! as int)?.complete();
       case PipeMsg.fail:
+        // Con traza, por lo mismo que en `DaemonClient._matarTodo`: un error sin
+        // ella que se escape a la zona se anota como `traza []`, y entonces se
+        // sabe qué falló y no quién esperaba.
         _escrituras
             .remove(m[1]! as int)
             ?.completeError(
@@ -191,6 +194,7 @@ class WindowsPipeTransport implements DaemonTransport {
                 m[2]! as String,
                 kind: DaemonUnreachableKind.writeFailed,
               ),
+              StackTrace.current,
             );
       case PipeMsg.closed:
         _despedidas++;
@@ -233,6 +237,7 @@ class WindowsPipeTransport implements DaemonTransport {
     if (_stop != 0) SetEvent(HANDLE(Pointer.fromAddress(_stop)));
     _alEscritor?.send(<Object?>[PipeMsg.stop]);
 
+    final StackTrace desde = StackTrace.current;
     for (final Completer<void> c in _escrituras.values) {
       if (!c.isCompleted) {
         c.completeError(
@@ -240,6 +245,7 @@ class WindowsPipeTransport implements DaemonTransport {
             'el canal se cerró mientras se escribía',
             kind: DaemonUnreachableKind.writeFailed,
           ),
+          desde,
         );
       }
     }

@@ -255,6 +255,10 @@ Así que se escribe desde Dart, con `runZonedGuarded` para lo asíncrono, `Flutt
 
 **Lo que este archivo NO ve:** un fallo nativo, del motor de Flutter, de un plugin o del driver de vídeo, no pasa por Dart. Esa mitad la cubre el código de salida que el daemon anota al ver morir el proceso, que separa una salida limpia de un `0xC0000005`.
 
+Y las dos mitades juntas ya contestaron la primera pregunta. Medido el 2026-08-09 con el bundle: **la interfaz muere con `0xC0000005`**, o sea violación de acceso, o sea nativo. El registro de Dart no va a tener nunca la causa, y saberlo vale porque descarta media búsqueda.
+
+**Todo error que se complete a mano lleva su traza.** `completeError` sin ella deja `StackTrace.empty`, que se anota como una traza vacía y no como una traza ausente: se sabe qué falló y no quién lo estaba esperando. Las dos caídas de ese día dejaron exactamente eso, y el camino no se pudo reconstruir leyendo el código. Ahora la toman el sitio que rompe las esperas del cliente y los dos del transporte que rompen una escritura.
+
 ### El latido: la interfaz pregunta sin parar
 
 **Esto revierte una decisión escrita**, y conviene leer por qué antes que el cómo. Decía que no había temporizador en ninguna capa: se refrescaba al entrar a una pantalla y cuando el usuario lo pedía, y la consecuencia aceptada era que lo que se ve pudiera estar viejo entre un refresco y el siguiente.

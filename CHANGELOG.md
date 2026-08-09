@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Fixed
+
+- Reconnect to the daemon after it drops an idle link, instead of leaving the window frozen on what it last knew
+
 ## [0.1.9] - 2026-08-09
 
 ### Added

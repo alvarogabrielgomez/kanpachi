@@ -95,9 +95,17 @@ abstract final class AppLog {
   /// mismo: la zona, el framework y el despachador de la plataforma.
   static void error(String origin, Object error, StackTrace? stack) {
     write('error', 'la interfaz falló', 'origen $origin error $error');
-    if (stack != null) {
-      write('error', 'traza', stack.toString().replaceAll('\n', ' | '));
+    final String traza = stack?.toString().trim() ?? '';
+    if (traza.isEmpty) {
+      // **Se dice, en vez de escribir `traza []` y parecer que hay una.**
+      //
+      // Una traza vacía no es ruido: significa que el error se completó a mano
+      // sin pasarle una, y eso ya costó una investigación entera el 2026-08-09
+      // por leerse como si la traza simplemente no se hubiera capturado.
+      write('error', 'sin traza', 'el error se completó sin pasar una');
+      return;
     }
+    write('error', 'traza', traza.replaceAll('\n', ' | '));
   }
 
   /// `2026-08-09 10:35:12.320`, igual que el daemon, para poder leer los dos
