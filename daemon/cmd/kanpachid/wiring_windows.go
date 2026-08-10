@@ -32,6 +32,12 @@ const sistemaDeCuarentena = domain.QuarantineWindows
 // engineExe es cómo se llama el motor al lado de este binario.
 const engineExe = "kanpachi-engine.exe"
 
+// builtinCatalogDir es dónde vive el catálogo que vino con la app.
+//
+// Al lado del binario, o sea en Program Files, que es de solo lectura para el
+// daemon y lo actualiza el instalador. Ver [catalogstore.Store].
+func builtinCatalogDir() string { return dirDelBinario() }
+
 // defaultDataDir es dónde viven el token, la llave y la sala del producto
 // instalado.
 //

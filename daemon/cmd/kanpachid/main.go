@@ -598,7 +598,7 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 		// oficina, y un rango elegido en la instalación sería correcto solo el
 		// primer día.
 		Routes:    routes.New(),
-		Store:     catalogstore.New(dirDelBinario(), datos, log),
+		Store:     catalogstore.New(builtinCatalogDir(), datos, log),
 		State:     statestore.New(datos),
 		Library:   watch.Library,
 		Directory: directorio,

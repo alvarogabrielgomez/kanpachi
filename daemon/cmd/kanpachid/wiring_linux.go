@@ -53,6 +53,19 @@ func defaultDataDir() string { return DataDir }
 // a ratos. Ver `killOrphans` en el adaptador del motor.
 const engineExe = "kanpachi-engine"
 
+// CatalogDir es dónde vive el catálogo que vino con el paquete.
+//
+// NO al lado del binario, que es lo que hace Windows: acá los ejecutables van a
+// `/usr/libexec/kanpachi` y esto es un fichero de datos que no depende de la
+// arquitectura, o sea `/usr/share`. Es lo que dice el estándar de jerarquía de
+// ficheros y es lo que un empaquetador de Debian espera encontrar.
+//
+// Exportada por lo mismo que [DataDir]: el `.deb` tiene que poner el fichero
+// exactamente acá, y dos constantes que se copian se desincronizan.
+const CatalogDir = "/usr/share/kanpachi"
+
+func builtinCatalogDir() string { return CatalogDir }
+
 // realFirewall compone las dos capas de Linux.
 func realFirewall(_ string, log port.Logger, router port.ExposureAudit) (
 	port.FirewallPort, port.ExposureAudit, func() error, error) {

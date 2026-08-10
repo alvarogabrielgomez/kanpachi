@@ -36,6 +36,10 @@ func defaultDataDir() string { return "/var/lib/kanpachi" }
 // porque `main.go` lo nombra sin preguntar en qué sistema corre.
 const engineExe = "kanpachi-engine"
 
+// builtinCatalogDir contesta la ruta de Unix aunque acá no arranque nada, por lo
+// mismo que [defaultDataDir].
+func builtinCatalogDir() string { return "/usr/share/kanpachi" }
+
 func realFirewall(string, port.Logger, port.ExposureAudit) (
 	port.FirewallPort, port.ExposureAudit, func() error, error) {
 
