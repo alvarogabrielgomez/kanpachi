@@ -1,6 +1,6 @@
 //go:build windows
 
-package windowscom
+package netfw
 
 import (
 	"context"
@@ -27,9 +27,6 @@ type Firewall struct {
 	suspendPath string
 	log         Logger
 }
-
-// SuspendedRulesFile is the name of that record, inside the data directory.
-const SuspendedRulesFile = "suspended-rules.json"
 
 // Logger is the slice of the daemon log this adapter needs.
 type Logger interface {

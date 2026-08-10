@@ -1,4 +1,4 @@
-package wfp
+package gate
 
 import "github.com/accentiostudios/kanpachi/core/domain"
 

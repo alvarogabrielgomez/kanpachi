@@ -39,7 +39,7 @@ jobs:
           cache: true
 
       - name: go vet
-        run: go vet ./core/... ./internal/... ./daemon/service/... ./daemon/transport/protocol/... ./daemon/transport/wire/... ./daemon/transport/control/... ./daemon/transport/pipe/... ./daemon/adapter/sinimplementar/... ./daemon/adapter/safewrite/... ./daemon/adapter/state/... ./daemon/adapter/catalog/... ./daemon/adapter/canary/... ./daemon/adapter/directory/... ./daemon/adapter/identity/... ./registry/...
+        run: go vet ./core/... ./internal/... ./daemon/service/... ./daemon/transport/protocol/... ./daemon/transport/wire/... ./daemon/transport/control/... ./daemon/transport/pipe/... ./daemon/adapter/sinimplementar/... ./daemon/adapter/safewrite/... ./daemon/adapter/state/... ./daemon/adapter/catalog/... ./daemon/adapter/canary/... ./daemon/adapter/directory/... ./daemon/adapter/identity/... ./daemon/adapter/firewall/... ./registry/...
 
       - name: Test de pureza de imports
         # Se ejecuta aparte y primero para que su fallo sea inconfundible en el
@@ -71,19 +71,28 @@ jobs:
       #                       es el traductor a la lengua de core y vive en su
       #                       propio paquete justo para que el de arriba conserve
       #                       su grafo de imports libre de `core`
-      #   adapter/firewall + wfp/  la capa pura de la compuerta, y el orden de las
-      #                       dos capas, que es una regla probada. Entraron el día
-      #                       que `wfp.Measurement` se mudó a un archivo portable:
-      #                       mientras vivió en `gate_windows.go`, el paquete
-      #                       compuesto NO COMPILABA en Linux y sus tests puros no
-      #                       llegaban a ejecutarse nunca
+      #   adapter/firewall    el orden de las DOS capas, que es una regla probada.
+      #                       Entró el día que `Measurement` se mudó a un archivo
+      #                       portable: mientras vivió en `gate_windows.go`, el
+      #                       paquete compuesto NO COMPILABA en Linux y sus tests
+      #                       puros no llegaban a ejecutarse nunca
+      #   adapter/firewall/gate/   QUÉ bloquea y qué abre la compuerta. Lo usan
+      #                       los dos sistemas, WFP en Windows y nftables en
+      #                       Linux, así que es el sitio donde un fallo sale caro
+      #                       por partida doble
+      #   adapter/firewall/windows/{wfp,netfw}/  la mitad SIN etiqueta de esos dos
+      #                       adaptadores: la traducción de condiciones, la
+      #                       derivación de claves por posición, y qué dice cada
+      #                       regla del Firewall de Windows. Están bajo
+      #                       `windows/` porque el adaptador es de Windows, y aun
+      #                       así lo que deciden se comprueba acá
       #
       # Correrlos en Ubuntu es lo que convierte esas frases en algo comprobable.
       # Con -race porque el supervisor y el canal de la sala son los dos
       # paquetes del proyecto con goroutines de larga vida.
       #
-      # La lista es explícita a propósito: el motor, el firewall por COM y
-      # netcfg son solo Windows y sus paquetes no compilan acá.
+      # La lista es explícita a propósito: el motor y netcfg son solo Windows y
+      # sus paquetes no compilan acá.
       #
       # adapter/directory es net/http puro, y su test de CONTRATO habla con el
       # paquete registry de este mismo repositorio: las dos puntas del protocolo
@@ -105,7 +114,9 @@ jobs:
           ./daemon/adapter/identity/...
           ./daemon/adapter/directory/...
           ./daemon/adapter/firewall
-          ./daemon/adapter/firewall/wfp/...
+          ./daemon/adapter/firewall/gate/...
+          ./daemon/adapter/firewall/windows/wfp/...
+          ./daemon/adapter/firewall/windows/netfw/...
 
       # El registro es el seed, o sea Linux por definición. Va en este job y no
       # en el de Windows. Con -race porque atiende peticiones concurrentes

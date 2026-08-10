@@ -17,7 +17,7 @@ import (
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windowscom"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windows/netfw"
 )
 
 // protegerFichero le pone a un fichero su ACL PROPIA: solo SYSTEM y
@@ -149,13 +149,13 @@ func (e exposure) RouterMappings(ctx context.Context) ([]domain.PortMapping, err
 // Así que esto abre la capa de permisos a secas, hace la única cosa que tiene
 // permitida, y cierra. Se llama SOLO desde `--uninstall-cleanup`.
 func quitarCuarentenaDeBase(ctx context.Context, dataDir string, log port.Logger) error {
-	permisos, err := windowscom.New(dataDir, "", log)
+	permisos, err := netfw.New(dataDir, "", log)
 	if err != nil {
 		return fmt.Errorf("abriendo el firewall para quitar la cuarentena: %w", err)
 	}
 	defer func() { _ = permisos.Close() }()
 
-	n, err := windowscom.RemoveBaseQuarantineForUninstall(ctx, permisos)
+	n, err := netfw.RemoveBaseQuarantineForUninstall(ctx, permisos)
 	if err != nil {
 		return fmt.Errorf("quitando la cuarentena de base: %w", err)
 	}

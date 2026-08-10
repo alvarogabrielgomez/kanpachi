@@ -1,6 +1,6 @@
 //go:build windows
 
-package windowscom
+package netfw
 
 // Calling IDispatch::Invoke by hand, for the one property go-ole cannot set.
 //

@@ -13,8 +13,8 @@ package firewall
 import (
 	"fmt"
 
-	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/wfp"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windowscom"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windows/wfp"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windows/netfw"
 )
 
 // Las comprobaciones de que los tipos reales encajan.
@@ -22,8 +22,8 @@ import (
 // Están acá y no en cada adaptador porque son lo único que puede fallar al
 // componer, y acá el error sale en el sitio donde se arreglaría.
 var (
-	_ Permits     = (*windowscom.Firewall)(nil)
-	_ PermitAudit = (*windowscom.Audit)(nil)
+	_ Permits     = (*netfw.Firewall)(nil)
+	_ PermitAudit = (*netfw.Audit)(nil)
 	_ Gate        = (*wfp.Gate)(nil)
 )
 
@@ -43,7 +43,7 @@ var (
 // filtro de la compuerta que exista o al cambiar cualquier cosa. Está medido y
 // anotado en [wfp.Open], con la trampa que tiene.
 func NewWindows(dataDir string, log Logger) (*Firewall, func() error, error) {
-	permits, err := windowscom.New(dataDir, "", log)
+	permits, err := netfw.New(dataDir, "", log)
 	if err != nil {
 		return nil, nil, fmt.Errorf("abriendo la capa de permisos: %w", err)
 	}
@@ -57,7 +57,7 @@ func NewWindows(dataDir string, log Logger) (*Firewall, func() error, error) {
 	// El resolver de LUID entra ACÁ y no dentro de `hybrid.go`: resolver un
 	// nombre a LUID es una llamada a Windows, y lo que decide `hybrid.go` es el
 	// orden de las dos capas y qué pasa cuando una falla, que se prueba en Linux.
-	fw, err := New(permits, windowscom.NewAudit(permits), gate, log, wfp.LUIDOf)
+	fw, err := New(permits, netfw.NewAudit(permits), gate, log, wfp.LUIDOf)
 	if err != nil {
 		_ = gate.Close()
 		_ = permits.Close()

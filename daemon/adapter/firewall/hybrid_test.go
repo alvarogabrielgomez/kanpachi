@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/wfp"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/gate"
 )
 
 // Los dobles anotan en un diario COMPARTIDO, y de eso depende todo este archivo:
@@ -101,12 +101,12 @@ type compuertaFalsa struct {
 	fallaApply  error
 	fallaPurga  error
 	fallaMedida error
-	medida      wfp.Measurement
-	pedido      []wfp.FilterSpec
-	preguntado  []wfp.FilterSpec
+	medida      gate.Measurement
+	pedido      []gate.Spec
+	preguntado  []gate.Spec
 }
 
-func (g *compuertaFalsa) Apply(_ context.Context, want []wfp.FilterSpec) error {
+func (g *compuertaFalsa) Apply(_ context.Context, want []gate.Spec) error {
 	g.d.anota("compuerta.apply")
 	if g.fallaApply != nil {
 		return g.fallaApply
@@ -120,11 +120,11 @@ func (g *compuertaFalsa) Purge(context.Context) error {
 	return g.fallaPurga
 }
 
-func (g *compuertaFalsa) Measure(_ context.Context, want []wfp.FilterSpec) (wfp.Measurement, error) {
+func (g *compuertaFalsa) Measure(_ context.Context, want []gate.Spec) (gate.Measurement, error) {
 	g.d.anota("compuerta.medida")
 	g.preguntado = want
 	if g.fallaMedida != nil {
-		return wfp.Measurement{}, g.fallaMedida
+		return gate.Measurement{}, g.fallaMedida
 	}
 	return g.medida, nil
 }
@@ -317,8 +317,8 @@ func TestBindRoomResolvesTheDomainAdaptersAndCoversTheLobby(t *testing.T) {
 	if err := fw.BindRoom(context.Background(), salaDePrueba(), domain.BindRoomAndLobby); err != nil {
 		t.Fatal(err)
 	}
-	if fw.scope.LUID != luidDePrueba {
-		t.Errorf("la sala se acotó al adaptador %#x", fw.scope.LUID)
+	if fw.scope.Iface != luidDePrueba {
+		t.Errorf("la sala se acotó al adaptador %#x", fw.scope.Iface)
 	}
 	if !fw.scope.HasLobby() {
 		t.Error("se pidió cubrir el vestíbulo y quedó sin adaptador")
@@ -402,7 +402,7 @@ func TestAScopeThatDoesNotNarrowIsRefused(t *testing.T) {
 	casos := []struct {
 		nombre    string
 		adaptador string
-		luid      uint64
+		iface     uint64
 		sala      netip.Prefix
 	}{
 		{"sin adaptador", "", luidDePrueba, salaDePrueba()},
@@ -412,7 +412,7 @@ func TestAScopeThatDoesNotNarrowIsRefused(t *testing.T) {
 	}
 	for _, c := range casos {
 		t.Run(c.nombre, func(t *testing.T) {
-			if err := fw.SetScopeForMeasurement(c.adaptador, c.luid, c.sala); err == nil {
+			if err := fw.SetScopeForMeasurement(c.adaptador, c.iface, c.sala); err == nil {
 				t.Fatal("se aceptó un alcance que no acota")
 			}
 			if p.adaptador != "" {
@@ -429,7 +429,7 @@ func TestEnforcementMeasuresBothLayers(t *testing.T) {
 	p.reglas = []domain.AppliedRule{
 		{Name: "kanpachi-udp-16261", Layer: domain.LayerFirewallRules, Enabled: true},
 	}
-	g.medida = wfp.Measurement{
+	g.medida = gate.Measurement{
 		Gate: domain.GatePresent,
 		Rules: []domain.AppliedRule{
 			{Name: "kanpachi-udp-16261", Layer: domain.LayerPacketFilter, Enabled: true},
@@ -474,8 +474,8 @@ func TestEnforcementAsksTheGateAboutWhatWasApplied(t *testing.T) {
 		t.Fatalf("se aplicaron %d filtros y se preguntó por %d", len(g.pedido), len(g.preguntado))
 	}
 	for i := range g.pedido {
-		if g.preguntado[i].Key != g.pedido[i].Key {
-			t.Errorf("se preguntó por una clave distinta de la que se puso, en la ranura %d", i)
+		if g.preguntado[i].Slot != g.pedido[i].Slot {
+			t.Errorf("se preguntó por una posición distinta de la que se puso, en el puesto %d", i)
 		}
 	}
 }

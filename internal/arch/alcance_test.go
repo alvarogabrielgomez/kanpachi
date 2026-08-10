@@ -50,7 +50,7 @@ import (
 // secas quedaban exentos todos los ficheros llamados así, y en `daemon/` hay
 // varios. El guardián pasaba en verde con el literal prohibido puesto delante,
 // que es peor que no tenerlo, porque además tranquiliza.
-const dondeSeConstruyenLosFiltros = "firewall/wfp/spec.go"
+const dondeSeConstruyenLosFiltros = "firewall/gate/spec.go"
 
 // esElConstructor compara la ruta sin depender del separador del sistema.
 func esElConstructor(ruta string) bool {

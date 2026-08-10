@@ -1,35 +1,44 @@
-// Package wfp decide QUÉ filtros pone la compuerta, sin tocar Windows.
+// Package gate decide QUÉ bloquea y qué abre la compuerta, sin tocar ningún
+// sistema operativo.
 //
 // # Qué es la compuerta y por qué existe
 //
-// Las reglas del Firewall de Windows son las que ABREN, y no pueden expresar
-// "denegar todo salvo esto": los bloqueos explícitos ganan sobre cualquier
-// permiso en conflicto, sin desempate por especificidad, así que un bloqueo
-// total taparía también los permisos del propio Kanpachi. La lista de lo que se
-// abre queda ADITIVA, y mientras lo sea, una regla permisiva ajena de escritorio
-// remoto alcanza al usuario por la red virtual.
+// La compuerta es «denegar todo lo que entre por el adaptador virtual, salvo
+// esto». Es lo que convierte la lista de lo que se abre de ADITIVA en COMPLETA,
+// y mientras sea aditiva una regla permisiva ajena de escritorio remoto alcanza
+// al usuario por la red virtual. Ver decisión 27, con las cuatro mediciones que
+// la sostienen.
 //
-// La compuerta es la segunda capa: un bloqueo de todo lo entrante acotado al
-// adaptador virtual, más permisos espejo del mismo conjunto. En WFP un Block es
-// HARD por defecto y un Permit es SOFT, y esa asimetría es lo que hace que
-// nuestro bloqueo anule la regla ajena sin tocarla, conservando a la vez el veto
-// del usuario. Ver decisión 27, con las cuatro mediciones que la sostienen.
+// # Este paquete no sabe cómo se instala lo que decide
 //
-// # Por qué este fichero es puro
+// Emite [Spec], y el adaptador de cada sistema lo traduce:
+//
+//   - Windows lo copia a filtros de WFP, donde hizo falta una segunda capa
+//     porque las reglas del Firewall de Windows no pueden expresar «denegar
+//     salvo esto» por sí solas: sus bloqueos explícitos ganan sobre cualquier
+//     permiso en conflicto, así que un bloqueo total taparía también los
+//     permisos propios. En WFP un Block es HARD y un Permit es SOFT, y esa
+//     asimetría es la que anula la regla ajena conservando el veto del usuario.
+//   - Linux lo copia a reglas de nftables, donde una tabla propia ya lo expresa
+//     en una sola capa: un `drop` corta la evaluación de todas las cadenas del
+//     hook y un `accept` no es final.
+//
+// Los dos necesitan la misma decisión, y por eso se toma acá una sola vez.
+//
+// # Por qué este paquete es puro
 //
 // Todo lo que se puede equivocar de forma cara se decide acá y lo prueba el CI
-// de Linux. La parte de Windows solo copia estos campos a una estructura de la
-// API. El fallo más caro posible de esta capa es un filtro SIN ALCANCE: no falla
-// en ningún test funcional, aplica a todos los adaptadores de la máquina, y con
-// un bloqueo duro deja al usuario sin su red de casa. No se ve leyendo un diff.
-package wfp
+// de Linux. El fallo más caro posible de esta capa es un filtro SIN ALCANCE, y
+// es el mismo fallo en los dos sistemas: en WFP aplica a todos los adaptadores
+// de la máquina, y una regla de nftables sin interfaz ni dirección local tira
+// todo el tráfico de entrada. No falla en ningún test funcional, deja al usuario
+// sin su red de casa, y no se ve leyendo un diff.
+package gate
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"net/netip"
 	"sort"
-	"strconv"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 )
@@ -38,10 +47,17 @@ import (
 type Action uint8
 
 const (
-	// Block es HARD por defecto en WFP: no lo puede permitir otro sublayer.
+	// Block cierra, y en los dos sistemas es la acción fuerte: en WFP es HARD,
+	// o sea que no lo puede permitir otro sublayer, y en nftables un `drop` corta
+	// la evaluación de todas las cadenas del hook.
 	Block Action = iota + 1
-	// Permit es SOFT por defecto: lo puede bloquear otro sublayer, que es lo
-	// que conserva el veto del usuario.
+	// Permit abre, y en los dos sistemas es la acción débil: en WFP es SOFT, o
+	// sea que lo puede bloquear otro sublayer, y en nftables un `accept` deja
+	// que el paquete siga a las cadenas de prioridad posterior.
+	//
+	// Que sea débil es lo que conserva el veto del usuario. También es el motivo
+	// por el que en Linux Kanpachi no puede abrir por encima del bloqueo de un
+	// ufw o un firewalld: se audita y se informa, no se pisa.
 	Permit
 )
 
@@ -58,33 +74,40 @@ func (a Action) String() string {
 
 // Layer es dónde se instala el filtro.
 //
-// SOLO capas de recepción. `ALE_AUTH_CONNECT` no aparece en este tipo a
-// propósito: bloquear la salida impediría que un invitado marque al puerto del
+// SOLO entrada, y las dos familias por separado. La salida no aparece en este
+// tipo a propósito: bloquearla impediría que un invitado marque al puerto del
 // juego del host, que es el caso central del producto. Lo que no existe en el
 // tipo no se puede pedir por error.
+//
+// Windows los mapea a `ALE_AUTH_RECV_ACCEPT_V4` y `_V6`; Linux, al hook `input`
+// con la familia correspondiente.
 type Layer uint8
 
 const (
-	RecvAcceptV4 Layer = iota + 1
-	RecvAcceptV6
+	InboundV4 Layer = iota + 1
+	InboundV6
 )
 
 func (l Layer) String() string {
 	switch l {
-	case RecvAcceptV4:
+	case InboundV4:
 		return "entrada IPv4"
-	case RecvAcceptV6:
+	case InboundV6:
 		return "entrada IPv6"
 	default:
 		return "capa-inválida"
 	}
 }
 
-// Pesos DENTRO del sublayer propio.
+// Pesos, que son la PRECEDENCIA entre los filtros propios.
 //
 // El permiso tiene que pesar más que el bloqueo de todo, o el bloqueo se lo
 // lleva por delante y no habría forma de abrir el puerto del juego. Medido
 // funcionando el 2026-08-04 con estos dos valores.
+//
+// Windows se los pasa a WFP, que arbitra por peso dentro del sublayer propio.
+// Linux los ordena: nftables resuelve por PRIMERA COINCIDENCIA dentro de la
+// cadena, así que más peso significa ir antes.
 const (
 	WeightBlockAll uint64 = 100
 	WeightPermit   uint64 = 200
@@ -94,22 +117,27 @@ const (
 //
 // # Por qué son dos cosas y no una
 //
-// El LUID del adaptador es lo preciso. El prefijo de la sala es el respaldo, y
-// existe por un riesgo concreto: si la condición de interfaz llegara vacía al
-// reautorizar un flujo ya establecido, tras reiniciar el servicio o al cambiar
-// de adaptador, el bloqueo dejaría de casar EN SILENCIO y la pantalla diría
-// verde. Emitiendo el bloqueo por las dos vías, ninguna es el único asidero.
+// La interfaz es lo preciso. El prefijo de la sala es el respaldo, y existe por
+// un riesgo concreto: si la condición de interfaz llegara vacía al reautorizar
+// un flujo ya establecido, tras reiniciar el servicio o al cambiar de adaptador,
+// el bloqueo dejaría de casar EN SILENCIO y la pantalla diría verde. Emitiendo
+// el bloqueo por las dos vías, ninguna es el único asidero.
 //
 // El prefijo no puede pisar la red de casa porque la `/24` de la sala se elige
 // en tiempo de ejecución contra las redes que la máquina ya tiene. Ver decisión
 // 10.
 type Scope struct {
-	// LUID del adaptador virtual de la SALA, tal como lo entiende WFP. Cero
-	// significa sin acotar, y eso está prohibido.
-	LUID uint64
+	// Iface identifica el adaptador virtual de la SALA, con el número que use
+	// cada sistema: el LUID en Windows, el `ifindex` en Linux.
+	//
+	// **Cero significa sin acotar y está prohibido**, y en los dos sistemas por
+	// el mismo motivo: WFP lee el LUID cero como TODAS las interfaces, y una
+	// regla de nftables sin `iifindex` casa con todas también. Quien lo resuelve
+	// devuelve error y jamás cero. Ver `firewall.IfaceResolver`.
+	Iface uint64
 	// Net es el rango de la sala sobre ese adaptador.
 	Net netip.Prefix
-	// Lobby es el LUID del adaptador del VESTÍBULO, y cero cuando no lo hay.
+	// Lobby identifica el adaptador del VESTÍBULO, y cero cuando no lo hay.
 	//
 	// # Por qué el vestíbulo no trae su rango
 	//
@@ -143,9 +171,9 @@ func (s Scope) HasLobby() bool { return s.Lobby != 0 }
 // viven. Un /16 dentro del espacio compartido tampoco vale: bloquearía 255 salas
 // ajenas de las que esta máquina no sabe nada.
 func (s Scope) Valid() error {
-	if s.LUID == 0 {
-		return fmt.Errorf("la compuerta necesita el adaptador, y llegó LUID=0, que WFP " +
-			"lee como TODAS las interfaces")
+	if s.Iface == 0 {
+		return fmt.Errorf("la compuerta necesita el adaptador, y llegó cero, que los dos " +
+			"sistemas leen como TODAS las interfaces")
 	}
 	if !s.Net.IsValid() {
 		return fmt.Errorf("la compuerta necesita el rango de la sala, y llegó vacío")
@@ -159,14 +187,14 @@ func (s Scope) Valid() error {
 		return fmt.Errorf("el rango de la sala es %v, fuera de %v y de %v, que es donde "+
 			"viven las salas", s.Net, domain.SharedSpace, domain.FallbackSpace)
 	}
-	if s.Lobby != 0 && s.Lobby == s.LUID {
-		// Los dos adaptadores son dos redes distintas del motor. El mismo LUID
+	if s.Lobby != 0 && s.Lobby == s.Iface {
+		// Los dos adaptadores son dos redes distintas del motor. El mismo número
 		// para las dos significa que alguien resolvió mal un nombre, y el
 		// resultado sería un bloqueo del vestíbulo puesto sobre la sala y el
 		// vestíbulo sin compuerta: descubierto justo el adaptador donde llega
 		// gente que todavía no es miembro.
-		return fmt.Errorf("la sala y el vestíbulo llegaron con el mismo adaptador (LUID %d), "+
-			"y son dos redes distintas", s.LUID)
+		return fmt.Errorf("la sala y el vestíbulo llegaron con el mismo adaptador (%d), "+
+			"y son dos redes distintas", s.Iface)
 	}
 	return nil
 }
@@ -177,8 +205,9 @@ func (s Scope) Valid() error {
 // para un permiso es lo inútil. Por eso nadie construye esto a mano fuera de
 // este fichero: lo vigila un guardián de internal/arch.
 type Conditions struct {
-	// LUID acota por adaptador. Cero es sin acotar.
-	LUID uint64
+	// Iface acota por adaptador, con el número de [Scope.Iface]. Cero es sin
+	// acotar.
+	Iface uint64
 	// LocalNet acota por dirección local. Inválido es sin acotar.
 	LocalNet netip.Prefix
 	// LocalAddr es la IP del adaptador, en los permisos.
@@ -191,8 +220,8 @@ type Conditions struct {
 	// Son dos campos y no uno porque el catálogo no pone tope a la amplitud de
 	// un rango, así que un perfil puede pedir `27000-27100` legítimamente.
 	// Expandir eso a cien filtros sería absurdo, y rechazarlo rompería perfiles
-	// que el dominio acepta. WFP tiene condición de rango y es lo que
-	// corresponde usar.
+	// que el dominio acepta. Los dos sistemas tienen condición de rango de
+	// puertos y es lo que corresponde usar.
 	LocalPortFrom uint16
 	LocalPortTo   uint16
 	Proto         domain.Proto
@@ -208,7 +237,7 @@ type Conditions struct {
 // Es la comprobación que separa un filtro correcto de uno que aplica a todos los
 // adaptadores de la máquina.
 func (c Conditions) scoped() bool {
-	if c.LUID != 0 || c.LocalAddr.IsValid() {
+	if c.Iface != 0 || c.LocalAddr.IsValid() {
 		return true
 	}
 	// Un prefijo de cero bits está puesto y no acota nada: casa con toda
@@ -232,10 +261,10 @@ func (c Conditions) scoped() bool {
 // un bloqueo que ya no aplica: un puerto que se cierra solo, sin nada que lo
 // explique.
 const (
-	SlotRoomLUID = iota
+	SlotRoomIface = iota
 	SlotRoomNet
 	SlotRoomV6
-	SlotLobbyLUID
+	SlotLobbyIface
 	SlotLobbyNet
 	SlotLobbyV6
 	// FirstPermitSlot es donde empiezan los permisos espejo, siempre.
@@ -257,51 +286,56 @@ const (
 // puede entrar.
 const MaxFilters = 40
 
-// FilterSpec es un filtro decidido, listo para que la capa de Windows lo copie.
-type FilterSpec struct {
-	// Key sale de la RANURA que ocupa el filtro, y no de su etiqueta.
+// Spec es un filtro decidido, listo para que el adaptador de cada sistema lo
+// traduzca.
+//
+// **No lleva identidad de backend**, y eso es deliberado. Cómo se reconoce un
+// filtro puesto es problema de quien lo pone, y los dos sistemas lo resuelven
+// distinto: Windows deriva una GUID estable de [Spec.Slot], porque tiene que
+// encontrar lo que dejó la ejecución anterior sin recordar nada entre arranques;
+// Linux reconstruye la cadena entera en una transacción, así que la identidad
+// por posición es implícita y no hace falta nombrar nada.
+type Spec struct {
+	// Slot es la POSICIÓN fija que ocupa este filtro, y por eso es su identidad.
 	//
-	// # Por qué de la ranura, que no es lo obvio
+	// # Por qué la posición, que no es lo obvio
 	//
-	// La limpieza tiene que encontrar lo que dejó la ejecución anterior sin
-	// recordar nada entre arranques. Derivando la clave de la etiqueta, un
-	// permiso espejo lleva dentro el nombre de la regla, o sea el juego: cambiar
-	// de juego cambia las etiquetas, cambia las claves, y los filtros del juego
+	// La alternativa era derivar la identidad de la etiqueta, y ahí un permiso
+	// espejo lleva dentro el nombre de la regla, o sea el juego: cambiar de juego
+	// cambia las etiquetas, cambia las identidades, y los filtros del juego
 	// anterior quedan HUÉRFANOS. Un permiso huérfano deja abierto un puerto que
 	// ya nadie pidió, y no se ve, porque un filtro de WFP no aparece en `wf.msc`
 	// ni en `Get-NetFirewallRule`.
 	//
-	// Con la clave por ranura, el conjunto de claves posibles es fijo y conocido:
+	// Con la posición, el conjunto de identidades posibles es fijo y conocido:
 	// barrer de 0 a [MaxFilters] borra todo lo que la compuerta pueda haber
 	// puesto alguna vez, sin enumerar nada.
-	//
-	// La etiqueta sigue siendo descriptiva y viaja al nombre visible del filtro,
-	// que es lo que se lee en `netsh wfp show filters`. Una identifica y la otra
-	// explica.
-	Key  [16]byte
 	Slot int
-	// Label explica. Viaja al nombre visible del filtro, que es lo que se lee en
-	// `netsh wfp show filters`.
+	// Label explica. Viaja al nombre visible del filtro en Windows, que es lo que
+	// se lee en `netsh wfp show filters`, y al `comment` de la regla en Linux,
+	// que es lo que se lee en `nft list ruleset`. La posición identifica y esto
+	// explica.
 	Label string
 	// Rule es el nombre de la regla del dominio que este filtro espeja, y va
 	// vacío en los bloqueos. Existe para que la medición pueda nombrar lo que
 	// encontró sin recortar la etiqueta con un corte de cadena.
 	Rule  string
 	Layer Layer
-	// Action y Weight deciden el arbitraje dentro del sublayer propio.
+	// Action y Weight deciden la precedencia entre los filtros propios. Ver los
+	// pesos, arriba.
 	Action     Action
 	Weight     uint64
 	Conditions Conditions
 }
 
-// Validate es la última puerta antes de que esto llegue a la API de Windows.
+// Validate es la última puerta antes de que esto llegue a la API del sistema.
 //
 // Un filtro sin alcance no falla en ningún test funcional: aplica a TODOS los
 // adaptadores, y con un bloqueo duro deja al usuario sin la red de casa. Por eso
 // se comprueba acá además de en el guardián de arquitectura: uno vigila cómo se
 // escribe el código y este vigila lo que de verdad se va a instalar.
-func (f FilterSpec) Validate() error {
-	if f.Layer != RecvAcceptV4 && f.Layer != RecvAcceptV6 {
+func (f Spec) Validate() error {
+	if f.Layer != InboundV4 && f.Layer != InboundV6 {
 		return fmt.Errorf("filtro %q: capa inválida %d", f.Label, f.Layer)
 	}
 	if f.Action != Block && f.Action != Permit {
@@ -327,7 +361,7 @@ func (f FilterSpec) Validate() error {
 			"une por O las condiciones del mismo campo, así que pedir las dos ENSANCHA "+
 			"el filtro en vez de acotarlo", f.Label, f.Conditions.LocalNet, f.Conditions.LocalAddr)
 	}
-	if f.Layer == RecvAcceptV6 {
+	if f.Layer == InboundV6 {
 		// Un filtro de la capa IPv6 con condiciones de dirección IPv4 no casa con
 		// nada, y no falla: el bloqueo de IPv6 quedaría puesto sin bloquear nada.
 		if f.Conditions.LocalNet.IsValid() || f.Conditions.LocalAddr.IsValid() ||
@@ -340,51 +374,14 @@ func (f FilterSpec) Validate() error {
 	return nil
 }
 
-// keyForSlot deriva la GUID de un filtro a partir de la ranura que ocupa.
-//
-// Determinista a propósito: al arrancar hay que poder borrar lo que dejó la
-// ejecución anterior, y recordar las claves en disco añadiría un fichero que
-// puede desincronizarse del sistema. Enumerar el sublayer sería la alternativa,
-// y trae bastante más superficie de API por la misma respuesta.
-//
-// El espacio de nombres lleva versión: el día que cambie qué ocupa cada ranura,
-// subirla evita que una limpieza borre por clave un filtro que significaba otra
-// cosa.
-func keyForSlot(slot int) [16]byte {
-	const namespace = "kanpachi/wfp/gate/v1\x00slot "
-	sum := sha256.Sum256([]byte(namespace + strconv.Itoa(slot)))
-
-	var key [16]byte
-	copy(key[:], sum[:16])
-	// Se marcan los bits de versión y variante de UUID v4 para que sea una GUID
-	// bien formada. Windows no lo exige y las herramientas que la muestren sí lo
-	// esperan.
-	key[6] = (key[6] & 0x0f) | 0x40
-	key[8] = (key[8] & 0x3f) | 0x80
-	return key
-}
-
-// AllKeys son las claves de TODAS las ranuras, ocupadas o no.
-//
-// Es lo que barre la limpieza al arrancar, y por eso no depende del conjunto
-// deseado: lo que hay que borrar es justo lo que sobró de un conjunto que ya no
-// se recuerda.
-func AllKeys() [][16]byte {
-	out := make([][16]byte, 0, MaxFilters)
-	for i := 0; i < MaxFilters; i++ {
-		out = append(out, keyForSlot(i))
-	}
-	return out
-}
-
 // SpecsFor traduce el conjunto deseado a los filtros de la compuerta.
 //
 // # Lo que emite, y en qué orden importa
 //
-// Dos bloqueos de todo, uno por LUID y otro por prefijo de la sala, en IPv4. Ver
-// [Scope] para el porqué de los dos.
+// Dos bloqueos de todo, uno por adaptador y otro por prefijo de la sala, en
+// IPv4. Ver [Scope] para el porqué de los dos.
 //
-// Un bloqueo de todo por LUID en IPv6, SIN permisos espejo. Kanpachi direcciona
+// Un bloqueo de todo por adaptador en IPv6, SIN permisos espejo. Kanpachi direcciona
 // en IPv4 dentro de `100.64.0.0/10`, así que cualquier cosa que llegue por IPv6
 // a ese adaptador no es nuestra, y dejarla pasar sería un agujero con la puerta
 // de al lado cerrada.
@@ -395,7 +392,7 @@ func AllKeys() [][16]byte {
 // `SpecsFor` del adaptador COM: un conjunto aplicado con una regla caída en
 // silencio deja al usuario creyendo que la sala está configurada mientras un
 // jugador no puede entrar, sin nada en pantalla que lo explique.
-func SpecsFor(desired domain.RuleSet, scope Scope) ([]FilterSpec, error) {
+func SpecsFor(desired domain.RuleSet, scope Scope) ([]Spec, error) {
 	if err := scope.Valid(); err != nil {
 		return nil, fmt.Errorf("sin alcance el bloqueo de todo dejaría al usuario sin su "+
 			"red de casa: %w", err)
@@ -405,13 +402,13 @@ func SpecsFor(desired domain.RuleSet, scope Scope) ([]FilterSpec, error) {
 	// por adaptador de la sala sea siempre la cero es lo que permite medir si la
 	// compuerta está puesta preguntando por UNA clave conocida, sin enumerar, y
 	// las del vestíbulo se miden igual por sus propias ranuras.
-	out := []FilterSpec{
-		newSpec(SlotRoomLUID, "bloqueo de todo, por adaptador de la sala", RecvAcceptV4, Block, WeightBlockAll,
-			Conditions{LUID: scope.LUID}),
-		newSpec(SlotRoomNet, "bloqueo de todo, por rango de la sala", RecvAcceptV4, Block, WeightBlockAll,
+	out := []Spec{
+		newSpec(SlotRoomIface, "bloqueo de todo, por adaptador de la sala", InboundV4, Block, WeightBlockAll,
+			Conditions{Iface: scope.Iface}),
+		newSpec(SlotRoomNet, "bloqueo de todo, por rango de la sala", InboundV4, Block, WeightBlockAll,
 			Conditions{LocalNet: scope.Net}),
-		newSpec(SlotRoomV6, "bloqueo de todo IPv6, por adaptador de la sala", RecvAcceptV6, Block, WeightBlockAll,
-			Conditions{LUID: scope.LUID}),
+		newSpec(SlotRoomV6, "bloqueo de todo IPv6, por adaptador de la sala", InboundV6, Block, WeightBlockAll,
+			Conditions{Iface: scope.Iface}),
 	}
 
 	// El vestíbulo se cubre igual que la sala, y NO es un extra. Es el adaptador
@@ -420,12 +417,12 @@ func SpecsFor(desired domain.RuleSet, scope Scope) ([]FilterSpec, error) {
 	// que tenga el código, que es el caso que la compuerta existe para cerrar.
 	if scope.HasLobby() {
 		out = append(out,
-			newSpec(SlotLobbyLUID, "bloqueo de todo, por adaptador del vestíbulo", RecvAcceptV4, Block, WeightBlockAll,
-				Conditions{LUID: scope.Lobby}),
-			newSpec(SlotLobbyNet, "bloqueo de todo, por rango del vestíbulo", RecvAcceptV4, Block, WeightBlockAll,
+			newSpec(SlotLobbyIface, "bloqueo de todo, por adaptador del vestíbulo", InboundV4, Block, WeightBlockAll,
+				Conditions{Iface: scope.Lobby}),
+			newSpec(SlotLobbyNet, "bloqueo de todo, por rango del vestíbulo", InboundV4, Block, WeightBlockAll,
 				Conditions{LocalNet: scope.LobbyNet()}),
-			newSpec(SlotLobbyV6, "bloqueo de todo IPv6, por adaptador del vestíbulo", RecvAcceptV6, Block, WeightBlockAll,
-				Conditions{LUID: scope.Lobby}),
+			newSpec(SlotLobbyV6, "bloqueo de todo IPv6, por adaptador del vestíbulo", InboundV6, Block, WeightBlockAll,
+				Conditions{Iface: scope.Lobby}),
 		)
 	}
 
@@ -461,7 +458,7 @@ func SpecsFor(desired domain.RuleSet, scope Scope) ([]FilterSpec, error) {
 
 // permitFor traduce una regla del dominio a su permiso espejo.
 //
-// El permiso lleva el MISMO alcance que la regla del Firewall de Windows, más el
+// El permiso lleva el MISMO alcance que la regla de la capa que abre, más el
 // adaptador. Que sean espejo es lo que hace que la compuerta no abra nada que
 // los permisos visibles no abran ya: quien audite con sus herramientas de
 // siempre ve la lista completa de lo que está abierto.
@@ -474,42 +471,42 @@ func SpecsFor(desired domain.RuleSet, scope Scope) ([]FilterSpec, error) {
 // dirección es lo que impide que el permiso de la puerta acabe acotado al
 // adaptador equivocado, donde no casaría con nada y dejaría la puerta cerrada
 // con la compuerta diciendo que está puesta.
-func permitFor(slot int, r domain.FirewallRule, scope Scope) (FilterSpec, error) {
+func permitFor(slot int, r domain.FirewallRule, scope Scope) (Spec, error) {
 	if !r.Local.IsValid() {
-		return FilterSpec{}, fmt.Errorf("regla %q: sin dirección local", r.Name)
+		return Spec{}, fmt.Errorf("regla %q: sin dirección local", r.Name)
 	}
 
-	luid := scope.LUID
+	iface := scope.Iface
 	if domain.RendezvousSubnet.Contains(r.Local) {
 		if !scope.HasLobby() {
 			// Fallar es lo correcto: acotarla a la sala pondría el permiso donde
 			// no casa, y emitirla sin adaptador la pondría en TODOS. El primero
 			// deja la puerta cerrada en silencio, el segundo abre el puerto del
 			// canal en la red de casa del usuario.
-			return FilterSpec{}, fmt.Errorf("regla %q: está en %v, o sea en el vestíbulo, "+
+			return Spec{}, fmt.Errorf("regla %q: está en %v, o sea en el vestíbulo, "+
 				"y el alcance llegó sin adaptador de vestíbulo", r.Name, domain.RendezvousSubnet)
 		}
-		luid = scope.Lobby
+		iface = scope.Lobby
 	}
 	if len(r.Remote) == 0 && len(r.Nets) == 0 {
 		// El dominio ya lo prohíbe. Se recomprueba porque un permiso sin alcance
 		// remoto en la compuerta abriría el puerto a cualquiera que alcance el
 		// adaptador, que es justo lo que la compuerta existe para impedir.
-		return FilterSpec{}, fmt.Errorf("regla %q: sin alcance remoto, y eso en la "+
+		return Spec{}, fmt.Errorf("regla %q: sin alcance remoto, y eso en la "+
 			"compuerta se lee como cualquiera", r.Name)
 	}
 	if r.Proto == domain.ProtoBoth {
-		return FilterSpec{}, fmt.Errorf("regla %q: proto both no llega hasta acá, "+
+		return Spec{}, fmt.Errorf("regla %q: proto both no llega hasta acá, "+
 			"[domain.BuildRuleSet] lo expande en dos reglas", r.Name)
 	}
 	if r.From == 0 || r.To == 0 {
 		// Un permiso sin puerto abriría el adaptador entero para esos miembros,
 		// que es exactamente lo que la compuerta existe para impedir.
-		return FilterSpec{}, fmt.Errorf("regla %q: rango de puertos %d-%d, y el cero "+
+		return Spec{}, fmt.Errorf("regla %q: rango de puertos %d-%d, y el cero "+
 			"en la compuerta se lee como cualquier puerto", r.Name, r.From, r.To)
 	}
 	if r.From > r.To {
-		return FilterSpec{}, fmt.Errorf("regla %q: rango invertido %d-%d", r.Name, r.From, r.To)
+		return Spec{}, fmt.Errorf("regla %q: rango invertido %d-%d", r.Name, r.From, r.To)
 	}
 
 	remote := append([]netip.Addr(nil), r.Remote...)
@@ -517,8 +514,8 @@ func permitFor(slot int, r domain.FirewallRule, scope Scope) (FilterSpec, error)
 	nets := append([]netip.Prefix(nil), r.Nets...)
 	sort.Slice(nets, func(i, j int) bool { return nets[i].String() < nets[j].String() })
 
-	s := newSpec(slot, "permiso espejo: "+r.Name, RecvAcceptV4, Permit, WeightPermit, Conditions{
-		LUID:          luid,
+	s := newSpec(slot, "permiso espejo: "+r.Name, InboundV4, Permit, WeightPermit, Conditions{
+		Iface:         iface,
 		LocalAddr:     r.Local,
 		LocalPortFrom: r.From,
 		LocalPortTo:   r.To,
@@ -532,10 +529,10 @@ func permitFor(slot int, r domain.FirewallRule, scope Scope) (FilterSpec, error)
 // mirroring anota de qué regla del dominio es espejo este filtro.
 //
 // Va aparte del constructor para que este siga teniendo una firma corta, y
-// devuelve una copia en vez de mutar: un [FilterSpec] a medio construir que se
+// devuelve una copia en vez de mutar: un [Spec] a medio construir que se
 // escapara sería justo el tipo de cosa que el guardián del alcance existe para
 // impedir.
-func (f FilterSpec) mirroring(rule string) FilterSpec {
+func (f Spec) mirroring(rule string) Spec {
 	f.Rule = rule
 	return f
 }
@@ -543,11 +540,10 @@ func (f FilterSpec) mirroring(rule string) FilterSpec {
 // newSpec es el ÚNICO constructor de filtros.
 //
 // Existe para que el guardián de arquitectura tenga algo concreto que vigilar:
-// un literal `FilterSpec{...}` fuera de este fichero puede olvidarse el alcance
+// un literal `Spec{...}` fuera de este fichero puede olvidarse el alcance
 // y compilar igual.
-func newSpec(slot int, label string, layer Layer, action Action, weight uint64, c Conditions) FilterSpec {
-	return FilterSpec{
-		Key:        keyForSlot(slot),
+func newSpec(slot int, label string, layer Layer, action Action, weight uint64, c Conditions) Spec {
+	return Spec{
 		Slot:       slot,
 		Label:      label,
 		Layer:      layer,
@@ -556,19 +552,3 @@ func newSpec(slot int, label string, layer Layer, action Action, weight uint64, 
 		Conditions: c,
 	}
 }
-
-// GateKey es la clave por la que se pregunta si la compuerta está puesta.
-//
-// Es la ranura cero, o sea el bloqueo de todo por adaptador de la sala.
-// Preguntar por una clave conocida evita enumerar, y la ranura cero es la
-// correcta porque es el filtro sin el cual la compuerta no contiene nada: con
-// los permisos espejo puestos y el bloqueo ausente, la lista vuelve a ser
-// aditiva.
-func GateKey() [16]byte { return keyForSlot(SlotRoomLUID) }
-
-// LobbyGateKey es la misma pregunta para el vestíbulo.
-//
-// Va aparte porque el vestíbulo puede no estar, y eso NO es un fallo: el
-// invitado lo suelta al entrar. Quien mida tiene que poder distinguir "no
-// aplica" de "falta", y con una sola clave las dos respuestas serían la misma.
-func LobbyGateKey() [16]byte { return keyForSlot(SlotLobbyLUID) }

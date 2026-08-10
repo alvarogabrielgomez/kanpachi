@@ -33,12 +33,19 @@ import (
 // separada del pipe. Y el día que la meta en el canal de la sala, el código que
 // más revisión merece del proyecto, el que corre como SYSTEM parseando mensajes
 // de gente de la sala, se queda sin sus tests en CI.
+//
+// `firewall/gate` es el cuarto de daemon/ y el más reciente. Ahí se decide qué
+// bloquea y qué abre la compuerta, y lo usan LOS DOS sistemas: WFP en Windows y
+// nftables en Linux. Una llamada a un sistema concreto ahí dentro convierte la
+// decisión compartida en la decisión de uno solo, y el otro se entera cuando ya
+// no compila.
 var puros = []string{
 	"../../core",
 	"../../daemon/service",
 	"../../daemon/transport/protocol",
 	"../../daemon/transport/wire",
 	"../../daemon/transport/control",
+	"../../daemon/adapter/firewall/gate",
 }
 
 // prohibidos son los imports que no pueden aparecer en core.
@@ -165,21 +172,26 @@ func TestElTestDePurezaDetectaUnaViolacion(t *testing.T) {
 	}
 }
 
-// adaptadoresPartidos son los que separan lo que DECIDE de lo que llama a
-// Windows, con el archivo sin etiqueta de compilación como mitad pura.
+// adaptadoresPartidos son los que separan lo que DECIDE de lo que llama al
+// sistema, con el archivo sin etiqueta de compilación como mitad pura.
 //
 // Es el corte que hace que las decisiones caras se prueben en el job de Linux.
-// En `wfp` lo que se decide es el ALCANCE de un bloqueo duro, y un filtro sin
-// alcance deja al usuario sin la entrada de su red de casa; en `windowscom`, qué
+// En `windows/wfp` lo que se decide sin etiqueta es cómo se traduce una
+// condición y cómo se deriva la clave de una posición; en `windows/netfw`, qué
 // dice cada regla; en `netcfg`, qué rutas se ponen y cuál se borra; en `routes`,
 // qué prefijos se descartan al elegir la subred de la sala. Ninguna de esas
 // necesita Windows para comprobarse, y el día que la mitad pura importe Windows
 // dejan de comprobarse todas a la vez, en silencio: el paquete sigue compilando
 // en la máquina donde se programa.
+//
+// `firewall/gate` NO está acá y es a propósito: no tiene mitad de Windows, es
+// puro entero, así que lo vigila la lista de directorios puros. La distinción
+// importa porque en `gate` un fichero `_windows.go` sería el fallo, y en
+// `windows/wfp` es lo normal.
 var adaptadoresPartidos = []string{
 	"../../daemon/adapter/firewall",
-	"../../daemon/adapter/firewall/wfp",
-	"../../daemon/adapter/firewall/windowscom",
+	"../../daemon/adapter/firewall/windows/wfp",
+	"../../daemon/adapter/firewall/windows/netfw",
 	"../../daemon/adapter/netcfg",
 	"../../daemon/adapter/routes",
 	"../../daemon/adapter/engine/kanpachi",

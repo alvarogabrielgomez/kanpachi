@@ -1,4 +1,4 @@
-package windowscom
+package netfw
 
 import (
 	"fmt"

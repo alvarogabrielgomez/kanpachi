@@ -2,23 +2,36 @@
 //
 // # Por qué son dos y no una
 //
-// Las reglas del Firewall de Windows son las que ABREN, y son visibles: el
-// usuario las enumera sin elevar, salen en la consola del sistema, y sus
-// bloqueos le siguen ganando a los permisos de Kanpachi. Lo que NO pueden
-// expresar es "denegar todo en el adaptador salvo esto", porque los bloqueos
-// explícitos ganan sobre cualquier permiso en conflicto y taparían también los
-// permisos propios.
+// La capa que ABRE es visible y es del sistema: en Windows, las reglas del
+// Firewall de Windows, que el usuario enumera sin elevar y cuyos bloqueos le
+// siguen ganando a los permisos de Kanpachi. Lo que NO pueden expresar es
+// "denegar todo en el adaptador salvo esto", porque los bloqueos explícitos
+// ganan sobre cualquier permiso en conflicto y taparían también los permisos
+// propios.
 //
 // La compuerta es la segunda capa, un filtro de paquetes acotado al adaptador
 // virtual, y ahí un bloqueo SÍ admite excepciones por encima. Eso convierte la
 // lista de permitidos de ADITIVA en COMPLETA, que es lo único que cierra el caso
 // de una regla ajena de escritorio remoto. Ver decisión 27.
 //
+// # En Linux la segunda capa hace las dos cosas, y este fichero no cambia
+//
+// nftables sí expresa "denegar salvo esto" en una tabla propia, así que la
+// compuerta se basta sola. La capa que abre queda como AUDITORÍA: en Linux
+// nadie puede abrir por encima del `drop` de un ufw o un firewalld, así que se
+// reporta y no se toca. La cuarentena de base sigue siendo suya, porque es lo
+// único que tiene que sobrevivir a Kanpachi apagado.
+//
+// La composición no se entera de nada de eso, y ese es el punto: sigue siendo
+// intersección, sigue habiendo un orden correcto, y [Permits] sigue teniendo los
+// mismos siete métodos.
+//
 // # Por qué este fichero es puro
 //
-// Porque lo que decide no es cómo se habla con Windows: es el ORDEN de las dos
-// capas y qué pasa cuando una falla. Las dos cosas tienen una dirección correcta
-// y una que abre un agujero, y ninguna necesita Windows para comprobarse.
+// Porque lo que decide no es cómo se habla con el sistema: es el ORDEN de las
+// dos capas y qué pasa cuando una falla. Las dos cosas tienen una dirección
+// correcta y una que abre un agujero, y ninguna necesita un sistema concreto
+// para comprobarse.
 package firewall
 
 import (
@@ -29,7 +42,7 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/wfp"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/gate"
 )
 
 // Permits es la capa que ABRE.
@@ -62,9 +75,9 @@ type PermitAudit interface {
 
 // Gate es la capa que CIERRA todo lo demás.
 type Gate interface {
-	Apply(ctx context.Context, want []wfp.FilterSpec) error
+	Apply(ctx context.Context, want []gate.Spec) error
 	Purge(ctx context.Context) error
-	Measure(ctx context.Context, want []wfp.FilterSpec) (wfp.Measurement, error)
+	Measure(ctx context.Context, want []gate.Spec) (gate.Measurement, error)
 }
 
 // Logger es la rebanada del log del daemon que hace falta acá.
@@ -89,46 +102,51 @@ type Firewall struct {
 
 	// scope es el adaptador y el rango de la sala. Vacío hasta que el motor crea
 	// el adaptador, que pasa DESPUÉS de que arranca el daemon.
-	scope wfp.Scope
+	scope gate.Scope
 
 	// last es lo último que se le PIDIÓ a la compuerta, y no lo que tiene
 	// puesto. Sirve para saber por qué filtros preguntar al medir: las ranuras
 	// son posiciones y no nombres. Quien contesta si el filtro está sigue siendo
 	// el sistema.
-	last []wfp.FilterSpec
+	last []gate.Spec
 
 	// swept es si ya se barrió la compuerta alguna vez en la vida de este
 	// objeto. Existe para que el primer Apply sin sala barra igual: un daemon
 	// que murió sucio dejó filtros puestos, porque la sesión no es dinámica.
 	swept bool
 
-	// luidOf traduce el nombre de un adaptador al LUID que entiende WFP.
+	// ifaceOf traduce el nombre de un adaptador al número que lo identifica.
 	//
 	// Se INYECTA para que este fichero siga siendo puro: resolverlo es una
-	// llamada a Windows, y lo que se decide acá es el orden de las dos capas y
-	// qué pasa cuando una falla, que se prueba sin Windows. El cableado le pasa
-	// [wfp.LUIDOf].
-	luidOf LUIDResolver
+	// llamada al sistema, y lo que se decide acá es el orden de las dos capas y
+	// qué pasa cuando una falla, que se prueba sin sistema. El cableado de
+	// Windows le pasa [wfp.LUIDOf] y el de Linux, el `ifindex`.
+	ifaceOf IfaceResolver
 }
 
-// LUIDResolver traduce el nombre de un adaptador al LUID que entiende WFP.
+// IfaceResolver traduce el nombre de un adaptador al número que lo identifica:
+// el LUID en Windows, el `ifindex` en Linux.
 //
-// Devuelve error y jamás cero: un LUID cero no es "sin adaptador", es TODAS las
-// interfaces, y con un bloqueo duro eso deja al usuario sin su red de casa.
-type LUIDResolver func(name string) (uint64, error)
+// Devuelve error y jamás cero: el cero no es "sin adaptador", es TODAS las
+// interfaces, y con un bloqueo duro eso deja al usuario sin su red de casa. Vale
+// igual para los dos sistemas, y por eso la firma es una sola.
+type IfaceResolver func(name string) (uint64, error)
 
-func New(permits Permits, audit PermitAudit, gate Gate, log Logger, luidOf LUIDResolver) (*Firewall, error) {
-	if permits == nil || audit == nil || gate == nil || log == nil {
+// El parámetro de la compuerta se llama `g` y no `gate` a propósito: `gate` es
+// el paquete del modelo compartido, y un parámetro con ese nombre lo taparía
+// dentro de esta función.
+func New(permits Permits, audit PermitAudit, g Gate, log Logger, ifaceOf IfaceResolver) (*Firewall, error) {
+	if permits == nil || audit == nil || g == nil || log == nil {
 		return nil, fmt.Errorf("el firewall necesita las dos capas, su auditoría y un log")
 	}
-	if luidOf == nil {
+	if ifaceOf == nil {
 		// Sin resolver, `BindRoom` no puede acotar nada, o sea que la compuerta
 		// no se pone nunca y el fallo aparecería recién al abrir una sala, con
 		// la red virtual ya arriba.
-		return nil, fmt.Errorf("el firewall necesita resolver el nombre del adaptador a LUID, " +
-			"o la compuerta no se puede acotar")
+		return nil, fmt.Errorf("el firewall necesita resolver el nombre del adaptador a un " +
+			"número de interfaz, o la compuerta no se puede acotar")
 	}
-	return &Firewall{permits: permits, audit: audit, gate: gate, log: log, luidOf: luidOf}, nil
+	return &Firewall{permits: permits, audit: audit, gate: g, log: log, ifaceOf: ifaceOf}, nil
 }
 
 // La comprobación de que esto sigue encajando en el puerto. Si cambia una firma
@@ -154,11 +172,11 @@ var _ port.FirewallPort = (*Firewall)(nil)
 // Acotar sigue siendo una sola llamada para las dos capas: si discreparan sobre
 // qué adaptador es la sala, los permisos irían sobre uno y el bloqueo sobre
 // otro, con las dos contestando que sí.
-func (f *Firewall) SetScopeForMeasurement(adapter string, luid uint64, room netip.Prefix) error {
+func (f *Firewall) SetScopeForMeasurement(adapter string, iface uint64, room netip.Prefix) error {
 	if adapter == "" {
 		return fmt.Errorf("los permisos necesitan el NOMBRE del adaptador, y llegó vacío")
 	}
-	return f.setScope(wfp.Scope{LUID: luid, Net: room}, adapter)
+	return f.setScope(gate.Scope{Iface: iface, Net: room}, adapter)
 }
 
 // setScope es la única puerta por la que se acota, y valida SIEMPRE.
@@ -166,7 +184,7 @@ func (f *Firewall) SetScopeForMeasurement(adapter string, luid uint64, room neti
 // Estar sola importa: un alcance que entrara sin pasar por `Valid` podría
 // llevar `0.0.0.0/0`, y un bloqueo duro con ese alcance deja al usuario sin la
 // entrada de su red de casa sin que nada se vea raro leyendo el código.
-func (f *Firewall) setScope(scope wfp.Scope, adapter string) error {
+func (f *Firewall) setScope(scope gate.Scope, adapter string) error {
 	if err := scope.Valid(); err != nil {
 		return fmt.Errorf("el alcance de la sala no sirve para acotar: %w", err)
 	}
@@ -185,7 +203,7 @@ func (f *Firewall) ClearScope() {
 	defer f.mu.Unlock()
 
 	f.permits.SetAdapter("")
-	f.scope = wfp.Scope{}
+	f.scope = gate.Scope{}
 }
 
 // BindRoom es [port.FirewallPort.BindRoom]: acota las dos capas a los
@@ -194,7 +212,7 @@ func (f *Firewall) ClearScope() {
 // # Por qué acá no viaja ningún nombre
 //
 // Los adaptadores son [domain.AdapterName] y [domain.LobbyAdapterName],
-// constantes del dominio, y este método las resuelve a LUID con la función que
+// constantes del dominio, y este método las resuelve a número de interfaz con la función que
 // le inyectó el cableado de Windows. Aceptar el nombre por parámetro dejaría al
 // caso de uso eligiendo a qué adaptador se acota un BLOQUEO DURO, que es la
 // decisión que separa contener la sala de dejar al usuario sin su red de casa.
@@ -202,21 +220,21 @@ func (f *Firewall) ClearScope() {
 // Que el vestíbulo falte no es un fallo: el invitado lo suelta al entrar. Que
 // falte cuando se pidió, sí.
 func (f *Firewall) BindRoom(ctx context.Context, room netip.Prefix, with domain.RoomBinding) error {
-	_ = ctx // resolver un nombre a LUID no espera por nada
+	_ = ctx // resolver un nombre a un número de interfaz no espera por nada
 
-	if f.luidOf == nil {
+	if f.ifaceOf == nil {
 		return fmt.Errorf("el firewall se construyó sin resolver de adaptadores, así que la " +
 			"compuerta no se puede acotar y no hay forma de contener la sala")
 	}
 
-	luid, err := f.luidOf(domain.AdapterName)
+	iface, err := f.ifaceOf(domain.AdapterName)
 	if err != nil {
 		return fmt.Errorf("no se encontró el adaptador %s de la sala: %w", domain.AdapterName, err)
 	}
-	scope := wfp.Scope{LUID: luid, Net: room}
+	scope := gate.Scope{Iface: iface, Net: room}
 
 	if with == domain.BindRoomAndLobby {
-		lobby, err := f.luidOf(domain.LobbyAdapterName)
+		lobby, err := f.ifaceOf(domain.LobbyAdapterName)
 		if err != nil {
 			return fmt.Errorf("no se encontró el adaptador %s del vestíbulo, que es donde "+
 				"llega gente que todavía no es miembro: %w", domain.LobbyAdapterName, err)
@@ -400,9 +418,9 @@ func (f *Firewall) Enforcement(ctx context.Context) (domain.Enforcement, error) 
 }
 
 // specsFor calcula los filtros de la compuerta, o nil si todavía no hay dónde.
-func (f *Firewall) specsFor(desired domain.RuleSet) ([]wfp.FilterSpec, error) {
+func (f *Firewall) specsFor(desired domain.RuleSet) ([]gate.Spec, error) {
 	if err := f.scope.Valid(); err != nil {
 		return nil, nil
 	}
-	return wfp.SpecsFor(desired, f.scope)
+	return gate.SpecsFor(desired, f.scope)
 }

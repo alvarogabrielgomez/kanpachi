@@ -20,8 +20,8 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/wfp"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windowscom"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windows/wfp"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windows/netfw"
 )
 
 // abrir monta el firewall compuesto igual que lo montaría el daemon.
@@ -45,11 +45,11 @@ func abrir(dataDir string) (*firewall.Firewall, func() error, error) {
 //
 // El directorio de datos no se comprueba acá: quien lo necesita es suspender
 // reglas ajenas, y desde estos subcomandos no se suspende nada.
-func abrirPermisos(dataDir string) (*windowscom.Firewall, error) {
+func abrirPermisos(dataDir string) (*netfw.Firewall, error) {
 	if dataDir == "" {
 		dataDir = os.Getenv("ProgramData") + `\Kanpachi`
 	}
-	return windowscom.New(dataDir, "", logConsola{})
+	return netfw.New(dataDir, "", logConsola{})
 }
 
 // adapters lista lo que hace falta para elegir un alcance.
@@ -151,7 +151,7 @@ func enabled(args []string) error {
 	}
 	defer func() { _ = fw.Close() }()
 
-	perfiles, err := windowscom.NewAudit(fw).FirewallEnabled(context.Background())
+	perfiles, err := netfw.NewAudit(fw).FirewallEnabled(context.Background())
 	if err != nil {
 		return err
 	}

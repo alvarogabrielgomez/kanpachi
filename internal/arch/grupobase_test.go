@@ -47,7 +47,7 @@ import (
 // Uno solo y por prefijo de ruta, así que el permiso cubre el archivo puro y su
 // hermano _windows sin cubrir nada más. Ampliar esta lista es una decisión que
 // se ve en el diff.
-const paqueteDeLaCuarentena = "daemon/adapter/firewall/windowscom/"
+const paqueteDeLaCuarentena = "daemon/adapter/firewall/windows/netfw/"
 
 // TestSoloUnPaqueteDelDaemonNombraElGrupoBase.
 //

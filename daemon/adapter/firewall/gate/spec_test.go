@@ -1,4 +1,4 @@
-package wfp
+package gate
 
 import (
 	"net/netip"
@@ -11,7 +11,7 @@ import (
 
 func addr(s string) netip.Addr  { return netip.MustParseAddr(s) }
 func pfx(s string) netip.Prefix { return netip.MustParsePrefix(s) }
-func roomScope() Scope          { return Scope{LUID: 0x47008000000000, Net: pfx("100.64.1.0/24")} }
+func roomScope() Scope          { return Scope{Iface: 0x47008000000000, Net: pfx("100.64.1.0/24")} }
 
 // bothScope es el alcance del HOST mientras acepta gente: la sala y el
 // vestíbulo a la vez, cada uno con su adaptador.
@@ -45,14 +45,14 @@ func TestTheGateRefusesToExistWithoutScope(t *testing.T) {
 		scope  Scope
 	}{
 		{"nada", Scope{}},
-		{"solo el adaptador", Scope{LUID: luid}},
+		{"solo el adaptador", Scope{Iface: luid}},
 		{"solo el rango", Scope{Net: pfx("100.64.1.0/24")}},
 		// Los tres de abajo tienen los dos campos PUESTOS, y ninguno acota. Son
 		// los que un `!= 0 && IsValid()` deja pasar, y los tres terminan en un
 		// bloqueo duro sobre una red que no es de Kanpachi.
-		{"todo internet", Scope{LUID: luid, Net: pfx("0.0.0.0/0")}},
-		{"255 salas ajenas", Scope{LUID: luid, Net: pfx("100.64.0.0/16")}},
-		{"la LAN de casa", Scope{LUID: luid, Net: pfx("192.168.1.0/24")}},
+		{"todo internet", Scope{Iface: luid, Net: pfx("0.0.0.0/0")}},
+		{"255 salas ajenas", Scope{Iface: luid, Net: pfx("100.64.0.0/16")}},
+		{"la LAN de casa", Scope{Iface: luid, Net: pfx("192.168.1.0/24")}},
 	}
 	for _, c := range cases {
 		t.Run(c.nombre, func(t *testing.T) {
@@ -75,13 +75,13 @@ func TestTheBlockIsEmittedTwice(t *testing.T) {
 
 	porAdaptador, porRango := 0, 0
 	for _, s := range specs {
-		if s.Action != Block || s.Layer != RecvAcceptV4 {
+		if s.Action != Block || s.Layer != InboundV4 {
 			continue
 		}
-		if s.Conditions.LUID != 0 && !s.Conditions.LocalNet.IsValid() {
+		if s.Conditions.Iface != 0 && !s.Conditions.LocalNet.IsValid() {
 			porAdaptador++
 		}
-		if s.Conditions.LocalNet.IsValid() && s.Conditions.LUID == 0 {
+		if s.Conditions.LocalNet.IsValid() && s.Conditions.Iface == 0 {
 			porRango++
 		}
 	}
@@ -106,7 +106,7 @@ func TestIPv6IsClosedWithNoPermits(t *testing.T) {
 
 	bloqueos, permisos := 0, 0
 	for _, s := range specs {
-		if s.Layer != RecvAcceptV6 {
+		if s.Layer != InboundV6 {
 			continue
 		}
 		if s.Action == Block {
@@ -153,7 +153,7 @@ func TestThePermitMirrorsTheRule(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var permit *FilterSpec
+	var permit *Spec
 	for i := range specs {
 		if specs[i].Action == Permit {
 			permit = &specs[i]
@@ -164,7 +164,7 @@ func TestThePermitMirrorsTheRule(t *testing.T) {
 	}
 
 	c := permit.Conditions
-	if c.LUID != roomScope().LUID {
+	if c.Iface != roomScope().Iface {
 		t.Error("el permiso no lleva el adaptador")
 	}
 	if c.LocalAddr != gameRule().Local {
@@ -216,7 +216,7 @@ func TestTheLobbyDoorLivesOutsideTheRoomRange(t *testing.T) {
 		t.Fatalf("se rechazó la puerta del vestíbulo: %v", err)
 	}
 
-	var permiso *FilterSpec
+	var permiso *Spec
 	for i := range specs {
 		if specs[i].Action == Permit {
 			permiso = &specs[i]
@@ -228,9 +228,9 @@ func TestTheLobbyDoorLivesOutsideTheRoomRange(t *testing.T) {
 	// Y va acotado al adaptador del VESTÍBULO, que es donde vive esa dirección.
 	// Con el de la sala el filtro se lee perfectamente razonable y no casa con
 	// nada.
-	if permiso.Conditions.LUID != bothScope().Lobby {
+	if permiso.Conditions.Iface != bothScope().Lobby {
 		t.Errorf("el permiso de la puerta lleva el adaptador %#x, y la puerta vive en el "+
-			"del vestíbulo, %#x", permiso.Conditions.LUID, bothScope().Lobby)
+			"del vestíbulo, %#x", permiso.Conditions.Iface, bothScope().Lobby)
 	}
 	if len(permiso.Conditions.RemoteNets) != 1 {
 		t.Errorf("el alcance remoto de la puerta es %v, y es el /24 del vestíbulo entero",
@@ -335,8 +335,8 @@ func TestTheKeyDoesNotDependOnTheGame(t *testing.T) {
 		t.Fatalf("los dos conjuntos tienen %d y %d filtros", len(specsA), len(specsB))
 	}
 	for i := range specsA {
-		if specsA[i].Key != specsB[i].Key {
-			t.Errorf("la ranura %d cambia de clave al cambiar de juego: %q contra %q.\n"+
+		if specsA[i].Slot != specsB[i].Slot {
+			t.Errorf("la posición %d cambia al cambiar de juego: %q contra %q.\n"+
 				"  Los filtros del juego anterior quedarían huérfanos y abiertos",
 				i, specsA[i].Label, specsB[i].Label)
 		}
@@ -358,7 +358,7 @@ func TestTheFixedSlotsAreWhereEnforcementLooks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if specs[0].Slot != SlotRoomLUID || specs[0].Action != Block || specs[0].Conditions.LUID == 0 {
+	if specs[0].Slot != SlotRoomIface || specs[0].Action != Block || specs[0].Conditions.Iface == 0 {
 		t.Fatalf("la ranura 0 es %+v, y tiene que ser el bloqueo por adaptador", specs[0])
 	}
 }
@@ -385,7 +385,7 @@ func TestThePermitsStartAtTheSameSlotWithAndWithoutALobby(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", c.nombre, err)
 		}
-		var permiso *FilterSpec
+		var permiso *Spec
 		for i := range specs {
 			if specs[i].Action == Permit {
 				permiso = &specs[i]
@@ -415,7 +415,7 @@ func TestTheLobbyGetsItsOwnBlocks(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, s := range sinVestíbulo {
-		if s.Slot >= SlotLobbyLUID && s.Slot < FirstPermitSlot {
+		if s.Slot >= SlotLobbyIface && s.Slot < FirstPermitSlot {
 			t.Errorf("sin vestíbulo salió un filtro en la ranura %d: %q", s.Slot, s.Label)
 		}
 	}
@@ -424,11 +424,11 @@ func TestTheLobbyGetsItsOwnBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	porRanura := map[int]FilterSpec{}
+	porRanura := map[int]Spec{}
 	for _, s := range conVestíbulo {
 		porRanura[s.Slot] = s
 	}
-	for _, r := range []int{SlotLobbyLUID, SlotLobbyNet, SlotLobbyV6} {
+	for _, r := range []int{SlotLobbyIface, SlotLobbyNet, SlotLobbyV6} {
 		s, ok := porRanura[r]
 		if !ok {
 			t.Fatalf("falta el bloqueo del vestíbulo en la ranura %d", r)
@@ -437,7 +437,7 @@ func TestTheLobbyGetsItsOwnBlocks(t *testing.T) {
 			t.Errorf("la ranura %d del vestíbulo es %v, y tiene que ser un bloqueo", r, s.Action)
 		}
 	}
-	if porRanura[SlotLobbyLUID].Conditions.LUID != bothScope().Lobby {
+	if porRanura[SlotLobbyIface].Conditions.Iface != bothScope().Lobby {
 		t.Error("el bloqueo por adaptador del vestíbulo no lleva el adaptador del vestíbulo")
 	}
 	// El rango del vestíbulo NO viaja en el alcance: es constante para todas las
@@ -453,15 +453,20 @@ func TestTheLobbyGetsItsOwnBlocks(t *testing.T) {
 // descubierto, con la compuerta contestando que está puesta.
 func TestTheTwoAdaptersCannotBeTheSameOne(t *testing.T) {
 	s := roomScope()
-	s.Lobby = s.LUID
+	s.Lobby = s.Iface
 	if err := s.Valid(); err == nil {
 		t.Fatal("la sala y el vestíbulo pasaron con el mismo adaptador")
 	}
 }
 
 func TestTheSweepCoversEverythingThatCanBeEmitted(t *testing.T) {
-	// La limpieza al arrancar barre ranuras, no un conjunto recordado. Si un
+	// La limpieza al arrancar barre POSICIONES, no un conjunto recordado. Si un
 	// filtro pudiera caer fuera del barrido, quedaría puesto para siempre.
+	//
+	// Acá se comprueba la mitad compartida: ninguna posición emitida se sale del
+	// rango que se barre. La otra mitad, que la identidad del backend se deriva
+	// de la posición, es de cada adaptador: en Windows la vigila `wfp.AllKeys`, y
+	// en Linux no existe porque la cadena se reconstruye entera.
 	var rs domain.RuleSet
 	for i := 0; i < domain.MaxPortRanges*2; i++ {
 		r := gameRule()
@@ -475,13 +480,9 @@ func TestTheSweepCoversEverythingThatCanBeEmitted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	barrido := map[[16]byte]bool{}
-	for _, k := range AllKeys() {
-		barrido[k] = true
-	}
 	for _, s := range specs {
-		if !barrido[s.Key] {
-			t.Errorf("la clave de %q (ranura %d) no está en el barrido de %d ranuras",
+		if s.Slot < 0 || s.Slot >= MaxFilters {
+			t.Errorf("%q ocupa la posición %d, fuera del barrido de %d",
 				s.Label, s.Slot, MaxFilters)
 		}
 	}
@@ -503,49 +504,16 @@ func TestTooManyFiltersAreRefusedInsteadOfTruncated(t *testing.T) {
 	}
 }
 
-func TestKeysAreStableAndDistinct(t *testing.T) {
-	// La limpieza al arrancar tiene que encontrar lo que dejó la ejecución
-	// anterior sin recordar nada entre arranques.
-	var rs domain.RuleSet
-	rs.Rules = append(rs.Rules, gameRule())
-
-	first, err := SpecsFor(rs, roomScope())
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := SpecsFor(rs, roomScope())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	seen := map[[16]byte]string{}
-	for i := range first {
-		if first[i].Key != second[i].Key {
-			t.Errorf("la clave de %q cambia entre llamadas", first[i].Label)
-		}
-		if otra, dup := seen[first[i].Key]; dup {
-			t.Errorf("%q y %q comparten clave", otra, first[i].Label)
-		}
-		seen[first[i].Key] = first[i].Label
-	}
-
-	// Y bien formada como UUID v4, que es lo que esperan las herramientas que la
-	// muestren.
-	k := first[0].Key
-	if k[6]&0xf0 != 0x40 {
-		t.Errorf("la clave no lleva la versión de UUID: %#x", k[6])
-	}
-	if k[8]&0xc0 != 0x80 {
-		t.Errorf("la clave no lleva la variante de UUID: %#x", k[8])
-	}
-}
+// La estabilidad de las claves se comprobaba acá y se mudó con ellas, a
+// `windows/wfp/keys_test.go`: derivar una identidad de backend a partir de la
+// posición es cosa de WFP, y este paquete ya no las tiene.
 
 func TestValidateCatchesWhatTheConstructorCannot(t *testing.T) {
-	// Validate es la última puerta antes de la API de Windows, y existe además
+	// Validate es la última puerta antes de la API del sistema, y existe además
 	// del guardián de arquitectura: uno vigila cómo se escribe el código y este
 	// vigila lo que de verdad se va a instalar.
-	sinAlcance := FilterSpec{
-		Label: "inventado a mano", Layer: RecvAcceptV4, Action: Block, Weight: WeightBlockAll,
+	sinAlcance := Spec{
+		Label: "inventado a mano", Layer: InboundV4, Action: Block, Weight: WeightBlockAll,
 	}
 	if err := sinAlcance.Validate(); err == nil {
 		t.Fatal("un filtro sin alcance pasó la validación")
@@ -553,9 +521,9 @@ func TestValidateCatchesWhatTheConstructorCannot(t *testing.T) {
 		t.Errorf("el error no nombra el problema: %v", err)
 	}
 
-	permisoFlojo := FilterSpec{
-		Label: "permiso que no gana", Layer: RecvAcceptV4, Action: Permit,
-		Weight: WeightBlockAll, Conditions: Conditions{LUID: 1},
+	permisoFlojo := Spec{
+		Label: "permiso que no gana", Layer: InboundV4, Action: Permit,
+		Weight: WeightBlockAll, Conditions: Conditions{Iface: 1},
 	}
 	if err := permisoFlojo.Validate(); err == nil {
 		t.Fatal("un permiso que no le gana al bloqueo pasó la validación")
@@ -567,11 +535,11 @@ func TestTheTwoLocalConditionsTogetherAreRefused(t *testing.T) {
 	// local son el mismo campo, así que pedir las dos ENSANCHA en vez de acotar:
 	// un permiso pensado para la IP del host abriría el rango entero de la sala.
 	// Y se lee perfectamente razonable.
-	ancho := FilterSpec{
-		Label: "acota dos veces y abre", Layer: RecvAcceptV4, Action: Permit,
+	ancho := Spec{
+		Label: "acota dos veces y abre", Layer: InboundV4, Action: Permit,
 		Weight: WeightPermit,
 		Conditions: Conditions{
-			LUID:      1,
+			Iface:     1,
 			LocalNet:  pfx("100.64.1.0/24"),
 			LocalAddr: addr("100.64.1.1"),
 		},
@@ -587,10 +555,10 @@ func TestAnIPv4ConditionInTheIPv6LayerIsRefused(t *testing.T) {
 	// Un bloqueo IPv6 con una condición de dirección IPv4 no casa con nada y no
 	// falla: quedaría puesto sin bloquear, y la medición lo contaría como
 	// presente.
-	mudo := FilterSpec{
-		Label: "bloqueo IPv6 que no bloquea", Layer: RecvAcceptV6, Action: Block,
+	mudo := Spec{
+		Label: "bloqueo IPv6 que no bloquea", Layer: InboundV6, Action: Block,
 		Weight:     WeightBlockAll,
-		Conditions: Conditions{LUID: 1, LocalNet: pfx("100.64.1.0/24")},
+		Conditions: Conditions{Iface: 1, LocalNet: pfx("100.64.1.0/24")},
 	}
 	if err := mudo.Validate(); err == nil {
 		t.Fatal("se aceptó un filtro IPv6 con condiciones IPv4")

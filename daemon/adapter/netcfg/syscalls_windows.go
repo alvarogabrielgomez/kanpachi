@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/wfp"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windows/wfp"
 )
 
 // luidOf resolves an adapter name to the LUID the routing APIs speak.

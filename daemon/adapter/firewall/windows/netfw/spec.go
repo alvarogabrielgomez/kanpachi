@@ -11,7 +11,7 @@
 // calls that put it there live in the _windows file. The split is deliberate:
 // the interesting failures are in the translation, and a translation that can
 // only be tested on a developer's Windows box is a translation nobody tests.
-package windowscom
+package netfw
 
 import (
 	"fmt"

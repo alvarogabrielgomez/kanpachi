@@ -1,11 +1,17 @@
 package wfp
 
-// Las condiciones de un filtro, decididas sin tocar Windows.
+// La traducción de un [gate.Conditions] a las condiciones que compara WFP.
 //
-// # Por qué esto no vive en el archivo de Windows
+// # Por qué esto es de Windows y el modelo no
+//
+// Lo que se decide es de WFP entero: sus campos, su orden de bytes, y su regla
+// de unión. Lo que NO es de WFP es qué hay que acotar, y eso vive en
+// [gate.Conditions], que Linux traduce a lo suyo.
+//
+// # Por qué este fichero no lleva etiqueta de compilación
 //
 // Porque acá se deciden cuatro cosas que se equivocan calladas, y ninguna de las
-// cuatro necesita a Windows para comprobarse:
+// cuatro necesita correr en Windows para comprobarse:
 //
 //   - El orden de bytes de una dirección. WFP compara enteros en orden de host,
 //     así que meter los bytes al revés produce un filtro que casa con otra red.
@@ -16,14 +22,15 @@ package wfp
 //   - Cuántas condiciones salen y de qué campo, que es lo que decide si WFP las
 //     une con Y o con O.
 //
-// La parte de Windows traduce estos valores a las estructuras de la API y nada
-// más. Es la misma partición que ya usan los dos adaptadores del firewall.
+// Sin etiqueta, el CI de Linux los prueba. `gate_windows.go` copia estos valores
+// a las estructuras de la API y nada más.
 
 import (
 	"fmt"
 	"net/netip"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/gate"
 )
 
 // Field es el campo del paquete que compara una condición.
@@ -32,7 +39,7 @@ import (
 //
 // WFP une con Y las condiciones de campos DISTINTOS, y con O las del MISMO
 // campo. Por eso varias direcciones remotas significan "cualquiera de estas",
-// que es lo que se quiere, y por eso [FilterSpec.Validate] prohíbe llevar a la
+// que es lo que se quiere, y por eso [Spec.Validate] prohíbe llevar a la
 // vez red local y dirección local: ahí el O ensancharía el filtro.
 type Field uint8
 
@@ -112,18 +119,21 @@ type Condition struct {
 	From, To uint16
 }
 
-// Expand traduce las condiciones a la lista que la API espera.
+// Expand traduce las condiciones decididas a la lista que la API espera.
+//
+// Es función y no método porque [gate.Conditions] es de otro paquete, y que lo
+// sea es justo el punto: la decisión es compartida y esta traducción no.
 //
 // El orden es fijo, y no por estética: dos cálculos con la misma entrada tienen
 // que producir el mismo filtro, o el día que haya que comparar lo puesto contra
 // lo deseado la comparación vería cambios donde no los hay.
-func (c Conditions) Expand() ([]Condition, error) {
+func Expand(c gate.Conditions) ([]Condition, error) {
 	var out []Condition
 
-	if c.LUID != 0 {
+	if c.Iface != 0 {
 		out = append(out, Condition{
 			Field: FieldLocalInterface, Match: MatchEqual,
-			Kind: ValueNum, Num: c.LUID, Width: Width64,
+			Kind: ValueNum, Num: c.Iface, Width: Width64,
 		})
 	}
 
@@ -200,7 +210,7 @@ func (c Conditions) Expand() ([]Condition, error) {
 	}
 
 	if len(out) == 0 {
-		// [FilterSpec.Validate] lo caza antes y se recomprueba igual: un filtro
+		// [Spec.Validate] lo caza antes y se recomprueba igual: un filtro
 		// sin condiciones aplica a TODOS los adaptadores de la máquina, y siendo
 		// un bloqueo duro deja al usuario sin la entrada de su red de casa.
 		return nil, fmt.Errorf("no salió ninguna condición, y un filtro sin condiciones " +

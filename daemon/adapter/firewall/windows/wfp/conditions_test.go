@@ -5,7 +5,14 @@ import (
 	"testing"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/gate"
 )
+
+// Los mismos ayudantes que en el paquete del modelo. Se repiten en vez de
+// exportarse: un ayudante de test exportado es API pública que alguien acaba
+// usando en produccion.
+func addr(s string) netip.Addr  { return netip.MustParseAddr(s) }
+func pfx(s string) netip.Prefix { return netip.MustParsePrefix(s) }
 
 func TestAnAddressBecomesTheNumberItReads(t *testing.T) {
 	// El orden de bytes es el error más silencioso de toda esta capa: al revés
@@ -76,7 +83,7 @@ func TestAPrefixOfZeroBitsIsRefused(t *testing.T) {
 func TestASinglePortIsEqualityAndARangeIsARange(t *testing.T) {
 	// Un rango pedido como igualdad abriría solo el primer puerto, y un juego no
 	// funciona a medias: no funciona.
-	suelto, err := Conditions{LUID: 1, LocalPortFrom: 16261, LocalPortTo: 16261}.Expand()
+	suelto, err := Expand(gate.Conditions{Iface: 1, LocalPortFrom: 16261, LocalPortTo: 16261})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +92,7 @@ func TestASinglePortIsEqualityAndARangeIsARange(t *testing.T) {
 		t.Errorf("un puerto suelto salió como %+v", c)
 	}
 
-	ancho, err := Conditions{LUID: 1, LocalPortFrom: 27000, LocalPortTo: 27100}.Expand()
+	ancho, err := Expand(gate.Conditions{Iface: 1, LocalPortFrom: 27000, LocalPortTo: 27100})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,12 +107,12 @@ func TestEveryMemberIsItsOwnCondition(t *testing.T) {
 	// tres condiciones y significan "cualquiera de estos". Una sola condición con
 	// varios valores no existe, y creer que sí produciría un permiso que abre
 	// solo para el primero.
-	cs, err := Conditions{
-		LUID: 1,
+	cs, err := Expand(gate.Conditions{
+		Iface: 1,
 		Remote: []netip.Addr{
 			addr("100.64.1.5"), addr("100.64.1.6"), addr("100.64.1.7"),
 		},
-	}.Expand()
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +132,7 @@ func TestTheAdapterGoesAsSixtyFourBits(t *testing.T) {
 	// De esto depende que la capa de Windows lo pase POR PUNTERO. Con el ancho
 	// mal, la condición compara basura y el filtro no aplica a nada, en silencio,
 	// que es justo el modo de fallo que la compuerta entera existe para no tener.
-	cs, err := Conditions{LUID: 0x47008000000000}.Expand()
+	cs, err := Expand(gate.Conditions{Iface: 0x47008000000000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +144,7 @@ func TestTheAdapterGoesAsSixtyFourBits(t *testing.T) {
 
 func TestConditionsWithNothingInThemAreRefused(t *testing.T) {
 	// Un filtro sin condiciones aplica a TODOS los adaptadores de la máquina.
-	if _, err := (Conditions{}).Expand(); err == nil {
+	if _, err := Expand(gate.Conditions{}); err == nil {
 		t.Fatal("se aceptaron unas condiciones vacías")
 	}
 }
@@ -146,7 +153,7 @@ func TestBothProtocolIsRefused(t *testing.T) {
 	// [domain.BuildRuleSet] lo expande en dos reglas antes de llegar acá. Si
 	// llegara, traducirlo a un número inventado abriría un protocolo que nadie
 	// pidió.
-	if _, err := (Conditions{LUID: 1, Proto: domain.ProtoBoth}).Expand(); err == nil {
+	if _, err := Expand(gate.Conditions{Iface: 1, Proto: domain.ProtoBoth}); err == nil {
 		t.Fatal("se aceptó el protocolo both")
 	}
 }

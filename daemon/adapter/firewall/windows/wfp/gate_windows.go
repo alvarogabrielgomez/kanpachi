@@ -3,8 +3,8 @@
 package wfp
 
 // La parte que habla con Windows. Todo lo que se puede equivocar de forma cara
-// ya se decidió en spec.go, que es puro y lo prueba el CI de Linux: acá solo se
-// copian esos campos a las estructuras de la API.
+// ya se decidió en el paquete `gate`, que es compartido con Linux y lo prueba el
+// CI: acá solo se copian esos campos a las estructuras de la API.
 //
 // # La sesión: NO dinámica y NO persistente
 //
@@ -39,6 +39,7 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/gate"
 )
 
 var (
@@ -353,7 +354,7 @@ func (g *Gate) Close() error {
 //
 // # Se reescribe entero, no se parchea
 //
-// Barre las [MaxFilters] ranuras y vuelve a escribir las que toquen. Es más
+// Barre las [gate.MaxFilters] ranuras y vuelve a escribir las que toquen. Es más
 // simple que diferenciar, y sobre todo es lo que hace que reaplicar el mismo
 // conjunto REPARE lo que alguien haya borrado por fuera, igual que en el
 // adaptador COM. Un filtro de WFP tampoco se puede editar en sitio: la API solo
@@ -365,7 +366,7 @@ func (g *Gate) Close() error {
 // El contexto se mira UNA vez, al entrar. Cancelar a mitad de una transacción no
 // dejaría nada a medias, y tampoco serviría de nada: lo que sigue son unas pocas
 // llamadas locales.
-func (g *Gate) Apply(ctx context.Context, want []FilterSpec) error {
+func (g *Gate) Apply(ctx context.Context, want []gate.Spec) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -377,9 +378,9 @@ func (g *Gate) Apply(ctx context.Context, want []FilterSpec) error {
 			return err
 		}
 	}
-	if len(want) > MaxFilters {
+	if len(want) > gate.MaxFilters {
 		return fmt.Errorf("llegaron %d filtros y la limpieza solo barre %d ranuras: los "+
-			"de más quedarían puestos para siempre", len(want), MaxFilters)
+			"de más quedarían puestos para siempre", len(want), gate.MaxFilters)
 	}
 
 	g.mu.Lock()
@@ -409,7 +410,7 @@ func (g *Gate) Apply(ctx context.Context, want []FilterSpec) error {
 // un filtro de WFP no sale ni en `wf.msc` ni en `Get-NetFirewallRule`.
 //
 // Barre RANURAS y no un conjunto recordado, que es de lo que depende que
-// funcione sin memoria entre arranques. Ver [FilterSpec.Key].
+// funcione sin memoria entre arranques. Ver [gate.Spec.Key].
 //
 // Es idempotente: que no haya nada que borrar es el resultado normal.
 func (g *Gate) Purge(ctx context.Context) error {
@@ -440,15 +441,15 @@ func (g *Gate) Purge(ctx context.Context) error {
 // Un fallo al leer devuelve [domain.GateUnknown] y no ausente. La diferencia es
 // el motivo entero de que ese estado exista: una es un hecho y la otra es
 // ceguera, y una ceguera pintada de verde es peor que una alarma.
-func (g *Gate) Measure(ctx context.Context, want []FilterSpec) (Measurement, error) {
+func (g *Gate) Measure(ctx context.Context, want []gate.Spec) (gate.Measurement, error) {
 	if err := ctx.Err(); err != nil {
-		return Measurement{}, err
+		return gate.Measurement{}, err
 	}
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	out := Measurement{Gate: domain.GateUnknown}
+	out := gate.Measurement{Gate: domain.GateUnknown}
 
 	// Se pregunta por la ranura de la sala SIEMPRE, y por la del vestíbulo solo
 	// cuando se pidió.
@@ -461,7 +462,7 @@ func (g *Gate) Measure(ctx context.Context, want []FilterSpec) (Measurement, err
 	// adaptador donde llega gente que todavía no es miembro.
 	claves := [][16]byte{GateKey()}
 	for _, s := range want {
-		if s.Slot == SlotLobbyLUID {
+		if s.Slot == gate.SlotLobbyIface {
 			claves = append(claves, LobbyGateKey())
 			break
 		}
@@ -471,7 +472,7 @@ func (g *Gate) Measure(ctx context.Context, want []FilterSpec) (Measurement, err
 	for _, k := range claves {
 		present, err := g.present(guidOf(k))
 		if err != nil {
-			return Measurement{Gate: domain.GateUnknown}, err
+			return gate.Measurement{Gate: domain.GateUnknown}, err
 		}
 		if !present {
 			out.Gate = domain.GateAbsent
@@ -483,12 +484,12 @@ func (g *Gate) Measure(ctx context.Context, want []FilterSpec) (Measurement, err
 		if s.Rule == "" {
 			continue
 		}
-		ok, err := g.present(guidOf(s.Key))
+		ok, err := g.present(guidOf(keyForSlot(s.Slot)))
 		if err != nil {
 			// Medido a medias no se devuelve: el que llama no tiene cómo
 			// distinguir "este permiso no está" de "no se pudo preguntar", y esa
 			// confusión es la que produce un verde falso.
-			return Measurement{Gate: domain.GateUnknown}, err
+			return gate.Measurement{Gate: domain.GateUnknown}, err
 		}
 		out.Rules = append(out.Rules, domain.AppliedRule{
 			Name:    s.Rule,
@@ -589,7 +590,7 @@ func (g *Gate) removeSubLayer() error {
 	return nil
 }
 
-// sweep borra las [MaxFilters] ranuras, ocupadas o no.
+// sweep borra las [gate.MaxFilters] ranuras, ocupadas o no.
 func (g *Gate) sweep() error {
 	removed := 0
 	for slot, k := range AllKeys() {
@@ -615,7 +616,7 @@ func (g *Gate) sweep() error {
 }
 
 // add instala un filtro.
-func (g *Gate) add(s FilterSpec) error {
+func (g *Gate) add(s gate.Spec) error {
 	layer, err := layerGUID(s.Layer)
 	if err != nil {
 		return err
@@ -640,7 +641,7 @@ func (g *Gate) add(s FilterSpec) error {
 		return err
 	}
 
-	key := guidOf(s.Key)
+	key := guidOf(keyForSlot(s.Slot))
 	weight := s.Weight
 	f := fwpmFilter0{
 		filterKey:           key,
@@ -710,21 +711,21 @@ func guidOf(k [16]byte) windows.GUID {
 	}
 }
 
-func layerGUID(l Layer) (windows.GUID, error) {
+func layerGUID(l gate.Layer) (windows.GUID, error) {
 	switch l {
-	case RecvAcceptV4:
+	case gate.InboundV4:
 		return layerRecvAcceptV4, nil
-	case RecvAcceptV6:
+	case gate.InboundV6:
 		return layerRecvAcceptV6, nil
 	}
 	return windows.GUID{}, fmt.Errorf("capa %d sin GUID", l)
 }
 
-func actionOf(a Action) (uint32, error) {
+func actionOf(a gate.Action) (uint32, error) {
 	switch a {
-	case Block:
+	case gate.Block:
 		return actionBlock, nil
-	case Permit:
+	case gate.Permit:
 		return actionPermit, nil
 	}
 	return 0, fmt.Errorf("acción %d sin traducción", a)
@@ -776,9 +777,9 @@ func (cs *condSet) portRange(from, to uint16) uintptr {
 // conditionsOf copia las condiciones ya decididas a las estructuras de la API.
 //
 // Traduce y no decide: qué condiciones salen, con qué valores y de qué campo lo
-// resuelve [Conditions.Expand], que es puro y lo prueba el CI de Linux.
-func conditionsOf(c Conditions) (*condSet, error) {
-	expanded, err := c.Expand()
+// resuelve [gate.Conditions.Expand], que es puro y lo prueba el CI de Linux.
+func conditionsOf(c gate.Conditions) (*condSet, error) {
+	expanded, err := Expand(c)
 	if err != nil {
 		return nil, err
 	}
@@ -868,7 +869,7 @@ func widthType(w Width) (uint32, error) {
 // LUIDOf busca el LUID de un adaptador por su nombre.
 //
 // El LUID es lo que WFP entiende, y no el nombre ni el índice. Sin él no hay
-// [Scope] posible, así que esto es lo que hace utilizable a la compuerta.
+// [gate.Scope] posible, así que esto es lo que hace utilizable a la compuerta.
 //
 // Devolver cero jamás es una opción: WFP lee un LUID cero como TODAS las
 // interfaces, que es lo contrario de acotar, y con un bloqueo duro eso deja al

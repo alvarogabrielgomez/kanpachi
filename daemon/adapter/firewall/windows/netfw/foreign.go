@@ -1,4 +1,4 @@
-package windowscom
+package netfw
 
 import (
 	"bytes"
@@ -16,6 +16,16 @@ import (
 // it compiles and is tested on Linux. Everything decided here is decided the
 // same way on every machine; the _windows file only reads properties and writes
 // one boolean back.
+
+// SuspendedRulesFile is the name of the record of somebody else's rules, inside
+// the data directory.
+//
+// It lives in this file and not next to the struct that holds its path because
+// that one carries the //go:build windows tag, and the test that covers the
+// record's round trip does not. With the constant behind the tag, that test did
+// not compile on Linux and the whole file's coverage was silently skipped
+// there, which is the opposite of why this half exists.
+const SuspendedRulesFile = "suspended-rules.json"
 
 // liveRule is one rule as read from the store, before anything has been decided
 // about it.
