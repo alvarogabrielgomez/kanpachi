@@ -1,11 +1,23 @@
-# Los scripts de shell se guardan Y SE SACAN con finales de línea de Unix.
+# Todo lo que ejecuta o lee un Linux se guarda Y SE SACA con finales de línea de
+# Unix.
 #
 # Sin esto, un checkout en Windows con `core.autocrlf=true`, que es el valor por
-# omisión del instalador de Git, los convierte a CRLF. Ese fichero corre igual en
-# Windows y en Linux falla con `bad interpreter: /usr/bin/env bash^M`, que no
-# nombra el problema por ningún lado.
+# omisión del instalador de Git, lo convierte a CRLF. Ese fichero se ve idéntico
+# en un editor y del otro lado falla de formas que no nombran el problema por
+# ningún lado:
 #
-# Importa acá y no es hipotético: `seed/install.sh` lo descarga y lo corre el
-# operador de un droplet, y el `.deb` que viene trae scripts de instalación que
-# ejecuta dpkg.
-*.sh text eol=lf
+#   - un script con `#!` falla con `bad interpreter: /usr/bin/env bash^M`
+#   - un script de dpkg hace que `apt install` aborte a mitad, con el paquete
+#     medio configurado
+#   - una unidad de systemd se lee con el retorno de carro DENTRO del valor, así
+#     que `ExecStart=/usr/libexec/kanpachi/kanpachid^M` busca un binario que no
+#     existe
+#
+# Los tres de dpkg van por nombre porque NO llevan extensión: la regla de `*.sh`
+# no los alcanza, y eso ya pasó una vez en este repositorio.
+*.sh            text eol=lf
+*.service       text eol=lf
+packaging/debian/postinst  text eol=lf
+packaging/debian/prerm     text eol=lf
+packaging/debian/postrm    text eol=lf
+packaging/debian/control   text eol=lf
