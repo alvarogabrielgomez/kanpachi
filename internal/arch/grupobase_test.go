@@ -42,12 +42,20 @@ import (
 // expuesta. Ese es el peor modo de fallo posible en este proyecto: silencioso y
 // con la pantalla en verde.
 
-// paqueteDeLaCuarentena es el ÚNICO de daemon/ que puede nombrar el grupo base.
+// paquetesDeLaCuarentena son los ÚNICOS de daemon/ que pueden nombrar el grupo
+// base: uno por sistema, y ninguno más.
 //
-// Uno solo y por prefijo de ruta, así que el permiso cubre el archivo puro y su
-// hermano _windows sin cubrir nada más. Ampliar esta lista es una decisión que
-// se ve en el diff.
-const paqueteDeLaCuarentena = "daemon/adapter/firewall/windows/netfw/"
+// Son dos y no uno desde que existe Linux, y la lista sigue siendo del mismo
+// tamaño que implementaciones hay. Cada entrada es un prefijo de ruta, así que
+// cubre el archivo puro y sus hermanos con etiqueta sin cubrir nada más.
+// Ampliar esto es una decisión que se ve en el diff, y lo que hay que
+// preguntarse al ampliarlo es si el paquete nuevo IMPLEMENTA la cuarentena o
+// solo quiere leerla: para leerla está `ApplyBaseQuarantine` del puerto, y para
+// comprobar si está puesta, `nftpermits.QuarantineLoaded`.
+var paquetesDeLaCuarentena = []string{
+	"daemon/adapter/firewall/windows/netfw/",
+	"daemon/adapter/firewall/linux/nftpermits/",
+}
 
 // TestSoloUnPaqueteDelDaemonNombraElGrupoBase.
 //
@@ -67,9 +75,9 @@ func TestSoloUnPaqueteDelDaemonNombraElGrupoBase(t *testing.T) {
 		}
 		if lit, ok := buscaLiteral(literales, literal); ok {
 			t.Errorf("%s: aparece el grupo de la cuarentena de base en %q.\n"+
-				"  Solo %s puede nombrarlo. Nombrarlo es todo lo que hace falta para tocarlo,\n"+
+				"  Solo %s pueden nombrarlo. Nombrarlo es todo lo que hace falta para tocarlo,\n"+
 				"  y la cuarentena es lo único que protege la máquina con el servicio parado.",
-				ruta, lit, paqueteDeLaCuarentena)
+				ruta, lit, strings.Join(paquetesDeLaCuarentena, " y "))
 		}
 	}
 
@@ -78,7 +86,7 @@ func TestSoloUnPaqueteDelDaemonNombraElGrupoBase(t *testing.T) {
 			continue
 		}
 		t.Errorf("%s: usa domain.%s.\n"+
-			"  Solo %s puede nombrarlo.", ruta, identificador, paqueteDeLaCuarentena)
+			"  Solo %s pueden nombrarlo.", ruta, identificador, strings.Join(paquetesDeLaCuarentena, " y "))
 	}
 }
 
@@ -136,7 +144,13 @@ func TestNoExisteUnMetodoParaBorrarLaCuarentena(t *testing.T) {
 var verbosDestructivos = []string{"Remove", "RemoveAll", "Delete", "Purge", "Disable", "Clear", "Drop", "Reset"}
 
 func permitido(ruta string) bool {
-	return strings.Contains(filepath.ToSlash(ruta), paqueteDeLaCuarentena)
+	limpia := filepath.ToSlash(ruta)
+	for _, p := range paquetesDeLaCuarentena {
+		if strings.Contains(limpia, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // TestNadieComparaElGrupoPorPrefijo.

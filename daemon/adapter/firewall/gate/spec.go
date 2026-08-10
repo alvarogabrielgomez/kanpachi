@@ -125,15 +125,28 @@ const (
 //
 // # En Linux el bloqueo por prefijo tapa un agujero que en Windows no existe
 //
-// Esto se descubrió midiendo la compuerta de nftables el 2026-08-10, y hay que
-// dejarlo escrito porque el bloqueo por prefijo se ve REDUNDANTE mirando solo
-// Windows, y quitarlo ahí lo abre acá.
+// Hay que dejarlo escrito porque el bloqueo por prefijo se ve REDUNDANTE mirando
+// solo Windows, y quitarlo ahí lo abre acá.
 //
 // Linux usa el modelo de host DÉBIL: un paquete que llega por la interfaz física
 // con destino a la dirección del adaptador virtual lo acepta el kernel y se lo
 // entrega al socket atado a esa dirección. Windows usa el modelo fuerte y lo
 // descarta. O sea que en Linux el bloqueo acotado por adaptador NO casa con ese
 // paquete, porque entró por otra interfaz.
+//
+// **Medido el 2026-08-10**, en kernel 5.15 y no deducido leyendo. El montaje son
+// dos espacios de red unidos por un veth: en uno, un `dummy` llamado kanpachi0
+// con 100.64.7.1/24 y un oyente atado SOLO a esa dirección, como el canal de
+// control; en el otro, una ruta hacia ese /24, que es lo que tiene cualquier
+// vecino que sepa qué IP usa tu adaptador virtual. Tocando el puerto desde
+// fuera:
+//
+//	sin nada puesto              LLEGA
+//	con `iif kanpachi0 drop`     LLEGA    ← el bloqueo por adaptador no lo ve
+//	con `ip daddr <rango> drop`  NO LLEGA ← este es el que cierra
+//
+// El `rp_filter` de la máquina no gobierna esto y por eso no cambia el
+// resultado: valida el camino de vuelta del ORIGEN, no el destino.
 //
 // El bloqueo por prefijo sí casa, porque no lleva condición de interfaz. Es lo
 // que impide alcanzar el puerto del canal de control de la sala, o la puerta del

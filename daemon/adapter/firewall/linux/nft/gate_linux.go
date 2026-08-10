@@ -322,15 +322,37 @@ func (g *Gate) Measure(ctx context.Context, want []gate.Spec) (gate.Measurement,
 		}
 	}
 
+	// # Cada permiso se reporta en las DOS capas, y no es un duplicado
+	//
+	// En Windows son dos capas de verdad: las reglas del Firewall de Windows,
+	// que son las visibles y las que el usuario audita con sus herramientas, y
+	// los filtros espejo de WFP. Cada adaptador reporta la suya.
+	//
+	// En Linux la misma tabla cumple los dos papeles: es el filtro de paquetes
+	// Y es lo que el operador ve con `nft list ruleset`. Reportar solo
+	// [domain.LayerPacketFilter] no sería "más honesto", sería FALSO en un
+	// sentido concreto y caro: [domain.Enforcement.Diff] cuenta únicamente las de
+	// [domain.LayerFirewallRules] para decidir qué falta, así que toda regla
+	// saldría como ausente, la pantalla diría que alguien tocó las reglas, y la
+	// autorreparación las repondría en cada latido sobre un sistema que ya las
+	// tenía puestas.
+	//
+	// Así que se emiten las dos, leídas del mismo sitio y del kernel. Es lo mismo
+	// que pasa en Windows, donde un permiso también aparece dos veces porque de
+	// verdad está en dos capas.
 	for _, s := range want {
 		if s.Rule == "" {
 			continue
 		}
-		out.Rules = append(out.Rules, domain.AppliedRule{
-			Name:    s.Rule,
-			Layer:   domain.LayerPacketFilter,
-			Enabled: puestas[s.Slot],
-		})
+		for _, capa := range [...]domain.EnforcementLayer{
+			domain.LayerFirewallRules, domain.LayerPacketFilter,
+		} {
+			out.Rules = append(out.Rules, domain.AppliedRule{
+				Name:    s.Rule,
+				Layer:   capa,
+				Enabled: puestas[s.Slot],
+			})
+		}
 	}
 	return out, nil
 }

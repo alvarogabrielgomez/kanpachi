@@ -86,15 +86,81 @@ type QuarantineRule struct {
 	In bool
 }
 
-// BaseQuarantine devuelve la cuarentena entera.
+// QuarantineSystem es el conjunto CERRADO de sistemas que tienen cuarentena.
 //
-// **No recibe parámetros a propósito.** No hay nada que un llamador pueda
-// ajustar: ni qué puertos, que salen de [forbiddenPorts] y son la misma lista
-// que ningún perfil puede pedir, ni el alcance, que no existe. Un parámetro acá
-// sería una forma de escribir una cuarentena más floja.
+// Existe porque la lista de puertos no puede ser la misma en los dos, y la razón
+// es concreta: en Windows el 22 es un servicio opcional que casi nadie usa, y en
+// Linux es el canal por el que el operador administra el servidor. Cerrarlo ahí,
+// de forma permanente y sobreviviendo al reinicio, deja a alguien fuera de su
+// propia máquina sin forma de volver a entrar.
 //
-// Sale ordenada y es la misma lista en cada llamada, así que reponerla es
-// comparable contra lo vivo.
+// Medido el 2026-08-10 en el banco: la cuarentena tal como estaba emitía
+// `tcp dport 22 drop` entre sus 48 reglas.
+type QuarantineSystem uint8
+
+const (
+	QuarantineWindows QuarantineSystem = iota + 1
+	QuarantineLinux
+)
+
+// quarantinePortsFor son los puertos que cierra la cuarentena en cada sistema.
+//
+// # Por qué NO es [forbiddenPorts], que era lo que usaba antes
+//
+// Porque esa lista cumple DOS papeles que hasta ahora coincidían y dejaron de
+// coincidir. El primero es "ningún perfil de juego puede pedir estos puertos", y
+// ese vale igual en los dos sistemas: un perfil que abra el 22 es un perfil que
+// abre SSH, y da lo mismo dónde corra. El segundo es "esto lo cierra la
+// cuarentena para siempre", y ese sí depende del sistema.
+//
+// [forbiddenPorts] se queda entera para el primer papel. Esto es el segundo.
+func quarantinePortsFor(sys QuarantineSystem) []uint16 {
+	switch sys {
+	case QuarantineLinux:
+		// La misma lista menos el 22. Los otros once son servicios de Windows
+		// que en Linux no corren, y se dejan igual: un puerto cerrado que nadie
+		// usa no cuesta nada, y el día que alguien levante Samba en el servidor
+		// del juego, la cuarentena ya estaba puesta.
+		out := make([]uint16, 0, len(forbiddenPorts))
+		for _, p := range forbiddenPorts {
+			if p == sshPort {
+				continue
+			}
+			out = append(out, p)
+		}
+		return out
+	default:
+		return forbiddenPorts[:]
+	}
+}
+
+// sshPort es el canal de administración de una máquina Linux.
+//
+// Está nombrado en vez de escrito suelto porque quitarlo de la cuarentena es una
+// decisión y tiene que verse como tal al leer el código.
+//
+// **Esto no cubre a quien movió sshd de sitio.** Un operador que lo puso en otro
+// puerto de la lista se quedaría fuera igual, y por eso el adaptador de Linux
+// comprueba además qué hay escuchando antes de cerrar nada. Acá no se puede
+// saber: el dominio no mira el sistema.
+const sshPort = 22
+
+// BaseQuarantine devuelve la cuarentena entera de Windows.
+//
+// Se conserva con este nombre y esta firma porque es la que el producto de
+// Windows viene usando. [BaseQuarantineFor] es la general.
+func BaseQuarantine() []QuarantineRule { return BaseQuarantineFor(QuarantineWindows) }
+
+// BaseQuarantineFor devuelve la cuarentena entera del sistema que se nombre.
+//
+// **El parámetro es el NOMBRE de un sistema, jamás una lista de puertos**, y esa
+// diferencia es la que conserva la invariante de antes. Un llamador puede decir
+// dónde corre y no puede escribir una cuarentena más floja: las dos listas viven
+// acá, cerradas, y no hay ninguna tercera que se pueda pedir. Sigue sin haber
+// alcance que ajustar, porque la cuarentena no tiene alcance.
+//
+// Sale ordenada y es la misma lista en cada llamada para el mismo sistema, así
+// que reponerla es comparable contra lo vivo.
 //
 // # Sin permiso de ICMP echo
 //
@@ -106,7 +172,7 @@ type QuarantineRule struct {
 // o sea contestando el ping en toda red a la que la máquina se conecte, para
 // siempre y con Kanpachi apagado. Se paga una superficie permanente por un
 // diagnóstico que nadie usa.
-func BaseQuarantine() []QuarantineRule {
+func BaseQuarantineFor(sys QuarantineSystem) []QuarantineRule {
 	// Los dos protocolos para cada puerto, sin mirar cuál usa cada servicio de
 	// verdad. Un puerto bloqueado que nadie usa no cuesta nada; uno abierto
 	// porque alguien recordó mal qué protocolo era cuesta justo lo que esta
@@ -114,8 +180,9 @@ func BaseQuarantine() []QuarantineRule {
 	protos := [...]Proto{ProtoTCP, ProtoUDP}
 	dirs := [...]bool{true, false}
 
-	out := make([]QuarantineRule, 0, len(forbiddenPorts)*len(protos)*len(dirs))
-	for _, port := range forbiddenPorts {
+	puertos := quarantinePortsFor(sys)
+	out := make([]QuarantineRule, 0, len(puertos)*len(protos)*len(dirs))
+	for _, port := range puertos {
 		for _, proto := range protos {
 			for _, in := range dirs {
 				out = append(out, QuarantineRule{
