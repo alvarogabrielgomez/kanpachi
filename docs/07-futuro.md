@@ -216,7 +216,40 @@ falta decidir antes qué se le ofrece al usuario: nombrarlo no sirve de nada si 
 única acción posible es expulsar, porque expulsar no impide volver y el código de
 invitación no es un secreto. Ver decisión 8.
 
-## 14. Lo que se decidió NO hacer
+## 14. Que el icono de la barra de tareas también avise de la sala
+
+Hoy avisa solo el de la bandeja, que parpadea mientras hay sala. El de la barra
+de tareas no, y **la razón es medida y no una preferencia**: el `setIcon` de
+`window_manager` carga dos iconos con `LoadImage` y no destruye ninguno, y
+`WM_SETICON` no se queda con la propiedad de lo que recibe. Medido el
+2026-08-10 sobre 300 cargas: cada icono cuesta un handle de USER y unos tres de
+GDI, y solo los libera `DestroyIcon`. Parpadeando a 900 ms serían más de siete
+mil handles por hora contra un tope de diez mil por proceso, o sea la ventana
+quedándose sin handles a media partida, que es la familia de fallos de la que
+este proyecto acaba de salir.
+
+**Lo que lo activa** es escribirlo en el runner de C++, al lado de
+`kanpachi_pipe.cpp`: cargar los dos `HICON` UNA vez al arrancar, guardarlos, y
+alternar con `SendMessage(WM_SETICON)`. Cero fugas y cero disco por cuadro. Hay
+que medir antes una cosa: hay reportes de que `WM_SETICON` no refresca el icono
+de la barra en Windows 11.
+
+**La alternativa, que puede ser mejor**, es `ITaskbarList3::SetOverlayIcon`: una
+insignia chica y FIJA encima del botón de la barra, que es lo que Windows ofrece
+para "esta app está en un estado" y lo que usan Teams y Slack. La barra hace su
+propia copia del icono, así que no hay handle que administrar. No parpadea, y
+para una partida de tres horas eso probablemente sea una virtud.
+
+**Y no se resuelve migrando de paquete.** `tray_manager` está siendo migrado a
+`nativeapi`, del mismo autor, y se miró: su `tray_icon_windows.cpp` maneja bien
+el `HICON` —destruye el anterior y usa `NIM_MODIFY`—, y su `window_windows.cpp`
+son 30 KB de gestión de ventana **sin `SetIcon` ninguno**. O sea que para la
+bandeja no aporta nada que falte, y para la barra no ofrece la capacidad. Al día
+de hoy va por la 0.1.4, declarada "work in progress" por sus autores, y cambiar
+implicaría reemplazar `tray_manager` y `window_manager` a la vez, que es el
+shell entero. Se reevalúa cuando salga de obra y tenga icono de ventana.
+
+## 15. Lo que se decidió NO hacer
 
 Escrito para resistir la tentación:
 

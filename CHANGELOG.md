@@ -14,6 +14,8 @@ This file is in English, like commit messages and release notes, because a relea
 - Describe what every Kanpachi executable does in its file properties, and say it in the service list too
 - Give the service and the tunnel engine an icon of their own, so the four Kanpachi processes are told apart at a glance instead of by reading
 
+- Blink the tray icon while a room is up, so a running room is visible without opening the window
+
 ### Fixed
 
 - Stop Windows from asking for administrator on its own for the tunnel engine, which needed no privileges and was being elevated on a guess
