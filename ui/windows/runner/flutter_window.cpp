@@ -3,6 +3,7 @@
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "kanpachi_pipe.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -25,6 +26,9 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  // El named pipe del daemon. No es un plugin de pub a proposito: ver la nota
+  // de kanpachi_pipe.h.
+  RegisterKanpachiPipe(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   // La plantilla de Flutter ensena la ventana en el primer fotograma, desde
@@ -54,6 +58,11 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  // ANTES de soltar el motor: junta los hilos del pipe y suelta los canales.
+  // Un resultado contestado despues de que el motor se fue escribe sobre un
+  // mensajero que ya no existe.
+  UnregisterKanpachiPipe();
+
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

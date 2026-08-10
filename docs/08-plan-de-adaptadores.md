@@ -1062,12 +1062,15 @@ ahora la construye `scripts/preparar-stage.ps1`.
 
 # Del lado de la UI
 
-1. ~~**El transporte del pipe en Dart**~~: **HECHO y medido.** `package:win32`
-   más transporte propio, con E/S superpuesta y dos isolates trabajadores.
-   `dart_ipc` se descartó tras mirarlo: depende de `win32` igual, así que la
-   elección no era una dependencia contra ninguna, era un envoltorio de siete
-   likes en la puerta de un daemon que corre como SYSTEM contra doscientas
-   líneas nuestras. Ver la sección de más abajo.
+1. ~~**El transporte del pipe en Dart**~~: **HECHO, y después REHECHO en C++.**
+   La primera versión era `package:win32` con E/S superpuesta y dos isolates
+   trabajadores, y corrompía el heap del proceso: 49 caídas en 32 horas, nueve
+   de ellas `STATUS_HEAP_CORRUPTION`. Hoy vive en `windows/runner/
+   kanpachi_pipe.cpp` y llega por `MethodChannel`. Ver la sección de más abajo.
+   (`dart_ipc` se había descartado tras mirarlo: depende de `win32` igual, así
+   que la elección no era una dependencia contra ninguna, era un envoltorio de
+   siete likes en la puerta de un daemon que corre como SYSTEM. Con lo que se
+   sabe ahora, habría heredado el mismo fallo.)
 2. **Una línea de `ioc_manager.dart`** para que `SessionRepository` sea el real.
    El comentario del propio archivo ya lo dice.
 3. ~~**La pantalla de exposición**~~: **HECHA**, con las dos filas y el bloque
@@ -1117,13 +1120,18 @@ su `OVERLAPPED` y una operación pendiente sobre el handle; cerrarlo por debajo
 revienta en otro sitio y mucho después. El cierre espera a que los dos digan que
 soltaron, con plazo.
 
+> **Las dos frases de arriba describen un diseño que ya no existe, y se dejan
+> escritas porque explican por qué se cayó.** Ese "con plazo" es el agujero: un
+> plazo es una apuesta, y `Isolate.kill` no puede cobrarla porque no interrumpe
+> una llamada nativa. Ver *El heap corrupto* más abajo.
+
 Quedan dos cabos, y se anotan porque no están cerrados:
 
-- **Un crash intermitente que aparecía en una de cada siete corridas y no volvió
-  a aparecer en las últimas doce.** Se corrigieron dos cosas reales por el
-  camino: el cierre que no esperaba, y una cadena reservada con un asignador y
-  liberada con el otro. Doce corridas limpias no son una prueba con un fallo que
-  salía dos de quince. Lo que lo zanjaría es una tanda larga.
+- ~~**Un crash intermitente que aparecía en una de cada siete corridas**~~:
+  **CERRADO el 2026-08-09, y la respuesta era peor de lo que se creía.** La
+  tanda larga que pedía este cabo llegó sola: el bundle portable corriendo un
+  día entero. Ver *El heap corrupto* abajo. La sospecha de que doce corridas
+  limpias no probaban nada era correcta.
 - **Abrir muchos handles seguidos da `ERROR_PIPE_BUSY`.** El daemon acepta ocho
   conexiones, y el cliente reintenta tres veces cada 120 ms. Con la UI de verdad
   no debería llegar a pasar, y con varias ventanas conviene medirlo.
@@ -1136,6 +1144,58 @@ verlo. La otra mitad del mismo fallo: la salida estándar de Dart va bufferizada
 cuando no es una terminal, de modo que la última línea impresa **no** es la
 última que se ejecutó, y leer el crash como si lo fuera manda a buscar el fallo
 donde no está. La herramienta escribe ahora una traza síncrona a disco.
+
+> `ui/tool/pipe_smoke.dart` **ya no existe**. Murió con el FFI: el transporte
+> pasó a hablar por `MethodChannel`, y un canal necesita el motor de Flutter, o
+> sea que un `dart run` suelto no puede abrirlo. Se borró en vez de dejarlo
+> roto. Lo que medía se mide ahora corriendo la aplicación.
+
+## El heap corrupto, y por qué el pipe se fue a C++
+
+Medido el 2026-08-09 leyendo el **registro de eventos de Windows**, que era el
+sitio donde la respuesta estuvo todo el tiempo mientras se buscaba en los logs
+de la aplicación. `kanpachiui.exe`, 32 horas, tres firmas:
+
+| Módulo | Código | Offset | Veces |
+|---|---|---|---|
+| `ntdll.dll` | `0xC0000005` | `0x116135` | ~34 |
+| `ntdll.dll` | **`0xC0000374`** | `0x112165` | 9 |
+| `flutter_windows.dll` | `0xC0000005` → `0xC000041D` | `0x1d7b0` | 3 pares |
+
+**`0xC0000374` es `STATUS_HEAP_CORRUPTION` y no admite interpretación**: el
+proceso escribió fuera de una asignación y el gestor de heap lo cazó. Las tres
+firmas son una sola causa, porque el heap corrupto revienta donde toque después
+—de ahí que la víctima fuera casi siempre `ntdll` o el motor de Flutter, y nunca
+el culpable—.
+
+**La causa es de diseño, no un descuido.** Una `ReadFile` superpuesta le presta
+al kernel el `OVERLAPPED` y el buffer hasta que la operación termina de verdad.
+En la versión de Dart, esos dos punteros eran `calloc` cuya vida dependía de que
+un isolate llegara a su `finally`, y eso no se puede garantizar: `Isolate.kill`
+no interrumpe una llamada nativa, así que el dueño cerraba el handle tras una
+gracia de tres segundos con la lectura todavía viva.
+
+Lo que se descartó por el camino, y conviene que quede escrito para no volver a
+recorrerlo:
+
+- **No era Dart tirando excepciones.** Ninguna de las tres firmas pasa por Dart,
+  y por eso `kanpachi-ui.log` no tenía nada que decir de ellas.
+- **No era la suspensión.** La observación de que aparecía "al volver de
+  suspender" no se sostuvo: `powercfg` tiene la suspensión en **nunca** (AC y
+  DC), hubo dos suspensiones reales en 30 horas y ninguna cerca de una caída, y
+  las caídas van cada 20 a 60 minutos día y noche. El único hueco largo sin
+  caídas —03:12 a 10:04— **es** la suspensión, o sea la máquina apagada. Lo que
+  sí ocurre al irse es que la pantalla se apaga a los 5 minutos, pero eso solo
+  no explica un ritmo más lento que su propio plazo.
+- **No era el hilo que se va.** La hipótesis previa —Windows cancela la E/S
+  pendiente de un hilo al terminarlo, y un isolate no tiene hilo propio— se
+  instrumentó y se midió: el error fue `0` y los identificadores de hilo al
+  empezar y al acabar eran **iguales**. Refutada por su propio criterio.
+
+**Y un agujero de instrumentación que salió de ahí**: `error de Windows 0`
+significaba a la vez fin de archivo, parada pedida y espera fallida, o sea nada.
+La versión de C++ los separa con un motivo (`eof`, `stopped`, `io`, `wait`) al
+lado del código.
 
 ---
 

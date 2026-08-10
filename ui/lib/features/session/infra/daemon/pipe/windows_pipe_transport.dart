@@ -1,338 +1,260 @@
 import 'dart:async';
-import 'dart:ffi';
-import 'dart:isolate';
-import 'dart:typed_data';
 
-import 'package:ffi/ffi.dart';
+import 'package:flutter/services.dart';
 import 'package:kanpachi_ui/core/platform/app_log.dart';
 import 'package:kanpachi_ui/features/session/domain/daemon_failure.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_transport.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/pipe/pipe_names.dart';
-import 'package:kanpachi_ui/features/session/infra/daemon/pipe/pipe_workers.dart';
-import 'package:win32/win32.dart';
 
-/// The daemon's named pipe, spoken over `dart:ffi`.
+/// El named pipe del daemon, hablado por el runner de C++.
 ///
-/// # Why this exists at all
+/// # Por qué esto ya no usa `dart:ffi`
 ///
-/// `dart:io` does not speak Windows named pipes, and the old shortcut of
-/// opening one as a file has been broken since Flutter 3.27. So the only road
-/// is kernel32: `CreateFileW`, `ReadFile`, `WriteFile`.
+/// Porque lo hacía, y corrompía la memoria del proceso. Medido el 2026-08-09
+/// sobre 32 horas de registro de eventos de Windows: **49 caídas de
+/// `kanpachiui.exe`**, nueve de ellas con código `0xC0000374`, que es
+/// `STATUS_HEAP_CORRUPTION` — el gestor de heap cazando una escritura fuera de
+/// una asignación. Las demás salían en `ntdll` y en `flutter_windows`, que es lo
+/// que hace la memoria corrupta: mata al siguiente que toca la zona.
 ///
-/// # The part that surprises people
+/// La causa de fondo era estructural y no un descuido suelto: una `ReadFile`
+/// superpuesta le regala al kernel el `OVERLAPPED` y el buffer hasta que la
+/// operación termina de verdad, y en Dart esos dos punteros eran `calloc`
+/// sueltos cuya vida dependía de que un isolate llegara a su `finally`. Un
+/// isolate no da esa garantía: `Isolate.kill` no interrumpe una llamada nativa,
+/// y el dueño cerraba el handle por debajo tras una gracia de tres segundos.
 ///
-/// **An unprivileged process CAN open this pipe.** The `ProtectedPrefix\
-/// Administrators\` prefix restricts who may CREATE the name, not who may open
-/// it, and the daemon's descriptor grants the interactive user exactly
-/// read plus write plus synchronise. The UI runs without privileges and that is
-/// the design, not a leak.
+/// Ahora el dueño es un hilo de C++ que cancela y ESPERA su lectura antes de
+/// que nada se destruya. Ver `windows/runner/kanpachi_pipe.cpp`.
 ///
-/// # Shape
+/// # Lo que sigue siendo verdad
 ///
-/// The handle is owned here and shared with two worker isolates, one reading
-/// and one writing, because an isolate parked in a native call cannot drain its
-/// own inbox. See `pipe_workers.dart` for why the handle has to be overlapped.
+/// **Un proceso sin privilegios PUEDE abrir este pipe.** El prefijo
+/// `ProtectedPrefix\Administrators\` limita quién CREA el nombre, no quién lo
+/// abre, y el descriptor del daemon le da al usuario interactivo exactamente
+/// lectura, escritura y sincronización. Que la ventana corra sin elevar es el
+/// diseño, no una fuga.
 class WindowsPipeTransport implements DaemonTransport {
   WindowsPipeTransport({String? name, this.busyRetries = 3})
     : name = name ?? PipeNames.defaultName;
 
-  /// Which pipe. See [PipeNames.defaultName]: production unless this build was
-  /// compiled to talk to a `--console` daemon.
+  /// Qué pipe. Ver [PipeNames.defaultName].
   final String name;
 
-  /// How many times to come back when the daemon has all its instances busy.
-  /// `MaxConns` is 8 on the other side, so this is a real case with several
-  /// windows open, and it clears in milliseconds.
+  /// Cuántas veces volver cuando el daemon tiene todas sus instancias
+  /// ocupadas. `MaxConns` es 8 del otro lado, así que es un caso real con
+  /// varias ventanas abiertas, y se despeja en milisegundos.
   final int busyRetries;
 
-  final StreamController<List<int>> _entrada =
+  static const MethodChannel _methods = MethodChannel('kanpachi/pipe');
+
+  /// **El id lo pone Dart, y no C++.** Si lo devolviera `open`, los bytes
+  /// llegarían por el canal de eventos mientras la respuesta del canal de
+  /// métodos sigue viajando, y no hay orden garantizado entre dos canales: los
+  /// primeros bytes de una conexión rápida no tendrían a quién entregarse.
+  /// Poniéndolo acá, el buzón está registrado antes de que exista el handle.
+  static int _nextId = 0;
+
+  int? _id;
+  bool _closing = false;
+
+  final StreamController<List<int>> _incoming =
       StreamController<List<int>>.broadcast();
-  final Map<int, Completer<void>> _escrituras = <int, Completer<void>>{};
-
-  Isolate? _lector;
-  Isolate? _escritor;
-  ReceivePort? _buzon;
-  SendPort? _alEscritor;
-
-  int _pipe = 0;
-  int _stop = 0;
-  int _seq = 0;
-  int _despedidas = 0;
-  bool _abierto = false;
-  bool _cerrando = false;
-
-  /// Completes when BOTH workers have said they are done touching the handle.
-  final Completer<void> _ambosFuera = Completer<void>();
 
   @override
-  Stream<List<int>> get incoming => _entrada.stream;
+  Stream<List<int>> get incoming => _incoming.stream;
 
   @override
   Future<void> connect() async {
-    if (_abierto) return;
+    if (_id != null) return;
 
-    await _abrir();
-
-    final Completer<SendPort> puertoDelEscritor = Completer<SendPort>();
-    final ReceivePort buzon = ReceivePort();
-    _buzon = buzon;
-    buzon.listen((Object? m) => _delWorker(m, puertoDelEscritor));
-
-    final PipeWorkerConfig cfg = PipeWorkerConfig(
-      pipeHandle: _pipe,
-      stopEvent: _stop,
-      toOwner: buzon.sendPort,
-    );
-
-    _lector = await Isolate.spawn(
-      pipeReader,
-      cfg,
-      debugName: 'kanpachi-pipe-r',
-    );
-    _escritor = await Isolate.spawn(
-      pipeWriter,
-      cfg,
-      debugName: 'kanpachi-pipe-w',
-    );
-
-    _alEscritor = await puertoDelEscritor.future.timeout(
-      const Duration(seconds: 5),
-      onTimeout: () => throw const DaemonUnreachable(
-        'el isolate que escribe en el pipe no arrancó',
-        kind: DaemonUnreachableKind.notConnected,
-      ),
-    );
-    _abierto = true;
-  }
-
-  Future<void> _abrir() async {
-    // Allocated and freed with the SAME allocator, spelled out. `toNativeUtf16`
-    // defaults to one of them and freeing with the other is the kind of thing
-    // that works every day and corrupts the heap on the bad one.
-    final Pointer<Utf16> ruta = name.toNativeUtf16(allocator: malloc);
+    final int id = ++_nextId;
+    _PipeEvents.instance.register(id, this);
     try {
-      for (int intento = 0; ; intento++) {
-        // CreateFileW on a named pipe does not park: it connects, or it comes
-        // back at once saying busy or not there. That is why it runs on this
-        // isolate and only the reading and writing move away.
-        final Win32Result<HANDLE> r = CreateFile(
-          PCWSTR(ruta),
-          GENERIC_READ | GENERIC_WRITE,
-          FILE_SHARE_NONE,
-          null,
-          OPEN_EXISTING,
-          FILE_FLAG_OVERLAPPED,
-          null,
-        );
-
-        if (r.value.isValid) {
-          _pipe = r.value.address;
-          break;
-        }
-
-        if (r.error == ERROR_PIPE_BUSY && intento < busyRetries) {
-          // Deliberately NOT WaitNamedPipe, which parks the calling thread, and
-          // this one is the UI's. A few short waits cover the real case, which
-          // is another window holding an instance, and they yield meanwhile.
-          await Future<void>.delayed(const Duration(milliseconds: 120));
-          continue;
-        }
-
-        throw DaemonUnreachable(
-          _porQueNoAbrio(r.error),
-          kind: DaemonUnreachableKind.notConnected,
-        );
-      }
-    } finally {
-      malloc.free(ruta);
-    }
-
-    final Win32Result<HANDLE> parada = CreateEvent(null, true, false, null);
-    if (!parada.value.isValid) {
-      CloseHandle(HANDLE(Pointer.fromAddress(_pipe)));
-      _pipe = 0;
+      await _methods.invokeMethod<void>('open', <String, Object?>{
+        'id': id,
+        'name': name,
+        'busyRetries': busyRetries,
+      });
+    } on PlatformException catch (e) {
+      _PipeEvents.instance.forget(id);
       throw DaemonUnreachable(
-        'no se pudo crear el evento de parada, error ${parada.error} de Windows',
+        _whyItDidNotOpen(_win32Of(e)),
+        kind: DaemonUnreachableKind.notConnected,
+      );
+    } on MissingPluginException catch (e) {
+      _PipeEvents.instance.forget(id);
+      // Pasa fuera de la aplicación: `dart run` de una herramienta no tiene
+      // motor, así que no tiene canales. Se dice con esas palabras en vez de
+      // dejar el error crudo de Flutter, que se lee como un bug del producto.
+      throw DaemonUnreachable(
+        'el canal nativo del pipe no está: esto solo funciona dentro de la '
+        'aplicación, no en un proceso de Dart suelto ($e)',
         kind: DaemonUnreachableKind.notConnected,
       );
     }
-    _stop = parada.value.address;
-  }
-
-  /// The message for a failed open, which is the one the user meets most.
-  String _porQueNoAbrio(int error) {
-    if (error == ERROR_FILE_NOT_FOUND) {
-      return 'el servicio de Kanpachi no está escuchando en $name';
-    }
-    if (error == ERROR_PIPE_BUSY) {
-      return 'el servicio de Kanpachi tiene todas sus conexiones ocupadas';
-    }
-    if (error == ERROR_ACCESS_DENIED) {
-      return 'Windows negó el acceso al canal de Kanpachi';
-    }
-    return 'no se pudo abrir el canal de Kanpachi, error $error de Windows';
-  }
-
-  void _delWorker(Object? mensaje, Completer<SendPort> puertoDelEscritor) {
-    final List<Object?> m = mensaje! as List<Object?>;
-    switch (m[0]) {
-      case PipeMsg.port:
-        if (!puertoDelEscritor.isCompleted) {
-          puertoDelEscritor.complete(m[1]! as SendPort);
-        }
-      case PipeMsg.data:
-        if (!_entrada.isClosed) _entrada.add(m[1]! as Uint8List);
-      case PipeMsg.ack:
-        _escrituras.remove(m[1]! as int)?.complete();
-      case PipeMsg.fail:
-        // Con traza, por lo mismo que en `DaemonClient._matarTodo`: un error sin
-        // ella que se escape a la zona se anota como `traza []`, y entonces se
-        // sabe qué falló y no quién esperaba.
-        _escrituras
-            .remove(m[1]! as int)
-            ?.completeError(
-              DaemonUnreachable(
-                m[2]! as String,
-                kind: DaemonUnreachableKind.writeFailed,
-              ),
-              StackTrace.current,
-            );
-      case PipeMsg.closed:
-        _despedidas++;
-        if (_despedidas >= 2 && !_ambosFuera.isCompleted) {
-          _ambosFuera.complete();
-        }
-        // **El error de Windows se ANOTA, y antes se tiraba.**
-        //
-        // Ese entero es lo único que distingue por qué se acabó el canal, y sin
-        // él lo que la app cuenta arriba es «el daemon cerró la conexión», que
-        // es una interpretación y no un hecho. Medido el 2026-08-09: la ventana
-        // dijo eso doce veces y el log del daemon no tiene NI UN corte de
-        // conexión en toda la sesión, así que quien se rompió fue este lado.
-        //
-        // Los que importan y qué significan: 109 `ERROR_BROKEN_PIPE` es que el
-        // otro extremo se fue de verdad, 0 es un cierre limpio o cero bytes, 6
-        // `ERROR_INVALID_HANDLE` es que el handle dejó de ser válido debajo
-        // nuestro, y cualquier otro apunta al camino superpuesto.
-        final int porQue = m[1]! as int;
-        // Los hilos los manda solo el lector, que es quien tiene la lectura
-        // pendiente. `995` es `ERROR_OPERATION_ABORTED` y acá ya significa un
-        // aborto que NO pedimos: o sea que el hilo que lanzó la lectura se fue,
-        // y Windows canceló su E/S al terminarlo. Si además los dos números de
-        // hilo no coinciden, está probado en vez de deducido.
-        final String hilos = m.length > 3
-            ? ' hilo al empezar ${m[2]} al acabar ${m[3]}'
-            : '';
-        if (!_cerrando || porQue != 0) {
-          AppLog.info(
-            'el canal con el daemon se acabó',
-            'error de Windows $porQue cerrando $_cerrando '
-                'despedidas $_despedidas$hilos',
-          );
-        }
-        // The reader hanging up is how the death of the daemon arrives. Closing
-        // the stream lands in DaemonClient's onDone, which breaks every pending
-        // request at once instead of leaving them to expire one by one.
-        if (!_cerrando && !_entrada.isClosed) _entrada.close();
-    }
+    _id = id;
   }
 
   @override
-  Future<void> send(List<int> bytes) {
-    final SendPort? destino = _alEscritor;
-    if (!_abierto || destino == null) {
+  Future<void> send(List<int> bytes) async {
+    final int? id = _id;
+    if (id == null || _closing) {
       throw const DaemonUnreachable(
         'el canal con el daemon no está abierto',
         kind: DaemonUnreachableKind.notConnected,
       );
     }
-
-    final int seq = ++_seq;
-    final Completer<void> espera = Completer<void>();
-    _escrituras[seq] = espera;
-    destino.send(<Object?>[PipeMsg.write, seq, Uint8List.fromList(bytes)]);
-    return espera.future;
+    try {
+      await _methods.invokeMethod<void>('send', <String, Object?>{
+        'id': id,
+        'bytes': Uint8List.fromList(bytes),
+      });
+    } on PlatformException catch (e) {
+      throw DaemonUnreachable(
+        'no se pudo escribir en el canal del daemon, error ${_win32Of(e)} de '
+        'Windows',
+        kind: DaemonUnreachableKind.writeFailed,
+      );
+    }
   }
 
   @override
   Future<void> close() async {
-    if (_cerrando) return;
-    _cerrando = true;
+    if (_closing) return;
+    _closing = true;
 
-    // Setting the stop event is the whole shutdown: both workers are waiting on
-    // it alongside their own I/O, so neither one depends on the daemon ever
-    // saying anything again. The writer also gets a message, because when it is
-    // idle it sits on its inbox and not on the wait.
-    if (_stop != 0) SetEvent(HANDLE(Pointer.fromAddress(_stop)));
-    _alEscritor?.send(<Object?>[PipeMsg.stop]);
-
-    final StackTrace desde = StackTrace.current;
-    for (final Completer<void> c in _escrituras.values) {
-      if (!c.isCompleted) {
-        c.completeError(
-          const DaemonUnreachable(
-            'el canal se cerró mientras se escribía',
-            kind: DaemonUnreachableKind.writeFailed,
-          ),
-          desde,
-        );
+    final int? id = _id;
+    _id = null;
+    if (id != null) {
+      _PipeEvents.instance.forget(id);
+      try {
+        await _methods.invokeMethod<void>('close', <String, Object?>{'id': id});
+      } on PlatformException catch (e, s) {
+        AppLog.error('cerrando el canal del daemon', e, s);
+      } on MissingPluginException catch (e, s) {
+        AppLog.error('cerrando el canal del daemon', e, s);
       }
     }
-    _escrituras.clear();
 
-    // WAIT for both workers to say they are done, and only then take the
-    // handle away. This is not politeness: each worker owns an OVERLAPPED and
-    // a pending operation on this very handle, and closing it underneath them
-    // is a use-after-free that shows up as an access violation somewhere else
-    // entirely. A fixed grace period would be a guess, and a guess that is
-    // usually right is the worst kind of race.
-    //
-    // Bounded anyway, because a close that CAN hang is a close that will hang
-    // the app on exit. If the grace runs out the kill below is the fallback,
-    // and a worker still inside a native call takes the process down with the
-    // handle leaked, which is strictly better than corrupting it.
-    // **Que la gracia se agote se ANOTA, y era el único camino mudo que queda.**
-    //
-    // Es el instante exacto que el párrafo de arriba describe como aceptable, y
-    // aceptarlo a ciegas no sirve: si esto sale, un worker se quedó dentro de
-    // una llamada nativa mientras el handle se cerraba debajo suyo, y `kill` no
-    // puede interrumpirlo. A partir de ahí hay un proceso vivo con un zombi
-    // apuntando a un handle cerrado, y el valor de un handle cerrado lo REUSA
-    // Windows para lo siguiente que se abra: la conexión siguiente.
-    //
-    // O sea que si el fallo del 2026-08-09 es este, esta línea sale JUSTO ANTES
-    // de la conexión que después muere sin motivo. Sin anotarlo no hay forma de
-    // saberlo, porque las dos mitades pasan en sitios distintos y con minutos
-    // de diferencia.
-    if (_lector != null || _escritor != null) {
-      await _ambosFuera.future.timeout(
-        const Duration(seconds: 3),
-        onTimeout: () => AppLog.info(
-          'se acabó la gracia de cierre del canal',
-          'despedidas $_despedidas de 2, se mata a los workers como estén',
-        ),
-      );
+    if (!_incoming.isClosed) await _incoming.close();
+  }
+
+  /// Bytes del daemon. Lo llama [_PipeEvents], que es quien escucha el canal.
+  void _onData(Uint8List bytes) {
+    if (!_incoming.isClosed) _incoming.add(bytes);
+  }
+
+  /// El canal se acabó. `why` distingue los tres casos que antes eran todos
+  /// «error de Windows 0» y por lo tanto no distinguían nada.
+  void _onClosed(String why, int error) {
+    if (_closing) return;
+    AppLog.info(
+      'el canal con el daemon se acabó',
+      'motivo $why error de Windows $error',
+    );
+    // Cerrar el stream aterriza en el `onDone` de `DaemonClient`, que rompe
+    // todas las peticiones pendientes de una vez en lugar de dejarlas expirar
+    // una por una.
+    if (!_incoming.isClosed) _incoming.close();
+  }
+
+  /// El código de Windows que el runner mandó como detalle, o 0.
+  static int _win32Of(PlatformException e) {
+    final Object? details = e.details;
+    return details is int ? details : 0;
+  }
+
+  /// El mensaje de un fallo al abrir, que es el que más se ve.
+  String _whyItDidNotOpen(int error) {
+    if (error == _Win32.fileNotFound) {
+      return 'el servicio de Kanpachi no está escuchando en $name';
+    }
+    if (error == _Win32.pipeBusy) {
+      return 'el servicio de Kanpachi tiene todas sus conexiones ocupadas';
+    }
+    if (error == _Win32.accessDenied) {
+      return 'Windows negó el acceso al canal de Kanpachi';
+    }
+    return 'no se pudo abrir el canal de Kanpachi, error $error de Windows';
+  }
+}
+
+/// Los tres errores de Windows que esta pantalla sabe explicar con palabras.
+///
+/// Están acá como números y no importando `win32` a propósito: este archivo
+/// dejó de hablar FFI, y traer el paquete entero por tres constantes volvería a
+/// atar la capa a algo que ya no usa.
+abstract final class _Win32 {
+  static const int fileNotFound = 2;
+  static const int accessDenied = 5;
+  static const int pipeBusy = 231;
+}
+
+/// Reparte los eventos del canal nativo entre las conexiones abiertas.
+///
+/// # Por qué hay un repartidor y no un canal por conexión
+///
+/// Porque hay más de una conexión a la vez: `DaemonConnector.spare()` abre una
+/// SEGUNDA, y tiene que hacerlo — el bucle de servidor de una conexión es
+/// secuencial, así que preguntar por el progreso de `create_room` por la misma
+/// conexión haría cola detrás de la operación que quiere mirar.
+///
+/// Un `EventChannel` por conexión obligaría a crear canales con nombre dinámico
+/// en las dos puntas y a esperar a que Dart se suscriba antes de que lleguen
+/// bytes. Uno solo con el id dentro del evento no tiene esa carrera.
+class _PipeEvents {
+  _PipeEvents._() {
+    _subscription = const EventChannel(
+      'kanpachi/pipe/events',
+    ).receiveBroadcastStream().listen(_onEvent, onError: _onError);
+  }
+
+  static final _PipeEvents instance = _PipeEvents._();
+
+  final Map<int, WindowsPipeTransport> _open =
+      <int, WindowsPipeTransport>{};
+
+  // Se guarda aunque no se cancele nunca: vive lo que el proceso, y una
+  // suscripción sin referencia es justo lo que un análisis de fugas señala.
+  // ignore: unused_field
+  late final StreamSubscription<dynamic> _subscription;
+
+  void register(int id, WindowsPipeTransport transport) {
+    _open[id] = transport;
+  }
+
+  void forget(int id) {
+    _open.remove(id);
+  }
+
+  void _onEvent(Object? event) {
+    if (event is! Map) return;
+    final Object? id = event['id'];
+    if (id is! int) return;
+    final WindowsPipeTransport? transport = _open[id];
+    // Un id desconocido no es un error: el runner avisa del cierre aunque este
+    // lado ya haya cerrado y se haya borrado del mapa.
+    if (transport == null) return;
+
+    if (event['kind'] == 'data') {
+      final Object? bytes = event['bytes'];
+      if (bytes is Uint8List) transport._onData(bytes);
+      return;
     }
 
-    _lector?.kill(priority: Isolate.immediate);
-    _escritor?.kill(priority: Isolate.immediate);
-    _lector = null;
-    _escritor = null;
+    _open.remove(id);
+    final Object? why = event['why'];
+    final Object? error = event['error'];
+    transport._onClosed(
+      why is String ? why : 'desconocido',
+      error is int ? error : 0,
+    );
+  }
 
-    if (_pipe != 0) {
-      CloseHandle(HANDLE(Pointer.fromAddress(_pipe)));
-      _pipe = 0;
-    }
-    if (_stop != 0) {
-      CloseHandle(HANDLE(Pointer.fromAddress(_stop)));
-      _stop = 0;
-    }
-
-    _buzon?.close();
-    _buzon = null;
-    _alEscritor = null;
-    _abierto = false;
-
-    if (!_entrada.isClosed) await _entrada.close();
+  void _onError(Object error, StackTrace stack) {
+    // No se traga: si el canal nativo se rompe, todas las conexiones se quedan
+    // mudas y sin esto no habría dónde leerlo.
+    AppLog.error('el canal de eventos del pipe', error, stack);
   }
 }

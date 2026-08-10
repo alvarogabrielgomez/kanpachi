@@ -29,17 +29,25 @@ import 'dart:async';
 ///    Sigue abierto y sin arreglo (flutter/flutter#163539, verificado en agosto
 ///    de 2026). O sea que ese camino no es que sea frágil: hoy no funciona.
 ///
-/// Quedan dos caminos y los dos pasan por `dart:ffi`, o sea `CreateFileW`,
-/// `ReadFile` y `WriteFile`. Escribirlo acá sin dependencias, o tomar
-/// `dart_ipc`, que ya lo hace con E/S superpuesta. Lo segundo tiene 7 likes en
-/// pub, y esta es la superficie de la API local de un daemon que corre como
-/// SYSTEM: la decisión de meter esa dependencia es del dueño del proyecto, no
-/// mía, y el repo ya verifica lo que consume en vez de confiarlo.
+/// O sea que hay que llamar a `CreateFileW`, `ReadFile` y `WriteFile` a mano.
+/// La pregunta es DESDE DÓNDE, y esa tuvo dos respuestas.
 ///
-/// **La lectura no puede bloquear el isolate de la UI.** `ReadFile` sobre un
-/// pipe se queda esperando, así que va en un isolate aparte o con E/S
-/// superpuesta. Un cliente que congele la ventana mientras espera al daemon es
-/// peor que no tener cliente.
+/// **Se probó desde `dart:ffi` y salió mal, con medición.** El registro de
+/// eventos de Windows del 2026-08-09 tiene 49 caídas de `kanpachiui.exe` en 32
+/// horas, nueve con `STATUS_HEAP_CORRUPTION`. Una E/S superpuesta le presta al
+/// kernel el `OVERLAPPED` y el buffer hasta que la operación termina de verdad,
+/// y en Dart esos punteros eran `calloc` sueltos cuya vida dependía de que un
+/// isolate llegara a su `finally` — cosa que `Isolate.kill` no garantiza,
+/// porque no interrumpe una llamada nativa.
+///
+/// Hoy vive en el runner de C++ y llega por `MethodChannel`, con un hilo dueño
+/// del handle que cancela y espera su lectura antes de soltar nada. Ver
+/// `pipe/windows_pipe_transport.dart` y `windows/runner/kanpachi_pipe.cpp`.
+///
+/// **La lectura no puede bloquear el hilo de la UI.** `ReadFile` sobre un pipe
+/// se queda esperando, así que va en un hilo aparte y con E/S superpuesta. Un
+/// cliente que congele la ventana mientras espera al daemon es peor que no
+/// tener cliente.
 abstract interface class DaemonTransport {
   /// Opens the link. Nothing else on this interface works before it returns.
   ///
