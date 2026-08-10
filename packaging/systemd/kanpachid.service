@@ -1,0 +1,87 @@
+[Unit]
+Description=Daemon de Kanpachi
+Documentation=https://kanpachi.accentio.dev
+
+# La cuarentena PRIMERO. Es el mismo orden que el arranque del daemon respeta
+# por dentro y por la misma razón: el instante de menos protección es el que va
+# entre que se purgan las reglas viejas y se ponen las nuevas, y ese instante
+# tiene que ocurrir con la cuarentena ya puesta.
+After=network-online.target kanpachi-quarantine.service
+Wants=network-online.target kanpachi-quarantine.service
+
+[Service]
+# Type=notify, y no simple, porque el daemon sabe cuándo está listo y systemd
+# puede esperarlo.
+#
+# Lo que esto compra es que `systemctl start` no vuelva hasta que el canal local
+# escuche. Sin eso, un `kanpachi host` escrito enseguida después encuentra la
+# puerta cerrada y falla con "no hay servicio" teniendo el servicio arrancando
+# bien. Es el mismo contrato que el Administrador de servicios exige en Windows.
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/libexec/kanpachi/kanpachid
+
+# # Corre como root, y es una decisión, no una comodidad
+#
+# CAP_NET_ADMIN, que es lo que este daemon necesita para nftables y para
+# /dev/net/tun, ya permite reconfigurar la red entera de la máquina: quien la
+# tiene puede cambiar rutas, cargar reglas y crear interfaces. El aislamiento
+# que compraría un usuario propio es chico, y el coste es real: el socket de
+# control es 0600 de su dueño, así que el CLI habría que correrlo con
+# `sudo -u kanpachi`, cuando abrir una sala ya exige privilegios de todas formas.
+#
+# Es además lo mismo que hace en Windows, donde el servicio corre como SYSTEM.
+# El endurecimiento de abajo es lo que acota el resto.
+User=root
+
+Restart=on-failure
+RestartSec=5s
+
+# `control-group` es el análogo del Job Object de Windows, y es la capa FUERTE
+# de que el motor muera con el daemon. Si el daemon se va sin poder correr un
+# solo `defer`, systemd se lleva todo lo que quede en el cgroup del servicio, y
+# el motor está ahí por haber nacido dentro. Ver `child_linux.go`.
+KillMode=control-group
+# Holgado a propósito: apagar cierra la sala, purga las reglas y espera al
+# motor. Cortarlo por la mitad deja reglas puestas.
+TimeoutStopSec=45
+
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+DeviceAllow=/dev/net/tun rw
+
+# /run/kanpachi en 0700: es el directorio del socket de control, y es lo que
+# impide que otro proceso ocupe la dirección antes que el daemon. Medido: con el
+# directorio abierto, un usuario cualquiera llega a ver el socket. Ver
+# `pipe_linux.go`.
+RuntimeDirectory=kanpachi
+RuntimeDirectoryMode=0700
+# /var/lib/kanpachi: la llave de identidad, el token y la sala.
+StateDirectory=kanpachi
+StateDirectoryMode=0700
+# /etc/kanpachi: donde se escribe el fichero de la cuarentena, que la otra
+# unidad carga en el próximo arranque.
+ConfigurationDirectory=kanpachi
+ConfigurationDirectoryMode=0755
+
+# El resto del sistema, de solo lectura. `ReadWritePaths` abre las tres que sí.
+ProtectSystem=strict
+ReadWritePaths=/etc/kanpachi /var/lib/kanpachi
+# `read-only` y no `yes`: la detección de Steam mira los directorios de los
+# usuarios, y con `yes` los vería vacíos y contestaría "no hay Steam", que es
+# una respuesta creíble y falsa. Ver `root_linux.go`.
+ProtectHome=read-only
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+
+# Las cuatro familias que este daemon usa y ninguna más: AF_NETLINK para
+# nftables y para las rutas, AF_UNIX para el canal local y para hablar con el
+# motor, y las dos de internet para el seed.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

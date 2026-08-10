@@ -1,0 +1,33 @@
+#!/bin/sh
+# Lo que hay que dejar corriendo después de copiar los ficheros.
+set -e
+
+case "$1" in
+configure)
+	systemctl daemon-reload || true
+
+	# La cuarentena PRIMERO, y sin `--now` que falle.
+	#
+	# En la primera instalación su fichero todavía no existe, porque lo escribe
+	# el daemon al arrancar. Su `ConditionPathExists` hace que systemd la salte
+	# en vez de darla por fallida, así que arrancarla ahora es correcto y no
+	# hace nada. Lo que importa es dejarla HABILITADA: es lo que la carga en el
+	# próximo arranque de la máquina, que es cuando de verdad hace falta.
+	systemctl enable kanpachi-quarantine.service >/dev/null 2>&1 || true
+	systemctl start kanpachi-quarantine.service >/dev/null 2>&1 || true
+
+	systemctl enable kanpachid.service >/dev/null 2>&1 || true
+	# `restart` y no `start`: en una actualización el daemon viejo está
+	# corriendo, y el binario nuevo no entra en servicio hasta que se reinicie.
+	# Un `start` sobre algo ya arrancado no hace nada y dejaría la versión
+	# anterior en marcha con los ficheros nuevos en disco, que es la forma más
+	# confusa de que una actualización "no haya hecho nada".
+	systemctl restart kanpachid.service || {
+		echo "kanpachi: el daemon no arrancó. Mira qué dice:" >&2
+		echo "  systemctl status kanpachid" >&2
+		echo "  journalctl -u kanpachid -n 50" >&2
+	}
+	;;
+esac
+
+exit 0

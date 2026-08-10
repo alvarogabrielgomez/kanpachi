@@ -1,0 +1,32 @@
+#!/bin/sh
+# Lo que queda por limpiar cuando los ficheros ya no están.
+set -e
+
+case "$1" in
+remove)
+	systemctl daemon-reload >/dev/null 2>&1 || true
+	;;
+
+purge)
+	systemctl daemon-reload >/dev/null 2>&1 || true
+
+	# El estado se borra SOLO en purge, y esa distinción es la que importa.
+	#
+	# `apt remove` quita el programa y `apt purge` quita también sus datos, y
+	# acá los datos son la llave de identidad de este equipo. Borrarla en un
+	# `remove` haría que reinstalar convirtiera a la máquina en otra distinta
+	# para todos los que ya jugaron con ella, sin que nadie lo hubiera pedido.
+	rm -rf /var/lib/kanpachi
+	rm -rf /etc/kanpachi
+
+	# La cuarentena ya la quitó `prerm` con el daemon todavía en disco. Esto es
+	# la red de abajo, por si aquello no llegó a correr: el fichero se fue con
+	# el directorio de arriba, así que lo único que puede quedar es la tabla en
+	# el kernel.
+	if command -v nft >/dev/null 2>&1; then
+		nft delete table inet kanpachi-base >/dev/null 2>&1 || true
+	fi
+	;;
+esac
+
+exit 0

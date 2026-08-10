@@ -1,0 +1,19 @@
+Package: kanpachi
+Version: @VERSION@
+Section: net
+Priority: optional
+Architecture: amd64
+Maintainer: Accentio Studios <alvaro@accentiostudios.com>
+Homepage: https://kanpachi.accentio.dev
+Depends: nftables, libc6 (>= 2.34), systemd
+Description: Juega en LAN con quien quieras, sin abrir puertos
+ Kanpachi levanta una red privada cifrada entre las máquinas que comparten un
+ código de ocho caracteres, y los juegos la ven como una LAN.
+ .
+ Kanpachi Protection es lo que lo distingue de un túnel cualquiera: los puertos
+ del juego quedan cerrados desde internet, y solo alcanzables desde dentro de la
+ sala. Esa contención sigue puesta con Kanpachi apagado, porque vive en una
+ tabla de nftables propia que se carga al arrancar la máquina.
+ .
+ Este paquete trae el daemon, el motor de red y el CLI. No trae el registro de
+ encuentro, que es otro producto y no hace falta para usar este.

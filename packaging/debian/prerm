@@ -1,0 +1,42 @@
+#!/bin/sh
+# Lo que hay que deshacer ANTES de que dpkg se lleve los ficheros.
+#
+# # Por qué la cuarentena se quita acá y no en postrm
+#
+# Porque quitarla la quita el propio daemon, con `--uninstall-cleanup`, y en
+# `postrm` ese binario ya no está. Es el único camino del producto que la borra,
+# y existe aparte a propósito: lo que hace que la cuarentena valga es seguir
+# puesta con Kanpachi apagado, así que no puede ser una operación que el daemon
+# ofrezca por su canal de control.
+#
+# Y hay que hacerlo, no es opcional. Una cuarentena que sobrevive a desinstalar
+# el producto es de las cosas que peor se diagnostican: el usuario ya no tiene
+# Kanpachi y su SMB sigue sin contestar, sin nada en la máquina que lo explique.
+set -e
+
+case "$1" in
+remove)
+	systemctl stop kanpachid.service >/dev/null 2>&1 || true
+	systemctl disable kanpachid.service >/dev/null 2>&1 || true
+
+	# La tabla Y el fichero, en ese orden, que es lo que hace esta bandera.
+	if [ -x /usr/libexec/kanpachi/kanpachid ]; then
+		/usr/libexec/kanpachi/kanpachid --uninstall-cleanup || {
+			echo "kanpachi: la cuarentena de base quedó a medio quitar." >&2
+			echo "  Comprobalo con: nft list table inet kanpachi-base" >&2
+			echo "  Y quitala con:  nft delete table inet kanpachi-base" >&2
+		}
+	fi
+
+	systemctl stop kanpachi-quarantine.service >/dev/null 2>&1 || true
+	systemctl disable kanpachi-quarantine.service >/dev/null 2>&1 || true
+	;;
+
+upgrade | deconfigure)
+	# En una actualización NO se toca la cuarentena. Parar el daemon lo hace
+	# `postinst` con su reinicio, y quitar la protección entre dos versiones
+	# abriría los puertos del juego a internet durante el rato que dure `apt`.
+	;;
+esac
+
+exit 0

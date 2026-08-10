@@ -1,0 +1,43 @@
+[Unit]
+# La cuarentena de base, que es lo que hace que los puertos del juego sigan
+# cerrados desde internet CON KANPACHI APAGADO.
+#
+# Es la unidad más importante de las dos y la que menos se ve. Sin ella, apagar
+# Kanpachi deja la máquina como estaba antes de instalarlo, y lo que este
+# producto promete es lo contrario: que la protección no dependa de que un
+# proceso esté vivo.
+Description=Cuarentena de base de Kanpachi
+Documentation=https://kanpachi.accentio.dev
+
+# `DefaultDependencies=no` más `Before=network-pre.target` es lo que la pone
+# ANTES de que la red exista. Con las dependencias por omisión, systemd la
+# arrancaría después de `basic.target`, y entre que la red sube y esto carga
+# habría una ventana con los puertos abiertos al mundo. Corta, y suficiente.
+DefaultDependencies=no
+Before=network-pre.target
+Wants=network-pre.target
+After=nftables.service
+
+# Sin fichero no hay nada que cargar, y eso es lo normal antes del primer
+# arranque del daemon: lo escribe él. La condición evita que la unidad falle y
+# ensucie `systemctl status` con un error que no lo es.
+ConditionPathExists=/etc/kanpachi/quarantine.nft
+
+[Service]
+Type=oneshot
+# El estado que importa es el del kernel, no el del proceso: `nft -f` termina y
+# las reglas se quedan. Sin esto la unidad figuraría como inactiva con la
+# cuarentena puesta, que es justo la lectura equivocada.
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/kanpachi/quarantine.nft
+
+# NO hay ExecStop, y es deliberado.
+#
+# Parar esta unidad no puede quitar la cuarentena. Lo que la hace valer es que
+# siga puesta con todo lo demás apagado, así que un `systemctl stop` que la
+# levantara convertiría un comando de rutina en abrir los puertos del juego a
+# internet sin que nadie lo pidiera. Quitarla es del desinstalador, y el
+# desinstalador no pasa por acá: ver `RemoveBaseQuarantineForUninstall`.
+
+[Install]
+WantedBy=multi-user.target
