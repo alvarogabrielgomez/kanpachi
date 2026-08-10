@@ -66,8 +66,11 @@ En el Administrador de tareas de Windows los tres se ven por su nombre y no por 
 | `kanpachid.exe` | Kanpachi service | `daemon/cmd/kanpachid/rsrc_windows_amd64.syso` |
 | `kanpachi-engine.exe` | Kanpachi tunnel engine | `build.rs` del motor, que genera el recurso y lo compila con `rc.exe` |
 | `kanpachiui.exe` | Kanpachi UI | `ui/windows/runner/Runner.rc` |
+| `kanpachi-portable.exe` | Kanpachi portable wrapper | `internal/kanpachibundle/rsrc_windows_amd64.syso` |
 
-Tres procesos sin identificar en esa lista son tres cosas que alguien puede decidir cerrar sin saber qué son, y este producto pide administrador.
+Procesos sin identificar en esa lista son cosas que alguien puede decidir cerrar sin saber qué son, y este producto pide administrador.
+
+El cuarto solo existe corriendo el portable de un archivo, y su nombre dice lo que es: un envoltorio. Extrae, lanza el daemon, espera, y borra la carpeta temporal al salir. Esperar es su único motivo para seguir vivo.
 
 `[job]` es un Job Object con `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, el mismo mecanismo que ya usaba el motor. De ahí sale la invariante que gobierna todo lo demás:
 

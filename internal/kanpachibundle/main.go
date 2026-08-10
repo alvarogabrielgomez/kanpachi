@@ -85,7 +85,7 @@
 // compilación y no un resultado: sin él, un clon recién hecho produciría un
 // ejecutable sin icono y sin manifiesto, y nadie se enteraría hasta mandarlo.
 //
-//go:generate go run github.com/tc-hib/go-winres@latest simply --arch amd64 --out rsrc --icon ../../ui/windows/runner/resources/app_icon.ico --manifest cli --admin --product-name Kanpachi --product-version git-tag --file-version git-tag --file-description "Kanpachi portable: todo en un solo ejecutable" --original-filename kanpachi-portable.exe --copyright "Accentio Studios"
+//go:generate go run github.com/tc-hib/go-winres@latest simply --arch amd64 --out rsrc --icon ../../ui/windows/runner/resources/app_icon.ico --manifest cli --admin --product-name Kanpachi --product-version git-tag --file-version git-tag --file-description "Kanpachi portable wrapper" --original-filename kanpachi-portable.exe --copyright "Accentio Studios"
 //
 // Vive en `internal/` para que el producto no lo importe y el instalador no lo
 // distribuya, igual que el resto de las sondas.

@@ -10,7 +10,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Changed
 
-- Say what each Kanpachi process is in Task Manager, which listed three bare executable names with a blank icon
+- Say what each Kanpachi process is in Task Manager, which listed bare executable names with a blank icon ([d8e3902](https://github.com/alvarogabrielgomez/kanpachi/commit/d8e3902))
 
 ### Fixed
 
