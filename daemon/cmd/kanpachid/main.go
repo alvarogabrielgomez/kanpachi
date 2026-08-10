@@ -155,6 +155,9 @@ func limpiar(datos string, desinstalar bool) error {
 		Engine:   motor,
 		State:    statestore.New(datos),
 		Log:      log,
+		// Qué lista de puertos cierra la cuarentena. Lo dice el cableado del
+		// sistema, no un runtime.GOOS acá. Ver `wiring_linux.go`.
+		Quarantine: sistemaDeCuarentena,
 	})
 
 	if !desinstalar {
@@ -581,6 +584,10 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 	sesion, err := usecase.NewSession(ctx, usecase.Deps{
 		Engine:   motor,
 		Firewall: fw,
+		// Qué lista de puertos cierra la cuarentena de base. Lo dice el cableado
+		// del sistema y no un runtime.GOOS acá, para que un sistema nuevo sin
+		// cableado propio no compile en vez de heredar la lista de otro.
+		Quarantine: sistemaDeCuarentena,
 		// Los ajustes del adaptador. MANTIENE en vez de aplicar: Windows revierte
 		// la métrica, la categoría y las rutas en cada evento de identificación
 		// de red, así que el supervisor lo reaplica entero, y además cada tantos

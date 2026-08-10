@@ -61,7 +61,7 @@ func Reset(ctx context.Context, d ResetDeps) error {
 	// 2. La cuarentena de base, ANTES de purgar. La purga es el instante de
 	// menos protección: se lleva las reglas de la sala y todavía no hay nada
 	// nuevo. Es el mismo orden que el arranque, por la misma razón.
-	falló("reponiendo la cuarentena de base", d.Firewall.ApplyBaseQuarantine(ctx, domain.BaseQuarantine()))
+	falló("reponiendo la cuarentena de base", d.Firewall.ApplyBaseQuarantine(ctx, domain.BaseQuarantineFor(d.Quarantine)))
 
 	// 3. Las dos capas de la sala. `PurgeOwned` se lleva el grupo propio y las
 	// ranuras de la compuerta, en el orden que corresponde, que lo decide el
@@ -103,6 +103,13 @@ type ResetDeps struct {
 	Engine   ResetEngine
 	State    ResetState
 	Log      Logger
+
+	// Quarantine es en qué sistema corre esto, por lo mismo que en
+	// [usecase.Deps]: de eso depende qué puertos cierra la cuarentena, y este
+	// paquete no mira el sistema porque corre en el job de Linux.
+	//
+	// El cero no se completa solo. Ver la comprobación en [Reset].
+	Quarantine domain.QuarantineSystem
 }
 
 // ResetFirewall es el firewall visto desde el reset. NO tiene `Apply`: un reset
@@ -145,6 +152,13 @@ type Logger interface {
 func (d ResetDeps) validate() error {
 	if d.Firewall == nil || d.NetCfg == nil || d.Engine == nil || d.State == nil || d.Log == nil {
 		return errors.New("el reset necesita el firewall, netcfg, el motor, el estado y un log")
+	}
+	if d.Quarantine == 0 {
+		// Va aparte y con su propio mensaje porque no es "falta un puerto": es
+		// que nadie dijo en qué sistema corre, y por defecto se aplicaría la
+		// cuarentena del otro. En Linux eso cierra el puerto de administración.
+		return errors.New("el reset necesita saber en qué sistema corre para reponer la " +
+			"cuarentena: las listas de puertos no son la misma en Windows y en Linux")
 	}
 	return nil
 }

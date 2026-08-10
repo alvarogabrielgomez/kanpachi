@@ -20,6 +20,13 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windows/netfw"
 )
 
+// sistemaDeCuarentena es qué lista de puertos cierra la cuarentena de base.
+//
+// Ver el gemelo en `wiring_linux.go`: se declara en el fichero del sistema para
+// que el día que haya un tercero, no compilar su cableado sea un error de
+// enlazado en vez de un `default` que aplique la lista de otro.
+const sistemaDeCuarentena = domain.QuarantineWindows
+
 // protegerFichero le pone a un fichero su ACL PROPIA: solo SYSTEM y
 // Administradores, sin heredar nada.
 //
@@ -112,29 +119,6 @@ func realFirewall(dataDir string, log port.Logger, router port.ExposureAudit) (
 			"que abrir la terminal elevada", err)
 	}
 	return fw, exposure{fw: fw, router: router}, close, nil
-}
-
-// exposure junta las dos mitades de la auditoría SIN embeberlas.
-//
-// Explícito y no por embebido, aunque salgan tres líneas más: embeber el
-// firewall promovería `Apply` y `PurgeOwned` sobre el objeto que solo debería
-// medir, y una auditoría con métodos que modifican es lo contrario de una
-// auditoría.
-type exposure struct {
-	fw     *firewall.Firewall
-	router port.ExposureAudit
-}
-
-func (e exposure) FirewallEnabled(ctx context.Context) ([]domain.FirewallProfileState, error) {
-	return e.fw.FirewallEnabled(ctx)
-}
-
-func (e exposure) Enforcement(ctx context.Context) (domain.Enforcement, error) {
-	return e.fw.Enforcement(ctx)
-}
-
-func (e exposure) RouterMappings(ctx context.Context) ([]domain.PortMapping, error) {
-	return e.router.RouterMappings(ctx)
 }
 
 // quitarCuarentenaDeBase es el único camino del repositorio que la borra.

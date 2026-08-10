@@ -89,7 +89,13 @@ func armadoReset() (ResetDeps, *diarioReset, *fwReset, *netcfgReset, *motorReset
 	nc := &netcfgReset{d: d}
 	mt := &motorReset{d: d}
 	st := &estadoReset{d: d}
-	return ResetDeps{Firewall: fw, NetCfg: nc, Engine: mt, State: st, Log: logMudoReset{}}, d, fw, nc, mt, st
+	return ResetDeps{
+		Firewall: fw, NetCfg: nc, Engine: mt, State: st, Log: logMudoReset{},
+		// Cualquiera de los dos sirve acá: lo que este banco prueba es el ORDEN
+		// del reset, no qué puertos cierra la cuarentena, que se prueba en el
+		// dominio.
+		Quarantine: domain.QuarantineWindows,
+	}, d, fw, nc, mt, st
 }
 
 // El orden del reset no es de lectura: cada par tiene una dirección correcta y

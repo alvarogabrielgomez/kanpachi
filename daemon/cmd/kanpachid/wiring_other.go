@@ -1,9 +1,10 @@
-//go:build !windows
+//go:build !windows && !linux
 
 package main
 
-// El firewall de Kanpachi es el Firewall de Windows más una sesión de WFP, así
-// que fuera de Windows no hay adaptador posible ni lo va a haber.
+// Fuera de Windows y de Linux no hay adaptador de firewall, y no lo va a haber:
+// el de Windows son las reglas del Firewall de Windows más una sesión de WFP, y
+// el de Linux es nftables.
 //
 // Existe para que `go build ./...` siga compilando en el job de Linux, que es
 // el que corre los tests del dominio, del orden de arranque y del canal de la
@@ -15,14 +16,20 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
 )
+
+// sistemaDeCuarentena queda en cero, que es lo que `validate` rechaza con su
+// propio mensaje. Es lo correcto: acá no hay cuarentena que escribir, y elegir
+// una de las dos listas sería fingir que sí.
+const sistemaDeCuarentena domain.QuarantineSystem = 0
 
 func realFirewall(string, port.Logger, port.ExposureAudit) (
 	port.FirewallPort, port.ExposureAudit, func() error, error) {
 
 	return nil, nil, nil, fmt.Errorf("el firewall de Kanpachi son las reglas del Firewall " +
-		"de Windows y una sesión de WFP, así que este binario solo sirve en Windows")
+		"de Windows y una sesión de WFP, así que este binario solo sirve en Windows y en Linux")
 }
 
 // Fuera de Windows no hay cuarentena que quitar, porque no hay firewall donde

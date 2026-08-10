@@ -156,23 +156,27 @@ func correr(op opciones) error {
 	}
 
 	sesion, err := usecase.NewSession(ctxRaiz, usecase.Deps{
-		Engine:    motor,
-		Firewall:  fw,
-		NetCfg:    netcfg.New(op.datos, log),
-		Routes:    routes.New(),
-		Store:     catalogstore.New(op.dirExe, op.datos, log),
-		State:     statestore.New(op.datos),
-		Library:   steam.New(log),
-		Directory: registro,
-		Control:   canal,
-		Audit:     auditoria{fw: fw, router: igd.New(log)},
-		Inspector: inspector.New(),
-		Prober:    probe.New(),
-		Canary:    opener.New(log),
-		Clock:     relojReal{},
-		Rand:      rand.Reader,
-		Log:       log,
-		Progress:  diario,
+		// Esta sonda es de Windows, así que la cuarentena es la de Windows. El
+		// fichero lleva etiqueta `_windows`, o sea que la constante no puede
+		// desalinearse con el sistema en el que corre.
+		Quarantine: domain.QuarantineWindows,
+		Engine:     motor,
+		Firewall:   fw,
+		NetCfg:     netcfg.New(op.datos, log),
+		Routes:     routes.New(),
+		Store:      catalogstore.New(op.dirExe, op.datos, log),
+		State:      statestore.New(op.datos),
+		Library:    steam.New(log),
+		Directory:  registro,
+		Control:    canal,
+		Audit:      auditoria{fw: fw, router: igd.New(log)},
+		Inspector:  inspector.New(),
+		Prober:     probe.New(),
+		Canary:     opener.New(log),
+		Clock:      relojReal{},
+		Rand:       rand.Reader,
+		Log:        log,
+		Progress:   diario,
 	})
 	if err != nil {
 		return fmt.Errorf("construyendo la sesión: %w", err)

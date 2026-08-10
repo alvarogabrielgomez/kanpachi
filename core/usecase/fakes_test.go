@@ -1106,6 +1106,10 @@ func bancoSinSesión() *banco {
 		// Un lector constante hace que la subred y las claves salgan siempre
 		// iguales, y que el test sea el mismo en cada ejecución.
 		Rand: bytes.NewReader(bytes.Repeat([]byte{0x11}, 1<<16)),
+		// Los tests usan la lista de Windows porque es la que este banco venía
+		// ejercitando. Lo que cambia entre sistemas es qué puertos cierra, y eso
+		// se prueba en `core/domain`, que es donde vive la decisión.
+		Quarantine: domain.QuarantineWindows,
 	}
 	return b
 }

@@ -105,6 +105,24 @@ type Deps struct {
 	// resultado sin dejar de ejercitar el mismo camino.
 	Rand io.Reader
 
+	// Quarantine es en qué sistema corre esto, y de eso depende qué puertos
+	// cierra la cuarentena de base.
+	//
+	// # Por qué se inyecta en vez de mirarse
+	//
+	// Porque este paquete no mira el sistema: es la regla que hace que core
+	// corra en el CI de Linux sin privilegios. Lo mismo que ya pasa con el
+	// resolver de adaptadores del firewall, que también es un hecho del sistema
+	// y también entra por parámetro.
+	//
+	// # Por qué el valor cero NO se completa solo
+	//
+	// Porque los dos sistemas cierran listas distintas, y elegir una por defecto
+	// significa que un cableado que se olvide de ponerlo aplica la del otro sin
+	// que nada falle. En Linux eso cerraría el puerto por el que el operador
+	// administra su servidor. Falta esto y el daemon no arranca. Ver `validate`.
+	Quarantine domain.QuarantineSystem
+
 	// Progress es el diario de la operación larga en curso. Ver [Journal].
 	//
 	// **Es el ÚNICO opcional de esta lista**, y por eso no está en `validate`:
@@ -146,6 +164,9 @@ func (d Deps) validate() error {
 	nombrar("Clock", d.Clock != nil)
 	nombrar("Log", d.Log != nil)
 	nombrar("Rand", d.Rand != nil)
+	// El único que no se comprueba contra nil: es un entero, y su cero significa
+	// "nadie lo puso". Dejarlo pasar aplicaría la cuarentena del otro sistema.
+	nombrar("Quarantine", d.Quarantine != 0)
 
 	if len(faltan) > 0 {
 		return fmt.Errorf("usecase: el cableado no está completo, faltan %v", faltan)
@@ -383,7 +404,7 @@ func NewSession(ctx context.Context, d Deps) (*Session, error) {
 	// apagada, y seguir arrancando dejaría al usuario con la app abierta,
 	// diciendo que todo está bien, sobre una máquina sin lo único que la protege
 	// con el servicio detenido.
-	if err := d.Firewall.ApplyBaseQuarantine(ctx, domain.BaseQuarantine()); err != nil {
+	if err := d.Firewall.ApplyBaseQuarantine(ctx, domain.BaseQuarantineFor(d.Quarantine)); err != nil {
 		return nil, fmt.Errorf("escribiendo la cuarentena de base: %w", err)
 	}
 	if err := d.Firewall.PurgeOwned(ctx); err != nil {
