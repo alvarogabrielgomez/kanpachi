@@ -29,6 +29,9 @@ import (
 // enlazado en vez de un `default` que aplique la lista de otro.
 const sistemaDeCuarentena = domain.QuarantineWindows
 
+// engineExe es cómo se llama el motor al lado de este binario.
+const engineExe = "kanpachi-engine.exe"
+
 // defaultDataDir es dónde viven el token, la llave y la sala del producto
 // instalado.
 //

@@ -175,34 +175,39 @@ func TestElTestDePurezaDetectaUnaViolacion(t *testing.T) {
 // adaptadoresPartidos son los que separan lo que DECIDE de lo que llama al
 // sistema, con el archivo sin etiqueta de compilación como mitad pura.
 //
-// Es el corte que hace que las decisiones caras se prueben en el job de Linux.
-// En `windows/wfp` lo que se decide sin etiqueta es cómo se traduce una
-// condición y cómo se deriva la clave de una posición; en `windows/netfw`, qué
-// dice cada regla; en `netcfg`, qué rutas se ponen y cuál se borra; en `routes`,
-// qué prefijos se descartan al elegir la subred de la sala. Ninguna de esas
-// necesita Windows para comprobarse, y el día que la mitad pura importe Windows
-// dejan de comprobarse todas a la vez, en silencio: el paquete sigue compilando
-// en la máquina donde se programa.
+// Es el corte que hace que las decisiones caras se prueben en TODOS los CI, que
+// desde que hay dos sistemas son dos. En `windows/wfp` lo que se decide sin
+// etiqueta es cómo se traduce una condición y cómo se deriva la clave de una
+// posición; en `windows/netfw`, qué dice cada regla; en `netcfg`, qué rutas se
+// ponen y cuál se borra; en `routes`, qué prefijos se descartan al elegir la
+// subred de la sala; en `procnet`, cómo se lee la tabla de sockets del kernel.
+// Ninguna de esas necesita un sistema concreto para comprobarse, y el día que la
+// mitad pura importe uno dejan de comprobarse todas a la vez, en silencio: el
+// paquete sigue compilando en la máquina donde se programa.
 //
-// `firewall/gate` NO está acá y es a propósito: no tiene mitad de Windows, es
-// puro entero, así que lo vigila la lista de directorios puros. La distinción
-// importa porque en `gate` un fichero `_windows.go` sería el fallo, y en
-// `windows/wfp` es lo normal.
+// `firewall/gate` NO está acá y es a propósito: no tiene mitad de ningún
+// sistema, es puro entero, así que lo vigila la lista de directorios puros. La
+// distinción importa porque en `gate` un fichero `_windows.go` sería el fallo, y
+// en `windows/wfp` es lo normal.
 var adaptadoresPartidos = []string{
 	"../../daemon/adapter/firewall",
 	"../../daemon/adapter/firewall/windows/wfp",
 	"../../daemon/adapter/firewall/windows/netfw",
 	"../../daemon/adapter/netcfg",
 	"../../daemon/adapter/routes",
+	"../../daemon/adapter/procnet",
 	"../../daemon/adapter/engine/kanpachi",
 }
 
-// deWindows son los imports que atan un archivo a Windows.
+// deWindows son los imports que atan un archivo a UN SISTEMA.
+//
+// El nombre es de cuando el único sistema era Windows, y la lista sirve igual
+// para los dos: `syscall` y `golang.org/x/sys` atan a cualquiera de ellos.
 //
 // Es una lista MÁS CORTA que `prohibidos` a propósito: la mitad pura de un
 // adaptador sí puede leer y escribir ficheros, que es lo que hace el libro de
-// ajustes. Lo que no puede es hablar con Windows, porque eso es exactamente lo
-// que decide si el job de Linux la puede correr.
+// ajustes. Lo que no puede es hablar con el sistema, porque eso es exactamente
+// lo que decide si un archivo se puede compilar en los dos sitios.
 var deWindows = []string{
 	"syscall",
 	"os/exec",
@@ -213,9 +218,16 @@ var deWindows = []string{
 // TestLaMitadPuraDeLosAdaptadoresNoConoceWindows.
 //
 // Se mira por ARCHIVO y no por paquete, que es lo que distingue este guardián
-// del de pureza de core: acá el paquete entero SÍ conoce Windows, y lo que se
-// vigila es que la frontera esté donde dice estar. Un archivo sin sufijo
-// `_windows` es la mitad que el CI de Linux compila y prueba.
+// del de pureza de core: acá el paquete entero SÍ conoce un sistema, y lo que se
+// vigila es que la frontera esté donde dice estar. Un archivo SIN sufijo de
+// sistema es la mitad que se compila y se prueba en todos ellos.
+//
+// Los tres sufijos que se saltan son los tres lados de la frontera:
+// `_windows.go` y `_linux.go` son las implementaciones, `_other.go` es la
+// negativa honesta. Lo que queda es lo que decide, y eso tiene que poder correr
+// en cualquier CI: si `netcfg_linux.go` contara como impuro por importar
+// `syscall`, este guardián estaría prohibiendo justo lo que ese archivo existe
+// para hacer.
 func TestLaMitadPuraDeLosAdaptadoresNoConoceWindows(t *testing.T) {
 	for _, dir := range adaptadoresPartidos {
 		t.Run(dir, func(t *testing.T) {
@@ -230,6 +242,7 @@ func TestLaMitadPuraDeLosAdaptadoresNoConoceWindows(t *testing.T) {
 				if e.IsDir() || !strings.HasSuffix(nombre, ".go") ||
 					strings.HasSuffix(nombre, "_test.go") ||
 					strings.HasSuffix(nombre, "_windows.go") ||
+					strings.HasSuffix(nombre, "_linux.go") ||
 					strings.HasSuffix(nombre, "_other.go") {
 					continue
 				}
@@ -245,11 +258,11 @@ func TestLaMitadPuraDeLosAdaptadoresNoConoceWindows(t *testing.T) {
 					for _, p := range deWindows {
 						if ruteo == p || strings.HasPrefix(ruteo, p+"/") {
 							t.Errorf("%s importa %q.\n"+
-								"  Es la mitad PURA de un adaptador partido, o sea la que el job de Linux\n"+
-								"  compila y prueba. Con este import deja de correr ahí, y lo que se queda\n"+
-								"  sin pruebas son las decisiones caras del adaptador, en silencio: el\n"+
-								"  paquete sigue compilando en la máquina donde se programa.\n"+
-								"  Lo que habla con Windows va en un archivo _windows.go.", ruta, ruteo)
+								"  Es la mitad PURA de un adaptador partido, o sea la que se compila y se\n"+
+								"  prueba en TODOS los CI. Con este import deja de correr en alguno, y lo\n"+
+								"  que se queda sin pruebas son las decisiones caras del adaptador, en\n"+
+								"  silencio: el paquete sigue compilando en la máquina donde se programa.\n"+
+								"  Lo que habla con el sistema va en _windows.go o en _linux.go.", ruta, ruteo)
 						}
 					}
 				}

@@ -1,0 +1,11 @@
+# Los scripts de shell se guardan Y SE SACAN con finales de línea de Unix.
+#
+# Sin esto, un checkout en Windows con `core.autocrlf=true`, que es el valor por
+# omisión del instalador de Git, los convierte a CRLF. Ese fichero corre igual en
+# Windows y en Linux falla con `bad interpreter: /usr/bin/env bash^M`, que no
+# nombra el problema por ningún lado.
+#
+# Importa acá y no es hipotético: `seed/install.sh` lo descarga y lo corre el
+# operador de un droplet, y el `.deb` que viene trae scripts de instalación que
+# ejecuta dpkg.
+*.sh text eol=lf

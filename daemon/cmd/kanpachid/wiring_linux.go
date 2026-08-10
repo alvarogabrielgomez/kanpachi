@@ -45,6 +45,14 @@ const DataDir = "/var/lib/kanpachi"
 
 func defaultDataDir() string { return DataDir }
 
+// engineExe es cómo se llama el motor al lado de este binario.
+//
+// Sin `.exe`, que es lo obvio, y hace falta decirlo igual: el nombre se compara
+// con `/proc/<pid>/exe` para matar motores huérfanos, así que un nombre que no
+// sea el del fichero de verdad no mata nada y el síntoma es una sala que conecta
+// a ratos. Ver `killOrphans` en el adaptador del motor.
+const engineExe = "kanpachi-engine"
+
 // realFirewall compone las dos capas de Linux.
 func realFirewall(_ string, log port.Logger, router port.ExposureAudit) (
 	port.FirewallPort, port.ExposureAudit, func() error, error) {

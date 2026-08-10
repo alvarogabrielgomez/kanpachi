@@ -141,7 +141,7 @@ func limpiar(datos string, desinstalar bool) error {
 	defer func() { _ = cerrarFirewall() }()
 
 	motor, err := kanpachiengine.New(kanpachiengine.Deps{
-		Exe: filepath.Join(dirDelBinario(), "kanpachi-engine.exe"),
+		Exe: filepath.Join(dirDelBinario(), engineExe),
 		Log: log,
 	})
 	if err != nil {
@@ -560,7 +560,7 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 	diary := usecase.NewJournal(relojReal{}, log)
 
 	motor, err := kanpachiengine.New(kanpachiengine.Deps{
-		Exe: filepath.Join(dirDelBinario(), "kanpachi-engine.exe"),
+		Exe: filepath.Join(dirDelBinario(), engineExe),
 		Log: log,
 		// El motor escribe su propio log en la MISMA carpeta que este daemon,
 		// que en el bundle portable es la de quien lo ejecutó y no el temporal

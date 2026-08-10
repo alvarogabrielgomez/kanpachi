@@ -32,8 +32,8 @@ const maxLine = 1 << 20
 // un adaptador virtual, que en una máquina cargada tarda segundos.
 const callTimeout = 45 * time.Second
 
-// child es el proceso hijo, detrás de una interfaz para que este fichero sea
-// Go puro y lo pruebe el CI de Linux.
+// child es el proceso hijo, detrás de una interfaz para que este fichero sea Go
+// puro y lo prueben los dos CI sin lanzar un proceso de verdad.
 type child interface {
 	Stdin() io.WriteCloser
 	Stdout() io.Reader
@@ -43,7 +43,7 @@ type child interface {
 	Kill() error
 }
 
-// spawner lanza el motor. En Windows lo implementa child_windows.go.
+// spawner lanza el motor. Lo implementan `child_windows.go` y `child_linux.go`.
 type spawner func(ctx context.Context, exe string) (child, error)
 
 // Deps es lo que hay que darle al adaptador.
@@ -236,9 +236,9 @@ func (e *Engine) Close() error {
 // que quitar: mientras siga vivo la red virtual sigue arriba, así que purgar el
 // firewall antes dejaría un adaptador con tráfico y sin nada conteniéndolo.
 //
-// Se compara por RUTA COMPLETA y jamás por nombre. Esto corre como SYSTEM, o sea
-// que matar cualquier proceso llamado `kanpachi-engine.exe` sería matar el de
-// otra instalación, y podría.
+// Se compara por RUTA COMPLETA y jamás por nombre. Esto corre como SYSTEM en
+// Windows y como root en Linux, o sea que matar cualquier proceso llamado
+// `kanpachi-engine` sería matar el de otra instalación, y podría.
 func (e *Engine) KillOrphans() int {
 	abs, err := filepath.Abs(e.deps.Exe)
 	if err != nil {
@@ -295,7 +295,11 @@ func (e *Engine) ensureLocked(context.Context) error {
 	// Solo la PRIMERA vez deja rastro, que es justo lo que hace útil el paso:
 	// las llamadas siguientes reusan el proceso, y verlo aparecer dos veces en
 	// la misma operación diría que el motor se cayó por el camino.
-	e.deps.Progress.Step(domain.ScopeEngine, "arrancando kanpachi-engine.exe")
+	// El nombre sale de [Deps.Exe] y no está escrito acá: en Linux el fichero se
+	// llama `kanpachi-engine`, sin `.exe`, y esto lo LEE el usuario mientras
+	// espera a que abra su sala. Un binario que no existe con ese nombre es
+	// exactamente lo que uno buscaría al diagnosticar, y no estaría.
+	e.deps.Progress.Step(domain.ScopeEngine, "arrancando "+filepath.Base(e.deps.Exe))
 	p, err := e.deps.spawn(e.procCtx, e.deps.Exe)
 	if err != nil {
 		return fmt.Errorf("arrancando el motor: %w", err)

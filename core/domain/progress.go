@@ -14,7 +14,7 @@ const (
 	// ScopeSeed es el registro del vestíbulo, que está en otra máquina y es lo
 	// único de esta lista que depende de internet.
 	ScopeSeed ProgressScope = "seed"
-	// ScopeEngine es kanpachi-engine.exe, que es otro proceso.
+	// ScopeEngine es el motor, que es otro proceso.
 	ScopeEngine ProgressScope = "engine"
 	// ScopeNetwork es el adaptador virtual: direcciones, MTU, métricas.
 	ScopeNetwork ProgressScope = "red"

@@ -32,6 +32,10 @@ const sistemaDeCuarentena domain.QuarantineSystem = 0
 // "este binario no es de tu sistema" que corresponde. Ver [realFirewall].
 func defaultDataDir() string { return "/var/lib/kanpachi" }
 
+// engineExe no lo alcanza nadie acá: [realFirewall] falla antes. Se declara
+// porque `main.go` lo nombra sin preguntar en qué sistema corre.
+const engineExe = "kanpachi-engine"
+
 func realFirewall(string, port.Logger, port.ExposureAudit) (
 	port.FirewallPort, port.ExposureAudit, func() error, error) {
 

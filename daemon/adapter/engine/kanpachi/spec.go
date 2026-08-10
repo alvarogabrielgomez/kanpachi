@@ -1,4 +1,4 @@
-// Package kanpachi conduce `kanpachi-engine.exe`, el motor de red propio.
+// Package kanpachi conduce el motor de red propio, `kanpachi-engine`.
 //
 // # Qué es el motor y por qué no es `easytier-core.exe`
 //
