@@ -63,12 +63,22 @@ curl -fsSL -o /tmp/kanpachi.deb https://github.com/alvarogabrielgomez/kanpachi/r
 That is the whole install. The service starts and is enabled at boot, and so is
 the quarantine that keeps your game ports closed from the internet.
 
-> **The Linux package ships from the next release.** Until then the URL above is
-> a 404, and the way to get it today is to build it: `scripts/build-linux.sh` in
-> the engine repository, then `scripts/build-deb.sh --version <v> --engine <path>`
-> in this one. Both must run **on** Linux; there is no cross-compile. A package
-> built today carries the diagnostic tool at `/usr/bin/kanpachi`, not the client
-> described below; the client lands with the release.
+#### Building the package yourself
+
+Everything here is public, so the package is reproducible from source:
+
+```sh
+# in the engine repository
+scripts/build-linux.sh
+# in this one
+scripts/build-deb.sh --version 0.2.0 --engine ~/.cache/kanpachi-engine-target/release/kanpachi-engine
+```
+
+Both run **on** Linux. There is no cross-compile in either direction, and that
+is not an omission: on Linux the engine pulls in a vendored `dbus`, `zstd-sys`
+and `kcp-sys` through bindgen, which is three C toolchains that would need a
+Linux linker and sysroot mounted by hand elsewhere. The scripts name what is
+missing instead of letting the compiler guess.
 
 #### Why not `apt install kanpachi`
 
@@ -85,10 +95,10 @@ apt install /tmp/kanpachi.deb      # installs it — apt saw a path, not a name
 leaves the package half configured. `apt` pulls `nftables`, `libc6` and
 `systemd` from the official repositories first.
 
-There is no APT repository of ours to add, and that is deliberate for now: an
+There is no APT repository of ours to add, and that is a deliberate choice: an
 APT signing key is the key that pushes code **as root** to every machine that
-trusts it, and that is a permanent responsibility rather than an afternoon of
-work.
+trusts it, and holding one is a permanent responsibility rather than an
+afternoon of work.
 
 #### What it installs
 
