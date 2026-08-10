@@ -123,6 +123,27 @@ const (
 // el bloqueo dejaría de casar EN SILENCIO y la pantalla diría verde. Emitiendo
 // el bloqueo por las dos vías, ninguna es el único asidero.
 //
+// # En Linux el bloqueo por prefijo tapa un agujero que en Windows no existe
+//
+// Esto se descubrió midiendo la compuerta de nftables el 2026-08-10, y hay que
+// dejarlo escrito porque el bloqueo por prefijo se ve REDUNDANTE mirando solo
+// Windows, y quitarlo ahí lo abre acá.
+//
+// Linux usa el modelo de host DÉBIL: un paquete que llega por la interfaz física
+// con destino a la dirección del adaptador virtual lo acepta el kernel y se lo
+// entrega al socket atado a esa dirección. Windows usa el modelo fuerte y lo
+// descarta. O sea que en Linux el bloqueo acotado por adaptador NO casa con ese
+// paquete, porque entró por otra interfaz.
+//
+// El bloqueo por prefijo sí casa, porque no lleva condición de interfaz. Es lo
+// que impide alcanzar el puerto del canal de control de la sala, o la puerta del
+// vestíbulo, mandando un paquete a la dirección virtual desde fuera.
+//
+// Los bloqueos IPv6 no tienen gemelo por prefijo, y es correcto: Kanpachi
+// direcciona en IPv4, así que no hay rango IPv6 propio que nombrar, y lo único
+// que un adaptador virtual puede tener ahí es una dirección de enlace local, a
+// la que por definición solo se llega desde ese enlace.
+//
 // El prefijo no puede pisar la red de casa porque la `/24` de la sala se elige
 // en tiempo de ejecución contra las redes que la máquina ya tiene. Ver decisión
 // 10.

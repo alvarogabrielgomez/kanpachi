@@ -67,6 +67,12 @@ func TestTheBlockIsEmittedTwice(t *testing.T) {
 	// La mitigación del riesgo que queda abierto: si la condición de interfaz
 	// llegara vacía al reautorizar un flujo, el bloqueo por rango sigue casando.
 	// Ninguna de las dos vías es el único asidero.
+	//
+	// Y en Linux el bloqueo por rango no es una mitigación, es LA que cierra el
+	// modelo de host débil: ahí un paquete que llega por la interfaz física con
+	// destino a la dirección virtual no casa con el bloqueo por adaptador, y sí
+	// con el de rango. Ver [Scope]. Este test es lo que impide que alguien lo
+	// quite por redundante mirando solo Windows.
 	var rs domain.RuleSet
 	specs, err := SpecsFor(rs, roomScope())
 	if err != nil {
