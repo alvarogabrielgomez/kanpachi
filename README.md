@@ -21,6 +21,14 @@ Kanpachi is a gaming utility for friend groups that want a simpler and safer LAN
 - Open only the game ports needed for the active session.
 - Keep protection active by default while the room is running.
 
+It runs on **Windows**, with a window, and on **Linux**, headless, for the case a
+window cannot cover: a Minecraft or Project Zomboid server on a VPS, where the
+usual answer is to open a port to the whole internet. A room stays open as long
+as the host wants, so the same invite code still works next week.
+
+Windows and Linux are the same room. The invite code, the key derivation, the
+credential exchange and the tunnel are identical on both.
+
 If the room directory service is unavailable, the room can still work. What degrades is the invite card presentation.
 
 See the protection statement: [kanpachi-protection.md](kanpachi-protection.md).
@@ -37,6 +45,104 @@ See the protection statement: [kanpachi-protection.md](kanpachi-protection.md).
   <img src="screenshots/new_game.png" alt="Kanpachi game selection" width="270">
   <img src="screenshots/web_invite.png" alt="Kanpachi web invite" width="270">
 </p>
+
+## Install
+
+### Windows
+
+Download the installer from the [releases page](https://github.com/alvarogabrielgomez/kanpachi/releases/latest), or open an invite link and let the page hand you the right file.
+
+### Linux · Ubuntu 22.04 or newer, amd64
+
+One line:
+
+```sh
+curl -fsSL -o /tmp/kanpachi.deb https://github.com/alvarogabrielgomez/kanpachi/releases/latest/download/kanpachi-amd64.deb && sudo apt install -y /tmp/kanpachi.deb
+```
+
+That is the whole install. The service starts and is enabled at boot, and so is
+the quarantine that keeps your game ports closed from the internet.
+
+> **The Linux package ships from the next release.** Until then the URL above is
+> a 404, and the way to get it today is to build it: `scripts/build-linux.sh` in
+> the engine repository, then `scripts/build-deb.sh --version <v> --engine <path>`
+> in this one. Both must run **on** Linux; there is no cross-compile. A package
+> built today carries the diagnostic tool at `/usr/bin/kanpachi`, not the client
+> described below; the client lands with the release.
+
+#### Why not `apt install kanpachi`
+
+Because Kanpachi is not in Ubuntu's repositories, and with a plain `.deb` it will
+not be. The path is what makes the difference, and getting it wrong is the one
+mistake worth naming:
+
+```sh
+apt install kanpachi-amd64.deb     # E: Unable to locate package — apt searched the repos
+apt install /tmp/kanpachi.deb      # installs it — apt saw a path, not a name
+```
+
+`apt` and not `dpkg -i`, because `dpkg` stops when a dependency is missing and
+leaves the package half configured. `apt` pulls `nftables`, `libc6` and
+`systemd` from the official repositories first.
+
+There is no APT repository of ours to add, and that is deliberate for now: an
+APT signing key is the key that pushes code **as root** to every machine that
+trusts it, and that is a permanent responsibility rather than an afternoon of
+work.
+
+#### What it installs
+
+| Path | What |
+|---|---|
+| `/usr/bin/kanpachi` | the command line client |
+| `/usr/libexec/kanpachi/kanpachid` | the daemon |
+| `/usr/libexec/kanpachi/kanpachi-engine` | the network engine |
+| `/usr/share/kanpachi/builtin.json` | the game catalogue that ships with the package |
+| `/etc/kanpachi/quarantine.nft` | the base quarantine, written by the daemon |
+| `/var/lib/kanpachi/` | state: identity key, API token, the room |
+| `/run/kanpachi/api.sock` | the control socket, `0600`, in a `0700` root-owned directory |
+
+And two systemd units:
+
+- `kanpachid.service` — the daemon. `Type=notify`, so `systemctl start` does not
+  return until the control socket is listening.
+- `kanpachi-quarantine.service` — **the one that matters when Kanpachi is off.**
+  It loads before the network comes up and keeps the game ports closed from the
+  internet with nothing of ours running. Stopping it does not lift the
+  quarantine; only uninstalling does.
+
+Check both with:
+
+```sh
+systemctl status kanpachid kanpachi-quarantine
+sudo nft list table inet kanpachi-base   # the quarantine, as the kernel sees it
+```
+
+#### Verifying the download
+
+Every release publishes `SHA256SUMS-linux`:
+
+```sh
+curl -fsSL -O https://github.com/alvarogabrielgomez/kanpachi/releases/latest/download/SHA256SUMS-linux
+sha256sum -c SHA256SUMS-linux --ignore-missing
+```
+
+Worth being precise about what this buys: it catches a truncated or tampered
+**download**, not a bad release, since the sums file lives in the same release as
+the package. What protects the release itself is that everything here is public
+and reproducible from source.
+
+#### Uninstalling
+
+```sh
+sudo apt remove kanpachi    # removes the program and the quarantine, keeps your identity
+sudo apt purge kanpachi     # also deletes /var/lib/kanpachi and /etc/kanpachi
+```
+
+The difference is the identity key. `remove` keeps it, so reinstalling leaves
+this machine as the same machine for everyone who already played with it;
+`purge` deletes it. Either way the quarantine goes: a firewall rule that outlives
+the program that put it there is the hardest kind of problem to diagnose.
 
 ## Repositories
 
