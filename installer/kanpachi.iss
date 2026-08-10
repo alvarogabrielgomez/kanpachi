@@ -282,7 +282,7 @@ begin
     'Actualizando el servicio de Kanpachi');
 
   CorrerObligatorio(SysExe('sc.exe'),
-    'description {#ServiceName} "Abre y cierra los puertos de tus partidas en LAN, y los vuelve a cerrar al salir."',
+    'description {#ServiceName} "Opens the ports your LAN games need while you play, only toward the people in your room, and closes them again when you leave."',
     'Escribiendo la descripcion del servicio');
 
   { Reintentar a los 5 s, 10 s y 30 s. Si el daemon se cae, la sala se cae con

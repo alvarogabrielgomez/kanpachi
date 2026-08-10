@@ -11,6 +11,11 @@ This file is in English, like commit messages and release notes, because a relea
 ### Changed
 
 - Say what each Kanpachi process is in Task Manager, which listed bare executable names with a blank icon ([d8e3902](https://github.com/alvarogabrielgomez/kanpachi/commit/d8e3902))
+- Describe what every Kanpachi executable does in its file properties, and say it in the service list too
+
+### Fixed
+
+- Stop Windows from asking for administrator on its own for the tunnel engine, which needed no privileges and was being elevated on a guess
 
 ### Fixed
 

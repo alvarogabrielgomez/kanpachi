@@ -85,7 +85,14 @@
 // compilación y no un resultado: sin él, un clon recién hecho produciría un
 // ejecutable sin icono y sin manifiesto, y nadie se enteraría hasta mandarlo.
 //
-//go:generate go run github.com/tc-hib/go-winres@latest simply --arch amd64 --out rsrc --icon ../../ui/windows/runner/resources/app_icon.ico --manifest cli --admin --product-name Kanpachi --product-version git-tag --file-version git-tag --file-description "Kanpachi portable wrapper" --original-filename kanpachi-portable.exe --copyright "Accentio Studios"
+// La fuente es `winres/winres.json`, y es json y no banderas porque el modo
+// `simply` de go-winres no tiene campo para `Comments`, que es donde va la
+// descripción larga. `FileDescription` es un NOMBRE: lo que se ve es una
+// columna estrecha del Administrador de tareas, y ahí dice «Kanpachi portable
+// wrapper». El nivel de ejecución sigue siendo `require administrator`, que es
+// lo que este archivo explica arriba.
+//
+//go:generate go run github.com/tc-hib/go-winres@latest make --arch amd64 --out rsrc --product-version git-tag --file-version git-tag
 //
 // Vive en `internal/` para que el producto no lo importe y el instalador no lo
 // distribuya, igual que el resto de las sondas.

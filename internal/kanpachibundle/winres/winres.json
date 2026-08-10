@@ -1,0 +1,60 @@
+{
+  "RT_GROUP_ICON": {
+    "APP": {
+      "0000": [
+        "../../../ui/windows/runner/resources/app_icon.png"
+      ]
+    }
+  },
+  "RT_MANIFEST": {
+    "#1": {
+      "0409": {
+        "identity": {
+          "name": "Accentio.Kanpachi.Portable",
+          "version": "1.0.0.0"
+        },
+        "description": "Unpacks Kanpachi into a temporary folder, runs it, and deletes that folder on the way out. Installs nothing.",
+        "minimum-os": "win10",
+        "execution-level": "require administrator",
+        "ui-access": false,
+        "auto-elevate": false,
+        "dpi-awareness": "unaware",
+        "disable-theming": false,
+        "disable-window-filtering": false,
+        "high-resolution-scrolling-aware": false,
+        "ultra-high-resolution-scrolling-aware": false,
+        "long-path-aware": false,
+        "printer-driver-isolation": false,
+        "gdi-scaling": false,
+        "segment-heap": false,
+        "use-common-controls-v6": false
+      }
+    }
+  },
+  "RT_VERSION": {
+    "#1": {
+      "0000": {
+        "fixed": {
+          "file_version": "0.0.0.0",
+          "product_version": "0.0.0.0"
+        },
+        "info": {
+          "0409": {
+            "Comments": "Unpacks Kanpachi into a temporary folder, runs it, and deletes that folder on the way out. Installs nothing: no service, no autostart, no shortcuts.",
+            "CompanyName": "Accentio Studios",
+            "FileDescription": "Kanpachi portable wrapper",
+            "FileVersion": "",
+            "InternalName": "kanpachi-portable",
+            "LegalCopyright": "Accentio Studios",
+            "LegalTrademarks": "",
+            "OriginalFilename": "kanpachi-portable.exe",
+            "PrivateBuild": "",
+            "ProductName": "Kanpachi",
+            "ProductVersion": "",
+            "SpecialBuild": ""
+          }
+        }
+      }
+    }
+  }
+}

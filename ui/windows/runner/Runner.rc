@@ -89,6 +89,10 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
+            // El texto largo va en Comments, que es donde Windows guarda una
+            // descripcion: FileDescription es un NOMBRE, porque es lo que el
+            // Administrador de tareas pone en una columna estrecha.
+            VALUE "Comments", "The Kanpachi window: rooms, invite codes, and what is open on this machine right now. Runs without administrator privileges on purpose." "\0"
             VALUE "CompanyName", "Accentio Studios" "\0"
             // Lo que el Administrador de tareas de Windows pone en la columna
             // "Nombre": muestra el FileDescription, no el nombre del archivo.

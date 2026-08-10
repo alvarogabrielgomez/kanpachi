@@ -39,6 +39,8 @@ Nota de rol: "host" es quien corre el servidor del juego. Cualquier miembro pued
 2. Copia a `Program Files\Kanpachi\`: daemon, UI, `wintun.dll`, y `builtin.json`, que va suelto al lado del ejecutable del daemon y no en un subdirectorio.
 3. Crea `ProgramData\Kanpachi\` con ACL: escritura solo SYSTEM y Administradores.
 4. Registra o actualiza el servicio `kanpachi-daemon`, siempre apuntando al `kanpachid.exe` recién copiado en Program Files, como LocalSystem y con arranque automático retrasado. Antes de reemplazar archivos avisa de que eso cierra la sala, detiene ESE servicio y espera hasta 120 segundos; no busca ni detiene carpetas portables. Ver «Instalar encima cierra la sala» más abajo.
+   Le escribe además su **descripción**, con `sc description`, que es la columna que alguien lee en `services.msc` cuando va a mirar qué son los servicios de su máquina. Va en inglés, igual que los nombres que los cuatro ejecutables muestran en el Administrador de tareas, y a diferencia del resto de los textos del producto.
+
 5. Política de recuperación del servicio: reiniciar a los 5 s, 10 s, 30 s.
 
    **Y le concede al usuario interactivo `SERVICE_START`, `SERVICE_STOP` y `SERVICE_QUERY_STATUS` sobre este servicio**, con `sc sdset`. Sin esa concesión, hacer doble clic en el acceso directo con Kanpachi cerrado pediría UAC, y el producto promete un solo UAC en toda su vida. Es una concesión mínima y acotada: el usuario puede arrancar y detener este servicio, nada más, y no gana ningún permiso sobre los demás del sistema.

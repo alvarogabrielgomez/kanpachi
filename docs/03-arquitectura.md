@@ -72,6 +72,24 @@ Procesos sin identificar en esa lista son cosas que alguien puede decidir cerrar
 
 El cuarto solo existe corriendo el portable de un archivo, y su nombre dice lo que es: un envoltorio. Extrae, lanza el daemon, espera, y borra la carpeta temporal al salir. Esperar es su único motivo para seguir vivo.
 
+La descripción larga de cada uno va en `Comments`, que es el campo que Windows enseña en Propiedades del archivo. `FileDescription` se queda con el nombre corto porque lo que lo muestra es una columna estrecha. El servicio además lleva la suya propia, escrita con `sc description` por el instalador, que es la que sale en `services.msc`.
+
+#### Los cuatro declaran `asInvoker`, y tres de ellos no lo hacían
+
+**Un ejecutable sin `requestedExecutionLevel` en su manifiesto se lo deja adivinar a Windows, y Windows cambió de opinión.** Los parches KB5089549 y KB5087051 extendieron la inferencia de elevación a los binarios de 64 bits, que antes quedaban fuera. Medido el 2026-08-10: `kanpachi-engine.exe` hacía aparecer el diálogo de Control de cuentas de usuario **a su nombre**, con el daemon lanzándolo por `CreateProcess`, que hereda el token y no eleva nada. Ningún manifiesto, ninguna capa de compatibilidad, ningún script con `runas`: lo elevaba la heurística.
+
+Los tres que faltaban ahora lo declaran, y cada uno por un motivo distinto:
+
+| | Antes | Ahora | Por qué importa |
+|---|---|---|---|
+| `kanpachi-engine.exe` | sin manifiesto | `asInvoker` | Es el que se midió pidiendo UAC sin que nadie lo elevara |
+| `kanpachid.exe` | sin manifiesto | `asInvoker` | Elevar es cosa de `ArrancarSuelto`, que lo pide con el verbo `runas` a propósito. Que Windows adivine se lo saltea |
+| `kanpachiui.exe` | manifiesto **sin** `trustInfo` | `asInvoker` | Es el peor caso de los tres: esta ventana tiene que correr SIN privilegios por diseño, y una elevación adivinada rompería lo que `spawn_windows.go` se toma el trabajo de garantizar con el token del Explorador |
+
+`kanpachi-portable.exe` ya declaraba `requireAdministrator` y se queda igual: es el único que sí necesita elevarse, y es donde vive el UAC único del portable de un archivo.
+
+**`asInvoker` no dice «nunca elevado», dice «no me eleves por tu cuenta».** El camino que sí eleva sigue siendo explícito y sigue funcionando.
+
 `[job]` es un Job Object con `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, el mismo mecanismo que ya usaba el motor. De ahí sale la invariante que gobierna todo lo demás:
 
 > **Hay bandeja si y solo si hay daemon.**
