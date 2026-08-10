@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !linux
 
 package main
 
@@ -8,5 +8,6 @@ import (
 )
 
 func dial(string) (net.Conn, error) {
-	return nil, errors.New("el named pipe es de Windows, y este binario no lo es")
+	return nil, errors.New("el canal local está escrito para Windows y para Linux, " +
+		"y este binario no es de ninguno de los dos")
 }

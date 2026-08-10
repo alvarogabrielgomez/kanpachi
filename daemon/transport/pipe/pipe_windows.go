@@ -8,6 +8,80 @@ import (
 	"github.com/Microsoft/go-winio"
 )
 
+// Name es el nombre del pipe en producción.
+//
+// # Por qué bajo ProtectedPrefix
+//
+// Cualquier proceso del usuario, sin elevar, puede crear `\\.\pipe\kanpachi` y
+// quedarse con el nombre antes que el servicio. Ahí la defensa sería ganar una
+// carrera contra el atacante, y esa clase de defensa se pierde el día que el
+// arranque va lento.
+//
+// Bajo `ProtectedPrefix\Administrators` no puede, y no porque lo comprobemos
+// nosotros: el prefijo lo impone el sistema, que solo deja crear ahí a
+// SYSTEM y a los administradores. Un proceso sin privilegios recibe
+// ERROR_ACCESS_DENIED al intentarlo. La diferencia es entre defender el
+// squatting con una carrera y que sea imposible.
+//
+// Conectarse es otra cosa y sí funciona sin privilegios: el prefijo restringe
+// quién CREA el nombre, y quién puede abrirlo lo dice [SecurityDescriptor].
+const Name = `\\.\pipe\ProtectedPrefix\Administrators\kanpachi-installed`
+
+// PortableName es el canal del producto portable.
+//
+// No puede compartir [Name]. Instalado y portable son dos productos completos
+// que pueden convivir en la misma máquina, cada uno con su daemon, sus datos y
+// su interfaz. Compartir el pipe hacía que el primero que arrancara secuestrara
+// al lanzador del otro y que una UI leyera el token de su carpeta contra el
+// daemon ajeno.
+const PortableName = `\\.\pipe\ProtectedPrefix\Administrators\kanpachi-portable`
+
+// ConsoleName es el del modo desarrollo, y es OTRO a propósito.
+//
+// Con el mismo nombre, un proceso sin privilegios ocupa el nombre de producción
+// arrancando el binario real con --console. Sería el squatting sin escribir un
+// okupa, usando nuestro propio binario firmado como herramienta.
+const ConsoleName = `\\.\pipe\ProtectedPrefix\Administrators\kanpachi-console`
+
+// SecurityDescriptor es quién puede abrir el pipe, en SDDL.
+//
+//	D:P                 DACL protegida: no hereda nada del objeto padre
+//	(A;;GA;;;SY)        SYSTEM, todo. Es quien corre el servicio
+//	(A;;GA;;;BA)        Administradores, todo. Para diagnosticar
+//	(A;;0x12019b;;;IU)  Usuario interactivo: leer, escribir y sincronizar
+//
+// **El valor del usuario interactivo NO es GENERIC_ALL, y esa es la parte que
+// importa.** Con todos los permisos podría crear INSTANCIAS NUEVAS del pipe, y
+// una instancia nueva atiende conexiones como si fuera el daemon: sería
+// secuestrar a la UI desde una cuenta sin privilegios. `0x12019b` es
+// FILE_GENERIC_READ | FILE_GENERIC_WRITE | SYNCHRONIZE, o sea hablar y nada más.
+//
+// Pasar la cadena vacía NO es "los permisos por defecto y ya": el descriptor
+// por defecto de un named pipe da lectura a Everyone y a la cuenta anónima. Por
+// eso [Listen] se niega a arrancar sin descriptor en vez de tratarlo como una
+// opción.
+//
+// # Comprobado a mano, y el resultado es mejor de lo esperado
+//
+// Con el daemon corriendo como usuario NORMAL, el pipe se crea y el token se
+// escribe, y la primera conexión falla al aceptar con "Access is denied". El
+// motivo es que aceptar exige crear la instancia SIGUIENTE del pipe, y el
+// usuario interactivo no puede: solo tiene leer, escribir y sincronizar.
+//
+// O sea que el descriptor cumple su promesa tan literalmente que impide
+// probarlo sin elevar. En producción el daemon corre como SYSTEM, que sí tiene
+// GENERIC_ALL, y por eso ahí sí atiende. Para probar a mano hace falta una
+// consola elevada.
+const SecurityDescriptor = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x12019b;;;IU)"
+
+// checkPeer en Windows no comprueba nada, y no es un hueco.
+//
+// Quién puede abrir el pipe lo decidió el sistema ANTES de que hubiera conexión,
+// leyendo [SecurityDescriptor]: una conexión que llega acá ya pasó por la DACL.
+// En Linux no hay ese filtro previo con la misma finura, y por eso allá esta
+// función sí hace trabajo. Ver el `checkPeer` de `pipe_linux.go`.
+func checkPeer(net.Conn) error { return nil }
+
 // abrirPipe crea el named pipe de verdad.
 //
 // Vive aparte del resto del paquete para que TODO lo demás compile y se pruebe

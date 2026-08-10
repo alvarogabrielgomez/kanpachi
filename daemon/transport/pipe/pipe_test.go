@@ -7,6 +7,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -15,16 +17,19 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
 )
 
-// Los tests del pipe corren en LINUX, y eso es a propósito.
+// Los tests del canal corren en los DOS sistemas, sin etiqueta.
 //
-// Lo único que es de Windows acá es crear el named pipe, y vive solo en
-// `pipe_windows.go`. Todo lo demás son plazas, plazos y cierre sobre un
-// net.Listener, o sea lógica, y la lógica que solo corre en la máquina donde se
-// programa es lógica sin CI.
+// Lo que es de cada sistema acá es abrir el canal, y vive solo en su
+// `pipe_windows.go` o `pipe_linux.go`. Todo lo demás son plazas, plazos y cierre
+// sobre un net.Listener, o sea lógica, y la lógica que solo corre en la máquina
+// donde se programa es lógica sin CI.
 //
-// Lo que estos tests NO pueden afirmar, y hay que decirlo: que el descriptor de
-// seguridad haga lo que dice, y que el prefijo protegido impida el squatting.
-// Eso se mide en Windows y está medido a mano, ver el doc del paquete.
+// Lo que estos tests NO pueden afirmar, y hay que decirlo: lo que hace el
+// sistema por su cuenta. Que el descriptor de seguridad de Windows haga lo que
+// dice y que el prefijo protegido impida el squatting está medido a mano, ver el
+// doc del paquete. Del lado de Linux, que el modo 0600 y el uid del que se
+// conecta cierren de verdad está medido con dos usuarios en una máquina Ubuntu,
+// y el resultado está escrito en `pipe_linux.go`.
 
 func TestSinTokenNoSeEscucha(t *testing.T) {
 	// Un token vacío haría que el saludo lo pase cualquiera: la puerta abierta
@@ -47,41 +52,89 @@ func TestSinDescriptorNoSeEscucha(t *testing.T) {
 	}
 }
 
-func TestCadaProductoTieneSuNombreBajoElPrefijoProtegido(t *testing.T) {
-	// Es lo que hace imposible el squatting en vez de defenderlo con una
-	// carrera: bajo este prefijo, un proceso sin elevar recibe ERROR_ACCESS_DENIED
-	// al intentar crear el nombre. Medido a mano en Windows.
-	const prefijo = `\\.\pipe\ProtectedPrefix\Administrators\`
-
+// Las direcciones y el descriptor son constantes de CADA sistema, así que este
+// guardián y el siguiente comprueban lo que es cierto donde compilan.
+//
+// La rama va por `runtime.GOOS` y no por etiqueta de fichero a propósito: el
+// job que corre los tests es el de Linux, y el de Windows solo los corre desde
+// que existe este paquete partido. Con dos ficheros etiquetados, la mitad de
+// estas invariantes dejaría de mirarse el día que uno de los dos jobs se caiga.
+func TestCadaProductoTieneSuPropiaDirección(t *testing.T) {
 	nombres := []string{Name, PortableName, ConsoleName}
-	for _, n := range nombres {
-		if !strings.HasPrefix(n, prefijo) {
-			t.Errorf("el nombre %q no va bajo %q", n, prefijo)
-		}
-	}
+
+	// Lo universal: tres direcciones distintas. Instalado, portable y consola son
+	// productos que pueden convivir en la misma máquina, cada uno con su daemon,
+	// sus datos y su cliente. Compartir dirección hacía que el primero que
+	// arrancara secuestrara al lanzador del otro y que un cliente leyera el token
+	// de su carpeta contra el daemon ajeno.
 	for i, a := range nombres {
 		for _, b := range nombres[i+1:] {
 			if a == b {
-				t.Errorf("dos productos comparten el pipe %q: instalado, portable y consola tienen que coexistir", a)
+				t.Errorf("dos productos comparten la dirección %q", a)
+			}
+		}
+	}
+
+	switch runtime.GOOS {
+	case "windows":
+		// Es lo que hace imposible el squatting en vez de defenderlo con una
+		// carrera: bajo este prefijo, un proceso sin elevar recibe
+		// ERROR_ACCESS_DENIED al intentar crear el nombre. Medido a mano.
+		const prefijo = `\\.\pipe\ProtectedPrefix\Administrators\`
+		for _, n := range nombres {
+			if !strings.HasPrefix(n, prefijo) {
+				t.Errorf("el nombre %q no va bajo %q", n, prefijo)
+			}
+		}
+	default:
+		// El análogo en Linux es el DIRECTORIO, que es de root y no deja entrar a
+		// nadie más. Una ruta relativa o un socket abstracto (`@algo`) se saltan
+		// esa protección entera, así que la invariante es que las tres sean
+		// absolutas y compartan directorio.
+		for _, n := range nombres {
+			if !filepath.IsAbs(n) {
+				t.Errorf("la dirección %q no es absoluta, así que no la protege ningún directorio", n)
+			}
+			if d := filepath.Dir(n); d != filepath.Dir(Name) {
+				t.Errorf("la dirección %q vive en %q y no en %q, así que la protege otro directorio",
+					n, d, filepath.Dir(Name))
 			}
 		}
 	}
 }
 
-func TestElDescriptorNoLeDaTodoAlUsuarioInteractivo(t *testing.T) {
-	// Con GENERIC_ALL, el usuario interactivo podría crear INSTANCIAS NUEVAS del
-	// pipe, y una instancia nueva atiende conexiones como si fuera el daemon:
-	// secuestrar a la UI desde una cuenta sin privilegios.
-	if strings.Contains(SecurityDescriptor, "(A;;GA;;;IU)") {
-		t.Error("el descriptor le da GENERIC_ALL al usuario interactivo")
+func TestElDescriptorNoLeDaTodoAlQueNoEsElDaemon(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Con GENERIC_ALL, el usuario interactivo podría crear INSTANCIAS NUEVAS
+		// del pipe, y una instancia nueva atiende conexiones como si fuera el
+		// daemon: secuestrar a la UI desde una cuenta sin privilegios.
+		if strings.Contains(SecurityDescriptor, "(A;;GA;;;IU)") {
+			t.Error("el descriptor le da GENERIC_ALL al usuario interactivo")
+		}
+		if !strings.Contains(SecurityDescriptor, ";IU)") {
+			t.Error("el descriptor no menciona al usuario interactivo, así que la UI no podría abrir el pipe")
+		}
+		// D:P es la DACL protegida: sin eso hereda permisos del objeto padre y
+		// deja de ser esta lista.
+		if !strings.HasPrefix(SecurityDescriptor, "D:P") {
+			t.Errorf("el descriptor %q no es una DACL protegida", SecurityDescriptor)
+		}
+		return
 	}
-	if !strings.Contains(SecurityDescriptor, ";IU)") {
-		t.Error("el descriptor no menciona al usuario interactivo, así que la UI no podría abrir el pipe")
+
+	// Fuera de Windows el descriptor son los nueve bits de permiso del socket, y
+	// la invariante es la misma que allá dicho de otra forma: nadie que no sea el
+	// daemon puede abrir el canal. Un bit de grupo o de otros acá vale lo que un
+	// GENERIC_ALL a un grupo allá.
+	modo, err := strconv.ParseUint(SecurityDescriptor, 8, 32)
+	if err != nil {
+		t.Fatalf("el descriptor %q no es un modo en octal: %v", SecurityDescriptor, err)
 	}
-	// D:P es la DACL protegida: sin eso hereda permisos del objeto padre y deja
-	// de ser esta lista.
-	if !strings.HasPrefix(SecurityDescriptor, "D:P") {
-		t.Errorf("el descriptor %q no es una DACL protegida", SecurityDescriptor)
+	if modo&0o077 != 0 {
+		t.Errorf("el modo %04o le da permisos al grupo o a otros", modo)
+	}
+	if modo&0o600 != 0o600 {
+		t.Errorf("el modo %04o no le deja al daemon leer y escribir su propio canal", modo)
 	}
 }
 

@@ -11,6 +11,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"golang.org/x/sys/windows"
 
@@ -26,6 +28,17 @@ import (
 // que el día que haya un tercero, no compilar su cableado sea un error de
 // enlazado en vez de un `default` que aplique la lista de otro.
 const sistemaDeCuarentena = domain.QuarantineWindows
+
+// defaultDataDir es dónde viven el token, la llave y la sala del producto
+// instalado.
+//
+// Lo crea el INSTALADOR con una ACL propia, y por eso el arranque se niega si no
+// está en vez de crearlo: esa ACL es la mitad de la protección de todo lo que hay
+// dentro, y crearlo por accidente la perdería en silencio. Ver el rechazo en
+// `main.go` y el porqué en [protegerFichero].
+func defaultDataDir() string {
+	return filepath.Join(os.Getenv("ProgramData"), "Kanpachi")
+}
 
 // protegerFichero le pone a un fichero su ACL PROPIA: solo SYSTEM y
 // Administradores, sin heredar nada.

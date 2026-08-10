@@ -216,8 +216,14 @@ func TestElDesinstaladorBorraLasPreferenciasDeLaUIInstalada(t *testing.T) {
 // Son dos ejecutables y dos lenguajes: un typo compila perfecto y se ve como
 // "no hay servicio" aunque ambos procesos estén sanos. Los tres nombres son
 // distintos para que instalado, portable y consola puedan coexistir.
+//
+// Lee el fichero de WINDOWS del paquete y no `pipe.go`, que es donde estaban
+// antes de que el canal tuviera dos sistemas. Es lo correcto y no un ajuste al
+// refactor: la interfaz de Flutter es solo de Windows, así que este par lo forman
+// el Dart y el lado de Windows del canal. En Linux quien habla es el CLI, que
+// está escrito en Go y usa la constante directamente.
 func TestLosTresCanalesCoincidenEnGoYDart(t *testing.T) {
-	goSource, err := os.ReadFile("../../daemon/transport/pipe/pipe.go")
+	goSource, err := os.ReadFile("../../daemon/transport/pipe/pipe_windows.go")
 	if err != nil {
 		t.Fatal(err)
 	}

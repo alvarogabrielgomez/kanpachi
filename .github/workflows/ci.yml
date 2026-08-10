@@ -38,6 +38,17 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # El daemon ENTERO tiene que compilar en Linux, y hasta ahora nadie lo
+      # comprobaba: este job hacía `go vet` sobre una lista y el de Windows era
+      # el único que construía. Mientras el daemon fue solo de Windows eso era
+      # correcto; desde que hay adaptadores de Linux, un fallo de compilación de
+      # los suyos no salía hasta que alguien los construía a mano.
+      #
+      # `./...` y no una lista: el punto de este paso es justamente que no haya
+      # una lista que actualizar.
+      - name: Compilar todo en Linux
+        run: go build ./...
+
       - name: go vet
         run: go vet ./core/... ./internal/... ./daemon/service/... ./daemon/transport/protocol/... ./daemon/transport/wire/... ./daemon/transport/control/... ./daemon/transport/pipe/... ./daemon/adapter/sinimplementar/... ./daemon/adapter/safewrite/... ./daemon/adapter/state/... ./daemon/adapter/catalog/... ./daemon/adapter/canary/... ./daemon/adapter/directory/... ./daemon/adapter/identity/... ./daemon/adapter/firewall/... ./registry/...
 
@@ -56,8 +67,10 @@ jobs:
       #   transport/protocol/ el protocolo se define aparte de su transporte
       #   transport/wire/     enmarcado de mensajes, io.Reader e io.Writer
       #   transport/control/  el canal de la sala: sockets y bytes, sin Windows
-      #   transport/pipe/     TODO menos crear el pipe: plazas, plazos y cierre
-      #                       son lógica sobre net.Listener, y la lógica que solo
+      #   transport/pipe/     el canal local. Acá compila SU LADO DE LINUX, que
+      #                       es un socket Unix de verdad, más todo lo que no es
+      #                       de ningún sistema: plazas, plazos y cierre son
+      #                       lógica sobre net.Listener, y la lógica que solo
       #                       corre en la máquina donde se programa no tiene CI
       #   adapter/sinimplementar/  que los provisionales fallen en todo es lo
       #                       que hace la cuarentena verificable desde dentro
@@ -133,10 +146,14 @@ jobs:
             exit 1
           fi
 
-  # El daemon es solo Windows, así que se compila donde va a correr. No se
-  # ejecutan sus tests todavía porque el paquete no existe; el job queda
-  # declarado para que exista el día que se agregue y nadie tenga que
-  # acordarse.
+  # El daemon se compila donde va a correr, y desde que hay dos sistemas eso son
+  # dos jobs: este y el de `core`, que ya compila y prueba en Linux.
+  #
+  # Este además EJECUTA los tests, que es nuevo. El comentario de antes decía que
+  # no se ejecutaban "porque el paquete no existe", y hace tiempo que existe. Lo
+  # que lo vuelve obligatorio es que el canal local se partió por sistema: las
+  # invariantes del descriptor de seguridad y del prefijo protegido son
+  # constantes de Windows, así que su guardián solo dice algo donde compilan.
   daemon:
     name: daemon en Windows
     runs-on: windows-latest
@@ -154,6 +171,12 @@ jobs:
       # Ver docs/07-futuro.md.
       - name: Compilar todo
         run: go build ./...
+
+      # Sin -race: el runner de Windows es el más lento de los tres y estos
+      # tests ya corren con -race en el job de Linux, que es el mismo código.
+      # Lo que este job agrega es lo que allá NO compila.
+      - name: Tests del daemon en Windows
+        run: go test -count=1 ./daemon/... ./internal/...
 
   # La UI corre en UBUNTU, con el cliente siendo solo de Windows, y no es un
   # descuido.

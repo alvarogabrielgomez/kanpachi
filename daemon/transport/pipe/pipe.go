@@ -1,32 +1,42 @@
-// Package pipe es la entrada del daemon: un named pipe de Windows por el que
-// la UI le habla.
+// Package pipe es la entrada del daemon: el canal local por el que le hablan la
+// interfaz en Windows y el CLI en Linux.
+//
+// El nombre del paquete es de cuando solo había named pipes. El canal es un
+// named pipe en Windows y un socket Unix en Linux, y **la única diferencia que
+// llega a este fichero es el `net.Listener` que devuelve `abrirPipe`**. Todo lo
+// que decide qué pasa después (las plazas, los tres plazos, el cierre que espera
+// a las conversaciones en curso) es lógica que se prueba entera en el job de
+// Linux.
 //
 // # Qué separa a quién
 //
-// La frontera de seguridad honesta acá es la sesión del usuario, igual que en
-// cualquier aplicación de escritorio: un proceso corriendo como el usuario
-// puede hablarle a este pipe, y ninguna autenticación de este paquete lo
-// impide. Lo que acota el daño es **lo que la API puede pedir**, y eso vive en
-// `protocol`: lista cerrada de métodos, y perfiles solo del catálogo.
+// La frontera de seguridad honesta acá es **quién puede abrir el canal**, y en
+// los dos sistemas es la misma persona que ya puede hacer el daño por otras
+// vías: el usuario de la sesión en Windows, root en Linux. Ninguna
+// autenticación de este paquete lo cambia. Lo que acota el daño es **lo que la
+// API puede pedir**, y eso vive en `protocol`: lista cerrada de métodos, y
+// perfiles solo del catálogo.
 //
 // Lo que este paquete sí impide, que es distinto y también importa:
 //
-//   - Que un proceso sin privilegios TOME EL NOMBRE antes que el servicio y se
-//     haga pasar por el daemon. Lo impide el prefijo protegido.
-//   - Que cualquiera lea la conversación. Lo impide el descriptor de seguridad.
-//   - Que se le hable desde OTRA MÁQUINA. Lo impide go-winio, que pone
-//     PIPE_REJECT_REMOTE_CLIENTS siempre.
+//   - Que un proceso sin privilegios TOME LA DIRECCIÓN antes que el daemon y se
+//     haga pasar por él. En Windows lo impide el prefijo protegido; en Linux, el
+//     directorio del socket, que es de root y no deja entrar a nadie más.
+//   - Que cualquiera lea la conversación. En Windows es el descriptor de
+//     seguridad; en Linux, el modo del socket más la comprobación del dueño de
+//     quien se conecta.
+//   - Que se le hable desde OTRA MÁQUINA. En Windows lo pone go-winio con
+//     PIPE_REJECT_REMOTE_CLIENTS; un socket Unix no tiene forma de salir de la
+//     máquina.
 //
-// # Por qué go-winio y no CreateNamedPipeW a mano
+// # Por qué el descriptor no se puede dejar vacío
 //
-// Trae hechas las dos defensas que uno se olvidaría, la semántica de primera
-// instancia y el rechazo de clientes remotos, más la E/S superpuesta, que son
-// cientos de líneas de syscall donde un error no se ve hasta que alguien lo
-// explota. Es de Microsoft, MIT, y es lo que usa Docker en Windows.
-//
-// Medido en esta máquina, agosto de 2026: crea el pipe normal con y sin
-// descriptor, y bajo el prefijo protegido devuelve "Access is denied" sin
-// elevar. Ese rechazo es la prueba de que el prefijo hace lo que promete.
+// Los dos sistemas comparten la misma trampa: **el valor por omisión es el
+// permisivo**. Un named pipe sin descriptor da lectura a Everyone y a la cuenta
+// anónima; un socket Unix recién creado toma `0777 &^ umask`, o sea 0755 con el
+// umask de siempre, y eso es conectable por cualquiera. Por eso la cadena vacía
+// es [ErrSinDescriptor] y no una opción, y por eso la comprobación va en cada
+// `abrirPipe` y no acá: es la única forma de que el job de Linux la pruebe.
 package pipe
 
 import (
@@ -41,71 +51,15 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
 )
 
-// Name es el nombre del pipe en producción.
+// Las direcciones ([Name], [PortableName], [ConsoleName]) y el descriptor
+// ([SecurityDescriptor]) viven en el fichero de cada sistema, no acá.
 //
-// # Por qué bajo ProtectedPrefix
-//
-// Cualquier proceso del usuario, sin elevar, puede crear `\\.\pipe\kanpachi` y
-// quedarse con el nombre antes que el servicio. Ahí la defensa sería ganar una
-// carrera contra el atacante, y esa clase de defensa se pierde el día que el
-// arranque va lento.
-//
-// Bajo `ProtectedPrefix\Administrators` no puede, y no porque lo comprobemos
-// nosotros: el prefijo lo impone el sistema, que solo deja crear ahí a
-// SYSTEM y a los administradores. Un proceso sin privilegios recibe
-// ERROR_ACCESS_DENIED al intentarlo. La diferencia es entre defender el
-// squatting con una carrera y que sea imposible.
-//
-// Conectarse es otra cosa y sí funciona sin privilegios: el prefijo restringe
-// quién CREA el nombre, y quién puede abrirlo lo dice [SecurityDescriptor].
-const Name = `\\.\pipe\ProtectedPrefix\Administrators\kanpachi-installed`
-
-// PortableName es el canal del producto portable.
-//
-// No puede compartir [Name]. Instalado y portable son dos productos completos
-// que pueden convivir en la misma máquina, cada uno con su daemon, sus datos y
-// su interfaz. Compartir el pipe hacía que el primero que arrancara secuestrara
-// al lanzador del otro y que una UI leyera el token de su carpeta contra el
-// daemon ajeno.
-const PortableName = `\\.\pipe\ProtectedPrefix\Administrators\kanpachi-portable`
-
-// ConsoleName es el del modo desarrollo, y es OTRO a propósito.
-//
-// Con el mismo nombre, un proceso sin privilegios ocupa el nombre de producción
-// arrancando el binario real con --console. Sería el squatting sin escribir un
-// okupa, usando nuestro propio binario firmado como herramienta.
-const ConsoleName = `\\.\pipe\ProtectedPrefix\Administrators\kanpachi-console`
-
-// SecurityDescriptor es quién puede abrir el pipe, en SDDL.
-//
-//	D:P                 DACL protegida: no hereda nada del objeto padre
-//	(A;;GA;;;SY)        SYSTEM, todo. Es quien corre el servicio
-//	(A;;GA;;;BA)        Administradores, todo. Para diagnosticar
-//	(A;;0x12019b;;;IU)  Usuario interactivo: leer, escribir y sincronizar
-//
-// **El valor del usuario interactivo NO es GENERIC_ALL, y esa es la parte que
-// importa.** Con todos los permisos podría crear INSTANCIAS NUEVAS del pipe, y
-// una instancia nueva atiende conexiones como si fuera el daemon: sería
-// secuestrar a la UI desde una cuenta sin privilegios. `0x12019b` es
-// FILE_GENERIC_READ | FILE_GENERIC_WRITE | SYNCHRONIZE, o sea hablar y nada más.
-//
-// Pasar la cadena vacía NO es "los permisos por defecto y ya": el descriptor
-// por defecto de un named pipe da lectura a Everyone y a la cuenta anónima. Por
-// eso [Listen] se niega a arrancar sin descriptor en vez de tratarlo como una
-// opción.
-//
-// # Comprobado a mano, y el resultado es mejor de lo esperado
-//
-// Con el daemon corriendo como usuario NORMAL, el pipe se crea y el token se
-// escribe, y la primera conexión falla al aceptar con "Access is denied". El
-// motivo es que aceptar exige crear la instancia SIGUIENTE del pipe, y el
-// usuario interactivo no puede: solo tiene leer, escribir y sincronizar.
-//
-// O sea que el descriptor cumple su promesa tan literalmente que impide
-// probarlo sin elevar. En producción el daemon corre como SYSTEM, que sí tiene
-// GENERIC_ALL, y por eso ahí sí atiende. Para probar a mano hace falta una
-// consola elevada.
-const SecurityDescriptor = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x12019b;;;IU)"
+// Es lo mismo que hace [abrirPipe] y por la misma razón: un nombre de named pipe
+// no significa nada en Linux y una ruta de `/run` no significa nada en Windows,
+// así que un fichero compartido que declarara los dos juegos obligaría a leerlo
+// entero para saber cuál manda. Los identificadores sí son los mismos en los dos
+// sistemas, que es lo que permite que `main.go` los use sin preguntar dónde
+// corre.
 
 // Los topes. Constantes de compilación, como los cortes automáticos: nada que
 // llegue por el pipe puede cambiarlos, porque lo que se configura desde fuera

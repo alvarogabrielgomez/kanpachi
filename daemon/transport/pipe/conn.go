@@ -54,6 +54,18 @@ func (l *Listener) atender(ctx context.Context, conn net.Conn) {
 		}
 	}()
 
+	// Quién está del otro lado, ANTES de leer un solo byte suyo.
+	//
+	// Lo contesta cada sistema como puede: Windows ya filtró con la DACL antes de
+	// que hubiera conexión y acá no repite nada, Linux le pregunta al kernel por
+	// el uid del proceso. La comprobación vive en el transporte y no en
+	// `protocol` porque no es sobre lo que el cliente DICE (para eso está el
+	// token del saludo), es sobre quién es, y eso solo lo sabe el socket.
+	if err := checkPeer(conn); err != nil {
+		l.deps.Log.Warn("se rechazó una conexión por quién la abrió", "error", err)
+		return
+	}
+
 	// Abrir una conexión NO se anota, y ese silencio es deliberado.
 	//
 	// La pantalla abre una por cada pedido, y mientras narra los pasos de una

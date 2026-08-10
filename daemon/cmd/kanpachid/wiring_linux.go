@@ -31,6 +31,20 @@ import (
 // servidor. Ver [domain.QuarantineSystem].
 const sistemaDeCuarentena = domain.QuarantineLinux
 
+// DataDir es dónde viven el token, la llave y la sala.
+//
+// `/var/lib/kanpachi` es lo que dice el estándar para el estado que un servicio
+// tiene que conservar entre reinicios, y es lo que el `.deb` crea. No es
+// `/etc/kanpachi`, que es solo para configuración, ni `/run/kanpachi`, que se
+// borra al arrancar: la llave de identidad no puede perderse en un reinicio o el
+// equipo deja de ser el mismo para quienes ya jugaron con él.
+//
+// Exportada porque el `.deb` y el CLI tienen que decir exactamente esta ruta, y
+// dos constantes que se copian son dos constantes que se desincronizan.
+const DataDir = "/var/lib/kanpachi"
+
+func defaultDataDir() string { return DataDir }
+
 // realFirewall compone las dos capas de Linux.
 func realFirewall(_ string, log port.Logger, router port.ExposureAudit) (
 	port.FirewallPort, port.ExposureAudit, func() error, error) {

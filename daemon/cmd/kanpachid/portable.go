@@ -74,8 +74,13 @@ func esPortable() bool {
 // dirDeDatos resuelve el directorio de datos, vacío incluido.
 //
 // El orden importa y es el único que tiene sentido: lo que se pidió a mano gana
-// siempre, después la carpeta portable, y ProgramData es el default del producto
-// instalado.
+// siempre, después la carpeta portable, y el del sistema es el default del
+// producto instalado.
+//
+// La rama portable se evalúa en los dos sistemas y solo puede dar verdadero en
+// Windows, porque el marcador viaja dentro de un ZIP que solo se publica ahí.
+// Dejarla puesta cuesta un `Stat` por arranque y evita que este fichero tenga
+// que saber en qué sistema corre para contestar una pregunta sobre una carpeta.
 func dirDeDatos(datos string) string {
 	if datos != "" {
 		return datos
@@ -83,5 +88,5 @@ func dirDeDatos(datos string) string {
 	if esPortable() {
 		return filepath.Join(dirDelBinario(), PortableDataDir)
 	}
-	return filepath.Join(os.Getenv("ProgramData"), "Kanpachi")
+	return defaultDataDir()
 }

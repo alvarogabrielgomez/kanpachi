@@ -736,7 +736,33 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 		}
 	}
 
-	return &booted{wait: rt.Wait, shutdown: apagar}, nil
+	// **Esperar es esperar al apagado ENTERO, y no solo a que la puerta cierre.**
+	//
+	// `rt.Wait` termina cuando termina `Serve`, y lo primero que hace el apagado
+	// es cerrar la entrada, así que `Wait` devuelve con el apagado a medias. El
+	// proceso salía por ahí mientras el otro hilo todavía estaba saliendo de la
+	// sala, cerrando el motor y borrando el token, y quien ganara la carrera
+	// decidía qué quedaba puesto.
+	//
+	// Medido en Linux el 2026-08-10 con el mismo binario y el mismo SIGTERM: dos
+	// ejecuciones, una dejó `api.token` en disco y la otra no, y la que lo dejó
+	// cortó el log en `apagando el daemon` sin llegar a `el daemon se apagó`. El
+	// fichero era lo visible; lo que estaba en juego eran las reglas de la sala,
+	// los ajustes de red y el proceso del motor.
+	//
+	// El arreglo es llamar al apagado ACÁ también. Es idempotente por
+	// [sync.Once], y esa es la parte que lo hace funcionar: `Do` no devuelve
+	// hasta que la función termina, así que si el apagado ya venía corriendo
+	// desde la señal, esta llamada se queda esperándolo en vez de duplicarlo.
+	//
+	// De paso arregla el otro camino, que nadie cubría: si la entrada se cae
+	// sola, antes se salía sin cerrar nada.
+	esperar := func() error {
+		err := rt.Wait()
+		apagar()
+		return err
+	}
+	return &booted{wait: esperar, shutdown: apagar}, nil
 }
 
 // dirDelBinario es donde vive el catálogo que trajo el instalador.
