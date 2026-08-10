@@ -74,6 +74,17 @@ El cuarto solo existe corriendo el portable de un archivo, y su nombre dice lo q
 
 La descripción larga de cada uno va en `Comments`, que es el campo que Windows enseña en Propiedades del archivo. `FileDescription` se queda con el nombre corto porque lo que lo muestra es una columna estrecha. El servicio además lleva la suya propia, escrita con `sc description` por el instalador, que es la que sale en `services.msc`.
 
+**Y cada uno lleva su propio icono**, porque un nombre en una lista donde los cuatro iconos son iguales sigue obligando a leer para distinguirlos:
+
+| Ejecutable | Icono | Fuente |
+|---|---|---|
+| `kanpachid.exe` | gris, engranaje naranja | `logos/kanpachi_daemon_icon.svg` |
+| `kanpachi-engine.exe` | naranja, engranaje blanco | `logos/kanpachi_engine_icon.svg`, rasterizado y versionado como `.ico` en el repositorio del motor |
+| `kanpachiui.exe` | naranja, sin engranaje | `ui/windows/runner/resources/app_icon.ico` |
+| `kanpachi-portable.exe` | naranja, sin engranaje | el mismo, que es el del producto |
+
+Los PNG que consume `go-winres` se versionan al lado de su `winres.json` y salen de los SVG con Inkscape, en 16, 32, 48 y 256. **Se dibuja cada tamaño en vez de escalar el de 256**: un engranaje reducido por una máquina a 16 píxeles es una mancha.
+
 #### Los cuatro declaran `asInvoker`, y tres de ellos no lo hacían
 
 **Un ejecutable sin `requestedExecutionLevel` en su manifiesto se lo deja adivinar a Windows, y Windows cambió de opinión.** Los parches KB5089549 y KB5087051 extendieron la inferencia de elevación a los binarios de 64 bits, que antes quedaban fuera. Medido el 2026-08-10: `kanpachi-engine.exe` hacía aparecer el diálogo de Control de cuentas de usuario **a su nombre**, con el daemon lanzándolo por `CreateProcess`, que hereda el token y no eleva nada. Ningún manifiesto, ninguna capa de compatibilidad, ningún script con `runas`: lo elevaba la heurística.

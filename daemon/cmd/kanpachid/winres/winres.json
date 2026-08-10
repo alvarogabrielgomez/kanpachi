@@ -2,7 +2,10 @@
   "RT_GROUP_ICON": {
     "APP": {
       "0000": [
-        "../../../../ui/windows/runner/resources/app_icon.png"
+        "icon.png",
+        "icon48.png",
+        "icon32.png",
+        "icon16.png"
       ]
     }
   },

@@ -12,6 +12,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 - Say what each Kanpachi process is in Task Manager, which listed bare executable names with a blank icon ([d8e3902](https://github.com/alvarogabrielgomez/kanpachi/commit/d8e3902))
 - Describe what every Kanpachi executable does in its file properties, and say it in the service list too
+- Give the service and the tunnel engine an icon of their own, so the four Kanpachi processes are told apart at a glance instead of by reading
 
 ### Fixed
 

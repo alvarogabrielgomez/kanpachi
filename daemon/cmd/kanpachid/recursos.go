@@ -38,9 +38,22 @@
 // descripción larga. `FileDescription` es un NOMBRE: lo que se ve es una
 // columna estrecha del Administrador de tareas.
 //
-// El icono se toma del PNG y no del `.ico`: `go-winres make` no sabe leer ese
-// `.ico` (contesta `image: unknown format`), y el PNG de 256 es exactamente el
-// cuadro grande que el propio `.ico` ya llevaba dentro.
+// # El icono es PROPIO, y no el del producto
+//
+// El daemon lleva el suyo: fondo gris con el engranaje naranja, contra el naranja
+// liso del producto y el engranaje blanco del motor. Los tres se distinguen en
+// la lista del Administrador de tareas, que es de donde salió todo esto.
+//
+// La fuente es `logos/kanpachi_daemon_icon.svg`. Los cuatro PNG de al lado se
+// rasterizan con Inkscape y se versionan, porque `go-winres make` no sabe leer
+// un SVG y tampoco el `.ico` del producto (contesta `image: unknown format`).
+// Se dan los cuatro tamaños en vez de dejar que go-winres reduzca el de 256:
+// el engranaje a 16 píxeles se convierte en una mancha si lo escala una máquina
+// en vez de dibujarlo el rasterizador.
+//
+//	& 'C:\Program Files\Inkscape\bin\inkscape.exe' logos\kanpachi_daemon_icon.svg `
+//	    --export-type=png --export-filename=daemon\cmd\kanpachid\winres\icon.png `
+//	    --export-width=256 --export-height=256
 //
 // El `.syso` se versiona, porque es una ENTRADA de la compilación y no un
 // resultado: sin él, un clon recién hecho produciría un ejecutable sin nombre y
