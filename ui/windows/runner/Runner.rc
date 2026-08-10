@@ -90,7 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "Accentio Studios" "\0"
-            VALUE "FileDescription", "Kanpachi" "\0"
+            // Lo que el Administrador de tareas de Windows pone en la columna
+            // "Nombre": muestra el FileDescription, no el nombre del archivo.
+            // Dice "Kanpachi UI" y no "Kanpachi" porque al lado corren otros
+            // dos procesos del producto, y en esa lista hay que poder decir
+            // cual es cual sin abrir ninguno.
+            VALUE "FileDescription", "Kanpachi UI" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "kanpachiui" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 Accentio Studios. All rights reserved." "\0"

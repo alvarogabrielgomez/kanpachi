@@ -1164,9 +1164,9 @@ de la aplicación. `kanpachiui.exe`, 32 horas, tres firmas:
 
 **`0xC0000374` es `STATUS_HEAP_CORRUPTION` y no admite interpretación**: el
 proceso escribió fuera de una asignación y el gestor de heap lo cazó. Las tres
-firmas son una sola causa, porque el heap corrupto revienta donde toque después
-—de ahí que la víctima fuera casi siempre `ntdll` o el motor de Flutter, y nunca
-el culpable—.
+firmas son una sola causa, porque el heap corrupto revienta donde toque después,
+de ahí que la víctima fuera casi siempre `ntdll` o el motor de Flutter, y nunca
+el culpable.
 
 **La causa es de diseño, no un descuido.** Una `ReadFile` superpuesta le presta
 al kernel el `OVERLAPPED` y el buffer hasta que la operación termina de verdad.
@@ -1184,11 +1184,11 @@ recorrerlo:
   suspender" no se sostuvo: `powercfg` tiene la suspensión en **nunca** (AC y
   DC), hubo dos suspensiones reales en 30 horas y ninguna cerca de una caída, y
   las caídas van cada 20 a 60 minutos día y noche. El único hueco largo sin
-  caídas —03:12 a 10:04— **es** la suspensión, o sea la máquina apagada. Lo que
-  sí ocurre al irse es que la pantalla se apaga a los 5 minutos, pero eso solo
+  caídas, de 03:12 a 10:04, **es** la suspensión, o sea la máquina apagada. Lo
+  que sí ocurre al irse es que la pantalla se apaga a los 5 minutos, y eso solo
   no explica un ritmo más lento que su propio plazo.
-- **No era el hilo que se va.** La hipótesis previa —Windows cancela la E/S
-  pendiente de un hilo al terminarlo, y un isolate no tiene hilo propio— se
+- **No era el hilo que se va.** La hipótesis previa, que Windows cancela la E/S
+  pendiente de un hilo al terminarlo y un isolate no tiene hilo propio, se
   instrumentó y se midió: el error fue `0` y los identificadores de hilo al
   empezar y al acabar eran **iguales**. Refutada por su propio criterio.
 

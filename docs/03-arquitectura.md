@@ -59,6 +59,16 @@ sesión del usuario
                    habla con el daemon por el named pipe
 ```
 
+En el Administrador de tareas de Windows los tres se ven por su nombre y no por el del archivo, porque esa columna muestra el `FileDescription` del recurso VERSIONINFO:
+
+| Ejecutable | Lo que dice el Administrador de tareas | De dónde sale |
+|---|---|---|
+| `kanpachid.exe` | Kanpachi service | `daemon/cmd/kanpachid/rsrc_windows_amd64.syso` |
+| `kanpachi-engine.exe` | Kanpachi tunnel engine | `build.rs` del motor, que genera el recurso y lo compila con `rc.exe` |
+| `kanpachiui.exe` | Kanpachi UI | `ui/windows/runner/Runner.rc` |
+
+Tres procesos sin identificar en esa lista son tres cosas que alguien puede decidir cerrar sin saber qué son, y este producto pide administrador.
+
 `[job]` es un Job Object con `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, el mismo mecanismo que ya usaba el motor. De ahí sale la invariante que gobierna todo lo demás:
 
 > **Hay bandeja si y solo si hay daemon.**
@@ -1039,11 +1049,11 @@ Tres cosas que el cliente resuelve y que parecen detalles hasta que faltan. **El
 
 **El transporte de Windows todavía no se puede escribir con `dart:io`, y eso está verificado.** No hay `Socket` ni `File` que sirva: el soporte de IPC multiplataforma sigue siendo una petición abierta en el SDK de Dart (dart-lang/sdk#47310), y el atajo que existía, `File(r'\\.\pipe\...').openSync()`, funcionaba hasta Flutter 3.24.5 y **está roto desde 3.27** con `PathNotFoundException ... errno = 53`, sin arreglo (flutter/flutter#163539). Así que hay que llamar a `CreateFileW`, `ReadFile` y `WriteFile` a mano. La pregunta que quedaba era **desde dónde**, y tuvo dos respuestas: la primera se probó y se cayó con medición.
 
-**Se escribió con `dart:ffi` y corrompía la memoria del proceso.** Dos isolates trabajadores, E/S superpuesta, `calloc` para el `OVERLAPPED` y el buffer. Funcionaba, y aun así el registro de eventos de Windows del 2026-08-09 tiene **49 caídas de `kanpachiui.exe` en 32 horas**: nueve con código `0xC0000374`, o sea `STATUS_HEAP_CORRUPTION` —el gestor de heap cazando una escritura fuera de una asignación—, y el resto repartidas entre `ntdll` y `flutter_windows`, que es exactamente lo que hace la memoria corrupta: mata al siguiente que toca la zona, no al que la rompió.
+**Se escribió con `dart:ffi` y corrompía la memoria del proceso.** Dos isolates trabajadores, E/S superpuesta, `calloc` para el `OVERLAPPED` y el buffer. Funcionaba, y aun así el registro de eventos de Windows del 2026-08-09 tiene **49 caídas de `kanpachiui.exe` en 32 horas**: nueve con código `0xC0000374`, o sea `STATUS_HEAP_CORRUPTION`, el gestor de heap cazando una escritura fuera de una asignación, y el resto repartidas entre `ntdll` y `flutter_windows`, que es exactamente lo que hace la memoria corrupta: mata al siguiente que toca la zona, no al que la rompió.
 
-El fallo era **estructural y no un descuido suelto**. Una E/S superpuesta le presta al kernel dos punteros —el `OVERLAPPED` y el buffer— hasta que la operación termina de verdad. En Dart, la vida de esos punteros dependía de que un isolate llegara a su `finally`, y un isolate no da esa garantía: `Isolate.kill` no interrumpe una llamada nativa, así que el dueño acababa cerrando el handle por debajo tras una gracia de tres segundos. No hay forma de arreglar eso sin un dueño de verdad.
+El fallo era **estructural y no un descuido suelto**. Una E/S superpuesta le presta al kernel dos punteros, el `OVERLAPPED` y el buffer, hasta que la operación termina de verdad. En Dart, la vida de esos punteros dependía de que un isolate llegara a su `finally`, y un isolate no da esa garantía: `Isolate.kill` no interrumpe una llamada nativa, así que el dueño acababa cerrando el handle por debajo tras una gracia de tres segundos. No hay forma de arreglar eso sin un dueño de verdad.
 
-**Hoy vive en el runner de C++ y llega por `MethodChannel`.** `windows/runner/kanpachi_pipe.cpp`: un hilo por conexión, dueño del handle, que cancela y ESPERA su lectura pendiente antes de que nada se destruya, y cuyo buffer de escritura es un `std::vector` local que muere después de cobrar la operación. Los eventos cruzan al hilo de plataforma por una ventana *message-only* propia —no enganchándose al window proc de la aplicación, que es camino de otra de las firmas de caída—. El transporte de Dart quedó en cuarenta líneas que solo hablan por canales.
+**Hoy vive en el runner de C++ y llega por `MethodChannel`.** `windows/runner/kanpachi_pipe.cpp`: un hilo por conexión, dueño del handle, que cancela y ESPERA su lectura pendiente antes de que nada se destruya, y cuyo buffer de escritura es un `std::vector` local que muere después de cobrar la operación. Los eventos cruzan al hilo de plataforma por una ventana *message-only* propia, no enganchándose al window proc de la aplicación, que es camino de otra de las firmas de caída. El transporte de Dart quedó en cuarenta líneas que solo hablan por canales.
 
 Lo que hizo esto barato es que **el transporte es una interfaz de tres métodos**: cambiar de `dart:ffi` a C++ no tocó el cliente, ni el códec, ni sus tests. Era el argumento con el que se justificó la interfaz, y se cobró entero.
 

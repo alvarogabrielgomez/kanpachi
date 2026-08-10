@@ -8,12 +8,16 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Changed
+
+- Say what each Kanpachi process is in Task Manager, which listed three bare executable names with a blank icon
+
 ### Fixed
 
-- Stop the window from crashing every twenty to sixty minutes: it corrupted its own memory reading the daemon's pipe, and the pipe now lives in native code that owns its buffers
-- Reconnect to the daemon after it drops an idle link, instead of leaving the window frozen on what it last knew
-- Name the engine log `kanpachi-engine.log`, which shipped with no extension at all and left Windows asking what to open it with (in `kanpachi-engine`)
-- Keep more of the engine log before it wraps, which at two megabytes rolled over mid-session (in `kanpachi-engine`)
+- Stop the window from crashing every twenty to sixty minutes: it corrupted its own memory reading the daemon's pipe, and the pipe now lives in native code that owns its buffers ([e8000ca](https://github.com/alvarogabrielgomez/kanpachi/commit/e8000ca))
+- Reconnect to the daemon after it drops an idle link, instead of leaving the window frozen on what it last knew ([40a260d](https://github.com/alvarogabrielgomez/kanpachi/commit/40a260d))
+- Name the engine log `kanpachi-engine.log`, which shipped with no extension at all and left Windows asking what to open it with ([e6a5ca7](https://github.com/alvarogabrielgomez/kanpachi-engine/commit/e6a5ca7), in `kanpachi-engine`)
+- Keep more of the engine log before it wraps, which at two megabytes rolled over mid-session ([e6a5ca7](https://github.com/alvarogabrielgomez/kanpachi-engine/commit/e6a5ca7), in `kanpachi-engine`)
 
 ## [0.1.9] - 2026-08-09
 
