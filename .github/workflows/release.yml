@@ -378,6 +378,35 @@ jobs:
 
             Engine built from `alvarogabrielgomez/kanpachi-engine@${{ inputs.motor || 'main' }}`.
 
+            ## Client · Linux, amd64
+
+            `kanpachi-amd64.deb`
+
+            ```
+            curl -fsSLO https://github.com/alvarogabrielgomez/kanpachi/releases/latest/download/kanpachi-amd64.deb
+            sudo apt install ./kanpachi-amd64.deb
+            ```
+
+            Headless: no window, and the client is the `kanpachi` command, with
+            a wizard when you run it with no arguments. Built on Ubuntu 22.04 so
+            it also runs on 24.04.
+
+            It installs two systemd units. `kanpachid` is the daemon.
+            `kanpachi-quarantine` is the one that matters and the one nobody
+            sees: it loads before the network comes up and it is what keeps the
+            game ports closed from the internet **with Kanpachi switched off**.
+
+            `sudo kanpachi doctor` checks the machine and writes nothing;
+            `--fix` repairs only what belongs to Kanpachi and never touches ufw,
+            firewalld or Docker. `sudo kanpachi upgrade` brings the next
+            version.
+
+            The SHA256 is in `SHA256SUMS-linux`, which is built in its own job:
+
+            ```
+            sha256sum -c SHA256SUMS-linux --ignore-missing
+            ```
+
             ## Rendezvous node · Linux
 
             `kanpseed-linux-amd64`, `kanpseed-linux-arm64`, `index.html`
@@ -412,3 +441,137 @@ jobs:
             dist/kanpachi-setup.exe
             dist/kanpachi-portable.exe
             dist/SHA256SUMS-windows
+
+  # The Linux client, which is a THIRD job writing into the same release.
+  #
+  # # Why a separate job and not a step of the one above
+  #
+  # Because each artifact is compiled on its own system, and that is not a
+  # preference. The engine on Linux pulls in vendored dbus, zstd-sys and kcp-sys
+  # with bindgen, so cross-compiling from Windows would mean three C toolchains
+  # with a Linux linker and sysroot wired up by hand. Same rule the Windows job
+  # already states for the other direction.
+  #
+  # # Why ubuntu-22.04 and not ubuntu-latest
+  #
+  # The glibc floor decides where the package runs, and only the ENGINE has one:
+  # the two Go binaries are built with CGO off. Built on 24.04 it demands
+  # GLIBC_2.39 and does NOT start on 22.04, which is the release most often
+  # found on a VPS. Built here it demands 2.35 or less and runs on both. This is
+  # a release decision, so it lives in the workflow and not in the code.
+  #
+  # It does not wait for the Windows job and the Windows job does not wait for
+  # it. That is the same trade already accepted for the seed: a window exists
+  # where the release is published with some payloads missing, it closes by
+  # itself, and the alternative was twenty minutes of Windows delaying a Linux
+  # payload that was ready.
+  paquete-linux:
+    name: kanpachi-amd64.deb
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: alvarogabrielgomez/kanpachi-engine
+          ref: ${{ inputs.motor || 'main' }}
+          path: motor
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Versión
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          # Same three entry points as the other two jobs. With no tag the
+          # version is 0.0.0 and nothing is published: a package that announced
+          # itself as a real version would make `kanpachi upgrade` on somebody's
+          # server compare against something nobody released.
+          TAG=""
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            TAG="$GITHUB_REF_NAME"
+          elif [ "$EVENT_NAME" = "release" ] && [ -n "$RELEASE_TAG" ]; then
+            TAG="$RELEASE_TAG"
+          fi
+          echo "VERSION=${TAG:-0.0.0}" >> "$GITHUB_ENV"
+          echo "release_target=$TAG" >> "$GITHUB_OUTPUT"
+
+      # What the engine's Rust chain needs on Linux, each for its own reason.
+      # Same list `scripts/build-linux.sh` states in its header.
+      #
+      # `protobuf-compiler` because EasyTier's protoc autodownloader lives in
+      # `WindowsBuild::check_for_win()`, which is cfg'd to a Windows HOST and
+      # therefore never runs here. `libclang-dev` for kcp-sys's bindgen.
+      # `build-essential` for zstd-sys, and for the dbus that EasyTier declares
+      # as a NON-optional Linux dependency with `features = ["vendored"]`, so it
+      # compiles libdbus from source whether or not magic-dns is on.
+      - name: Lo que pide la cadena de Rust
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler libclang-dev build-essential pkg-config
+
+      - name: Compilar el motor
+        working-directory: motor
+        run: cargo build --release
+
+      # The same tests the Windows job runs before packaging, and for the same
+      # reason: what gets published passes the tests that pass today.
+      - name: Tests de Go
+        run: go test -count=1 ./core/... ./internal/arch/...
+
+      - name: Armar el paquete
+        run: |
+          scripts/build-deb.sh \
+            --version "$VERSION" \
+            --engine motor/target/release/kanpachi-engine \
+            --out dist
+
+      # The floor is checked HERE and not only inside the script, because here
+      # it has to be able to stop the release. `build-deb.sh` warns, which is
+      # right on a development machine; a package that cannot start on the
+      # release most people run is not something to warn about and publish.
+      - name: El piso de glibc
+        run: |
+          PISO="$(objdump -T dist/kanpachi-deb/usr/libexec/kanpachi/kanpachi-engine |
+            grep -o 'GLIBC_[0-9.]*' | sort -V | tail -1)"
+          echo "the engine demands $PISO"
+          case "$PISO" in
+          GLIBC_2.3[6-9] | GLIBC_2.4*)
+            echo "above the 2.35 of Ubuntu 22.04: this package would not start there" >&2
+            exit 1
+            ;;
+          esac
+
+      - name: Checksums
+        # `SHA256SUMS-linux` is the CLIENT's, and the seed's is
+        # `SHA256SUMS-seed-linux`. Three workflows write into one release, so a
+        # shared name means the last one to upload overwrites the others and
+        # leaves `kanpachi upgrade` verifying a package that is not listed.
+        run: cd dist && sha256sum kanpachi-amd64.deb > SHA256SUMS-linux && cat SHA256SUMS-linux
+
+      - name: Publicar
+        if: steps.version.outputs.release_target != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.release_target }}
+          # No body: the release text is written by the job above, which is the
+          # one that knows the installer's SHA. Two jobs writing the same body
+          # would give a different order on every publication.
+          fail_on_unmatched_files: true
+          files: |
+            dist/kanpachi-amd64.deb
+            dist/SHA256SUMS-linux
+
+      - name: Guardar el paquete
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kanpachi-deb
+          path: |
+            dist/kanpachi-amd64.deb
+            dist/SHA256SUMS-linux
