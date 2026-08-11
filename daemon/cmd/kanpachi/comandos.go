@@ -41,6 +41,7 @@ var grupos = []struct {
 	{"El juego:", []string{"games", "game"}},
 	{"Comprobar:", []string{"exposure", "diag", "probe", "protect"}},
 	{"Lo que quedó de antes:", []string{"pending", "resume", "discard", "last"}},
+	{"El sistema:", []string{"doctor"}},
 	{"Otros:", []string{"version", "help"}},
 }
 
@@ -91,6 +92,8 @@ func init() {
 			correr: cmdDiscard},
 		"last": {breve: "la última sala a la que entraste como invitado",
 			correr: cmdLast},
+		"doctor": {args: "[--fix]", breve: "qué hace falta para que esto funcione, y qué está mal",
+			correr: cmdDoctor},
 		"version": {breve: "qué versión es esta",
 			correr: cmdVersion},
 		"help": {breve: "esto",
