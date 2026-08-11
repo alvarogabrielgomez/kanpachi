@@ -174,16 +174,30 @@ func limpiar(datos string, desinstalar bool) error {
 
 	// La llave larga de esta instalación, que el reset CONSERVA a propósito.
 	//
-	// Se borra acá y explícitamente, y no se da por hecho que "ya la borrará el
-	// instalador al llevarse el directorio": hoy nada de este repositorio borra
-	// ese directorio, así que darlo por hecho dejaría la llave viva en una
-	// máquina donde Kanpachi ya no está. Es best effort porque desinstalar tiene
-	// que terminar: una llave que no se pudo borrar es una molestia, y una
-	// desinstalación a medias es una máquina con puertos bloqueados que nadie
-	// puede explicar.
-	llave := filepath.Join(datos, identity.IdentityFile)
-	if err := os.Remove(llave); err != nil && !os.IsNotExist(err) {
-		log.Warn("no se pudo borrar la llave de esta instalación", "ruta", llave, "error", err)
+	// # Quién la borra depende de si el empaquetador se lleva el directorio
+	//
+	// En Windows no se lo lleva nadie, así que se borra acá y explícitamente:
+	// darlo por hecho dejaría la llave viva en una máquina donde Kanpachi ya no
+	// está.
+	//
+	// En Linux sí, y eso cambia quién manda. `dpkg` distingue dos cosas que este
+	// código no distinguía: `apt remove` quita el programa y `apt purge` quita
+	// además sus datos. Borrar la llave en el `remove` rompe esa promesa, y lo
+	// que se pierde no es un fichero cualquiera: es lo que hace que esta máquina
+	// siga siendo LA MISMA para todos los que ya jugaron con ella. Quitar y
+	// reinstalar la convertiría en otra, sin que nadie lo hubiera pedido.
+	//
+	// Medido el 2026-08-10 con el paquete puesto: un `apt remove` se llevaba la
+	// llave, contra lo que promete el propio README y contra lo que espera
+	// cualquiera que use Debian.
+	if !packageRemovesData {
+		// Best effort porque desinstalar tiene que terminar: una llave que no se
+		// pudo borrar es una molestia, y una desinstalación a medias es una
+		// máquina con puertos bloqueados que nadie puede explicar.
+		llave := filepath.Join(datos, identity.IdentityFile)
+		if err := os.Remove(llave); err != nil && !os.IsNotExist(err) {
+			log.Warn("no se pudo borrar la llave de esta instalación", "ruta", llave, "error", err)
+		}
 	}
 
 	if err := quitarCuarentenaDeBase(ctx, datos, log); err != nil {
@@ -501,8 +515,17 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 	// delante y arranca la interfaz cuando quiere. Levantarle una ventana en
 	// cada `--console` sería una molestia, y peor, taparía el caso que el
 	// producto de verdad tiene que resolver, que es el daemon lanzándola él.
+	//
+	// # Y tampoco donde no hay ventana que hospedar
+	//
+	// [hospedaInterfaz] es falso en Linux, donde el cliente es un CLI que
+	// arranca el usuario y no algo que el daemon lance en la sesión de nadie.
+	// Sin esa condición, el arranque como servicio moría con `uihost: lanzar la
+	// interfaz en la sesión del usuario es de Windows`, y solo como servicio:
+	// en `--console` esta rama no se pisa, así que el daemon parecía sano.
+	// Medido con el paquete instalado, el 2026-08-10.
 	var ui *uihost.Host
-	if !consola {
+	if !consola && hospedaInterfaz {
 		ui, err = uihost.New(uihost.Deps{
 			// Junto a este binario, y de `os.Executable()`. **Nunca del estado,
 			// de la configuración ni del pipe**: esto corre como SYSTEM, y una

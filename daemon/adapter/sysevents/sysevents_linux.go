@@ -51,6 +51,28 @@ func (e *Events) subscribe() {
 
 	e.undo = append(e.undo, func() { _ = conn.Close() })
 
+	// **El socket se cierra al ver `stop`, y NO solo desde `undo`.**
+	//
+	// Sin esto el apagado se cuelga, y el orden de [Events.Close] explica por
+	// qué: cierra `stop`, después espera a las goroutines con `waiting.Wait()`,
+	// y RECIÉN DESPUÉS corre `undo`. En Windows funciona porque cada suscripción
+	// espera un handle de evento que `stop` despierta; acá la espera es un
+	// `Receive` sobre un socket, que solo termina cuando el socket se cierra, y
+	// el cierre estaba detrás de la espera. Los dos esperándose.
+	//
+	// Medido con el paquete instalado el 2026-08-10: el daemon anotaba su
+	// arranque fallido y no salía nunca. systemd esperó los noventa segundos del
+	// plazo de arranque, mandó SIGTERM, esperó otros cincuenta, y lo mató con
+	// SIGKILL. En modo consola no se veía: ahí Ctrl+C mata el proceso entero sin
+	// pasar por este cierre.
+	//
+	// Cerrar dos veces no es un problema: la segunda devuelve un error que
+	// `undo` ya descarta.
+	go func() {
+		<-e.stop
+		_ = conn.Close()
+	}()
+
 	e.waiting.Add(1)
 	go func() {
 		defer e.waiting.Done()
