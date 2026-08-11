@@ -573,6 +573,29 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 		return abortar(err)
 	}
 
+	// The key that seals what stays on disk, derived from this machine's
+	// identity.
+	//
+	// # Why it is loaded HERE and not left to whoever needs it
+	//
+	// Because the room file has to be openable before there is a room, at
+	// startup, to reopen the one from the previous run. Deriving it lazily would
+	// mean the first read happens with no key and falls back to reading plain,
+	// which is the failure that looks like it worked.
+	//
+	// This is also what makes `identity.key` exist from the first start instead
+	// of from the first room. It is the same key either way and it is this
+	// machine's name: creating it earlier only means the machine has a name
+	// before it has a room.
+	llaveDeIdentidad, err := identity.LoadOrCreate(datos, protegerFichero)
+	if err != nil {
+		return abortar(err)
+	}
+	claveDelEstado, err := identity.StateKey(llaveDeIdentidad)
+	if err != nil {
+		return abortar(err)
+	}
+
 	// El motor REAL. Vive al lado de este binario y no se busca en el PATH: un
 	// PATH que alguien pueda escribir es una forma de que este proceso, que
 	// corre como SYSTEM, ejecute otro ejecutable con ese nombre.
@@ -625,7 +648,7 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 		// primer día.
 		Routes:    routes.New(),
 		Store:     catalogstore.New(builtinCatalogDir(), datos, log),
-		State:     statestore.New(datos),
+		State:     statestore.NewSealed(datos, claveDelEstado),
 		Library:   watch.Library,
 		Directory: directorio,
 		Control:   canal,

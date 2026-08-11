@@ -36,6 +36,9 @@ var ErrNoState = errors.New("no hay estado guardado")
 // Store es el almacén.
 type Store struct {
 	dir string
+	// clave sella lo que se escribe. En cero, se escribe en claro.
+	clave  [32]byte
+	sellar bool
 }
 
 // New apunta al directorio de datos, normalmente ProgramData\Kanpachi.
@@ -44,7 +47,31 @@ type Store struct {
 // solo para SYSTEM y Administradores. Crearlo desde el daemon lo dejaría con
 // los permisos que herede, y esos permisos son la mitad de la protección de
 // estos archivos.
+//
+// **Escribe en CLARO.** Lo usan los tests y las herramientas que no tienen
+// identidad de la que derivar una llave. El producto usa [NewSealed].
 func New(dir string) *Store { return &Store{dir: dir} }
+
+// NewSealed es [New] con la llave que cifra lo que queda en disco.
+//
+// # Qué protege, y contra quién no
+//
+// Contra los demás usuarios de la máquina, y ese es el caso que lo hizo
+// necesario: `ProgramData\Kanpachi` da lectura a todos ellos a propósito, porque
+// la interfaz lee de ahí sin elevar. Antes de esto, cualquiera de ellos abría
+// `room.json` y leía `NetworkSecret`, que es la identidad de la red REAL, y
+// `CardKey`. Ahora leen un blob.
+//
+// Contra quien puede leer `identity.key`, no, y es correcto: de ahí sale esta
+// llave, y quien tiene aquélla puede además firmar como este equipo, que es
+// peor. Esa es la única puerta, y es la que sí lleva ACL propia.
+//
+// Se volvió mucho más necesario cuando la sala pasó a sobrevivir al apagado:
+// antes el fichero existía solo entre una muerte sucia y el arranque siguiente,
+// y ahora vive tanto como la sala.
+func NewSealed(dir string, clave [32]byte) *Store {
+	return &Store{dir: dir, clave: clave, sellar: true}
+}
 
 func (s *Store) LoadRoom() ([]byte, error) { return s.load(RoomFile) }
 func (s *Store) SaveRoom(raw []byte) error { return s.save(RoomFile, raw) }
@@ -62,7 +89,16 @@ func (s *Store) load(nombre string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("leyendo %s: %w", nombre, err)
 	}
-	return raw, nil
+	if !s.sellar {
+		return raw, nil
+	}
+	// Abrir tolera lo escrito en claro por una versión anterior, y ahí está la
+	// migración: se lee, y el guardado siguiente ya lo deja sellado. Ver [abrir].
+	plano, err := abrir(s.clave, raw)
+	if err != nil {
+		return nil, fmt.Errorf("abriendo %s: %w", nombre, err)
+	}
+	return plano, nil
 }
 
 // save escribe de forma atómica.
@@ -73,10 +109,22 @@ func (s *Store) load(nombre string) ([]byte, error) {
 // falta. El catálogo sí lo lleva porque ahí lo que se pierde es trabajo del
 // usuario.
 func (s *Store) save(nombre string, raw []byte) error {
+	if s.sellar {
+		sellado, err := sellar(s.clave, raw)
+		if err != nil {
+			return fmt.Errorf("sellando %s: %w", nombre, err)
+		}
+		raw = sellado
+	}
 	// 0600 y no 0644: estos archivos llevan la identidad de la red real, o sea
 	// que son portadores de acceso a la sala. En Windows manda la ACL del
 	// directorio y esto no cambia nada; en Linux, que es donde corre el test y
 	// donde va a correr el host headless, sí.
+	//
+	// El modo se pone IGUAL con el fichero sellado. Las dos defensas son
+	// distintas y ninguna sustituye a la otra: el modo impide leerlo, y el sello
+	// impide entenderlo si el modo falla, que es exactamente lo que pasa en
+	// Windows, donde el modo de Go no gobierna nada.
 	return safewrite.File(s.path(nombre), raw, 0o600)
 }
 
