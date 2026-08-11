@@ -50,7 +50,19 @@ command -v dpkg-deb >/dev/null || { echo "falta dpkg-deb. Instalalo con: sudo ap
 # Sin la `v` inicial: dpkg ordena versiones y `v0.2.0` no es un número para él.
 version="${version#v}"
 
-paso "compilando el daemon y el CLI"
+# La VARIANTE del producto, que es un eje distinto del sistema operativo.
+#
+# Hoy `headless` es lo que sale por omisión fuera de Windows, así que pasarlo es
+# lo mismo que no pasarlo. Se pasa igual, y esa es la cuestión: el día que Linux
+# tenga interfaz de escritorio, el valor por omisión de ese sistema puede cambiar
+# y este paquete, que es el del SERVIDOR, tiene que seguir siendo el del
+# servidor. Un `.deb` que se volviera de escritorio por heredar un default es la
+# clase de cambio que nadie ve hasta que un servidor intenta abrir una ventana.
+#
+# Ver `daemon/cmd/kanpachid/variant.go` para la tabla entera.
+VARIANTE=headless
+
+paso "compilando el daemon y el CLI ($VARIANTE)"
 # CGO apagado: sin él el binario no arrastra el enlazador dinámico de glibc para
 # NSS, que es lo que hace que un binario compilado en una distribución no arranque
 # en otra. El daemon no usa nada que lo necesite.
@@ -70,10 +82,10 @@ mkdir -p "$out"
 # prueba.
 compilar() {
 	local destino=$1 paquete=$2
-	if go build -trimpath -o "$destino" "$paquete" 2>/dev/null; then
+	if go build -trimpath -tags "$VARIANTE" -o "$destino" "$paquete" 2>/dev/null; then
 		return 0
 	fi
-	if go build -trimpath -buildvcs=false -o "$destino" "$paquete"; then
+	if go build -trimpath -tags "$VARIANTE" -buildvcs=false -o "$destino" "$paquete"; then
 		echo "  --  sin sellado de git: este checkout es de otro usuario." >&2
 		return 0
 	fi

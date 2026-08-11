@@ -216,10 +216,10 @@ func limpiar(datos string, desinstalar bool) error {
 // La bandera pide MOSTRAR, no callar, y esa vuelta es deliberada: el silencio
 // es el default de los dos ejecutables. Una bandera que se pierda por el camino
 // deja la interfaz callada en vez de abriendo una ventana sola.
-const (
-	uiExeName  = "kanpachiui.exe"
-	uiShowFlag = "--show"
-)
+// `uiExeName`, la pareja de esto, la decide la VARIANTE y no el sistema: el
+// nombre del ejecutable de la interfaz solo tiene sentido donde hay interfaz.
+// Ver `variant.go`.
+const uiShowFlag = "--show"
 
 // watchers son los cuatro adaptadores que MIRAN la máquina sin cambiarla: los
 // avisos del sistema, la biblioteca de Steam, la tabla de sockets y los mapeos
@@ -518,14 +518,17 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 	//
 	// # Y tampoco donde no hay ventana que hospedar
 	//
-	// [hospedaInterfaz] es falso en Linux, donde el cliente es un CLI que
+	// [hostsUI] es falso en la variante headless, donde el cliente es un CLI que
 	// arranca el usuario y no algo que el daemon lance en la sesión de nadie.
 	// Sin esa condición, el arranque como servicio moría con `uihost: lanzar la
 	// interfaz en la sesión del usuario es de Windows`, y solo como servicio:
 	// en `--console` esta rama no se pisa, así que el daemon parecía sano.
 	// Medido con el paquete instalado, el 2026-08-10.
+	//
+	// Lo decide la VARIANTE y no el sistema, que son dos ejes distintos: ver
+	// `variant.go`.
 	var ui *uihost.Host
-	if !consola && hospedaInterfaz {
+	if !consola && hostsUI {
 		ui, err = uihost.New(uihost.Deps{
 			// Junto a este binario, y de `os.Executable()`. **Nunca del estado,
 			// de la configuración ni del pipe**: esto corre como SYSTEM, y una

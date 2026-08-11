@@ -32,13 +32,6 @@ const sistemaDeCuarentena = domain.QuarantineWindows
 // engineExe es cómo se llama el motor al lado de este binario.
 const engineExe = "kanpachi-engine.exe"
 
-// hospedaInterfaz dice si el daemon lanza la ventana él mismo.
-//
-// Acá sí: el producto es una aplicación de escritorio y el daemon corre como
-// SYSTEM, o sea en otra sesión que la del usuario. Lanzarla desde ahí es todo un
-// adaptador, `uihost`, justamente por eso.
-const hospedaInterfaz = true
-
 // packageRemovesData dice si el empaquetador se lleva el directorio de datos.
 //
 // Acá no. El desinstalador quita Program Files y deja `ProgramData\Kanpachi`

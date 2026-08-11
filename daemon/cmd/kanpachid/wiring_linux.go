@@ -66,16 +66,6 @@ const CatalogDir = "/usr/share/kanpachi"
 
 func builtinCatalogDir() string { return CatalogDir }
 
-// hospedaInterfaz dice si el daemon lanza la ventana él mismo.
-//
-// Acá no, y no es un pendiente: en Linux el cliente es un CLI que arranca el
-// usuario cuando quiere, no algo que el daemon levante en la sesión de nadie.
-// Un servidor headless no tiene sesión donde levantarla.
-//
-// Que sea una constante y no un `runtime.GOOS` es lo de siempre: el día que
-// haya un tercer sistema, no escribir su cableado es un error de enlazado.
-const hospedaInterfaz = false
-
 // packageRemovesData dice si el empaquetador se lleva el directorio de datos.
 //
 // Acá sí, y por eso el desinstalador NO borra la llave: `apt purge` se lleva

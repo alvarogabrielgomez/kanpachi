@@ -40,9 +40,6 @@ const engineExe = "kanpachi-engine"
 // mismo que [defaultDataDir].
 func builtinCatalogDir() string { return "/usr/share/kanpachi" }
 
-// hospedaInterfaz no lo alcanza nadie acá: [realFirewall] falla antes.
-const hospedaInterfaz = false
-
 // packageRemovesData no lo alcanza nadie acá: [realFirewall] falla antes.
 const packageRemovesData = false
 
