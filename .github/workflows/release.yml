@@ -396,8 +396,9 @@ jobs:
             sudo kanpseed upgrade
             ```
 
-            Each payload ships its own manifest: `SHA256SUMS-windows` and
-            `SHA256SUMS-linux`.
+            Each payload ships its own manifest: `SHA256SUMS-windows`,
+            `SHA256SUMS-linux` for the Linux client, and `SHA256SUMS-seed-linux`
+            for the seed.
 
       # Sin publicar, la corrida manual deja el instalador como artefacto. Es lo
       # que permite probar este workflow entero sin crear un tag ni una

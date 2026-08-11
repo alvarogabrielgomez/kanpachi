@@ -64,11 +64,14 @@ $BAJAR "$TMP/kanpseed" "$BASE/kanpseed-linux-$ARCO" \
 # sin recompilar, y el binario no crece con un HTML incrustado.
 $BAJAR "$TMP/index.html" "$BASE/index.html" \
   || morir "no se pudo bajar la página de invitación"
-# `-linux` y no `SHA256SUMS` a secas: el release trae también la carga de
-# Windows, con su propio manifiesto. Un solo nombre para las dos significaba que
-# el último workflow en terminar pisaba el archivo del otro.
-$BAJAR "$TMP/SHA256SUMS-linux" "$BASE/SHA256SUMS-linux" \
-  || morir "no se pudo bajar SHA256SUMS-linux: sin él no se verifica nada y no se instala nada"
+# `-seed-linux` y no `SHA256SUMS` a secas, ni `-linux`: en el mismo release hay
+# TRES cargas con tres manifiestos, porque tres workflows escriben en él. El de
+# Windows es `SHA256SUMS-windows`, el del cliente de Linux es `SHA256SUMS-linux`,
+# y este. Un nombre compartido significa que el último en terminar pisa a los
+# otros, y entonces el instalador verifica binarios que no aparecen en el
+# archivo que bajó.
+$BAJAR "$TMP/SHA256SUMS-seed-linux" "$BASE/SHA256SUMS-seed-linux" \
+  || morir "no se pudo bajar SHA256SUMS-seed-linux: sin él no se verifica nada y no se instala nada"
 
 # Se verifica ANTES de darle permiso de ejecución. Esto termina corriendo como
 # servicio en un servidor con IP pública, así que la comprobación no es un
@@ -76,8 +79,8 @@ $BAJAR "$TMP/SHA256SUMS-linux" "$BASE/SHA256SUMS-linux" \
 # sirve a desconocidos y es igual de sustituible en tránsito.
 verificar() {
   archivo="$1"
-  quiero="$(grep " $archivo\$" "$TMP/SHA256SUMS-linux" | cut -d' ' -f1)"
-  [ -n "$quiero" ] || morir "SHA256SUMS-linux no menciona $archivo"
+  quiero="$(grep " $archivo\$" "$TMP/SHA256SUMS-seed-linux" | cut -d' ' -f1)"
+  [ -n "$quiero" ] || morir "SHA256SUMS-seed-linux no menciona $archivo"
   tengo="$(cd "$TMP" && sha256sum "$2" | cut -d' ' -f1)"
   [ "$tengo" = "$quiero" ] || morir "el SHA256 de $archivo no coincide
   esperado $quiero

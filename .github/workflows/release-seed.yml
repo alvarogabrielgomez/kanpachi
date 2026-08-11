@@ -111,11 +111,15 @@ jobs:
         # El formato es el que espera `sha256sum -c`, el que lee `install.sh` y
         # el que lee `kanpseed upgrade`.
         #
-        # El nombre lleva `-linux` porque este release trae DOS cargas. Con el
-        # nombre a secas, el workflow de Windows subía su `SHA256SUMS` al mismo
-        # release y el último en terminar pisaba al otro: el instalador de
-        # Linux se quedaba verificando binarios que no aparecían en el archivo.
-        run: cd dist && sha256sum kanpseed-linux-* index.html > SHA256SUMS-linux && cat SHA256SUMS-linux
+        # El nombre lleva `-seed-` porque este release trae TRES cargas, una por
+        # workflow: el instalador de Windows, el `.deb` del cliente y esto. Con un
+        # nombre compartido, el último en terminar pisa al de los otros y el
+        # instalador se queda verificando binarios que no aparecen en el archivo.
+        #
+        # Se llamó `SHA256SUMS-linux` hasta que existió un cliente de Linux, que
+        # es a quien le corresponde ese nombre: el suyo lo bajan desconocidos
+        # desde la página, y el del seed lo baja quien se autohospeda.
+        run: cd dist && sha256sum kanpseed-linux-* index.html > SHA256SUMS-seed-linux && cat SHA256SUMS-seed-linux
 
       # Se publica cuando hay un release al que subir, y ese dato lo decidió el
       # paso de la versión. Preguntarlo otra vez acá, con otra expresión, es
@@ -133,7 +137,7 @@ jobs:
             dist/kanpseed-linux-amd64
             dist/kanpseed-linux-arm64
             dist/index.html
-            dist/SHA256SUMS-linux
+            dist/SHA256SUMS-seed-linux
 
       # Sin publicar, la corrida manual deja la carga como artefacto, para poder
       # probar este workflow entero sin cortar una versión.

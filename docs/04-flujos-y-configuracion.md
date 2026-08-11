@@ -103,13 +103,15 @@ Se publica **por tag y solo por tag**. No hay CI en cada push ni en cada pull re
 | Workflow | Qué publica | Qué corre antes |
 |---|---|---|
 | `release.yml` | `kanpachi-setup.exe`, `kanpachi-portable.exe` y `SHA256SUMS-windows` | `./core/...`, `./internal/arch/...`, `flutter analyze` y `flutter test` |
-| `release-seed.yml` | `kanpseed` para amd64 y arm64, `index.html`, y `SHA256SUMS-linux` | `./core/...`, `./registry/...` y `./internal/arch/...` |
+| `release-seed.yml` | `kanpseed` para amd64 y arm64, `index.html`, y `SHA256SUMS-seed-linux` | `./core/...`, `./registry/...` y `./internal/arch/...` |
 
 `internal/arch` entra en los dos porque los dos publican algo que esos guardianes atan: el cliente y la página comparten el alfabeto del invite ID y la forma de la URL, escritos dos veces en dos lenguajes.
 
 **El tag `seed-v*` ya no existe.** Publicaba el seed por su cuenta, con su propia numeración, y eso costaba dos cosas. Una: un release SIN `kanpachi-setup.exe` se llevaba el `latest`, y la URL permanente de la página de descarga quedaba apuntando a una publicación sin instalador. Dos: había que cruzar dos numeraciones para saber qué seed habla con qué cliente. Ahora el seed se publica aunque no haya cambiado nada, y ese release "de más" es lo que compra mirar un droplet, leer `v0.1.0` y saberlo.
 
-**Cada carga trae su propio manifiesto de sumas**, `SHA256SUMS-windows` y `SHA256SUMS-linux`. Con un solo nombre para las dos, el último workflow en terminar pisaba el archivo del otro y dejaba a `install.sh` verificando binarios que no aparecían en él.
+**Cada carga trae su propio manifiesto de sumas**, `SHA256SUMS-windows` y `SHA256SUMS-seed-linux`. Con un solo nombre para las dos, el último workflow en terminar pisaba el archivo del otro y dejaba a `install.sh` verificando binarios que no aparecían en él.
+
+El del seed se llamó `SHA256SUMS-linux` hasta que existió un cliente de Linux, y ese nombre le corresponde al cliente: es el que bajan desconocidos desde la página, mientras que el del seed lo baja quien se autohospeda. El cambio deja varado al seed que ya está desplegado, porque el nombre viaja como constante compilada dentro de su binario: ese seed pide `SHA256SUMS-linux`, recibe el manifiesto del cliente, no encuentra su propio nombre dentro y se niega a instalar. **Falla del lado seguro**, que es lo que tiene que hacer, y aun así hay que arreglarlo a mano: volver a correr `install.sh` en el droplet, que baja la versión nueva del script y ya trae el nombre nuevo. Una acción manual, una vez. El día que haya seeds de terceros el camino es otro: publicar el manifiesto del seed con los dos nombres, esperar a que se actualicen, y soltar el viejo en la siguiente.
 
 **Los dos workflows corren en paralelo y ninguno espera al otro.** El de Linux tarda un minuto y el de Windows veinte, así que hay una ventana en la que el release existe sin instalador. Se acepta a conciencia: se cierra sola, y la alternativa era que veinte minutos de Windows retrasaran una carga de Linux que ya estaba lista.
 
