@@ -42,6 +42,7 @@ class TypographyTokens extends ThemeExtension<TypographyTokens>
     required this.titleXs,
     required this.gameName,
     required this.sectionTitle,
+    required this.flavor,
     required this.bodyLg,
     required this.body,
     required this.bodySm,
@@ -88,6 +89,17 @@ class TypographyTokens extends ThemeExtension<TypographyTokens>
   /// "Creando la sala…", "Buscando la sala…".
   @override
   final TextStyle sectionTitle;
+
+  /// La frase que rota en la pantalla de carga: "Organizando polvo espacial",
+  /// "Buscando una silla libre".
+  ///
+  /// Tiene rol propio y no es un `copyWith` de [titleLg] porque es lo único que
+  /// se lee en esa pantalla y su peso es deliberadamente MENOR que el de un
+  /// título: la frase acompaña la espera, no anuncia una sección. Mismo cuerpo
+  /// que [titleLg], w600 en vez de w700, y más interlínea porque va sola en el
+  /// centro de la ventana.
+  @override
+  final TextStyle flavor;
 
   @override
   final TextStyle bodyLg;
@@ -207,6 +219,12 @@ abstract final class AppTypography {
       fontSize: 19,
       height: 1.2,
       fontWeight: FontWeight.w600,
+    ),
+    flavor: _sans.copyWith(
+      fontSize: 26,
+      height: 1.3,
+      fontWeight: FontWeight.w600,
+      letterSpacing: -0.52,
     ),
     bodyLg: _sans.copyWith(fontSize: 15, height: 1.6),
     body: _sans.copyWith(fontSize: 13.5, height: 1.6),

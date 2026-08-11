@@ -3,15 +3,11 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_chip.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_field.dart';
-import 'package:kanpachi_ui/core/design_system/atoms/app_spinner.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/kanpachi_wordmark.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_ambient_background.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
-import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
-import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
-import 'package:kanpachi_ui/features/session/presentation/widgets/progress_steps.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
 
@@ -190,135 +186,6 @@ class _NicknameScreenState extends State<NicknameScreen> {
   }
 }
 
-/// Las cuatro esperas: creando la sala, buscándola, saliendo y cerrándola.
-///
-/// Dicen qué está pasando y, sobre todo, qué NO está pasando todavía — que no
-/// hay ningún puerto abierto, que el tráfico del juego no pasa por el
-/// servidor. Es el momento en que alguien se pregunta qué acaba de autorizar,
-/// y contestarlo ahí vale más que en cualquier ayuda.
-///
-/// Las dos salidas están acá por lo mismo que las dos entradas, y no por
-/// simetría: tardan lo que tarda bajar la red cifrada, y sin ellas la pantalla
-/// de la sala se quedaba quieta con los botones vivos. Se distinguen de las
-/// otras dos en que NO se pueden cancelar, ver [SessionState.canCancelWait].
-class ProgressScreen extends StatelessWidget {
-  const ProgressScreen({
-    required this.title,
-    required this.note,
-    this.onCancel,
-    super.key,
-  });
-
-  const ProgressScreen.creating({this.onCancel, super.key})
-    : title = 'Creando la sala…',
-      note =
-          'Levantando la red de la sala y generando el código. Todavía no '
-          'hay ningún puerto abierto.';
-
-  /// La salida de un invitado.
-  ///
-  /// El texto dice lo que se está DESHACIENDO, que es lo que alguien quiere
-  /// saber al salir: si quedó algo abierto. Es la misma pregunta que la espera
-  /// de creación contesta por el otro lado, y la respuesta tiene que llegar
-  /// mientras se espera, no después.
-  const ProgressScreen.leaving({super.key})
-    : title = 'Saliendo de la sala…',
-      note =
-          'Cerrando los puertos que se abrieron, devolviendo las reglas que '
-          'se habían suspendido y bajando la red de la sala.',
-      onCancel = null;
-
-  /// El cierre de la sala propia.
-  ///
-  /// Separada de [ProgressScreen.leaving] por el texto: al host se le cierra
-  /// la sala para todos, y decir "saliendo" mentiría por omisión sobre lo que
-  /// les pasa a los demás. Es la misma distinción que hace el botón que la
-  /// dispara.
-  const ProgressScreen.closing({super.key})
-    : title = 'Cerrando la sala…',
-      note =
-          'Avisando a los miembros, cerrando los puertos que se abrieron, '
-          'devolviendo las reglas que se habían suspendido y bajando la red.',
-      onCancel = null;
-
-  final String title;
-  final String note;
-
-  /// Cortar la operación. **Las dos esperas lo llevan.**
-  ///
-  /// Crear no lo tenía, y esa era la peor de las dos: es la que levanta un
-  /// motor, toma dirección en dos adaptadores y escribe reglas, o sea la que
-  /// más deja puesto mientras corre. Sin botón, la única salida de un minuto de
-  /// espera era esperar el minuto.
-  final VoidCallback? onCancel;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    // The scroll is the FLOOR, not the mechanism: the step list caps and
-    // scrolls itself, and this is what keeps the spinner and the note
-    // reachable in a window at the 520 px minimum, where the two together
-    // already fill it.
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.x10l),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const AppSpinner(),
-            const SizedBox(height: AppSpacing.x4l),
-            Text(
-              title,
-              style: context.type.sectionTitle.copyWith(color: colors.text),
-            ),
-            const SizedBox(height: AppSpacing.x4l),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 360),
-              child: Text(
-                note,
-                textAlign: TextAlign.center,
-                style: context.type.body.copyWith(color: colors.textMuted),
-              ),
-            ),
-            if (onCancel != null) ...<Widget>[
-              const SizedBox(height: AppSpacing.x4l),
-              AppButton(
-                label: 'Cancelar',
-                variant: AppButtonVariant.ghost,
-                onPressed: onCancel,
-              ),
-            ],
-            // What the daemon is doing right now, for whoever asked to be
-            // told. It paints itself away when there is nothing, which is the
-            // normal case: with the narration off nobody fetches the steps.
-            const _StepsPanel(),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The step panel, wired to the session.
-///
-/// Its own class so the wait screen does not watch the session on its own
-/// account: this rebuilds a couple of times a second while a room opens, and
-/// the spinner, the title and the note above it have no reason to.
-class _StepsPanel extends StatelessWidget {
-  const _StepsPanel();
-
-  @override
-  Widget build(BuildContext context) {
-    final SessionState session = context.watch<SessionCubit>().state;
-    if (!session.verbose) return const SizedBox.shrink();
-    final Progress? p = session.progress;
-    if (p == null || p.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.x6l),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 620),
-        child: ProgressSteps(progress: p),
-      ),
-    );
-  }
-}
+// Las cuatro esperas —crear, entrar, salir y cerrar— vivían acá y se mudaron a
+// `features/session/presentation/pages/loading_page.dart`. Nunca fueron parte
+// del alta: las elige la fase de la sesión, no el paso del alta en que va uno.

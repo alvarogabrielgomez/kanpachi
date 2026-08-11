@@ -15,19 +15,34 @@ class CopyButton extends StatefulWidget {
   const CopyButton({
     required this.label,
     required this.value,
+    this.copiedLabel = 'Copiado',
     this.variant = AppButtonVariant.primaryFlat,
     this.height,
     this.horizontalPadding,
     this.textStyle,
+    this.icon,
+    this.iconGap,
+    this.iconAlpha = 1,
     super.key,
   });
 
   final String label;
   final String value;
+
+  /// Lo que dice mientras acusa recibo.
+  ///
+  /// Se puede cambiar porque no siempre cabe lo mismo ni se copia lo mismo: la
+  /// píldora del código dice «Código copiado» porque al lado hay otro botón que
+  /// copia el ENLACE, y dos «Copiado» seguidos no dirían cuál de los dos.
+  final String copiedLabel;
+
   final AppButtonVariant variant;
   final double? height;
   final double? horizontalPadding;
   final TextStyle? textStyle;
+  final Widget? icon;
+  final double? iconGap;
+  final double iconAlpha;
 
   @override
   State<CopyButton> createState() => _CopyButtonState();
@@ -56,11 +71,14 @@ class _CopyButtonState extends State<CopyButton> {
   @override
   Widget build(BuildContext context) {
     return AppButton(
-      label: _copied ? 'Copiado' : widget.label,
+      label: _copied ? widget.copiedLabel : widget.label,
       variant: widget.variant,
       height: widget.height,
       horizontalPadding: widget.horizontalPadding,
       textStyle: widget.textStyle,
+      icon: widget.icon,
+      iconGap: widget.iconGap,
+      iconAlpha: widget.iconAlpha,
       onPressed: _copy,
     );
   }

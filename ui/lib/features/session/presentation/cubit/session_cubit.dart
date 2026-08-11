@@ -49,9 +49,9 @@ class SessionCubit extends Cubit<SessionState> {
 
   /// Poll of the daemon's step diary while a long operation runs.
   ///
-  /// Only exists while [SessionState.verbose] is on. With it off nothing
-  /// starts it, so the field stays null and the daemon never sees the extra
-  /// connection.
+  /// Only exists while there IS a long operation: every wait starts it and the
+  /// end of the wait stops it. It used to depend on [SessionState.verbose] as
+  /// well, and no longer does — see [_watchProgress].
   Timer? _pollingProgreso;
 
   /// How often the steps are asked for.
@@ -205,19 +205,41 @@ class SessionCubit extends Cubit<SessionState> {
 
   /// Turns the step-by-step narration on or off, and remembers it.
   ///
-  /// Turning it OFF stops the poll on the spot rather than at the end of the
-  /// operation. Somebody who switches this off mid-creation is asking for the
-  /// traffic to stop, not to stop in a while.
+  /// It no longer stops the poll on the spot, and that changed with the wait
+  /// screen: the steps also drive the progress bar and the phrase that rotates
+  /// while a room opens, which everybody sees. Switching the narration off
+  /// mid-creation now hides the panel and leaves the bar moving — killing the
+  /// poll would freeze the screen of somebody who only asked for less text.
+  /// Outside a wait there is nothing to watch, so it stops as before.
   void setVerbose({required bool enabled}) {
     emit(state.copyWith(verbose: enabled));
-    if (!enabled) _stopWatching();
+    if (!enabled && !state.isWaiting) _stopWatching();
     unawaited(_preferences?.setVerbose(enabled: enabled));
   }
 
-  /// Starts polling the daemon's step diary. Does nothing when not narrating.
+  /// Starts polling the daemon's step diary.
+  ///
+  /// # Why it runs for everybody now
+  ///
+  /// It used to bail out when the narration was off, because the step panel was
+  /// the only thing reading it. It is not anymore: the bar and the rotating
+  /// phrase of the wait screen are drawn from these same steps, so with the
+  /// poll gated the screen of anybody who had not turned narration on stood
+  /// still for the forty seconds a room takes to open — which is exactly what
+  /// the new screen exists to fix.
+  ///
+  /// What it costs is one request every 400 ms down a local named pipe, for the
+  /// seconds a wait lasts, over the SPARE connection so it never queues behind
+  /// the operation it is watching. `verbose` still decides whether the step
+  /// panel is painted.
   void _watchProgress() {
-    if (!state.verbose) return;
     _pollingProgreso?.cancel();
+    // The previous operation's steps go FIRST, before the new ones arrive.
+    // They outlive their wait on purpose — the failure notice reads them when
+    // something goes wrong — but the bar is drawn from their count, so leaving
+    // them there showed a room being closed at 95% for the 400 ms it takes the
+    // first sample of the closing to land.
+    emit(state.copyWith(clearProgress: true));
     _pollingProgreso = Timer.periodic(_cadenciaProgreso, (_) async {
       try {
         final Progress p = await _repository.progress();
@@ -419,7 +441,7 @@ class SessionCubit extends Cubit<SessionState> {
         clearRoom: true,
       ),
     );
-    // Only whoever asked to be narrated to pays for the poll.
+    // The step diary, which the wait screen turns into a bar and a phrase.
     _watchProgress();
     await _try(FailedAction.createRoom, onFail: SessionPhase.idle, () async {
       final Room room = await _repository.createRoom(
@@ -621,7 +643,8 @@ class SessionCubit extends Cubit<SessionState> {
           clearFailure: true,
         ),
       );
-      // Solo quien pidió que se lo narren paga el sondeo, igual que al abrir.
+      // El diario de pasos, igual que al abrir: acá también hay una espera con
+      // barra y frase que alimentar.
       _watchProgress();
       await _try(FailedAction.leaveRoom, () => _repository.leaveRoom(current));
       _stopWatching();

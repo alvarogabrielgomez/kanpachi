@@ -17,6 +17,7 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
   TextStyle get titleXs;
   TextStyle get gameName;
   TextStyle get sectionTitle;
+  TextStyle get flavor;
   TextStyle get bodyLg;
   TextStyle get body;
   TextStyle get bodySm;
@@ -48,6 +49,7 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
     TextStyle? titleXs,
     TextStyle? gameName,
     TextStyle? sectionTitle,
+    TextStyle? flavor,
     TextStyle? bodyLg,
     TextStyle? body,
     TextStyle? bodySm,
@@ -78,6 +80,7 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
       titleXs: titleXs ?? this.titleXs,
       gameName: gameName ?? this.gameName,
       sectionTitle: sectionTitle ?? this.sectionTitle,
+      flavor: flavor ?? this.flavor,
       bodyLg: bodyLg ?? this.bodyLg,
       body: body ?? this.body,
       bodySm: bodySm ?? this.bodySm,
@@ -116,6 +119,7 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
       titleXs: TextStyle.lerp(titleXs, other.titleXs, t)!,
       gameName: TextStyle.lerp(gameName, other.gameName, t)!,
       sectionTitle: TextStyle.lerp(sectionTitle, other.sectionTitle, t)!,
+      flavor: TextStyle.lerp(flavor, other.flavor, t)!,
       bodyLg: TextStyle.lerp(bodyLg, other.bodyLg, t)!,
       body: TextStyle.lerp(body, other.body, t)!,
       bodySm: TextStyle.lerp(bodySm, other.bodySm, t)!,
@@ -155,6 +159,7 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
               sectionTitle,
               other.sectionTitle,
             ) &&
+            const DeepCollectionEquality().equals(flavor, other.flavor) &&
             const DeepCollectionEquality().equals(bodyLg, other.bodyLg) &&
             const DeepCollectionEquality().equals(body, other.body) &&
             const DeepCollectionEquality().equals(bodySm, other.bodySm) &&
@@ -195,6 +200,7 @@ mixin _$TypographyTokensTailorMixin on ThemeExtension<TypographyTokens> {
       const DeepCollectionEquality().hash(titleXs),
       const DeepCollectionEquality().hash(gameName),
       const DeepCollectionEquality().hash(sectionTitle),
+      const DeepCollectionEquality().hash(flavor),
       const DeepCollectionEquality().hash(bodyLg),
       const DeepCollectionEquality().hash(body),
       const DeepCollectionEquality().hash(bodySm),
@@ -240,6 +246,16 @@ extension TypographyTokensBuildContextProps on BuildContext {
 
   /// "Creando la sala…", "Buscando la sala…".
   TextStyle get sectionTitle => typographyTokens.sectionTitle;
+
+  /// La frase que rota en la pantalla de carga: "Organizando polvo espacial",
+  /// "Buscando una silla libre".
+  ///
+  /// Tiene rol propio y no es un `copyWith` de [titleLg] porque es lo único que
+  /// se lee en esa pantalla y su peso es deliberadamente MENOR que el de un
+  /// título: la frase acompaña la espera, no anuncia una sección. Mismo cuerpo
+  /// que [titleLg], w600 en vez de w700, y más interlínea porque va sola en el
+  /// centro de la ventana.
+  TextStyle get flavor => typographyTokens.flavor;
   TextStyle get bodyLg => typographyTokens.bodyLg;
   TextStyle get body => typographyTokens.body;
   TextStyle get bodySm => typographyTokens.bodySm;

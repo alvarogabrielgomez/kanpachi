@@ -62,12 +62,12 @@ abstract final class AppTheme {
         selectionColor: colors.accent.withValues(alpha: 0.24),
         selectionHandleColor: colors.accent,
       ),
-      scrollbarTheme: ScrollbarThemeData(
-        thickness: const WidgetStatePropertyAll<double>(8),
-        radius: const Radius.circular(4),
-        thumbColor: WidgetStatePropertyAll<Color>(
-          colors.textMuted.withValues(alpha: 0.35),
-        ),
+      // Sin barra de scroll en ningún sitio. Quien la quita de verdad es el
+      // `scrollBehavior` de la app, y esto es el cinturón: si alguien pone un
+      // `Scrollbar` a mano, que al menos no se pinte.
+      scrollbarTheme: const ScrollbarThemeData(
+        thickness: WidgetStatePropertyAll<double>(0),
+        thumbVisibility: WidgetStatePropertyAll<bool>(false),
       ),
       extensions: <ThemeExtension<dynamic>>[colors, type, density],
     );

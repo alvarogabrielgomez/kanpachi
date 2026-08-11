@@ -229,11 +229,11 @@ class ScreenPanels extends StatelessWidget {
 ///
 /// Con controlador propio y no el primario: dos scrolls verticales sin
 /// controlador se pelean por el `PrimaryScrollController` del marco y Flutter
-/// lanza. Además es lo que le permite a la barra saber de cuál de los dos es.
+/// lanza.
 ///
-/// La barra va POR FUERA del padding, así que el pulgar se apoya en el borde del
-/// panel y el contenido conserva su margen. Sólo aparece cuando el panel de
-/// verdad se pasa de alto, que es exactamente el aviso que hace falta dar.
+/// Sin barra, como el resto de la app. Ver `_SinBarra` en `main.dart`: la quita
+/// del comportamiento de scroll entero, y un `Scrollbar` puesto a mano acá se la
+/// saltaría.
 class _Panel extends StatefulWidget {
   const _Panel({required this.child, required this.padding});
 
@@ -255,13 +255,10 @@ class _PanelState extends State<_Panel> {
 
   @override
   Widget build(BuildContext context) {
-    return Scrollbar(
+    return SingleChildScrollView(
       controller: _controller,
-      child: SingleChildScrollView(
-        controller: _controller,
-        padding: widget.padding,
-        child: widget.child,
-      ),
+      padding: widget.padding,
+      child: widget.child,
     );
   }
 }

@@ -4,19 +4,40 @@
 /// mientras se juega, y lo único que hace falta saber sin abrir la ventana es
 /// si hay sala y cuánta gente hay dentro.
 class TrayStatus {
-  const TrayStatus({required this.line, required this.hasRoom});
+  const TrayStatus({
+    required this.line,
+    required this.hasRoom,
+    this.leaving = false,
+  });
 
-  const TrayStatus.noRoom() : line = 'Sin sala', hasRoom = false;
+  const TrayStatus.noRoom()
+    : line = 'Sin sala',
+      hasRoom = false,
+      leaving = false;
 
   final String line;
   final bool hasRoom;
 
-  @override
-  bool operator ==(Object other) =>
-      other is TrayStatus && other.line == line && other.hasRoom == hasRoom;
+  /// La salida está en curso.
+  ///
+  /// Existe porque salir tarda: por dentro cierra puertos, restaura reglas
+  /// ajenas, revierte los ajustes del adaptador y baja la red cifrada. Desde la
+  /// bandeja eso eran varios segundos en los que el menú seguía diciendo lo
+  /// mismo, así que la única lectura posible era que el clic no había hecho
+  /// nada, y lo natural es volver a pulsarlo.
+  ///
+  /// Además de contarlo, deshabilita la entrada. Ver [TrayPresence].
+  final bool leaving;
 
   @override
-  int get hashCode => Object.hash(line, hasRoom);
+  bool operator ==(Object other) =>
+      other is TrayStatus &&
+      other.line == line &&
+      other.hasRoom == hasRoom &&
+      other.leaving == leaving;
+
+  @override
+  int get hashCode => Object.hash(line, hasRoom, leaving);
 }
 
 /// El icono de Kanpachi en la bandeja del sistema.

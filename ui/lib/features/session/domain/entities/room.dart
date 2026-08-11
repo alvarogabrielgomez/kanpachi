@@ -154,6 +154,7 @@ class Room {
     this.hostLeft = false,
     this.hostGoneFor,
     this.reconnectingFor,
+    this.rejoining = false,
     this.network = ConnState.connected,
     // **`none` and not `open`, and that is a correctness fix.**
     //
@@ -203,6 +204,7 @@ class Room {
       reconnectingFor: reconectando > 0
           ? Duration(milliseconds: reconectando)
           : null,
+      rejoining: json['rejoining'] as bool? ?? false,
       // Unknown state counts as idle, which is the only safe reading: it
       // promises nothing about there being a room.
       network: ConnState.fromWire(json['conn'] as String?) ?? ConnState.idle,
@@ -271,6 +273,13 @@ class Room {
   /// El host cerró su lado. La sala sigue en pie, pero si el juego corría en
   /// su PC no hay a qué conectarse.
   final bool hostLeft;
+
+  /// Esta máquina está volviendo a pedirle credencial al host, ahora mismo.
+  ///
+  /// Dura unos diez segundos y le gana en pantalla a [hostLeft], que en el caso
+  /// normal ya es falso cuando esto pasa: el reingreso lo suele disparar un
+  /// aviso del host, o sea con el host presente.
+  final bool rejoining;
 
   final ConnState network;
   final ForeignRuleState foreignRule;
@@ -348,6 +357,7 @@ class Room {
     hostLeft: hostLeft ?? this.hostLeft,
     hostGoneFor: hostGoneFor,
     reconnectingFor: reconnectingFor,
+    rejoining: rejoining,
     network: network ?? this.network,
     foreignRule: foreignRule ?? this.foreignRule,
     foreignRuleClass: foreignRuleClass ?? this.foreignRuleClass,

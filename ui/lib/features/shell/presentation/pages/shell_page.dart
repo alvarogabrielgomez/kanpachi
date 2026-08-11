@@ -6,6 +6,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart
 import 'package:kanpachi_ui/features/session/presentation/widgets/failure_notice.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
+import 'package:kanpachi_ui/core/messages/loading_phrases.dart';
 import 'package:kanpachi_ui/features/games/presentation/pages/game_picker_page.dart';
 import 'package:kanpachi_ui/features/games/presentation/pages/manual_game_page.dart';
 import 'package:kanpachi_ui/features/home/presentation/pages/home_page.dart';
@@ -15,6 +16,7 @@ import 'package:kanpachi_ui/features/room/presentation/pages/exposure_page.dart'
 import 'package:kanpachi_ui/features/room/presentation/pages/room_page.dart';
 import 'package:kanpachi_ui/features/room/presentation/widgets/room_dialogs.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
+import 'package:kanpachi_ui/features/session/presentation/pages/loading_page.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
 import 'package:kanpachi_ui/features/settings/presentation/pages/settings_page.dart';
@@ -355,27 +357,25 @@ class _CurrentScreen extends StatelessWidget {
     // puestas por una sala que la app ya no creía estar abriendo. Ahora las dos
     // le piden al daemon que pare, y él deshace lo que alcanzó a hacer.
     if (session.isWaiting) {
-      void cancelar() {
-        context.read<SessionCubit>().cancelPending();
-        context.read<ShellCubit>().go(AppScreen.home);
-      }
-
       // **Las dos salidas van SIN botón de cancelar, y no es un olvido.**
       // Cortar un desmontaje a la mitad deja exactamente el estado que salir
       // existe para deshacer: reglas puestas para una sala que ya no está. Ver
-      // [SessionState.canCancelWait]. Duran segundos, y el panel de pasos dice
-      // en cuál va.
+      // [SessionState.canCancelWait], que es de donde lo saca el propio botón.
+      // Duran segundos, y el panel de pasos dice en cuál va.
+      //
+      // Las cuatro son `const` a propósito: esto se reconstruye con cada
+      // muestra de progreso, o sea dos veces por segundo, y una espera que no
+      // cambió de fase tiene que saltarse el rebuild entero. Ver [LoadingScreen].
       return switch (session.phase) {
-        SessionPhase.creating => ProgressScreen.creating(onCancel: cancelar),
-        SessionPhase.joining => ProgressScreen(
-          title: 'Buscando la sala…',
-          note:
-              'Presentando tu equipo con los demás miembros. El tráfico del '
-              'juego nunca pasa por el servidor.',
-          onCancel: cancelar,
+        SessionPhase.creating => const LoadingScreen(
+          flow: LoadingFlow.creating,
         ),
-        SessionPhase.closing => const ProgressScreen.closing(),
-        _ => const ProgressScreen.leaving(),
+        SessionPhase.joining => const LoadingScreen(flow: LoadingFlow.joining),
+        SessionPhase.closing => const LoadingScreen(
+          flow: LoadingFlow.leaving,
+          closing: true,
+        ),
+        _ => const LoadingScreen(flow: LoadingFlow.leaving),
       };
     }
 

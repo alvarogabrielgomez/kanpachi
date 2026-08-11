@@ -212,8 +212,7 @@ class _PipeEvents {
 
   static final _PipeEvents instance = _PipeEvents._();
 
-  final Map<int, WindowsPipeTransport> _open =
-      <int, WindowsPipeTransport>{};
+  final Map<int, WindowsPipeTransport> _open = <int, WindowsPipeTransport>{};
 
   // Se guarda aunque no se cancele nunca: vive lo que el proceso, y una
   // suscripción sin referencia es justo lo que un análisis de fugas señala.

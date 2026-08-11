@@ -35,10 +35,28 @@ class ProgressSteps extends StatelessWidget {
   const ProgressSteps({
     required this.progress,
     this.maxHeight = 240,
+    this.showHeader = true,
+    this.fadePast = false,
     super.key,
   });
 
   final Progress progress;
+
+  /// Si se pinta la fila de arriba con el nombre de la operación y su reloj.
+  ///
+  /// La pantalla de espera la apaga porque ya trae cabecera propia (DETALLE ·
+  /// MODO VERBOSO) y dos cabeceras encima de la misma caja son una de más. El
+  /// aviso de fallo la deja puesta: ahí el panel llega sin contexto ninguno y
+  /// el nombre de la operación es lo primero que hay que saber.
+  final bool showHeader;
+
+  /// Apaga los pasos ya pasados y deja entero sólo el último.
+  ///
+  /// Es para cuando el panel se está mirando EN VIVO: lo que importa es dónde
+  /// va, y la lista entera al mismo peso obliga a buscar el final cada vez que
+  /// cae una línea. En el aviso de fallo va al revés — ahí ya no hay "último",
+  /// hay un historial que se lee completo.
+  final bool fadePast;
 
   /// How tall the list of steps gets before it starts scrolling.
   ///
@@ -57,26 +75,28 @@ class ProgressSteps extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                progress.op,
-                style: context.type.strong.copyWith(color: colors.text),
+        if (showHeader) ...<Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  progress.op,
+                  style: context.type.strong.copyWith(color: colors.text),
+                ),
               ),
-            ),
-            Text(
-              _tiempo(progress.elapsed),
-              style: context.type.monoXs.copyWith(color: colors.textMuted),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.md),
+              Text(
+                _tiempo(progress.elapsed),
+                style: context.type.monoXs.copyWith(color: colors.textMuted),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+        ],
         // Not wrapped in a `Flexible`, and that is load-bearing: the failure
         // notice hangs from a `Positioned` with no top, so its height arrives
         // UNBOUNDED, and a flex child under an unbounded main axis throws. The
         // cap lives inside the list itself, which works in both places.
-        _StepList(progress: progress, maxHeight: maxHeight),
+        _StepList(progress: progress, maxHeight: maxHeight, fadePast: fadePast),
         if (progress.dropped > 0) ...<Widget>[
           const SizedBox(height: AppSpacing.sm),
           // Said out loud on purpose. A list cut in silence reads as a
@@ -102,10 +122,15 @@ class ProgressSteps extends StatelessWidget {
 /// scrolled up**, because scrolling up is somebody reading an earlier step, and
 /// yanking them back to the bottom every 400 ms would make that impossible.
 class _StepList extends StatefulWidget {
-  const _StepList({required this.progress, required this.maxHeight});
+  const _StepList({
+    required this.progress,
+    required this.maxHeight,
+    required this.fadePast,
+  });
 
   final Progress progress;
   final double maxHeight;
+  final bool fadePast;
 
   @override
   State<_StepList> createState() => _StepListState();
@@ -155,7 +180,11 @@ class _StepListState extends State<_StepList> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            for (final ProgressStep s in widget.progress.steps) _Linea(step: s),
+            for (int i = 0; i < widget.progress.steps.length; i++)
+              _Linea(
+                step: widget.progress.steps[i],
+                dim: widget.fadePast && i < widget.progress.steps.length - 1,
+              ),
           ],
         ),
       ),
@@ -169,9 +198,20 @@ class _StepListState extends State<_StepList> {
 /// the parent's rebuild redoes every line, and this panel rebuilds every 400 ms
 /// while a room is opening.
 class _Linea extends StatelessWidget {
-  const _Linea({required this.step});
+  const _Linea({required this.step, this.dim = false});
 
   final ProgressStep step;
+
+  /// Un paso que ya pasó, cuando la lista se mira en vivo.
+  final bool dim;
+
+  /// Cuánto se apagan los pasos anteriores. El mismo .6 del diseño.
+  static const double _dimAlpha = 0.6;
+
+  /// El alfa va en el COLOR y no en un `Opacity` alrededor, por lo mismo que en
+  /// las manchas del fondo: `Opacity` empuja una capa fuera de pantalla, y acá
+  /// serían hasta trece capas reconstruidas dos veces por segundo.
+  Color _apagado(Color c) => dim ? c.withValues(alpha: c.a * _dimAlpha) : c;
 
   @override
   Widget build(BuildContext context) {
@@ -186,7 +226,9 @@ class _Linea extends StatelessWidget {
             child: Text(
               _tiempo(step.since),
               textAlign: TextAlign.right,
-              style: context.type.monoXs.copyWith(color: colors.textMuted),
+              style: context.type.monoXs.copyWith(
+                color: _apagado(colors.textMuted),
+              ),
             ),
           ),
           const SizedBox(width: AppSpacing.lg),
@@ -195,7 +237,7 @@ class _Linea extends StatelessWidget {
             child: Text(
               _etiqueta(step.scope),
               style: context.type.monoXs.copyWith(
-                color: _color(context, step.scope),
+                color: _apagado(_color(context, step.scope)),
               ),
             ),
           ),
@@ -203,7 +245,9 @@ class _Linea extends StatelessWidget {
           Expanded(
             child: Text(
               step.text,
-              style: context.type.monoXs.copyWith(color: colors.textOnChip),
+              style: context.type.monoXs.copyWith(
+                color: _apagado(colors.textOnChip),
+              ),
             ),
           ),
         ],

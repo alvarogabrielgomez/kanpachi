@@ -175,8 +175,15 @@ class WindowsTray with TrayListener implements TrayPresence {
           MenuItem(label: _estado.line, disabled: true),
           MenuItem.separator(),
           MenuItem(key: _abrirKey, label: 'Abrir Kanpachi'),
+          // Se deshabilita mientras se sale, y no se esconde. Esconderla
+          // movería las entradas de abajo justo cuando el menú está abierto y
+          // el ratón encima, así que el clic siguiente caería en otra cosa.
           if (_estado.hasRoom)
-            MenuItem(key: _salirSalaKey, label: 'Salir de la sala'),
+            MenuItem(
+              key: _salirSalaKey,
+              label: 'Salir de la sala',
+              disabled: _estado.leaving,
+            ),
           MenuItem.separator(),
           MenuItem(key: _cerrarKey, label: 'Salir de Kanpachi'),
         ],

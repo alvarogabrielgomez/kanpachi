@@ -2,40 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 
-/// La píldora de sólo lectura donde vive un dato literal: el código de la
-/// sala en la cabecera.
-///
-/// Va en monoespaciada porque es un dato que se dicta y se compara carácter a
-/// carácter, y no se puede seleccionar por accidente al arrastrar: para
-/// llevárselo está el botón de copiar, que además dice que lo hizo.
-class AppChip extends StatelessWidget {
-  const AppChip(this.text, {this.mono = true, super.key});
-
-  final String text;
-  final bool mono;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final type = context.type;
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xxl,
-        vertical: AppSpacing.lg,
-      ),
-      decoration: BoxDecoration(
-        color: colors.chip,
-        borderRadius: AppRadius.pill,
-      ),
-      child: Text(
-        text,
-        style: (mono ? type.monoSm : type.labelSm).copyWith(
-          color: colors.textOnChip,
-        ),
-      ),
-    );
-  }
-}
+// Acá vivía `AppChip`, la píldora de SÓLO LECTURA del código de la sala. Su
+// propia documentación decía «para llevárselo está el botón de copiar», y ese
+// reparto era el problema: el gesto obvio —pulsar el código— no hacía nada, y
+// el botón que sí lo hacía estaba en otro sitio. Ahora la píldora es el botón,
+// ver `AppButtonVariant.data`.
 
 /// El bloque de texto explicativo sobre fondo de chip.
 ///

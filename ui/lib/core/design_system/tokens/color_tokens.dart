@@ -42,6 +42,7 @@ class ColorTokens extends ThemeExtension<ColorTokens>
     required this.veil,
     required this.shadow,
     required this.scrim,
+    required this.sheen,
     required this.shapeOpacity,
   });
 
@@ -158,6 +159,16 @@ class ColorTokens extends ThemeExtension<ColorTokens>
   @override
   final Color scrim;
 
+  /// El brillo que recorre la barra de progreso.
+  ///
+  /// Blanco translúcido en los dos temas, como [okInk] y por el mismo motivo:
+  /// no va sobre el lienzo sino sobre el ACENTO, que es naranja en claro y en
+  /// oscuro. Un brillo que respondiera al tema saldría oscuro sobre naranja en
+  /// modo oscuro, o sea una sombra. En oscuro va más bajo porque el acento
+  /// también es más claro ahí y el mismo blanco lo lavaría entero.
+  @override
+  final Color sheen;
+
   /// Cuánto se dejan ver las manchas del fondo. En oscuro se bajan, porque el
   /// mismo color sobre un lienzo oscuro pesa mucho más.
   @override
@@ -192,6 +203,7 @@ abstract final class AppPalette {
     veil: Color(0x57F7EFE6),
     shadow: Color(0x6B3C2414),
     scrim: Color(0x593C2414),
+    sheen: Color(0x8CFFFFFF),
     shapeOpacity: 1,
   );
 
@@ -221,6 +233,7 @@ abstract final class AppPalette {
     veil: Color(0x57141210),
     shadow: Color(0xCC000000),
     scrim: Color(0x990A0908),
+    sheen: Color(0x66FFFFFF),
     shapeOpacity: 0.85,
   );
 

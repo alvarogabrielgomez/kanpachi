@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_card.dart';
-import 'package:kanpachi_ui/core/design_system/atoms/app_chip.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_glyphs.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_cover.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_field.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_icon_button.dart';
@@ -115,7 +115,14 @@ class _RoomScreenState extends State<RoomScreen> {
             const _CodeLostNotice(),
             SizedBox(height: d.gap),
           ],
-          if (room.hostLeft && !room.selfIsHost) ...<Widget>[
+          // El reingreso le gana al cartel del host ausente, y no se muestran
+          // los dos: el reingreso EXPLICA la pausa, y decir a la vez que el host
+          // no está es la contradicción que se veía en pantalla, porque cuando
+          // lo dispara el aviso del host, el host sí está.
+          if (room.rejoining && !room.selfIsHost) ...<Widget>[
+            const AppMessageNotice(message: AppMessages.rejoining, pulse: true),
+            SizedBox(height: d.gap),
+          ] else if (room.hostLeft && !room.selfIsHost) ...<Widget>[
             AppMessageNotice(message: AppMessages.hostLeft(room.hostName)),
             SizedBox(height: d.gap),
           ],
@@ -133,6 +140,15 @@ class _RoomScreenState extends State<RoomScreen> {
     );
   }
 }
+
+/// Los dos altos de la fila de acciones de la cabecera, del diseño.
+///
+/// La píldora del código va DOS píxeles más baja que los botones, y no es un
+/// descuido de la maqueta: lleva menos aire vertical (9 contra 10) porque es un
+/// dato y no una acción, y de paso hace que los botones pesen un punto más en
+/// la fila. Salen de sumar el padding a la línea de 12,5.
+const double _chipHeight = 31;
+const double _pillHeight = 33;
 
 /// Nombre de la sala, código y las acciones del host.
 class _RoomHeader extends StatefulWidget {
@@ -207,33 +223,48 @@ class _RoomHeaderState extends State<_RoomHeader> {
                 alignment: WrapAlignment.end,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: <Widget>[
-                  AppChip(room.code),
-                  // La otra mitad de la política de refresco. El daemon no
-                  // empuja nada y no hay temporizador, así que sin esto la
-                  // única forma de ver quién entró es salir de la pantalla y
-                  // volver.
-                  AppButton(
-                    label: context.watch<SessionCubit>().state.isRefreshing
-                        ? 'Actualizando…'
-                        : 'Actualizar',
-                    variant: AppButtonVariant.ghost,
-                    height: 36,
-                    horizontalPadding: AppSpacing.x3l,
-                    textStyle: context.type.labelSm,
-                    onPressed: context.watch<SessionCubit>().state.isRefreshing
-                        ? null
-                        : () => context.read<SessionCubit>().refresh(),
+                  // **El código ES el botón de copiarlo.** Antes eran dos cosas
+                  // —una píldora de sólo lectura y, más allá, un botón— y eso
+                  // dejaba el gesto obvio (pulsar el código) sin hacer nada. El
+                  // icono apagado dice que se puede pulsar sin robarle la
+                  // primera lectura al código.
+                  CopyButton(
+                    label: room.code,
+                    copiedLabel: 'Código copiado',
+                    value: room.code,
+                    variant: AppButtonVariant.data,
+                    height: _chipHeight,
+                    horizontalPadding: AppSpacing.xxl,
+                    icon: const CopyGlyph(),
+                    iconGap: AppSpacing.md,
+                    iconAlpha: 0.75,
                   ),
+                  // **Acá había un «Actualizar», y se fue.**
+                  //
+                  // Existía cuando no había temporizador en ninguna capa: sin
+                  // él, la única forma de ver quién había entrado era salir de
+                  // la pantalla y volver. Eso dejó de ser cierto con el latido
+                  // de dos segundos —ver [SessionCubit.watchSession]—, que ya
+                  // trae la sala, la salud y los miembros solo. Lo que quedaba
+                  // era un botón que adelantaba como mucho dos segundos algo
+                  // que iba a pasar igual, ocupando el sitio de las dos
+                  // acciones que sí hacen algo. El diseño tampoco lo tiene.
+                  //
+                  // `SessionCubit.refresh()` sigue viva: la usa el propio
+                  // latido y la portada al entrar.
+                  //
                   // El enlace viene armado del daemon, con el seed de ESTA sala
                   // y la clave de la tarjeta en el fragmento. Ver [Room.link].
                   if (room.link.isNotEmpty)
                     CopyButton(
                       label: 'Copiar enlace',
-                      height: 36,
+                      height: _pillHeight,
                       horizontalPadding: AppSpacing.x3l,
                       textStyle: context.type.labelSm.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
+                      icon: const LinkGlyph(),
+                      iconGap: AppSpacing.md,
                       value: room.link,
                     ),
                   if (room.selfIsHost) const _RenewCodeButton(),

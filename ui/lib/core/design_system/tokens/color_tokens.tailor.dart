@@ -35,6 +35,7 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
   Color get veil;
   Color get shadow;
   Color get scrim;
+  Color get sheen;
   double get shapeOpacity;
 
   @override
@@ -64,6 +65,7 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
     Color? veil,
     Color? shadow,
     Color? scrim,
+    Color? sheen,
     double? shapeOpacity,
   }) {
     return ColorTokens(
@@ -92,6 +94,7 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
       veil: veil ?? this.veil,
       shadow: shadow ?? this.shadow,
       scrim: scrim ?? this.scrim,
+      sheen: sheen ?? this.sheen,
       shapeOpacity: shapeOpacity ?? this.shapeOpacity,
     );
   }
@@ -125,6 +128,7 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
       veil: Color.lerp(veil, other.veil, t)!,
       shadow: Color.lerp(shadow, other.shadow, t)!,
       scrim: Color.lerp(scrim, other.scrim, t)!,
+      sheen: Color.lerp(sheen, other.sheen, t)!,
       shapeOpacity: t < 0.5 ? shapeOpacity : other.shapeOpacity,
     );
   }
@@ -183,6 +187,7 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
             const DeepCollectionEquality().equals(veil, other.veil) &&
             const DeepCollectionEquality().equals(shadow, other.shadow) &&
             const DeepCollectionEquality().equals(scrim, other.scrim) &&
+            const DeepCollectionEquality().equals(sheen, other.sheen) &&
             const DeepCollectionEquality().equals(
               shapeOpacity,
               other.shapeOpacity,
@@ -218,6 +223,7 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
       const DeepCollectionEquality().hash(veil),
       const DeepCollectionEquality().hash(shadow),
       const DeepCollectionEquality().hash(scrim),
+      const DeepCollectionEquality().hash(sheen),
       const DeepCollectionEquality().hash(shapeOpacity),
     ]);
   }
@@ -309,6 +315,15 @@ extension ColorTokensBuildContextProps on BuildContext {
 
   /// El oscurecido de fondo cuando hay un diálogo abierto.
   Color get scrim => colorTokens.scrim;
+
+  /// El brillo que recorre la barra de progreso.
+  ///
+  /// Blanco translúcido en los dos temas, como [okInk] y por el mismo motivo:
+  /// no va sobre el lienzo sino sobre el ACENTO, que es naranja en claro y en
+  /// oscuro. Un brillo que respondiera al tema saldría oscuro sobre naranja en
+  /// modo oscuro, o sea una sombra. En oscuro va más bajo porque el acento
+  /// también es más claro ahí y el mismo blanco lo lavaría entero.
+  Color get sheen => colorTokens.sheen;
 
   /// Cuánto se dejan ver las manchas del fondo. En oscuro se bajan, porque el
   /// mismo color sobre un lienzo oscuro pesa mucho más.

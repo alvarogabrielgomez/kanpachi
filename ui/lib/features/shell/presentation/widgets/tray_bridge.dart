@@ -108,7 +108,15 @@ class _TrayBridgeState extends State<TrayBridge> with WindowListener {
 
   void _salirDeLaSala() {
     if (!mounted) return;
-    unawaited(context.read<SessionCubit>().leave());
+    // El menú ya deshabilita la entrada mientras se sale, y esto es la otra
+    // mitad: el menú se pinta cruzando a C++, así que entre el clic y el
+    // repintado hay una ventana en la que la entrada sigue viva. Salir dos
+    // veces no es inofensivo del lado del daemon: la segunda llega con la sala
+    // ya a medio desmontar.
+    final SessionCubit cubit = context.read<SessionCubit>();
+    final SessionPhase fase = cubit.state.phase;
+    if (fase == SessionPhase.leaving || fase == SessionPhase.closing) return;
+    unawaited(cubit.leave());
   }
 
   /// "Salir de Kanpachi" del menú de la bandeja.
@@ -138,6 +146,27 @@ class _TrayBridgeState extends State<TrayBridge> with WindowListener {
   static TrayStatus _estado(SessionState session) {
     final Room? room = session.room;
     if (room == null) return const TrayStatus.noRoom();
+    // Salir tarda segundos, y sin decirlo el menú se queda diciendo "En tal
+    // sala · 3 personas" mientras se cierran los puertos. Ver
+    // [TrayStatus.leaving].
+    //
+    // Las dos fases dicen cosas distintas a propósito, igual que el botón que
+    // las dispara: al host se le cierra la sala PARA TODOS, y decirle
+    // "saliendo" mentiría por omisión sobre lo que les pasa a los demás.
+    if (session.phase == SessionPhase.leaving) {
+      return const TrayStatus(
+        line: 'Saliendo de la sala…',
+        hasRoom: true,
+        leaving: true,
+      );
+    }
+    if (session.phase == SessionPhase.closing) {
+      return const TrayStatus(
+        line: 'Cerrando la sala…',
+        hasRoom: true,
+        leaving: true,
+      );
+    }
     return TrayStatus(
       line: 'En ${room.name} · ${room.members.length} personas',
       hasRoom: true,

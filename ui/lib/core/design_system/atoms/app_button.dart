@@ -35,6 +35,15 @@ enum AppButtonVariant {
   /// Cambia el fondo de chip por el hundido: el chip se apoya en la superficie
   /// de una pantalla, y sobre la superficie elevada de un menú se pierde.
   quietSunken,
+
+  /// Un DATO que además se puede copiar: el código de la sala.
+  ///
+  /// Se distingue de [quiet] en el contorno, y eso es justo lo que lo hace un
+  /// arquetipo aparte: `quiet` lleva borde siempre porque anuncia una acción, y
+  /// esto anuncia un dato. El borde nace transparente y sólo aparece —en
+  /// acento— cuando el ratón entra, que es cuando hay algo que decir. Ocupa su
+  /// píxel desde el principio para que el dato no se mueva al pasar por encima.
+  data,
 }
 
 /// El botón de Kanpachi.
@@ -54,6 +63,8 @@ class AppButton extends StatefulWidget {
     this.textStyle,
     this.emphasis = false,
     this.icon,
+    this.iconGap,
+    this.iconAlpha = 1,
     this.busy = false,
     super.key,
   });
@@ -91,6 +102,19 @@ class AppButton extends StatefulWidget {
   final bool emphasis;
 
   final Widget? icon;
+
+  /// El aire entre el icono y el texto. Va por llamada por lo mismo que
+  /// [horizontalPadding]: el diseño lo elige por SITIO. Son 7 en los botones de
+  /// «Agregar juego» y 8 en la fila del código de la sala.
+  final double? iconGap;
+
+  /// Cuánto se apaga el icono respecto del texto.
+  ///
+  /// Existe por la píldora del código: ahí el icono de copiar va al 75% a
+  /// propósito, para que lo primero que se lea sea el CÓDIGO y no el adorno que
+  /// dice qué pasa si lo pulsas. Sigue el color del texto, así que también se
+  /// tiñe de acento al pasar por encima.
+  final double iconAlpha;
 
   /// La acción de este botón está en marcha: rueda en vez de icono, y apagado.
   ///
@@ -176,6 +200,13 @@ class _AppButtonState extends State<AppButton> {
         _hovered && _enabled ? colors.accent : colors.text,
         _hovered && _enabled ? colors.accent : colors.border,
       ),
+      // El contorno transparente no es "sin borde": reserva el píxel para que
+      // el dato no se corra cuando el borde aparece al pasar por encima.
+      AppButtonVariant.data => (
+        colors.chip,
+        _hovered && _enabled ? colors.text : colors.textOnChip,
+        _hovered && _enabled ? colors.accent : Colors.transparent,
+      ),
     };
 
     final TextStyle textStyle =
@@ -187,6 +218,9 @@ class _AppButtonState extends State<AppButton> {
           AppButtonVariant.ghostDashed ||
           AppButtonVariant.quiet ||
           AppButtonVariant.quietSunken => type.label,
+          // Monoespaciada por lo mismo que cualquier dato literal: un código
+          // se dicta en voz alta y se compara carácter a carácter.
+          AppButtonVariant.data => type.monoSm,
         };
 
     return MouseRegion(
@@ -245,10 +279,15 @@ class _AppButtonState extends State<AppButton> {
                 const SizedBox(width: AppSpacing.sm),
               ] else if (widget.icon != null) ...<Widget>[
                 IconTheme(
-                  data: IconThemeData(color: foreground, size: 14),
+                  data: IconThemeData(
+                    color: foreground.withValues(
+                      alpha: foreground.a * widget.iconAlpha,
+                    ),
+                    size: 14,
+                  ),
                   child: widget.icon!,
                 ),
-                const SizedBox(width: AppSpacing.sm),
+                SizedBox(width: widget.iconGap ?? AppSpacing.sm),
               ],
               Flexible(
                 child: Text(

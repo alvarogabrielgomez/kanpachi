@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -356,7 +357,37 @@ class _ThemedApp extends StatelessWidget {
       themeMode: shell.themeMode,
       theme: AppTheme.light(density: density),
       darkTheme: AppTheme.dark(density: density),
+      scrollBehavior: const _SinBarra(),
       home: const ShellPage(),
     );
   }
+}
+
+/// El comportamiento de scroll de la app: sin barra, y con arrastre.
+///
+/// Va acá y no quitando widgets porque la barra no la pone nadie a mano. En
+/// escritorio, `MaterialScrollBehavior.buildScrollbar` le envuelve una a TODO
+/// scroll vertical, así que borrar un `Scrollbar` de una pantalla no la quita de
+/// las demás y la siguiente lista que alguien escriba la trae otra vez.
+///
+/// `dragDevices` gana el ratón, que es lo que en escritorio Flutter no incluye
+/// por defecto. Sin eso, quitar la barra dejaría contenido al que solo se llega
+/// con la rueda.
+class _SinBarra extends MaterialScrollBehavior {
+  const _SinBarra();
+
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) => child;
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => <PointerDeviceKind>{
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.trackpad,
+    PointerDeviceKind.stylus,
+  };
 }

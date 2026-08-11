@@ -13,9 +13,14 @@ import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
 /// falta nada medible.
 ///
 /// Se usa cuando la espera no tiene duración conocida — levantar la red de una
-/// sala, presentar el equipo con los demás miembros — y por eso tampoco hay
-/// barra de progreso: una barra promete un final medible que nadie puede
-/// prometer acá.
+/// sala, presentar el equipo con los demás miembros.
+///
+/// Durante mucho tiempo fue lo ÚNICO que se veía en esas esperas, porque una
+/// barra promete un final medible que nadie puede prometer acá. `AppProgressBar`
+/// vino a acompañarlo con una condición que sostiene esa misma regla: se llena
+/// con los pasos que el daemon ya terminó y no llega al final hasta que la
+/// operación llega. El anillo sigue diciendo lo que la barra no puede decir —
+/// que esto está vivo — mientras los pasos tardan.
 class AppSpinner extends StatefulWidget {
   const AppSpinner({this.size = 44, this.stroke = 3, super.key});
 

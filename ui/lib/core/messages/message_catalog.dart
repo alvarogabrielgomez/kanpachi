@@ -503,6 +503,20 @@ abstract final class AppMessages {
         'hasta que vuelva. La sala sigue en pie.',
   );
 
+  /// Esta máquina está volviendo a pedir credencial.
+  ///
+  /// Le gana al cartel de que el host se fue, y por eso lleva `pulse`: son unos
+  /// diez segundos en los que la sala parece congelada, y sin decirlo se leen
+  /// como que la app se colgó.
+  static const AppMessage rejoining = AppMessage(
+    severity: MessageSeverity.neutral,
+    title: 'Volviendo a entrar a la sala',
+    body:
+        'El host se reinició y ya no reconocía esta máquina, así que se le '
+        'está pidiendo entrada otra vez. Tarda unos segundos y no hay nada '
+        'que hacer.',
+  );
+
   /// El registro perdió la entrada de una sala que sigue abierta.
   ///
   /// No es una caída del seed: esa se cura sola y no afirma que el código haya
