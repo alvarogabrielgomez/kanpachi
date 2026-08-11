@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
 )
 
@@ -56,9 +57,15 @@ type Bucle interface {
 	Run(ctx context.Context, ready chan<- struct{}) error
 }
 
-// Sala es lo que hay que cerrar al apagar. La implementa la sesión.
+// Sala es la sala vista desde el arranque y el apagado. La implementa la
+// sesión.
 type Sala interface {
 	LeaveRoomOnShutdown(ctx context.Context) error
+
+	// PendingRoom is the room left by the previous run, if there is one.
+	PendingRoom() (domain.PersistedRoom, bool)
+	// ResumeRoom reopens it with the SAME code and the SAME network.
+	ResumeRoom(ctx context.Context) (domain.RoomState, error)
 }
 
 // Deps son las piezas YA CONSTRUIDAS.
@@ -92,6 +99,9 @@ type Runtime struct {
 	fin   chan struct{}
 	una   sync.Once
 	errIn error
+	// reabriendo cuenta la reapertura de la sala del arranque anterior, que
+	// corre en segundo plano. El apagado la espera: ver [Runtime.apagar].
+	reabriendo sync.WaitGroup
 }
 
 // Start arranca en el orden que importa.
@@ -144,14 +154,91 @@ func Start(ctx context.Context, d Deps) (*Runtime, error) {
 		}
 	}()
 
+	r.reabrirLaSala(ctx)
+
 	d.Log.Info("el daemon está en marcha")
 	return r, nil
+}
+
+// reabrirLaSala vuelve a abrir la que quedó del arranque anterior, si la hay.
+//
+// # Por qué en segundo plano, y por qué después de abrir la entrada
+//
+// Because it takes about a minute: two adapters have to come up, the credential
+// has to be exchanged and the MTU measured. Doing it before opening the entry
+// would delay systemd's READY by the same amount, and a `Type=notify` unit that
+// takes a minute to report looks hung. Worse on Windows, where the service
+// manager kills whatever does not report in time.
+//
+// So the entry opens first and this runs behind it. During that minute the
+// daemon answers `status` saying it is connecting, and `progress` shows the
+// steps, which is exactly what creating a room by hand does.
+//
+// # Por qué se reabre sola, si nada de fuera surte efecto sin confirmar
+//
+// Because that invariant is about what arrives FROM OUTSIDE, and what arrives
+// from outside is an invite link somebody clicked in their browser. Reopening
+// your own room, the one that was never closed, arrives from nowhere: this very
+// machine opened it and it is still theirs. Closing it is a button, and whoever
+// presses it deletes the file, so this finds nothing to reopen.
+//
+// **Worth saying out loud:** reopening the room also reopens the game ports of
+// whatever profile was active. That is what a server wants, and it is what the
+// gate and the quarantine bound.
+func (r *Runtime) reabrirLaSala(ctx context.Context) {
+	if r.deps.Sala == nil {
+		return
+	}
+	pendiente, hay := r.deps.Sala.PendingRoom()
+	if !hay {
+		return
+	}
+
+	r.deps.Log.Info("hay una sala del arranque anterior, se reabre",
+		"código", pendiente.Room.InviteID.String())
+
+	r.reabriendo.Add(1)
+	go func() {
+		defer r.reabriendo.Done()
+		if _, err := r.deps.Sala.ResumeRoom(ctx); err != nil {
+			// Not fatal, and that is why it does not bring the startup down: the
+			// daemon stays alive without a room, and whoever looks at `status`
+			// sees why. Bringing it down would trade a room that does not come
+			// back for a machine without Kanpachi.
+			if errors.Is(err, context.Canceled) {
+				r.deps.Log.Info("reabrir la sala se cortó porque el daemon se apagaba")
+				return
+			}
+			r.deps.Log.Error("no se pudo reabrir la sala del arranque anterior", "error", err)
+			return
+		}
+		r.deps.Log.Info("la sala del arranque anterior está abierta otra vez")
+	}()
 }
 
 // Wait espera a que la entrada termine.
 func (r *Runtime) Wait() error {
 	<-r.fin
 	return r.errIn
+}
+
+// esperarReapertura espera a que la sala termine de reabrirse, o al plazo.
+//
+// Returns false when the deadline ran out, so whoever shuts down can SAY it
+// instead of carrying on in silence: if that happens there is a half-finished
+// reopen racing the close, and the log is all that will be left.
+func (r *Runtime) esperarReapertura(ctx context.Context) bool {
+	hecho := make(chan struct{})
+	go func() {
+		r.reabriendo.Wait()
+		close(hecho)
+	}()
+	select {
+	case <-hecho:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // Shutdown cierra en el orden inverso y con su PROPIO contexto.
@@ -185,6 +272,22 @@ func (r *Runtime) apagar(padre context.Context) error {
 	// 1. La puerta. Que no entren órdenes nuevas mientras se cierra.
 	if err := r.deps.Entrada.Close(); err != nil {
 		r.deps.Log.Warn("no se pudo cerrar la API local", "error", err)
+	}
+
+	// 1b. La reapertura, si todavía está corriendo.
+	//
+	// **It is waited for BEFORE closing the room, and without this what is left
+	// is the worst of both.** Reopening raises adapters and writes rules;
+	// closing removes them. Running at the same time, the close can remove what
+	// the reopen has not put yet, and whatever stays put nobody removes,
+	// because the process dies right after.
+	//
+	// The service context already comes cancelled on the normal path, so the
+	// reopen cuts itself short. The deadline covers the other path, the shutdown
+	// order arriving over the local channel: there nobody cancelled anything,
+	// and waiting forever would leave the service never stopping.
+	if !r.esperarReapertura(ctx) {
+		r.deps.Log.Warn("la reapertura de la sala no terminó a tiempo, se cierra igual")
 	}
 
 	// 2. La sala. Es lo que cierra los puertos y revierte los ajustes, así que

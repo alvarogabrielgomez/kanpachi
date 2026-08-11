@@ -59,7 +59,7 @@ func (s *Session) LeaveRoom(ctx context.Context) domain.RoomState {
 			s.deps.Progress.Step(domain.ScopeDaemon, "no se pudo avisar a los miembros, se sigue igual")
 		}
 	}
-	s.leaveLocked(ctx, "el usuario salió de la sala", domain.ExitUser)
+	s.leaveLocked(ctx, "el usuario salió de la sala", domain.ExitUser, cerrarDeVerdad)
 	// Se comprueba DESPUÉS de salir, no solo al arrancar. El barrido periódico
 	// no cubre este momento: exige sala para juzgar, corre por temporizador, y
 	// si el daemon se apaga justo después de salir, que es lo que la gente hace
@@ -98,18 +98,43 @@ func (s *Session) OnRoomNotice(ctx context.Context, n domain.RoomNotice) domain.
 		// consigue que la salida sea sucia. Lo que se gana es revertir los
 		// ajustes del adaptador y cerrar el motor limpio en vez de que se caiga
 		// solo, y que la pantalla diga qué pasó.
-		return s.leaveLocked(ctx, "el host expulsó a esta máquina", domain.ExitKicked)
+		return s.leaveLocked(ctx, "el host expulsó a esta máquina", domain.ExitKicked, cerrarDeVerdad)
 	case domain.NoticeRoomClosed:
-		return s.leaveLocked(ctx, "el host cerró la sala", domain.ExitRoomClosed)
+		return s.leaveLocked(ctx, "el host cerró la sala", domain.ExitRoomClosed, cerrarDeVerdad)
 	default:
 		s.deps.Log.Info("aviso desconocido del host, se ignora", "tipo", int(n.Kind))
 		return s.snapshot()
 	}
 }
 
+// destino says what happens to the saved room when the session comes down.
+//
+// # Why leaving and shutting down stopped being the same thing
+//
+// They are two different events and they were one code path. Leaving is a
+// person pressing "close the room": the room is over and its file goes. Shutting
+// down is the process stopping while the room is still theirs -- an upgrade, a
+// reboot, a `systemctl restart` -- and there the file has to stay, because it
+// carries the invite ID and the network identity, which is all that reopening
+// the SAME room with the SAME code needs.
+//
+// Both still tear everything down: ports closed, foreign rules restored,
+// adapter tweaks reverted, engine stopped. What differs is only the file.
+type destino int
+
+const (
+	// cerrarDeVerdad borra la sala guardada. La sala se acabó.
+	cerrarDeVerdad destino = iota
+	// conservarParaReabrir la deja en disco. El proceso para y la sala sigue
+	// siendo de quien la abrió.
+	conservarParaReabrir
+)
+
 // leaveLocked es el cuerpo compartido con la salida automática. Asume el
 // candado tomado.
-func (s *Session) leaveLocked(ctx context.Context, reason string, exit domain.ExitReason) domain.RoomState {
+func (s *Session) leaveLocked(
+	ctx context.Context, reason string, exit domain.ExitReason, dest destino,
+) domain.RoomState {
 	if !s.state.Conn.InRoom() {
 		return s.snapshot()
 	}
@@ -128,15 +153,20 @@ func (s *Session) leaveLocked(ctx context.Context, reason string, exit domain.Ex
 		s.verificables[s.state.Game.ID] = s.deps.Clock.Now().UTC().Format("2006-01-02")
 	}
 
-	// El archivo de la sala se borra ACÁ, y su ausencia es lo que dice que esta
-	// salida fue limpia. No hay bandera de "cerrado bien" dentro del archivo:
-	// una bandera es un campo más que alguien puede escribir a mano, y este
-	// hecho no se puede falsificar desde dentro.
+	// The room's file goes away HERE, and only when the room is really over.
 	//
-	// La última sala del invitado NO se borra: existe justamente para volver, y
-	// que te hayan expulsado no cambia eso, porque expulsar no es banear.
-	if err := s.deps.State.ClearRoom(); err != nil {
-		s.deps.Log.Warn("no se pudo borrar la sala guardada al salir", "error", err)
+	// What its presence means changed with `destino`. It used to say "the last
+	// exit was dirty", inferred from absence, and that reading is gone: shutting
+	// down cleanly now keeps it too. It says "there is a room to reopen", and the
+	// only thing that clears it is somebody closing the room.
+	//
+	// The guest's last room is NOT cleared either way: it exists precisely to go
+	// back, and being kicked does not change that, because kicking is not
+	// banning.
+	if dest == cerrarDeVerdad {
+		if err := s.deps.State.ClearRoom(); err != nil {
+			s.deps.Log.Warn("no se pudo borrar la sala guardada al salir", "error", err)
+		}
 	}
 
 	s.teardown(ctx)

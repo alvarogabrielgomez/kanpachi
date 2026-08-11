@@ -89,7 +89,7 @@ func (s *Session) OnEngineGaveUp(ctx context.Context, reason string) domain.Room
 	defer s.mu.Unlock()
 
 	if s.state.Conn.InRoom() {
-		s.leaveLocked(ctx, razónTexto(reason, "el motor no volvió a levantar"), domain.ExitTunnelLost)
+		s.leaveLocked(ctx, razónTexto(reason, "el motor no volvió a levantar"), domain.ExitTunnelLost, cerrarDeVerdad)
 	}
 	if err := s.deps.Firewall.PurgeOwned(ctx); err != nil {
 		s.deps.Log.Error("no se pudieron purgar las reglas tras rendirse el motor", "error", err)

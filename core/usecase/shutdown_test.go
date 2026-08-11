@@ -8,7 +8,11 @@ import (
 	"github.com/accentiostudios/kanpachi/core/domain"
 )
 
-func TestShuttingDownLeavesTheRoomAndSaysSo(t *testing.T) {
+func TestShuttingDownKeepsTheRoomToReopenIt(t *testing.T) {
+	// Shutting down is not the room ending. An upgrade, a reboot or a
+	// `systemctl restart` stop the process while the room is still its owner's,
+	// so the file stays and the next start reopens it with the SAME code, which
+	// is what keeps the links already handed out working.
 	b := nuevoBanco(t)
 	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
 		t.Fatal(err)
@@ -24,13 +28,54 @@ func TestShuttingDownLeavesTheRoomAndSaysSo(t *testing.T) {
 	if st := b.sesión.Status(); st.Conn != domain.StateIdle {
 		t.Errorf("al apagar el estado quedó en %v", st.Conn)
 	}
-	// La ausencia del archivo es lo que dice que la salida fue limpia, y no hay
-	// bandera dentro que lo diga. Conservarlo haría que todo apagado se leyera
-	// como una muerte sucia, y el aviso de "quedó una sala abierta" dejaría de
-	// significar nada por salir siempre.
+	if len(b.estado.salaGuardada()) == 0 {
+		t.Error("el apagado se llevó la sala guardada, así que el arranque siguiente " +
+			"no la puede reabrir y el código repartido deja de valer")
+	}
+}
+
+func TestClosingTheRoomDoesClearIt(t *testing.T) {
+	// La otra mitad de la decisión, y sin ella la de arriba sería que el fichero
+	// no se borra nunca: cerrar la sala SÍ se lo lleva, porque ahí la sala se
+	// acabó de verdad. Es lo único que lo borra.
+	b := nuevoBanco(t)
+	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+		t.Fatal(err)
+	}
+	if len(b.estado.salaGuardada()) == 0 {
+		t.Fatal("este test no prueba nada: la sala no llegó a guardarse")
+	}
+
+	b.sesión.LeaveRoom(ctx())
+
 	if len(b.estado.salaGuardada()) != 0 {
-		t.Error("el apagado limpio dejó la sala guardada, así que el arranque siguiente " +
-			"la va a leer como una muerte sucia")
+		t.Error("cerrar la sala dejó su fichero, así que el arranque siguiente " +
+			"reabriría una sala que el usuario cerró a propósito")
+	}
+}
+
+func TestShuttingDownDoesNotTellTheMembersTheRoomClosed(t *testing.T) {
+	// The half that breaks in silence if anybody merges the two paths again.
+	// `LeaveRoom` sends NoticeRoomClosed and is right to: the room is over.
+	// Sending it from the shutdown would be a lie AND expensive, because every
+	// guest would leave and stop reconnecting, which is exactly what keeping the
+	// room exists to allow. What they see is the host absent, and the
+	// twenty-minute counter already covers that.
+	b := nuevoBanco(t)
+	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+		t.Fatal(err)
+	}
+	b.control.avisos = nil
+
+	if err := b.sesión.LeaveRoomOnShutdown(ctx()); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, a := range b.control.avisos {
+		if a.n.Kind == domain.NoticeRoomClosed {
+			t.Error("el apagado avisó de que la sala se cierra: cada invitado sale y " +
+				"deja de reconectar, que es lo contrario de conservarla")
+		}
 	}
 }
 

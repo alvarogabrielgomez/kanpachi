@@ -88,7 +88,7 @@ func (s *Session) enforceDeadlinesLocked(ctx context.Context) bool {
 		return true
 	}
 	if s.state.ShouldLeaveForReconnectTimeout(now) {
-		s.leaveLocked(ctx, "el túnel no volvió a levantar", domain.ExitTunnelLost)
+		s.leaveLocked(ctx, "el túnel no volvió a levantar", domain.ExitTunnelLost, cerrarDeVerdad)
 		return true
 	}
 
@@ -115,6 +115,6 @@ func (s *Session) leaveForHostAbsenceLocked(ctx context.Context) bool {
 	if !s.state.ShouldLeaveForHostAbsence(s.deps.Clock.Now()) {
 		return false
 	}
-	s.leaveLocked(ctx, "el host lleva veinte minutos sin aparecer", domain.ExitHostGone)
+	s.leaveLocked(ctx, "el host lleva veinte minutos sin aparecer", domain.ExitHostGone, cerrarDeVerdad)
 	return true
 }

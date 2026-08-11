@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/accentiostudios/kanpachi/core/domain"
 )
 
 // El orden de arranque y de apagado es lo ÚNICO que este paquete decide, así
@@ -132,6 +134,96 @@ func TestUnaSalaQueNoCierraNoCuelgaElApagadoParaSiempre(t *testing.T) {
 	}
 }
 
+func TestArrancarNoEsperaAQueLaSalaSeReabra(t *testing.T) {
+	// Reopening takes about a minute: two adapters, the credential exchange and
+	// the MTU probe. If `Start` waited for it, systemd's READY would be a minute
+	// late, and a `Type=notify` unit that takes a minute to report looks hung.
+	// On Windows the service manager just kills it.
+	//
+	// Lo que se afirma es que `Start` VUELVE, con la reapertura colgada a
+	// propósito. No el orden entre "entrada" y "reabrir-sala": aquello lo anota
+	// una gorrutina, así que compararlos es una carrera que pasa por suerte, y
+	// además no es lo que importa. Lo que decide el READY es cuándo vuelve esto.
+	orden := &registro{}
+	d := deps(orden)
+	d.ApagadoMax = 2 * time.Second
+	d.Sala = &salaFalsa{orden: orden, pendiente: true, reabrirCuelga: true}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	vuelto := make(chan *Runtime, 1)
+	go func() {
+		r, err := Start(ctx, d)
+		if err != nil {
+			t.Error(err)
+			vuelto <- nil
+			return
+		}
+		vuelto <- r
+	}()
+
+	select {
+	case r := <-vuelto:
+		if r == nil {
+			t.Fatal("el arranque falló")
+		}
+		t.Cleanup(func() { cancel(); _ = r.Shutdown(context.Background()) })
+	case <-time.After(2 * time.Second):
+		t.Fatal("el arranque se quedó esperando a que la sala se reabriera, " +
+			"así que el READY del servicio llega tarde")
+	}
+
+	// Y la reapertura sí arrancó: sin esto el test pasaría con la reapertura
+	// borrada, que es la otra forma de que `Start` vuelva rápido.
+	orden.espera(t, 3)
+	if !contiene(orden.lista(), "reabrir-sala") {
+		t.Errorf("no se reabrió la sala pendiente: %v", orden.lista())
+	}
+}
+
+func TestElApagadoEsperaALaReaperturaAntesDeCerrarLaSala(t *testing.T) {
+	// Reopening raises adapters and writes rules; closing removes them. Running
+	// at the same time, the close can remove what the reopen has not put yet,
+	// and whatever is left nobody removes: the process dies right after.
+	orden := &registro{}
+	d := deps(orden)
+	d.ApagadoMax = 2 * time.Second
+	d.Sala = &salaFalsa{orden: orden, pendiente: true, reabrirCuelga: true}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	r, err := Start(ctx, d)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	orden.espera(t, 3)
+
+	// Se cancela el contexto del servicio, que es lo que pasa en el apagado de
+	// verdad, y eso es lo que corta la reapertura colgada.
+	cancel()
+	if err := r.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	lista := orden.lista()
+	cortado, salir := -1, -1
+	for i, paso := range lista {
+		switch paso {
+		case "reabrir-cortado":
+			cortado = i
+		case "salir-sala":
+			salir = i
+		}
+	}
+	if cortado == -1 {
+		t.Fatalf("la reapertura no llegó a cortarse: %v", lista)
+	}
+	if salir == -1 || salir < cortado {
+		t.Errorf("se cerró la sala con la reapertura todavía corriendo: %v", lista)
+	}
+}
+
 func TestSinPiezasNoArranca(t *testing.T) {
 	// Un daemon a medio cablear arrancaría feliz y fallaría media hora después,
 	// dentro de una operación del usuario.
@@ -227,6 +319,15 @@ type salaFalsa struct {
 	orden        *registro
 	cuelga       bool
 	ctxCancelado bool
+
+	// pendiente dice si hay sala del arranque anterior. En falso, que es lo que
+	// vale por omisión, este falso no reabre nada y los tests del ORDEN de
+	// arranque miden solo el orden, que es lo suyo.
+	pendiente bool
+	// reabrirCuelga bloquea la reapertura hasta que se cancele el contexto, para
+	// poder medir que el apagado la espera antes de cerrar la sala.
+	reabrirCuelga bool
+	errReabrir    error
 }
 
 func (s *salaFalsa) LeaveRoomOnShutdown(ctx context.Context) error {
@@ -237,6 +338,20 @@ func (s *salaFalsa) LeaveRoomOnShutdown(ctx context.Context) error {
 		return errors.New("no cerró")
 	}
 	return nil
+}
+
+func (s *salaFalsa) PendingRoom() (domain.PersistedRoom, bool) {
+	return domain.PersistedRoom{}, s.pendiente
+}
+
+func (s *salaFalsa) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
+	s.orden.anota("reabrir-sala")
+	if s.reabrirCuelga {
+		<-ctx.Done()
+		s.orden.anota("reabrir-cortado")
+		return domain.RoomState{}, ctx.Err()
+	}
+	return domain.RoomState{}, s.errReabrir
 }
 
 type logMudo struct{}
