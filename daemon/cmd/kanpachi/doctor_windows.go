@@ -33,9 +33,9 @@ func chequeosDelSistema() []chequeo {
 }
 
 func pistaDeElevación() string {
-	return "En Windows el token lo puede leer cualquier usuario de la máquina,\n" +
-		"así que esto no debería pedir elevación. Si la pide, la ACL de\n" +
-		"ProgramData\\Kanpachi no es la que puso el instalador."
+	return "On Windows any user of the machine can read the token,\n" +
+		"so this should not need elevation. If it does, the ACL on\n" +
+		"ProgramData\\Kanpachi is not the one the installer put there."
 }
 
 // motorAlLadoDelDaemon es donde vive el motor en una instalación de Windows.
@@ -59,18 +59,18 @@ func motorAlLadoDelDaemon() string {
 // es peor que no tenerlo. Por eso este chequeo no lleva `arreglar`.
 func chequeoDelDirectorioDeDatos() chequeo {
 	return chequeo{
-		nombre: "el directorio de datos",
+		nombre: "the data directory",
 		mirar: func(_ context.Context, op opciones) veredicto {
 			info, err := os.Stat(op.datos)
 			if os.IsNotExist(err) {
-				return fallar("no está %s", op.datos).
-					con("Lo crea el instalador, con una ACL propia. Reinstalar lo repone.")
+				return fallar("%s is not there", op.datos).
+					con("The installer creates it, with an ACL of its own. Reinstalling puts it back.")
 			}
 			if err != nil {
-				return noSeSabe("no se pudo mirar %s: %v", op.datos, err)
+				return noSeSabe("could not look at %s: %v", op.datos, err)
 			}
 			if !info.IsDir() {
-				return fallar("%s existe y no es un directorio", op.datos)
+				return fallar("%s exists and is not a directory", op.datos)
 			}
 			return ok("%s", op.datos)
 		},

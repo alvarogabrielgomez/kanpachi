@@ -13,8 +13,8 @@ package firewall
 import (
 	"fmt"
 
-	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windows/wfp"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windows/netfw"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windows/wfp"
 )
 
 // Las comprobaciones de que los tipos reales encajan.

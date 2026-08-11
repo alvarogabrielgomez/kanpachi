@@ -73,9 +73,9 @@ type Client struct {
 func Open(addr, dataDir string) (*Client, error) {
 	token, err := pipe.ReadToken(dataDir)
 	if err != nil {
-		return nil, fmt.Errorf("leyendo el token en %s: %w\n"+
-			"  Ese fichero lo escribe el daemon al arrancar y solo lo puede leer quien tenga "+
-			"permiso sobre el directorio de datos", dataDir, err)
+		return nil, fmt.Errorf("reading the token in %s: %w\n"+
+			"  The daemon writes that file on start, and only someone with permission on "+
+			"the data directory can read it", dataDir, err)
 	}
 	return OpenWithToken(addr, token)
 }
@@ -88,7 +88,7 @@ func Open(addr, dataDir string) (*Client, error) {
 func OpenWithToken(addr, token string) (*Client, error) {
 	conn, err := Dial(addr)
 	if err != nil {
-		return nil, fmt.Errorf("no se pudo abrir %s: %w", addr, err)
+		return nil, fmt.Errorf("could not open %s: %w", addr, err)
 	}
 	c := &Client{
 		conn:  conn,
@@ -125,7 +125,7 @@ func (c *Client) Call(m protocol.Method, params any) (json.RawMessage, error) {
 	if params != nil {
 		b, err := json.Marshal(params)
 		if err != nil {
-			return nil, fmt.Errorf("serializando los parámetros de %s: %w", m, err)
+			return nil, fmt.Errorf("serializing the parameters of %s: %w", m, err)
 		}
 		raw = b
 	}
@@ -141,28 +141,28 @@ func (c *Client) Call(m protocol.Method, params any) (json.RawMessage, error) {
 func (c *Client) CallRaw(m protocol.Method, params json.RawMessage) (json.RawMessage, error) {
 	req := protocol.Request{ID: c.id.Add(1), Method: m, Params: params}
 	if err := c.w.Write(req); err != nil {
-		return nil, fmt.Errorf("mandando %s: %w", m, err)
+		return nil, fmt.Errorf("sending %s: %w", m, err)
 	}
 
 	// El plazo se pone por llamada y no una vez al abrir: es un plazo de
 	// RESPUESTA, y un plazo absoluto puesto al principio se agotaría a mitad de
 	// una sesión larga aunque cada orden hubiera contestado a tiempo.
 	if err := c.conn.SetReadDeadline(time.Now().Add(c.Plazo)); err != nil {
-		return nil, fmt.Errorf("poniendo el plazo de %s: %w", m, err)
+		return nil, fmt.Errorf("setting the deadline for %s: %w", m, err)
 	}
 	linea, err := c.r.ReadLine()
 	if err != nil {
-		return nil, fmt.Errorf("esperando la respuesta de %s: %w", m, err)
+		return nil, fmt.Errorf("waiting for the answer to %s: %w", m, err)
 	}
 
 	var resp protocol.Response
 	if err := json.Unmarshal(linea, &resp); err != nil {
-		return nil, fmt.Errorf("la respuesta de %s no es JSON: %w", m, err)
+		return nil, fmt.Errorf("the answer to %s is not JSON: %w", m, err)
 	}
 	if resp.ID != req.ID {
 		// No se ignora ni se reintenta: el flujo quedó desincronizado, y seguir
 		// leyendo daría la respuesta de una orden anterior como si fuera de esta.
-		return nil, fmt.Errorf("%s contestó con el id %d y se preguntó con el %d",
+		return nil, fmt.Errorf("%s answered with id %d and was asked with id %d",
 			m, resp.ID, req.ID)
 	}
 	if resp.Error != nil {
@@ -180,7 +180,7 @@ func Ask[T any](c *Client, m protocol.Method, params any) (T, error) {
 	raw, err := c.Call(m, params)
 	if len(raw) > 0 {
 		if e := json.Unmarshal(raw, &out); e != nil && err == nil {
-			return out, fmt.Errorf("interpretando la respuesta de %s: %w", m, e)
+			return out, fmt.Errorf("parsing the answer to %s: %w", m, e)
 		}
 	}
 	return out, err

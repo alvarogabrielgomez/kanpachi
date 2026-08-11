@@ -11,5 +11,5 @@ package main
 func chequeosDelSistema() []chequeo { return []chequeo{chequeoDelCanal()} }
 
 func pistaDeElevación() string {
-	return "El canal local está escrito para Windows y para Linux."
+	return "The local channel is written for Windows and for Linux."
 }

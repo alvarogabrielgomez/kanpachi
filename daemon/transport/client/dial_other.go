@@ -13,6 +13,6 @@ import (
 // Existe para que `go build ./...` siga compilando fuera de los dos, que es lo
 // que mantiene compilable el resto del paquete.
 func Dial(string) (net.Conn, error) {
-	return nil, errors.New("el canal local está escrito para Windows y para Linux, " +
-		"y este binario no es de ninguno de los dos")
+	return nil, errors.New("the local channel is written for Windows and for Linux, " +
+		"and this binary is neither")
 }

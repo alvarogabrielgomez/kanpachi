@@ -35,16 +35,16 @@ func asistente(ctx context.Context, op opciones) error {
 	// vez de fallar con lo que survey diría, que habla de descriptores de
 	// fichero y no de lo que le pasa a quien lo está corriendo.
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		fmt.Fprintln(os.Stderr, "kanpachi: sin terminal no hay asistente que enseñar.")
-		fmt.Fprintln(os.Stderr, "  Dentro de un script, un subcomando:")
+		fmt.Fprintln(os.Stderr, "kanpachi: with no terminal there is no wizard to show.")
+		fmt.Fprintln(os.Stderr, "  Inside a script, use a subcommand:")
 		fmt.Fprintln(os.Stderr)
 		ayuda(os.Stderr)
-		return uso("hace falta un subcomando")
+		return uso("a subcommand is needed")
 	}
 	// El asistente nunca imprime JSON: es una pantalla. Que `--json` lo apagara
 	// en silencio sería peor, así que se dice.
 	if op.json {
-		return uso("--json es para los subcomandos, y el asistente es una pantalla")
+		return uso("--json is for the subcommands, and the wizard is a screen")
 	}
 
 	for {
@@ -92,20 +92,21 @@ func estadoParaElMenú(op opciones) (protocol.RoomView, error) {
 func menuSinSala(ctx context.Context, op opciones) error {
 	limpiarPantalla(os.Stdout)
 	fmt.Println(raya)
-	fmt.Printf("  KANPACHI %-20s canal: %s\n", Version, op.canal)
+	fmt.Printf("  KANPACHI %-20s channel: %s\n", Version, op.canal)
 	fmt.Println(raya)
 	fmt.Println()
 
 	const (
-		abrir     = "Abrir una sala"
-		entrar    = "Entrar a la sala de otro"
-		volver    = "Volver a la última sala a la que entré"
-		reanudar  = "Reabrir la sala que quedó del arranque anterior"
-		descartar = "Olvidar esa sala pendiente"
-		juegos    = "Ver el catálogo de juegos"
-		comprobar = "Comprobar el sistema"
-		nombre    = "Cambiar mi nombre"
-		salir     = "Salir"
+		abrir     = "Open a room"
+		entrar    = "Enter someone else's room"
+		volver    = "Go back to the last room I entered"
+		reanudar  = "Reopen the room left from the previous start"
+		descartar = "Forget that pending room"
+		juegos    = "See the game catalog"
+		comprobar = "Check the system"
+		actualiza = "Look for a new version"
+		nombre    = "Change my name"
+		salir     = "Quit"
 	)
 
 	opciones := []string{abrir, entrar}
@@ -115,24 +116,24 @@ func menuSinSala(ctx context.Context, op opciones) error {
 	if hay, _ := hayÚltimaSala(op); hay {
 		opciones = append(opciones, volver)
 	}
-	opciones = append(opciones, juegos, comprobar, nombre, salir)
+	opciones = append(opciones, juegos, comprobar, actualiza, nombre, salir)
 
-	sel, err := elegir("Qué hacemos:", opciones)
+	sel, err := elegir("What do we do:", opciones)
 	if err != nil {
 		return err
 	}
 	switch sel {
 	case abrir:
-		nombreSala, err := texto("Nombre de la sala:",
-			"Viaja dentro de la tarjeta cifrada. El registro no lo conoce.", nombreDelEquipo())
+		nombreSala, err := texto("Room name:",
+			"It travels inside the encrypted card. The registry never sees it.", nombreDelEquipo())
 		if err != nil {
 			return err
 		}
 		return conAviso(cmdHost(ctx, op, strings.Fields(nombreSala)))
 	case entrar:
-		pegado, err := texto("Pega el enlace o el código tal como te llegó:",
-			"Valen las seis formas: VA3BSF5L, va3b-sf5l, kanpachi://VA3BSF5L,\n"+
-				"VA3BSF5L@otro-seed.com, kanpachi.accentio.dev/VA3BSF5L y https://...", "")
+		pegado, err := texto("Paste the link or the code exactly as it reached you:",
+			"All six forms work: VA3BSF5L, va3b-sf5l, kanpachi://VA3BSF5L,\n"+
+				"VA3BSF5L@another-seed.com, kanpachi.accentio.dev/VA3BSF5L and https://...", "")
 		if err != nil {
 			return err
 		}
@@ -147,6 +148,11 @@ func menuSinSala(ctx context.Context, op opciones) error {
 		return conAviso(cmdGames(ctx, op, nil))
 	case comprobar:
 		return menuDeComprobaciones(ctx, op)
+	case actualiza:
+		// `--check` y no la actualización entera, a propósito: desde el menú se
+		// MIRA, y actualizar reinicia el servicio. El comando que lo hace se
+		// escribe a mano, que es un paso que ahí sí vale la pena.
+		return conAviso(cmdUpgrade(ctx, op, []string{"--check"}))
 	case nombre:
 		return cambiarNombre(op)
 	case salir:
@@ -178,7 +184,7 @@ func volverALaÚltima(ctx context.Context, op opciones) error {
 		return err
 	}
 	if !v.Found {
-		return errors.New("no hay ninguna sala anterior guardada")
+		return errors.New("there is no previous room saved")
 	}
 	return cmdJoin(ctx, op, []string{v.Room.Code + "@" + v.Room.Seed})
 }
@@ -215,15 +221,15 @@ func menuConSala(ctx context.Context, op opciones, st protocol.RoomView) error {
 	fmt.Println()
 
 	const (
-		vigilar   = "Ver la sala en vivo"
-		copiar    = "Enseñar el enlace para repartir"
-		rotar     = "Renovar el código (los enlaces repartidos dejan de valer)"
-		juego     = "Activar el perfil de un juego"
-		cerrarJue = "Cerrar los puertos del juego"
-		comprobar = "Comprobar el sistema"
-		cerrar    = "Cerrar la sala"
-		salirSala = "Salir de la sala"
-		salir     = "Dejar el asistente (la sala sigue abierta)"
+		vigilar   = "Watch the room live"
+		copiar    = "Show the link to hand out"
+		rotar     = "Renew the code (the links handed out stop working)"
+		juego     = "Activate a game profile"
+		cerrarJue = "Close the game ports"
+		comprobar = "Check the system"
+		cerrar    = "Close the room"
+		salirSala = "Leave the room"
+		salir     = "Quit the wizard (the room stays open)"
 	)
 
 	opciones := []string{vigilar, copiar}
@@ -237,7 +243,7 @@ func menuConSala(ctx context.Context, op opciones, st protocol.RoomView) error {
 			if p.Self {
 				continue
 			}
-			etiqueta := fmt.Sprintf("Expulsar a %s (%s)", p.Name, p.IP)
+			etiqueta := fmt.Sprintf("Kick %s (%s)", p.Name, p.IP)
 			expulsar[etiqueta] = p.IP
 			opciones = append(opciones, etiqueta)
 		}
@@ -250,7 +256,7 @@ func menuConSala(ctx context.Context, op opciones, st protocol.RoomView) error {
 	}
 	opciones = append(opciones, salir)
 
-	sel, err := elegir("Acción:", opciones)
+	sel, err := elegir("Action:", opciones)
 	if err != nil {
 		return err
 	}
@@ -269,7 +275,7 @@ func menuConSala(ctx context.Context, op opciones, st protocol.RoomView) error {
 	case copiar:
 		return conAviso(cmdLink(ctx, op, nil))
 	case rotar:
-		ok, err := confirmar("Los enlaces que ya repartiste dejarán de valer. ¿Seguimos?")
+		ok, err := confirmar("The links you already handed out will stop working. Go on?")
 		if err != nil || !ok {
 			return err
 		}
@@ -300,7 +306,7 @@ func elegirJuego(ctx context.Context, op opciones) error {
 		return err
 	}
 	if len(juegos) == 0 {
-		return errors.New("el catálogo está vacío")
+		return errors.New("the catalog is empty")
 	}
 
 	etiquetas := make([]string, 0, len(juegos))
@@ -308,12 +314,12 @@ func elegirJuego(ctx context.Context, op opciones) error {
 	for _, g := range juegos {
 		e := g.Name
 		if g.Installed {
-			e += "  (instalado)"
+			e += "  (installed)"
 		}
 		etiquetas = append(etiquetas, e)
 		porEtiqueta[e] = g.ID
 	}
-	sel, err := elegir("Qué juego:", etiquetas)
+	sel, err := elegir("Which game:", etiquetas)
 	if err != nil {
 		return err
 	}
@@ -324,13 +330,13 @@ func elegirJuego(ctx context.Context, op opciones) error {
 
 func menuDeComprobaciones(ctx context.Context, op opciones) error {
 	const (
-		exposicion = "Qué tengo abierto, y hacia quién"
-		red        = "Cómo se ve mi red desde el motor"
-		sondeo     = "Sondearme desde otra máquina de la sala"
-		reponer    = "Reponer la Protección Kanpachi"
-		volver     = "<< Volver"
+		exposicion = "What I have open, and toward whom"
+		red        = "How my network looks from the engine"
+		sondeo     = "Probe me from another machine in the room"
+		reponer    = "Put Kanpachi Protection back"
+		volver     = "<< Back"
 	)
-	sel, err := elegir("Qué comprobamos:", []string{exposicion, red, sondeo, reponer, volver})
+	sel, err := elegir("What do we check:", []string{exposicion, red, sondeo, reponer, volver})
 	if err != nil {
 		return err
 	}
@@ -349,8 +355,8 @@ func menuDeComprobaciones(ctx context.Context, op opciones) error {
 
 func cambiarNombre(op opciones) error {
 	actual := leerApodo(op.datos)
-	nuevo, err := texto("Tu nombre:", "Lo ven los demás miembros de la sala. "+
-		"Solo letras y dígitos, hasta 12.", actual)
+	nuevo, err := texto("Your name:", "The other members of the room see it. "+
+		"Letters and digits only, up to 12.", actual)
 	if err != nil {
 		return err
 	}
@@ -410,13 +416,13 @@ func conAviso(err error) error {
 	if errors.Is(err, errInterrumpido) || errors.Is(err, context.Canceled) {
 		return err
 	}
-	fmt.Println("\n  MAL:", err)
+	fmt.Println("\n  BAD:", err)
 	esperarEnter()
 	return nil
 }
 
 func esperarEnter() {
-	fmt.Println("\n  Pulsa Enter para continuar...")
+	fmt.Println("\n  Press Enter to continue...")
 	var nada string
 	_, _ = fmt.Scanln(&nada)
 }

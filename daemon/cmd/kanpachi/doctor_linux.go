@@ -32,7 +32,7 @@ func chequeosDelSistema() []chequeo {
 	return []chequeo{
 		chequeoDeTUN(),
 		chequeoDelKernel(),
-		chequeoDeUnidad("kanpachid", "el servicio"),
+		chequeoDeUnidad("kanpachid", "the service"),
 		chequeoDeLaCuarentena(),
 		chequeoDelDirectorioDelCanal(),
 		chequeoDelCanal(),
@@ -41,7 +41,7 @@ func chequeosDelSistema() []chequeo {
 	}
 }
 
-func pistaDeElevación() string { return "Prueba con sudo: el canal y el token son de root." }
+func pistaDeElevación() string { return "Try sudo: the channel and the token belong to root." }
 
 // ─── /dev/net/tun ────────────────────────────────────────────────────────────
 
@@ -62,27 +62,27 @@ func chequeoDeTUN() chequeo {
 		mirar: func(context.Context, opciones) veredicto {
 			info, err := os.Stat(tunPath)
 			if os.IsNotExist(err) {
-				return fallar("no está, y sin él no hay red virtual").
+				return fallar("it is missing, and without it there is no virtual network").
 					con("modprobe tun\n" +
 						"mknod /dev/net/tun c 10 200 && chmod 0666 /dev/net/tun")
 			}
 			if err != nil {
-				return noSeSabe("no se pudo mirar: %v", err)
+				return noSeSabe("could not look at it: %v", err)
 			}
 			if info.Mode()&os.ModeCharDevice == 0 {
-				return fallar("existe y no es un dispositivo de caracteres").
+				return fallar("it exists and is not a character device").
 					con("rm /dev/net/tun && mknod /dev/net/tun c 10 200")
 			}
 			st, listo := info.Sys().(*syscall.Stat_t)
 			if !listo {
-				return noSeSabe("no se pudieron leer sus números")
+				return noSeSabe("its numbers could not be read")
 			}
 			ma, mi := mayorMenor(uint64(st.Rdev))
 			if ma != tunMajor || mi != tunMinor {
-				return fallar("es %d/%d y tiene que ser %d/%d", ma, mi, tunMajor, tunMinor).
+				return fallar("it is %d/%d and has to be %d/%d", ma, mi, tunMajor, tunMinor).
 					con("rm /dev/net/tun && mknod /dev/net/tun c 10 200")
 			}
-			return ok("%d/%d, como tiene que ser", ma, mi)
+			return ok("%d/%d, as it has to be", ma, mi)
 		},
 		arreglar: func(ctx context.Context, _ opciones) error {
 			// `modprobe` primero: en la mayoría de los casos el nodo no está
@@ -121,13 +121,13 @@ func mayorMenor(rdev uint64) (uint32, uint32) {
 // sobre todo para poner nombre a un fallo que si no parece de Kanpachi.
 func chequeoDelKernel() chequeo {
 	return chequeo{
-		nombre: "el kernel",
+		nombre: "the kernel",
 		mirar: func(context.Context, opciones) veredicto {
 			cfg, dónde, err := configDelKernel()
 			if err != nil {
 				// Que no esté la configuración es normal en muchas distribuciones,
 				// y no es un fallo: se dice que no se sabe, que es la verdad.
-				return noSeSabe("no se pudo leer la configuración del kernel: %v", err)
+				return noSeSabe("could not read the kernel configuration: %v", err)
 			}
 			faltan := []string{}
 			for _, opción := range []string{"CONFIG_TUN", "CONFIG_NF_TABLES", "CONFIG_NF_TABLES_INET"} {
@@ -136,10 +136,10 @@ func chequeoDelKernel() chequeo {
 				}
 			}
 			if len(faltan) > 0 {
-				return fallar("le falta %s (según %s)", strings.Join(faltan, ", "), dónde).
-					con("Es la configuración del kernel, así que esto no lo toca Kanpachi.")
+				return fallar("it is missing %s (according to %s)", strings.Join(faltan, ", "), dónde).
+					con("This is the kernel configuration, so Kanpachi does not touch it.")
 			}
-			return ok("TUN y nftables, según %s", dónde)
+			return ok("TUN and nftables, according to %s", dónde)
 		},
 	}
 }
@@ -161,7 +161,7 @@ func configDelKernel() (string, string, error) {
 
 	f, err := os.Open("/proc/config.gz")
 	if err != nil {
-		return "", "", fmt.Errorf("ni /boot/config-<versión> ni /proc/config.gz")
+		return "", "", fmt.Errorf("neither /boot/config-<version> nor /proc/config.gz")
 	}
 	defer func() { _ = f.Close() }()
 	gz, err := gzip.NewReader(f)
@@ -208,11 +208,11 @@ func chequeoDeUnidad(unidad, nombre string) chequeo {
 					// Corriendo y sin arrancar solo: funciona hoy y no mañana. Es
 					// un aviso y no un fallo, porque puede ser lo que el operador
 					// quiso.
-					return avisar("corriendo, y NO arranca con la máquina (%s)", habilitado)
+					return avisar("running, and does NOT start with the machine (%s)", habilitado)
 				}
-				return ok("corriendo, y arranca con la máquina")
+				return ok("running, and starts with the machine")
 			case "":
-				return noSeSabe("no hay systemctl que preguntar")
+				return noSeSabe("there is no systemctl to ask")
 			default:
 				return fallar("%s (%s)", activo, habilitado).
 					con("systemctl enable --now " + unidad)
@@ -236,24 +236,24 @@ func chequeoDeUnidad(unidad, nombre string) chequeo {
 // nada más en el sistema lo diría.
 func chequeoDeLaCuarentena() chequeo {
 	return chequeo{
-		nombre: "la cuarentena de base",
+		nombre: "the base quarantine",
 		mirar: func(ctx context.Context, _ opciones) veredicto {
 			if _, err := os.Stat(nftpermits.QuarantineFile); os.IsNotExist(err) {
 				// Antes del primer arranque del daemon no hay fichero, y eso es
 				// normal: lo escribe él. No hay nada roto que arreglar.
-				return avisar("todavía no hay %s: la escribe el daemon al arrancar",
+				return avisar("%s is not there yet: the daemon writes it on start",
 					nftpermits.QuarantineFile)
 			}
 			puesta, err := nftpermits.QuarantineLoaded(ctx)
 			if err != nil {
-				return noSeSabe("no se pudo leer el ruleset: %v", err)
+				return noSeSabe("could not read the ruleset: %v", err)
 			}
 			if !puesta {
-				return fallar("el fichero está y la tabla NO está cargada: " +
-					"los puertos del juego están abiertos desde internet").
+				return fallar("the file is there and the table is NOT loaded: " +
+					"the game ports are open from the internet").
 					con("systemctl restart kanpachi-quarantine")
 			}
-			return ok("tabla inet %s cargada", nftpermits.QuarantineTable)
+			return ok("table inet %s loaded", nftpermits.QuarantineTable)
 		},
 		arreglar: func(ctx context.Context, _ opciones) error {
 			return ejecutar(ctx, "systemctl", "restart", "kanpachi-quarantine")
@@ -272,21 +272,21 @@ func chequeoDeLaCuarentena() chequeo {
 func chequeoDelDirectorioDelCanal() chequeo {
 	dir := "/run/kanpachi"
 	return chequeo{
-		nombre: "los permisos del canal",
+		nombre: "the channel permissions",
 		mirar: func(context.Context, opciones) veredicto {
 			info, err := os.Lstat(dir)
 			if os.IsNotExist(err) {
-				return avisar("todavía no existe %s: lo crea el daemon al arrancar", dir)
+				return avisar("%s does not exist yet: the daemon creates it on start", dir)
 			}
 			if err != nil {
-				return noSeSabe("no se pudo mirar %s: %v", dir, err)
+				return noSeSabe("could not look at %s: %v", dir, err)
 			}
 			if info.Mode()&os.ModeSymlink != 0 {
-				return fallar("%s es un enlace simbólico, así que sus permisos no "+
-					"significan nada", dir)
+				return fallar("%s is a symlink, so its permissions mean "+
+					"nothing", dir)
 			}
 			if p := info.Mode().Perm(); p&0o077 != 0 {
-				return fallar("%s está en %04o y deja entrar al grupo o a otros", dir, p).
+				return fallar("%s is %04o and lets the group or others in", dir, p).
 					con("chmod 0700 " + dir)
 			}
 			// El socket solo se mira si el directorio ya está bien: con el
@@ -294,11 +294,11 @@ func chequeoDelDirectorioDelCanal() chequeo {
 			// dos fallos a la vez esconde cuál es el que manda.
 			if s, err := os.Stat(pipe.Name); err == nil {
 				if p := s.Mode().Perm(); p&0o077 != 0 {
-					return fallar("%s está en %04o", pipe.Name, p).
+					return fallar("%s is %04o", pipe.Name, p).
 						con("chmod 0600 " + pipe.Name)
 				}
 			}
-			return ok("%s en 0700, socket en 0600", dir)
+			return ok("%s at 0700, socket at 0600", dir)
 		},
 		arreglar: func(_ context.Context, _ opciones) error {
 			if err := os.Chmod(dir, 0o700); err != nil {
@@ -323,7 +323,7 @@ func chequeoDelDirectorioDelCanal() chequeo {
 // con el que lo miraría él, y se para ahí.
 func chequeoDeFirewallsAjenos() chequeo {
 	return chequeo{
-		nombre: "firewalls que no son nuestros",
+		nombre: "firewalls that are not ours",
 		mirar: func(ctx context.Context, _ opciones) veredicto {
 			encontrados := []string{}
 			if strings.Contains(salidaDe(ctx, "ufw", "status"), "Status: active") {
@@ -337,12 +337,12 @@ func chequeoDeFirewallsAjenos() chequeo {
 				encontrados = append(encontrados, "Docker")
 			}
 			if len(encontrados) == 0 {
-				return ok("no hay ninguno activo")
+				return ok("none is active")
 			}
-			return avisar("hay %s. Kanpachi NO puede abrir por encima de su bloqueo",
+			return avisar("there is %s. Kanpachi can NOT open above its block",
 				strings.Join(encontrados, ", ")).
-				con("Míralo tú: ufw status verbose / firewall-cmd --list-all / nft list ruleset\n" +
-					"Kanpachi no toca esto ni con --fix.")
+				con("Look yourself: ufw status verbose / firewall-cmd --list-all / nft list ruleset\n" +
+					"Kanpachi does not touch this, not even with --fix.")
 		},
 	}
 }

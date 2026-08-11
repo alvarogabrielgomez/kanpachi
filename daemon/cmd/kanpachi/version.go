@@ -37,11 +37,11 @@ func cmdVersion(_ context.Context, op opciones, _ []string) error {
 	if revisión != "" {
 		marca := ""
 		if sucio {
-			marca = " (con cambios sin cometer)"
+			marca = " (with uncommitted changes)"
 		}
 		fmt.Printf("  commit  %s%s\n", revisión, marca)
 	}
-	fmt.Printf("  go      %s en %s/%s\n", runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("  go      %s on %s/%s\n", runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	return nil
 }
 

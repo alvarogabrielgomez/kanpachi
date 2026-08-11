@@ -11,11 +11,13 @@ package main
 // fuera de texto plano es el borrado de pantalla de `watch`, que sin él no es
 // una pantalla.
 //
-// # Traducir los enums de cable a castellano se hace ACÁ
+// # Los enums de cable se traducen ACÁ
 //
-// El protocolo manda nombres estables en inglés a propósito, para que la UI no
-// se rompa cuando alguien encuentre una palabra mejor. Convertirlos a lo que se
-// lee es trabajo de quien pinta, que es esto.
+// El protocolo manda nombres estables en inglés a propósito, para que la UI no se
+// rompa cuando alguien encuentre una palabra mejor. Convertirlos a lo que se lee
+// es trabajo de quien pinta, que es esto. Que acá el destino sea también inglés
+// no vuelve inútil la traducción: `unreachable` es un valor del protocolo y "no
+// one answered, so this proves nothing" es una frase para una persona.
 
 import (
 	"fmt"
@@ -38,56 +40,57 @@ const raya = "  ─────────────────────�
 // pintarSala es la pantalla principal.
 func pintarSala(w io.Writer, st protocol.RoomView) {
 	if st.Conn == "idle" || st.Conn == "" {
-		fmt.Fprintln(w, "  No hay ninguna sala abierta.")
+		fmt.Fprintln(w, "  No room is open.")
 		if st.LastExit != "" {
-			fmt.Fprintf(w, "  La última terminó: %s\n", motivoDeSalida(st.LastExit))
+			fmt.Fprintf(w, "  The last one ended: %s\n", motivoDeSalida(st.LastExit))
 		}
-		fmt.Fprintln(w, "\n  `kanpachi host` abre una. `kanpachi join <código>` entra en la de otro.")
+		fmt.Fprintln(w, "\n  `kanpachi host` opens one. `kanpachi join <code>` enters someone else's.")
 		return
 	}
 
 	fmt.Fprintln(w, raya)
 	nombre := st.Name
 	if nombre == "" {
-		nombre = "(sin nombre)"
+		nombre = "(unnamed)"
 	}
 	fmt.Fprintf(w, "  %-34s %s, %s\n", nombre, papel(st.Role), estadoDeConexión(st.Conn))
 	fmt.Fprintln(w, raya)
 
 	if st.Code != "" {
-		fmt.Fprintf(w, "  Código   %s\n", conGuion(st.Code))
+		fmt.Fprintf(w, "  Code     %s\n", conGuion(st.Code))
 	}
 	if st.Link != "" {
-		fmt.Fprintf(w, "  Enlace   %s\n", st.Link)
+		fmt.Fprintf(w, "  Link     %s\n", st.Link)
 	}
 	if st.CodeLost {
 		// Se dice fuerte porque la sala SIGUE funcionando para los que están
 		// dentro: lo que se rompió es que entre alguien nuevo, y nada más en la
 		// pantalla lo delataría.
-		fmt.Fprintln(w, "  AVISO    el registro ya no conoce este código: no puede entrar nadie nuevo.")
-		fmt.Fprintln(w, "           Lo arregla `kanpachi rotate`, que invalida los enlaces repartidos.")
+		fmt.Fprintln(w, "  WARNING  the registry no longer knows this code: nobody new can join.")
+		fmt.Fprintln(w, "           `kanpachi rotate` fixes it, and voids the links you handed out.")
 	}
 	if st.LocalIP != "" {
-		fmt.Fprintf(w, "  Tu IP    %s", st.LocalIP)
+		fmt.Fprintf(w, "  Your IP  %s", st.LocalIP)
 		if st.Subnet != "" {
-			fmt.Fprintf(w, "  en %s", st.Subnet)
+			fmt.Fprintf(w, "  on %s", st.Subnet)
 		}
 		fmt.Fprintln(w)
 	}
 	if st.GameName != "" {
-		fmt.Fprintf(w, "  Juego    %s\n", st.GameName)
+		fmt.Fprintf(w, "  Game     %s\n", st.GameName)
 	} else if st.Game != "" {
-		fmt.Fprintf(w, "  Juego    %s\n", st.Game)
+		fmt.Fprintf(w, "  Game     %s\n", st.Game)
 	}
 	if st.MissingGame != "" {
-		fmt.Fprintf(w, "  Falta    %s: está activo en la sala y no lo tienes instalado\n", st.MissingGame)
+		fmt.Fprintf(w, "  Missing  %s: it is active in the room and you do not have it installed\n",
+			st.MissingGame)
 	}
 
 	if st.Role == "guest" && !st.HostPresent {
-		fmt.Fprintf(w, "  Host     ausente desde hace %s\n", milis(st.HostGoneForMS))
+		fmt.Fprintf(w, "  Host     gone for %s\n", milis(st.HostGoneForMS))
 	}
 	if st.ReconnectingForMS > 0 {
-		fmt.Fprintf(w, "  Túnel    reconectando desde hace %s\n", milis(st.ReconnectingForMS))
+		fmt.Fprintf(w, "  Tunnel   reconnecting for %s\n", milis(st.ReconnectingForMS))
 	}
 
 	fmt.Fprintln(w)
@@ -95,26 +98,26 @@ func pintarSala(w io.Writer, st protocol.RoomView) {
 	pintarCanario(w, st.Canary)
 
 	if len(st.Alerts) > 0 {
-		fmt.Fprintln(w, "\n  AVISOS")
+		fmt.Fprintln(w, "\n  ALERTS")
 		for _, a := range st.Alerts {
-			fmt.Fprintf(w, "    %-18s %s\n", nombreDeAlerta(a.Kind), a.Detail)
+			fmt.Fprintf(w, "    %-20s %s\n", nombreDeAlerta(a.Kind), a.Detail)
 		}
 	}
 }
 
 func pintarMiembros(w io.Writer, st protocol.RoomView) {
 	if len(st.Peers) == 0 {
-		fmt.Fprintln(w, "  No hay nadie en la sala.")
+		fmt.Fprintln(w, "  Nobody is in the room.")
 		return
 	}
-	fmt.Fprintf(w, "  MIEMBROS (%d)\n", len(st.Peers))
+	fmt.Fprintf(w, "  MEMBERS (%d)\n", len(st.Peers))
 	for _, p := range st.Peers {
 		marcas := ""
 		if p.Host {
 			marcas += " [host]"
 		}
 		if p.Self {
-			marcas += " [tú]"
+			marcas += " [you]"
 		}
 		latencia := "-"
 		if p.RTTMS > 0 {
@@ -135,13 +138,13 @@ func pintarCanario(w io.Writer, c protocol.CanaryView) {
 	if !c.Measured {
 		return
 	}
-	fmt.Fprintf(w, "\n  PROTECCIÓN   %s", veredictoDelCanario(c.Verdict))
+	fmt.Fprintf(w, "\n  PROTECTION   %s", veredictoDelCanario(c.Verdict))
 	if c.Port != 0 {
-		fmt.Fprintf(w, "  (puerto %d)", c.Port)
+		fmt.Fprintf(w, "  (port %d)", c.Port)
 	}
 	fmt.Fprintln(w)
 	if c.Touched {
-		fmt.Fprintln(w, "    el host vio entrar tráfico por ahí, con su propio socket")
+		fmt.Fprintln(w, "    the host saw traffic come in there, with its own socket")
 	}
 	for _, a := range c.Answers {
 		fmt.Fprintf(w, "    %-14s tcp %s, udp %s\n", a.From, resultado(a.TCP), resultado(a.UDP))
@@ -150,7 +153,7 @@ func pintarCanario(w io.Writer, c protocol.CanaryView) {
 
 func pintarJuegos(w io.Writer, juegos []protocol.GameView) {
 	if len(juegos) == 0 {
-		fmt.Fprintln(w, "  El catálogo está vacío.")
+		fmt.Fprintln(w, "  The catalog is empty.")
 		return
 	}
 	// Ordenados por nombre: el daemon los devuelve en el orden del catálogo, que
@@ -158,18 +161,18 @@ func pintarJuegos(w io.Writer, juegos []protocol.GameView) {
 	sort.Slice(juegos, func(i, j int) bool {
 		return strings.ToLower(juegos[i].Name) < strings.ToLower(juegos[j].Name)
 	})
-	fmt.Fprintf(w, "  %-24s %-22s %s\n", "ID", "NOMBRE", "")
+	fmt.Fprintf(w, "  %-24s %-34s %s\n", "ID", "NAME", "")
 	for _, g := range juegos {
 		marcas := []string{}
 		if g.Installed {
-			marcas = append(marcas, "instalado")
+			marcas = append(marcas, "installed")
 		}
 		if g.Verified {
-			marcas = append(marcas, "verificado")
+			marcas = append(marcas, "verified")
 		}
-		fmt.Fprintf(w, "  %-24s %-22s %s\n", g.ID, g.Name, strings.Join(marcas, ", "))
+		fmt.Fprintf(w, "  %-24s %-34s %s\n", g.ID, g.Name, strings.Join(marcas, ", "))
 	}
-	fmt.Fprintln(w, "\n  `kanpachi game <id>` lo activa.")
+	fmt.Fprintln(w, "\n  `kanpachi game <id>` activates one.")
 }
 
 // pintarExposicion enseña qué está abierto.
@@ -182,37 +185,37 @@ func pintarJuegos(w io.Writer, juegos []protocol.GameView) {
 // eso y acá se respeta.
 func pintarExposicion(w io.Writer, v protocol.ExposureView) {
 	if !v.Measured {
-		fmt.Fprintln(w, "  Kanpachi NO pudo leer lo que tiene puesto en el firewall.")
-		fmt.Fprintln(w, "  Esto no dice que no haya nada abierto: dice que no se sabe.")
+		fmt.Fprintln(w, "  Kanpachi could NOT read what it has in the firewall.")
+		fmt.Fprintln(w, "  This does not say nothing is open: it says nobody knows.")
 		return
 	}
-	fmt.Fprintf(w, "  Compuerta: %s\n", estadoDeCompuerta(v.Gate))
+	fmt.Fprintf(w, "  Gate: %s\n", estadoDeCompuerta(v.Gate))
 	if len(v.Ports) == 0 {
-		fmt.Fprintln(w, "  Kanpachi no tiene ningún puerto abierto.")
+		fmt.Fprintln(w, "  Kanpachi has no port open.")
 	}
 	for _, p := range v.Ports {
 		rango := fmt.Sprintf("%d", p.From)
 		if p.To != p.From {
 			rango = fmt.Sprintf("%d-%d", p.From, p.To)
 		}
-		qué := "juego"
+		qué := "game"
 		if p.Control {
-			qué = "canal de la sala"
+			qué = "room channel"
 		}
 		hacia := strings.Join(append(append([]string{}, p.Members...), p.Nets...), ", ")
 		if hacia == "" {
 			// Vacío JAMÁS significa "para cualquiera": el dominio no puede
 			// expresar eso. Se dice así para que nadie lo lea al revés.
-			hacia = "nadie"
+			hacia = "nobody"
 		}
-		estado := "puesto"
+		estado := "applied"
 		if !p.Applied {
-			estado = "PEDIDO Y NO PUESTO"
+			estado = "ASKED FOR AND NOT APPLIED"
 		}
-		fmt.Fprintf(w, "    %-4s %-12s %-18s hacia %s [%s]\n", p.Proto, rango, qué, hacia, estado)
+		fmt.Fprintf(w, "    %-4s %-12s %-14s toward %s [%s]\n", p.Proto, rango, qué, hacia, estado)
 	}
 	for _, u := range v.Unexpected {
-		fmt.Fprintf(w, "    REGLA QUE NADIE PIDIÓ: %s\n", u)
+		fmt.Fprintf(w, "    RULE NOBODY ASKED FOR: %s\n", u)
 	}
 }
 
@@ -220,19 +223,19 @@ func pintarRed(w io.Writer, v protocol.NetView) {
 	if v.NATKind != "" {
 		fmt.Fprintf(w, "  NAT      %s\n", v.NATKind)
 	}
-	fmt.Fprintf(w, "  UDP      %s\n", map[bool]string{true: "bloqueado", false: "pasa"}[v.UDPBlocked])
+	fmt.Fprintf(w, "  UDP      %s\n", map[bool]string{true: "blocked", false: "gets through"}[v.UDPBlocked])
 	if v.MTU > 0 {
 		fmt.Fprintf(w, "  MTU      %d\n", v.MTU)
 	}
 	if v.Subnet != "" {
-		fmt.Fprintf(w, "  Subred   %s", v.Subnet)
+		fmt.Fprintf(w, "  Subnet   %s", v.Subnet)
 		if v.SubnetReason != "" {
 			fmt.Fprintf(w, "  (%s)", v.SubnetReason)
 		}
 		fmt.Fprintln(w)
 	}
 	for seed, rtt := range v.SeedRTTMS {
-		fmt.Fprintf(w, "  Registro %s: %d ms\n", seed, rtt)
+		fmt.Fprintf(w, "  Registry %s: %d ms\n", seed, rtt)
 	}
 }
 
@@ -240,31 +243,32 @@ func pintarRed(w io.Writer, v protocol.NetView) {
 // verdad, y por eso la que más cuidado pide al leerla.
 func pintarSondeo(w io.Writer, v protocol.ProbeView) {
 	if !v.Measured {
-		fmt.Fprintln(w, "  No se midió nada.")
+		fmt.Fprintln(w, "  Nothing was measured.")
 		return
 	}
-	fmt.Fprintf(w, "  Sondeado desde %s (%s): %s\n", v.Name, v.Target, veredictoDelSondeo(v.Verdict))
+	fmt.Fprintf(w, "  Probed from %s (%s): %s\n", v.Name, v.Target, veredictoDelSondeo(v.Verdict))
 	for _, r := range v.Results {
-		fmt.Fprintf(w, "    %-6d %-11s %-24s %s\n", r.Port, claseDeSondeo(r.Kind), r.Label, resultado(r.Outcome))
+		fmt.Fprintf(w, "    %-6d %-11s %-24s %s\n",
+			r.Port, claseDeSondeo(r.Kind), r.Label, resultado(r.Outcome))
 	}
 }
 
-// ─── Los enums de cable, en castellano ───────────────────────────────────────
+// ─── Los enums de cable, para leerlos ────────────────────────────────────────
 
 func estadoDeConexión(s string) string {
 	switch s {
 	case "idle":
-		return "sin sala"
+		return "no room"
 	case "resolving":
-		return "resolviendo"
+		return "resolving"
 	case "connecting":
-		return "conectando"
+		return "connecting"
 	case "connected":
-		return "conectada"
+		return "connected"
 	case "degraded":
-		return "degradada"
+		return "degraded"
 	case "reconnecting":
-		return "reconectando"
+		return "reconnecting"
 	default:
 		// Lo que no se reconoce se enseña TAL CUAL en vez de traducirse a algo
 		// tranquilizador. Un cliente viejo hablando con un daemon nuevo tiene que
@@ -276,9 +280,9 @@ func estadoDeConexión(s string) string {
 func papel(s string) string {
 	switch s {
 	case "host":
-		return "eres el host"
+		return "you are the host"
 	case "guest":
-		return "eres invitado"
+		return "you are a guest"
 	default:
 		return s
 	}
@@ -287,11 +291,11 @@ func papel(s string) string {
 func camino(s string) string {
 	switch s {
 	case "direct":
-		return "directo"
+		return "direct"
 	case "relay":
-		return "por relay"
+		return "relayed"
 	case "self":
-		return "tú"
+		return "you"
 	default:
 		return "?"
 	}
@@ -300,13 +304,13 @@ func camino(s string) string {
 func resultado(s string) string {
 	switch s {
 	case "answered":
-		return "contestó"
+		return "answered"
 	case "refused":
-		return "rechazó"
+		return "refused"
 	case "silent":
-		return "silencio"
+		return "silent"
 	case "failed":
-		return "falló"
+		return "failed"
 	default:
 		return s
 	}
@@ -315,11 +319,11 @@ func resultado(s string) string {
 func estadoDeCompuerta(s string) string {
 	switch s {
 	case "present":
-		return "puesta"
+		return "up"
 	case "absent":
-		return "NO ESTÁ PUESTA"
+		return "NOT UP"
 	default:
-		return "sin comprobar"
+		return "unchecked"
 	}
 }
 
@@ -327,41 +331,41 @@ func veredictoDelSondeo(s string) string {
 	switch s {
 	case "leaky":
 		// Prueba POSITIVA de exposición: algo que nadie pidió contestó.
-		return "FUGA: algo que nadie abrió contestó desde fuera"
+		return "LEAK: something nobody opened answered from outside"
 	case "unreachable":
 		// No prueba nada, y decirlo importa: se ve igual con la máquina blindada
 		// que con la máquina apagada.
-		return "no contestó nadie, ni el canal de la sala, así que esto no prueba nada"
+		return "nobody answered, not even the room channel, so this proves nothing"
 	case "sealed":
-		return "sellada: el canal contesta y nada de lo prohibido lo hace"
+		return "sealed: the channel answers and nothing forbidden does"
 	default:
-		return "sin medir"
+		return "not measured"
 	}
 }
 
 func veredictoDelCanario(s string) string {
 	switch s {
 	case "leaking":
-		return "FUGA"
+		return "LEAKING"
 	case "clean":
-		return "limpia"
+		return "clean"
 	case "unconfirmed":
-		return "sin confirmar"
+		return "unconfirmed"
 	case "mismatch":
-		return "respuestas que no cuadran"
+		return "answers that do not agree"
 	default:
-		return "sin comprobar"
+		return "unchecked"
 	}
 }
 
 func claseDeSondeo(s string) string {
 	switch s {
 	case "reference":
-		return "referencia"
+		return "reference"
 	case "forbidden":
-		return "prohibido"
+		return "forbidden"
 	case "game":
-		return "del juego"
+		return "of the game"
 	default:
 		return s
 	}
@@ -370,17 +374,17 @@ func claseDeSondeo(s string) string {
 func motivoDeSalida(s string) string {
 	switch s {
 	case "user":
-		return "la cerraste tú"
+		return "you closed it"
 	case "kicked":
-		return "te expulsaron"
+		return "you were kicked"
 	case "host_gone":
-		return "el host se fue"
+		return "the host left"
 	case "room_closed":
-		return "el host la cerró"
+		return "the host closed it"
 	case "failed":
-		return "falló"
+		return "it failed"
 	case "tunnel_lost":
-		return "se perdió el túnel"
+		return "the tunnel was lost"
 	default:
 		return s
 	}
@@ -389,21 +393,21 @@ func motivoDeSalida(s string) string {
 func nombreDeAlerta(s string) string {
 	switch s {
 	case "firewall_off":
-		return "firewall apagado"
+		return "firewall off"
 	case "rules_tampered":
-		return "reglas tocadas"
+		return "rules tampered with"
 	case "router_mapping":
-		return "mapeo en el router"
+		return "mapping on the router"
 	case "foreign_rule":
-		return "regla ajena"
+		return "foreign rule"
 	case "lobby_conflict":
-		return "choque de vestíbulo"
+		return "lobby clash"
 	case "kick_incomplete":
-		return "expulsión a medias"
+		return "partial kick"
 	case "audit_failed":
-		return "auditoría fallida"
+		return "audit failed"
 	case "canary_leaking":
-		return "fuga detectada"
+		return "leak detected"
 	default:
 		return s
 	}

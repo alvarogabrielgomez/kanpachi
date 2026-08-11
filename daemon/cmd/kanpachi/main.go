@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/accentiostudios/kanpachi/daemon/paths"
 	"github.com/accentiostudios/kanpachi/daemon/transport/client"
@@ -48,8 +49,13 @@ type opciones struct {
 	// alguien mejora una pantalla, y la forma de cable no, porque es un contrato
 	// con la interfaz de Windows que además tiene candados.
 	json bool
-	// plazo se toca cuando la máquina es lenta. Ver [client.DefaultTimeout].
-	plazo string
+	// plazo es lo que se escribió en `--timeout`, y espera es ya interpretado.
+	//
+	// Los dos, y no solo el segundo: el texto crudo se conserva porque el error de
+	// un valor que no vale tiene que poder citarlo tal como lo escribieron. Cero
+	// en `espera` significa que nadie lo pidió y vale [client.DefaultTimeout].
+	plazo  string
+	espera time.Duration
 }
 
 func main() {
@@ -82,7 +88,7 @@ func correr(ctx context.Context, args []string) int {
 
 	cmd, ok := comandos[resto[0]]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "kanpachi: no existe el comando %q\n\n", resto[0])
+		fmt.Fprintf(os.Stderr, "kanpachi: there is no %q command\n\n", resto[0])
 		ayuda(os.Stderr)
 		return 2
 	}
@@ -174,7 +180,7 @@ func leerFlags(args []string) (opciones, []string, error) {
 		// interceptan los globales, que están en esta lista y en ninguna otra.
 		valor := func(nombre string) (string, error) {
 			if i+1 >= len(args) {
-				return "", uso("a %s le falta el valor", nombre)
+				return "", uso("%s is missing its value", nombre)
 			}
 			i++
 			return args[i], nil
@@ -200,6 +206,20 @@ func leerFlags(args []string) (opciones, []string, error) {
 			return op, nil, err
 		}
 	}
+
+	// The deadline is parsed HERE and not where it gets used, and that ordering
+	// is the point: it is a flag value, so a bad one has to be rejected without
+	// talking to anybody. It was validated inside `abrir`, after the connection
+	// was already open, so `kanpachi --timeout abc status` with the daemon down
+	// reported the daemon being down. Two wrong things at once, and the one it
+	// named was the one the person had not caused.
+	if op.plazo != "" {
+		d, err := tiempo(op.plazo)
+		if err != nil {
+			return op, nil, err
+		}
+		op.espera = d
+	}
 	return op, resto, nil
 }
 
@@ -214,13 +234,8 @@ func abrir(op opciones) (*client.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w\n%s", err, pistaDeConexión(op))
 	}
-	if op.plazo != "" {
-		d, e := tiempo(op.plazo)
-		if e != nil {
-			_ = c.Close()
-			return nil, e
-		}
-		c.Plazo = d
+	if op.espera > 0 {
+		c.Plazo = op.espera
 	}
 	return c, nil
 }

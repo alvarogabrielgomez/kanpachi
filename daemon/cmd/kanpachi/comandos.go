@@ -36,13 +36,13 @@ var grupos = []struct {
 	titulo  string
 	nombres []string
 }{
-	{"La sala:", []string{"status", "watch", "host", "join", "leave", "link", "rotate", "rename"}},
-	{"Quién está dentro:", []string{"members", "kick"}},
-	{"El juego:", []string{"games", "game"}},
-	{"Comprobar:", []string{"exposure", "diag", "probe", "protect"}},
-	{"Lo que quedó de antes:", []string{"pending", "resume", "discard", "last"}},
-	{"El sistema:", []string{"doctor"}},
-	{"Otros:", []string{"version", "help"}},
+	{"The room:", []string{"status", "watch", "host", "join", "leave", "link", "rotate", "rename"}},
+	{"Who is in:", []string{"members", "kick"}},
+	{"The game:", []string{"games", "game"}},
+	{"Checking:", []string{"exposure", "diag", "probe", "protect"}},
+	{"What was left from before:", []string{"pending", "resume", "discard", "last"}},
+	{"The system:", []string{"doctor", "upgrade"}},
+	{"Other:", []string{"version", "help"}},
 }
 
 // comandos es la tabla. Se rellena en `init` y no en la declaración porque
@@ -52,51 +52,54 @@ var comandos map[string]comando
 
 func init() {
 	comandos = map[string]comando{
-		"status": {breve: "qué hay ahora: sala, miembros, red y protección",
+		"status": {breve: "what there is right now: room, members, network and protection",
 			correr: cmdStatus},
-		"watch": {breve: "lo mismo, redibujado hasta que pulses Ctrl+C",
+		"watch": {breve: "the same, redrawn until you press Ctrl+C",
 			correr: cmdWatch},
-		"host": {args: "[nombre]", breve: "abrir una sala y quedarse de anfitrión",
+		"host": {args: "[name]", breve: "open a room and be its host",
 			correr: cmdHost},
-		"join": {args: "<código|enlace>", breve: "entrar a la sala de otro",
+		"join": {args: "<code|link>", breve: "enter someone else's room",
 			correr: cmdJoin},
-		"leave": {breve: "cerrar la sala si eres el host, salir si eres invitado",
+		"leave": {breve: "close the room if you are the host, leave if you are a guest",
 			correr: cmdLeave},
-		"link": {breve: "el enlace de invitación, para copiarlo y repartirlo",
+		"link": {breve: "the invite link, to copy and hand out",
 			correr: cmdLink},
-		"rotate": {breve: "renovar el código: los enlaces repartidos dejan de valer",
+		"rotate": {breve: "renew the code: the links you handed out stop working",
 			correr: cmdRotate},
-		"rename": {args: "<nombre>", breve: "cambiarle el nombre a la sala",
+		"rename": {args: "<name>", breve: "rename the room",
 			correr: cmdRename},
-		"members": {breve: "quién está dentro, por dónde y con cuánta latencia",
+		"members": {breve: "who is in, by which path, and with what latency",
 			correr: cmdMembers},
-		"kick": {args: "<nombre|ip>", breve: "expulsar a alguien de la sala",
+		"kick": {args: "<name|ip>", breve: "kick someone out of the room",
 			correr: cmdKick},
-		"games": {breve: "el catálogo de juegos, con cuáles están instalados",
+		"games": {breve: "the game catalog, and which ones are installed",
 			correr: cmdGames},
-		"game": {args: "[id]", breve: "activar el perfil de un juego; sin id, cerrar los puertos",
+		"game": {args: "[id]", breve: "activate a game profile; with no id, close the ports",
 			correr: cmdGame},
-		"exposure": {breve: "qué tiene abierto Kanpachi y hacia quién",
+		"exposure": {breve: "what Kanpachi has open, and toward whom",
 			correr: cmdExposure},
-		"diag": {breve: "la red vista desde el motor: NAT, UDP y MTU",
+		"diag": {breve: "the network as the engine sees it: NAT, UDP and MTU",
 			correr: cmdDiag},
-		"probe": {breve: "sondear esta máquina DESDE otra de la sala",
+		"probe": {breve: "probe this machine FROM another one in the room",
 			correr: cmdProbe},
-		"protect": {breve: "reponer la Protección Kanpachi. Es idempotente",
+		"protect": {breve: "put Kanpachi Protection back. It is idempotent",
 			correr: cmdProtect},
-		"pending": {breve: "si quedó una sala abierta del arranque anterior",
+		"pending": {breve: "whether a room was left open from the previous start",
 			correr: cmdPending},
-		"resume": {breve: "reabrir esa sala con el mismo código",
+		"resume": {breve: "reopen that room with the same code",
 			correr: cmdResume},
-		"discard": {breve: "olvidarla",
+		"discard": {breve: "forget it",
 			correr: cmdDiscard},
-		"last": {breve: "la última sala a la que entraste como invitado",
+		"last": {breve: "the last room you entered as a guest",
 			correr: cmdLast},
-		"doctor": {args: "[--fix]", breve: "qué hace falta para que esto funcione, y qué está mal",
+		"doctor": {args: "[--fix]", breve: "what this needs to work, and what is broken",
 			correr: cmdDoctor},
-		"version": {breve: "qué versión es esta",
+		"upgrade": {args: "[--check] [--version v] [--yes]",
+			breve:  "fetch the new version. Restarts the service, so the room drops",
+			correr: cmdUpgrade},
+		"version": {breve: "which version this is",
 			correr: cmdVersion},
-		"help": {breve: "esto",
+		"help": {breve: "this",
 			correr: func(context.Context, opciones, []string) error { ayuda(os.Stdout); return nil }},
 	}
 }
@@ -126,7 +129,7 @@ func pedir[T any](c *client.Client, op opciones, m protocol.Method, params any) 
 	}
 	if len(raw) > 0 {
 		if e := json.Unmarshal(raw, &out); e != nil && err == nil {
-			return out, false, fmt.Errorf("interpretando la respuesta de %s: %w", m, e)
+			return out, false, fmt.Errorf("parsing the answer to %s: %w", m, e)
 		}
 	}
 	return out, false, err
@@ -176,8 +179,8 @@ const refrescoDeWatch = 1 * time.Second
 // oyente cada vez. Hay ocho plazas y el daemon las cuenta.
 func cmdWatch(ctx context.Context, op opciones, _ []string) error {
 	if op.json {
-		return uso("watch pinta una pantalla, así que no tiene forma en --json.\n" +
-			"  Para un script, `kanpachi status --json` dentro de un bucle")
+		return uso("watch paints a screen, so it has no --json form.\n" +
+			"  For a script, `kanpachi status --json` inside a loop")
 	}
 	c, err := abrir(op)
 	if err != nil {
@@ -192,7 +195,7 @@ func cmdWatch(ctx context.Context, op opciones, _ []string) error {
 		}
 		limpiarPantalla(os.Stdout)
 		pintarSala(os.Stdout, st)
-		fmt.Println("  [Ctrl+C] salir. Esto NO cierra la sala: la sala vive en el daemon.")
+		fmt.Println("  [Ctrl+C] to leave. This does NOT close the room: the room lives in the daemon.")
 
 		select {
 		case <-ctx.Done():
@@ -215,8 +218,8 @@ func cmdHost(_ context.Context, op opciones, args []string) error {
 		nombre = nombreDelEquipo()
 	}
 	if !op.json {
-		fmt.Println("Abriendo la sala. Tarda cerca de un minuto: hay que levantar dos")
-		fmt.Println("adaptadores, canjear la credencial y medir el MTU.")
+		fmt.Println("Opening the room. This takes about a minute: two adapters have to")
+		fmt.Println("come up, the credential has to be exchanged, and the MTU measured.")
 	}
 	return conSala(op, protocol.MethodCreateRoom, struct {
 		Nickname string `json:"nickname"`
@@ -232,16 +235,16 @@ func cmdHost(_ context.Context, op opciones, args []string) error {
 // distinta de la que se quiere probar.
 func cmdJoin(_ context.Context, op opciones, args []string) error {
 	if len(args) == 0 {
-		return uso("join necesita el código o el enlace.\n" +
-			"  Valen las seis formas: VA3BSF5L, va3b-sf5l, kanpachi://VA3BSF5L,\n" +
-			"  VA3BSF5L@otro-seed.com, kanpachi.accentio.dev/VA3BSF5L y https://...")
+		return uso("join needs the code or the link.\n" +
+			"  All six forms work: VA3BSF5L, va3b-sf5l, kanpachi://VA3BSF5L,\n" +
+			"  VA3BSF5L@another-seed.com, kanpachi.accentio.dev/VA3BSF5L and https://...")
 	}
 	nick, err := apodo(op)
 	if err != nil {
 		return err
 	}
 	if !op.json {
-		fmt.Println("Entrando...")
+		fmt.Println("Entering...")
 	}
 	return conSala(op, protocol.MethodJoinRoom, struct {
 		Code     string `json:"code"`
@@ -267,7 +270,7 @@ func cmdLink(_ context.Context, op opciones, _ []string) error {
 		return err
 	}
 	if v.Link == "" {
-		return negativa("no hay sala abierta, así que no hay enlace que repartir")
+		return negativa("no room is open, so there is no link to hand out")
 	}
 	// Pelado y sin adornos: esto se usa dentro de un `$(...)`.
 	fmt.Println(v.Link)
@@ -276,15 +279,15 @@ func cmdLink(_ context.Context, op opciones, _ []string) error {
 
 func cmdRotate(_ context.Context, op opciones, _ []string) error {
 	if !op.json {
-		fmt.Println("Renovando el código. Los enlaces ya repartidos dejan de valer;")
-		fmt.Println("quien esté dentro se queda dentro.")
+		fmt.Println("Renewing the code. The links already handed out stop working;")
+		fmt.Println("whoever is inside stays inside.")
 	}
 	return conSala(op, protocol.MethodRotateInviteCode, nil)
 }
 
 func cmdRename(_ context.Context, op opciones, args []string) error {
 	if len(args) == 0 {
-		return uso("rename necesita el nombre nuevo")
+		return uso("rename needs the new name")
 	}
 	return conSala(op, protocol.MethodRenameRoom, struct {
 		Name string `json:"name"`
@@ -316,7 +319,7 @@ func cmdMembers(_ context.Context, op opciones, _ []string) error {
 // aparece dos veces** en vez de elegir uno.
 func cmdKick(_ context.Context, op opciones, args []string) error {
 	if len(args) == 0 {
-		return uso("kick necesita a quién: su nombre en la sala o su IP virtual")
+		return uso("kick needs who: their name in the room or their virtual IP")
 	}
 	c, err := abrir(op)
 	if err != nil {
@@ -357,10 +360,10 @@ func resolverMiembro(st protocol.RoomView, quién string) (string, error) {
 	}
 	switch len(encontrados) {
 	case 0:
-		return "", uso("en la sala no hay ningún %q.\n  `kanpachi members` dice quién está", quién)
+		return "", uso("there is no %q in the room.\n  `kanpachi members` says who is", quién)
 	case 1:
 		if encontrados[0].Self {
-			return "", uso("ese eres tú. Para salir de la sala es `kanpachi leave`")
+			return "", uso("that is you. To leave the room it is `kanpachi leave`")
 		}
 		return encontrados[0].IP, nil
 	default:
@@ -368,8 +371,8 @@ func resolverMiembro(st protocol.RoomView, quién string) (string, error) {
 		for _, p := range encontrados {
 			ips = append(ips, p.IP)
 		}
-		return "", uso("hay %d miembros llamados %q: %s.\n"+
-			"  Escribe la IP para no expulsar al que no era",
+		return "", uso("there are %d members called %q: %s.\n"+
+			"  Write the IP so you do not kick the wrong one",
 			len(encontrados), quién, strings.Join(ips, ", "))
 	}
 }
@@ -431,7 +434,7 @@ func cmdDiag(_ context.Context, op opciones, _ []string) error {
 	defer func() { _ = c.Close() }()
 
 	if !op.json {
-		fmt.Println("Midiendo. Esto sale a la red, así que tarda unos segundos.")
+		fmt.Println("Measuring. This goes out to the network, so it takes a few seconds.")
 	}
 	v, hecho, err := pedir[protocol.NetView](c, op, protocol.MethodDiagReport, nil)
 	if hecho || err != nil {
@@ -449,7 +452,7 @@ func cmdProbe(_ context.Context, op opciones, _ []string) error {
 	defer func() { _ = c.Close() }()
 
 	if !op.json {
-		fmt.Println("Pidiendo a otra máquina de la sala que sondee a esta.")
+		fmt.Println("Asking another machine in the room to probe this one.")
 	}
 	v, hecho, err := pedir[protocol.ProbeView](c, op, protocol.MethodProbeHost, nil)
 	if hecho || err != nil {
@@ -480,24 +483,24 @@ func cmdPending(_ context.Context, op opciones, _ []string) error {
 		return err
 	}
 	if !v.Found {
-		fmt.Println("No quedó ninguna sala del arranque anterior.")
+		fmt.Println("No room was left from the previous start.")
 		return nil
 	}
-	fmt.Printf("  Sala pendiente  %s\n", v.Room.Name)
-	fmt.Printf("  Código          %s@%s\n", v.Room.Code, v.Room.Seed)
+	fmt.Printf("  Pending room    %s\n", v.Room.Name)
+	fmt.Printf("  Code            %s@%s\n", v.Room.Code, v.Room.Seed)
 	if v.Room.Game != "" {
-		fmt.Printf("  Juego           %s\n", v.Room.Game)
+		fmt.Printf("  Game            %s\n", v.Room.Game)
 	}
 	if v.Room.SavedAt != "" {
-		fmt.Printf("  Guardada        %s\n", v.Room.SavedAt)
+		fmt.Printf("  Saved           %s\n", v.Room.SavedAt)
 	}
-	fmt.Println("\n  `kanpachi resume` la reabre con el mismo código. `kanpachi discard` la olvida.")
+	fmt.Println("\n  `kanpachi resume` reopens it with the same code. `kanpachi discard` forgets it.")
 	return nil
 }
 
 func cmdResume(_ context.Context, op opciones, _ []string) error {
 	if !op.json {
-		fmt.Println("Reabriendo la sala anterior con su mismo código.")
+		fmt.Println("Reopening the previous room with its same code.")
 	}
 	return conSala(op, protocol.MethodResumeRoom, nil)
 }
@@ -513,7 +516,7 @@ func cmdDiscard(_ context.Context, op opciones, _ []string) error {
 	if hecho || err != nil {
 		return err
 	}
-	fmt.Println("Olvidada.")
+	fmt.Println("Forgotten.")
 	return nil
 }
 
@@ -538,11 +541,11 @@ func cmdLast(_ context.Context, op opciones, _ []string) error {
 		return err
 	}
 	if !v.Found {
-		fmt.Println("No hay ninguna sala anterior guardada.")
+		fmt.Println("There is no previous room saved.")
 		return nil
 	}
-	fmt.Printf("  %s  %s@%s  (como %s)\n", v.Room.Name, v.Room.Code, v.Room.Seed, v.Room.Nick)
-	fmt.Printf("\n  Para volver:  kanpachi join %s@%s\n", v.Room.Code, v.Room.Seed)
+	fmt.Printf("  %s  %s@%s  (as %s)\n", v.Room.Name, v.Room.Code, v.Room.Seed, v.Room.Nick)
+	fmt.Printf("\n  To go back:  kanpachi join %s@%s\n", v.Room.Code, v.Room.Seed)
 	return nil
 }
 
@@ -558,7 +561,7 @@ func apodo(op opciones) (string, error) {
 	if op.nick != "" {
 		n, err := domain.ParseNickname(op.nick)
 		if err != nil {
-			return "", uso("--nick %q no vale: %v", op.nick, err)
+			return "", uso("--nick %q is not valid: %v", op.nick, err)
 		}
 		guardarApodo(op.datos, n.String())
 		return n.String(), nil
@@ -573,8 +576,8 @@ func apodo(op opciones) (string, error) {
 	}
 	n, err := domain.ParseNickname(nombreDeApodoPorDefecto())
 	if err != nil {
-		return "", fmt.Errorf("no se pudo sacar un nombre del equipo: %w.\n"+
-			"  Pásalo a mano con --nick", err)
+		return "", fmt.Errorf("could not derive a name from this machine: %w.\n"+
+			"  Pass one by hand with --nick", err)
 	}
 	guardarApodo(op.datos, n.String())
 	return n.String(), nil

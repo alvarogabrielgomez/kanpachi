@@ -15,9 +15,9 @@ import (
 // que la ayuda saldría barajada distinta en cada ejecución. Y el orden no es
 // alfabético a propósito, va por lo que se hace primero.
 func ayuda(w io.Writer) {
-	fmt.Fprintln(w, "kanpachi — el cliente de Kanpachi.")
+	fmt.Fprintln(w, "kanpachi — the Kanpachi client.")
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "  Sin argumentos abre el asistente, con flechas.")
+	fmt.Fprintln(w, "  With no arguments it opens the wizard, driven with arrow keys.")
 	fmt.Fprintln(w)
 	for _, g := range grupos {
 		fmt.Fprintf(w, "%s\n", g.titulo)
@@ -31,21 +31,21 @@ func ayuda(w io.Writer) {
 		}
 		fmt.Fprintln(w)
 	}
-	fmt.Fprintln(w, "Opciones, válidas en cualquier posición:")
-	fmt.Fprintln(w, "  --nick <nombre>            cómo te ven en la sala. Se recuerda")
-	fmt.Fprintln(w, "  --json                     la respuesta cruda del daemon, sin pintar")
-	fmt.Fprintln(w, "  --data <dir>               otro directorio de datos")
-	fmt.Fprintln(w, "  --pipe <ruta>              otro canal de control")
-	fmt.Fprintln(w, "  --timeout <duración>       cuánto esperar una respuesta (por omisión 90s)")
+	fmt.Fprintln(w, "Options, valid in any position:")
+	fmt.Fprintln(w, "  --nick <name>              how the room sees you. Remembered")
+	fmt.Fprintln(w, "  --json                     the daemon's raw answer, unrendered")
+	fmt.Fprintln(w, "  --data <dir>               a different data directory")
+	fmt.Fprintln(w, "  --pipe <path>              a different control channel")
+	fmt.Fprintln(w, "  --timeout <duration>       how long to wait for an answer (90s default)")
 }
 
 // pistaDeConexión dice qué mirar cuando el canal no abre.
 //
 // # Por qué hace falta decir dos cosas y no una
 //
-// Porque los dos fallos frecuentes se ven IGUAL desde acá: un socket que no
-// abre es lo mismo con el servicio parado que con el servicio corriendo y sin
-// `sudo`. Nombrar solo uno manda a la mitad de la gente a mirar donde no está.
+// Porque los dos fallos frecuentes se ven IGUAL desde acá: un socket que no abre
+// es lo mismo con el servicio parado que con el servicio corriendo y sin `sudo`.
+// Nombrar solo uno manda a la mitad de la gente a mirar donde no está.
 //
 // # Por qué esto sí mira `runtime.GOOS` y el resto del repositorio no
 //
@@ -54,18 +54,18 @@ func ayuda(w io.Writer) {
 // enlazado en vez de un `default` silencioso que aplica la decisión de otro; un
 // texto de ayuda que salga genérico en un sistema nuevo no rompe nada, y
 // partirlo costaría tres ficheros para tres frases.
-func pistaDeConexión(op opciones) string {
+func pistaDeConexión(opciones) string {
 	switch runtime.GOOS {
 	case "linux":
-		return "  Mira las dos cosas, que desde acá se ven igual:\n" +
-			"    systemctl status kanpachid       ¿está corriendo?\n" +
-			"    sudo kanpachi ...                el canal y el token son de root"
+		return "  Check both, they look the same from here:\n" +
+			"    systemctl status kanpachid       is it running?\n" +
+			"    sudo kanpachi ...                the channel and the token belong to root"
 	case "windows":
-		return fmt.Sprintf("  ¿Está corriendo el servicio de Kanpachi?\n"+
+		return fmt.Sprintf("  Is the Kanpachi service running?\n"+
 			"    sc query kanpachi-daemon\n"+
-			"  En modo consola el canal es otro: --pipe %s", pipe.ConsoleName)
+			"  In console mode the channel is another one: --pipe %s", pipe.ConsoleName)
 	default:
-		return "  El canal local está escrito para Windows y para Linux."
+		return "  The local channel is written for Windows and for Linux."
 	}
 }
 
@@ -73,10 +73,10 @@ func pistaDeConexión(op opciones) string {
 func tiempo(s string) (time.Duration, error) {
 	d, err := time.ParseDuration(s)
 	if err != nil {
-		return 0, uso("--timeout %q no es una duración: se escribe 30s, 2m, 1h30m", s)
+		return 0, uso("--timeout %q is not a duration: write it 30s, 2m, 1h30m", s)
 	}
 	if d <= 0 {
-		return 0, uso("--timeout tiene que ser positivo, llegó %s", d)
+		return 0, uso("--timeout has to be positive, got %s", d)
 	}
 	return d, nil
 }

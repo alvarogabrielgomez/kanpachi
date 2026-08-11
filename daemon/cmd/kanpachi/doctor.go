@@ -55,9 +55,9 @@ func (e estado) marca() string {
 	case estadoBien:
 		return "OK  "
 	case estadoAviso:
-		return "AVISO"
+		return "WARN"
 	case estadoMal:
-		return "MAL "
+		return "BAD "
 	default:
 		return "?   "
 	}
@@ -106,11 +106,11 @@ func cmdDoctor(ctx context.Context, op opciones, args []string) error {
 		case "--fix", "-fix":
 			arreglar = true
 		default:
-			return uso("doctor no entiende %q. Solo acepta --fix", a)
+			return uso("doctor does not understand %q. It only takes --fix", a)
 		}
 	}
 
-	fmt.Println("EL ENTORNO")
+	fmt.Println("THE ENVIRONMENT")
 	medidos := map[string]veredicto{}
 	pendientes := []chequeo{}
 	for _, c := range chequeosDelSistema() {
@@ -123,10 +123,10 @@ func cmdDoctor(ctx context.Context, op opciones, args []string) error {
 	}
 
 	if arreglar && len(pendientes) > 0 {
-		fmt.Println("\nARREGLANDO LO NUESTRO")
+		fmt.Println("\nFIXING WHAT IS OURS")
 		for _, c := range pendientes {
 			if err := c.arreglar(ctx, op); err != nil {
-				fmt.Printf("  %s %-30s no se pudo: %v\n", estadoMal.marca(), c.nombre, err)
+				fmt.Printf("  %s %-30s could not: %v\n", estadoMal.marca(), c.nombre, err)
 				continue
 			}
 			// Se vuelve a MIRAR en vez de dar por bueno el arreglo: un comando que
@@ -138,7 +138,7 @@ func cmdDoctor(ctx context.Context, op opciones, args []string) error {
 			medidos[c.nombre] = v
 		}
 	} else if len(pendientes) > 0 {
-		fmt.Printf("\n  %d de esas las puede arreglar `kanpachi doctor --fix`.\n", len(pendientes))
+		fmt.Printf("\n  `kanpachi doctor --fix` can fix %d of those.\n", len(pendientes))
 	}
 
 	// El resumen sale de lo medido, con los arreglados ya actualizados. No se
@@ -152,19 +152,19 @@ func cmdDoctor(ctx context.Context, op opciones, args []string) error {
 	}
 
 	if err := loQueMideElDaemon(ctx, op); err != nil {
-		fmt.Println("\nLO QUE MIDE EL DAEMON")
-		fmt.Println("  no se pudo preguntar:", err)
+		fmt.Println("\nWHAT THE DAEMON MEASURES")
+		fmt.Println("  could not ask:", err)
 	}
 
 	switch peor {
 	case estadoBien:
-		fmt.Println("\nTodo lo que se pudo comprobar está bien.")
+		fmt.Println("\nEverything that could be checked is fine.")
 		return nil
 	case estadoAviso, estadoNoSeSabe:
-		fmt.Println("\nHay cosas que mirar. Nada impide abrir una sala.")
+		fmt.Println("\nThere are things to look at. Nothing stops a room from opening.")
 		return nil
 	default:
-		return negativa("hay algo roto. Está arriba, marcado MAL")
+		return negativa("something is broken. It is above, marked BAD")
 	}
 }
 
@@ -189,21 +189,21 @@ func loQueMideElDaemon(ctx context.Context, op opciones) error {
 	}
 	defer func() { _ = c.Close() }()
 
-	fmt.Println("\nLO QUE MIDE EL DAEMON")
+	fmt.Println("\nWHAT THE DAEMON MEASURES")
 
 	st, err := client.Ask[protocol.RoomView](c, protocol.MethodStatus, nil)
 	if err != nil {
 		return err
 	}
 	if st.Conn == "idle" || st.Conn == "" {
-		fmt.Println("  No hay sala abierta, así que no hay nada que medir de ella.")
+		fmt.Println("  No room is open, so there is nothing of it to measure.")
 	} else {
-		fmt.Printf("  Sala %s, %s, %d miembros\n", st.Name, estadoDeConexión(st.Conn), len(st.Peers))
+		fmt.Printf("  Room %s, %s, %d members\n", st.Name, estadoDeConexión(st.Conn), len(st.Peers))
 		if st.Canary.Measured {
-			fmt.Printf("  Protección Kanpachi: %s\n", veredictoDelCanario(st.Canary.Verdict))
+			fmt.Printf("  Kanpachi Protection: %s\n", veredictoDelCanario(st.Canary.Verdict))
 		}
 		for _, a := range st.Alerts {
-			fmt.Printf("  AVISO %s: %s\n", nombreDeAlerta(a.Kind), a.Detail)
+			fmt.Printf("  ALERT %s: %s\n", nombreDeAlerta(a.Kind), a.Detail)
 		}
 	}
 
@@ -215,15 +215,15 @@ func loQueMideElDaemon(ctx context.Context, op opciones) error {
 		return err
 	}
 	if !exp.Measured {
-		fmt.Println("  NO se pudo leer el firewall. Esto no dice que no haya nada abierto:")
-		fmt.Println("  dice que no se sabe.")
+		fmt.Println("  The firewall could NOT be read. This does not say nothing is open:")
+		fmt.Println("  it says nobody knows.")
 		return nil
 	}
-	fmt.Printf("  Compuerta: %s, con %d puertos abiertos\n", estadoDeCompuerta(exp.Gate), len(exp.Ports))
+	fmt.Printf("  Gate: %s, with %d open ports\n", estadoDeCompuerta(exp.Gate), len(exp.Ports))
 	for _, u := range exp.Unexpected {
-		fmt.Printf("  REGLA QUE NADIE PIDIÓ: %s\n", u)
+		fmt.Printf("  RULE NOBODY ASKED FOR: %s\n", u)
 	}
-	fmt.Println("\n  `kanpachi exposure` los enseña uno a uno. `kanpachi diag` mide la red.")
+	fmt.Println("\n  `kanpachi exposure` shows them one by one. `kanpachi diag` measures the network.")
 	return nil
 }
 
@@ -236,15 +236,15 @@ func loQueMideElDaemon(ctx context.Context, op opciones) error {
 // corriendo y sin permiso, y quien lo sufre no tiene forma de distinguirlos.
 func chequeoDelCanal() chequeo {
 	return chequeo{
-		nombre: "el canal de control",
+		nombre: "the control channel",
 		mirar: func(_ context.Context, op opciones) veredicto {
 			c, err := client.Open(op.canal, op.datos)
 			if err == nil {
 				_ = c.Close()
-				return ok("%s contesta", op.canal)
+				return ok("%s answers", op.canal)
 			}
 			if os.IsPermission(err) {
-				return fallar("no hay permiso para %s", op.canal).con(pistaDeElevación())
+				return fallar("no permission for %s", op.canal).con(pistaDeElevación())
 			}
 			return fallar("%v", err).con(pistaDeConexión(op))
 		},
@@ -258,18 +258,18 @@ func chequeoDelCanal() chequeo {
 // alguien pide cuando escribe `doctor --fix`.
 func chequeoDelMotor(ruta string) chequeo {
 	return chequeo{
-		nombre: "el motor",
+		nombre: "the engine",
 		mirar: func(context.Context, opciones) veredicto {
 			info, err := os.Stat(ruta)
 			if os.IsNotExist(err) {
-				return fallar("no está en %s", ruta).
-					con("Lo pone el paquete. Reinstalar lo repone.")
+				return fallar("it is not at %s", ruta).
+					con("The package puts it there. Reinstalling puts it back.")
 			}
 			if err != nil {
-				return noSeSabe("no se pudo mirar %s: %v", ruta, err)
+				return noSeSabe("could not look at %s: %v", ruta, err)
 			}
 			if info.Mode()&0o111 == 0 {
-				return fallar("%s no es ejecutable (modo %04o)", ruta, info.Mode().Perm())
+				return fallar("%s is not executable (mode %04o)", ruta, info.Mode().Perm())
 			}
 			return ok("%s, %d KiB", ruta, info.Size()/1024)
 		},

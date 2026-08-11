@@ -39,7 +39,7 @@ func leerApodo(datos string) string {
 // pudo leer, así que este aviso llega antes de un fallo que sí corta.
 func guardarApodo(datos, nombre string) {
 	if err := os.WriteFile(rutaApodo(datos), []byte(nombre), 0o600); err != nil {
-		fmt.Fprintln(os.Stderr, "kanpachi: no se pudo recordar el nombre:", err)
+		fmt.Fprintln(os.Stderr, "kanpachi: could not remember the name:", err)
 	}
 }
 
