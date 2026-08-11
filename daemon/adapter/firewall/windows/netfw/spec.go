@@ -128,7 +128,9 @@ func specFor(r domain.FirewallRule, adapter string) (ruleSpec, error) {
 		Enabled:         true,
 	}
 	if adapter != "" {
-		if domain.RendezvousSubnet.Contains(r.Local) {
+		// Por el espacio y no por un /24 concreto: cada sala deriva el suyo. Ver
+		// [domain.Rendezvous.LobbySubnet].
+		if domain.LobbySpace.Contains(r.Local) {
 			s.Interfaces = []string{domain.LobbyAdapterName}
 		} else {
 			s.Interfaces = []string{adapter}

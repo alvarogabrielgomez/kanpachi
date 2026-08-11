@@ -152,7 +152,7 @@ func TestUnaSalaGuardadaRotaSeRechazaEntera(t *testing.T) {
 func TestLaSubredGuardadaSeComprueba(t *testing.T) {
 	casos := map[string]string{
 		"fuera de los rangos de Kanpachi": "192.168.1.0/24",
-		"el rango del vestíbulo":          RendezvousSubnet.String(),
+		"el espacio de los vestíbulos":    "198.19.7.0/24",
 		"un prefijo que no es /24":        "100.87.0.0/16",
 	}
 	for nombre, subred := range casos {

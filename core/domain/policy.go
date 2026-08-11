@@ -246,20 +246,26 @@ func ControlRules(role Role, lobby, room netip.Addr, members []netip.Addr) ([]Fi
 	out := make([]FirewallRule, 0, 2)
 
 	if lobby.IsValid() {
-		if !RendezvousSubnet.Contains(lobby) {
-			// La puerta abre al /24 del vestíbulo entero, así que anclarla a una
-			// dirección de otra red sería abrir ese rango en un sitio donde no
-			// significa lo que dice.
+		if !LobbySpace.Contains(lobby) {
+			// La puerta abre un /24 entero, así que anclarla a una dirección de
+			// otra red sería abrir ese rango en un sitio donde no significa lo
+			// que dice.
+			//
+			// Se comprueba contra el espacio y no contra un /24 concreto porque
+			// cada sala deriva el suyo del código. Ver [Rendezvous.LobbySubnet].
 			return nil, fmt.Errorf("%w: la puerta se pidió en %s, fuera de %s",
-				ErrRuleWideOpen, lobby, RendezvousSubnet)
+				ErrRuleWideOpen, lobby, LobbySpace)
 		}
+		// El /24 sale de la propia dirección en vez de recibirse aparte, y eso
+		// hace imposible que se contradigan: la regla abre exactamente la red de
+		// la dirección que ancla, no una que alguien dijo que era.
 		out = append(out, FirewallRule{
 			Name:  controlRuleName("puerta"),
 			Proto: ProtoTCP,
 			From:  ControlPort,
 			To:    ControlPort,
 			Local: lobby,
-			Nets:  []netip.Prefix{RendezvousSubnet},
+			Nets:  []netip.Prefix{netip.PrefixFrom(lobby, RoomPrefixBits).Masked()},
 		})
 	}
 

@@ -96,7 +96,7 @@ func TestTheLobbyGoesOnItsOwnAdapter(t *testing.T) {
 	rdv := domain.DeriveRendezvous(id)
 	spec := domain.RendezvousSpec{
 		Rendezvous: rdv,
-		Address:    domain.RendezvousHostAddress,
+		Address:    rdv.LobbyHostAddress(),
 		Name:       nick(t, "Alvaro"),
 	}
 	req := lobbyRequest(3, spec, []string{"tcp://203.0.113.9:11010"}, "")
@@ -118,8 +118,16 @@ func TestTheLobbyGoesOnItsOwnAdapter(t *testing.T) {
 	if l.NetworkName != rdv.NetworkName() {
 		t.Errorf("red del vestíbulo %q, se esperaba %q", l.NetworkName, rdv.NetworkName())
 	}
-	if l.IPv4 != "100.127.255.1/24" {
-		t.Errorf("el host tomó %q en el vestíbulo, y le toca la dirección fija", l.IPv4)
+	// El host toma la .1 del vestíbulo de SU sala, con máscara de /24. Ya no es
+	// una dirección fija: cada sala deriva su vestíbulo del código, que es lo
+	// que permite moverlo cuando le choca a alguien. Ver
+	// [domain.Rendezvous.LobbySubnet].
+	esperada := netip.PrefixFrom(rdv.LobbyHostAddress(), domain.RoomPrefixBits).String()
+	if l.IPv4 != esperada {
+		t.Errorf("el host tomó %q en el vestíbulo, y le tocaba %q", l.IPv4, esperada)
+	}
+	if !domain.LobbySpace.Contains(rdv.LobbyHostAddress()) {
+		t.Errorf("el vestíbulo cayó fuera de %v", domain.LobbySpace)
 	}
 }
 

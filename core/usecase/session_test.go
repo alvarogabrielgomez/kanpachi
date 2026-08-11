@@ -178,6 +178,15 @@ func TestUnFalloAMitadDeCaminoVuelveAIdle(t *testing.T) {
 	}
 }
 
+// lobbyDe es la .1 del vestíbulo de la sala que tenga esa sesión.
+//
+// Se deriva del código en vez de escribirse porque desde el 2026-08-11 no hay
+// una dirección fija: cada sala saca la suya de su invite ID. Ver
+// [domain.Rendezvous.LobbySubnet].
+func lobbyDe(b *banco) netip.Addr {
+	return domain.DeriveRendezvous(b.sesión.Status().Room.InviteID).LobbyHostAddress()
+}
+
 func salaCreada(t *testing.T) *banco {
 	t.Helper()
 	b := nuevoBanco(t)
@@ -472,7 +481,7 @@ func TestElInvitadoNoAbreElCanalDeControl(t *testing.T) {
 	if len(marcados) != 2 {
 		t.Fatalf("marcó %d veces: %v", len(marcados), marcados)
 	}
-	if marcados[0] != domain.RendezvousHostAddress {
+	if marcados[0] != lobbyDe(b) {
 		t.Errorf("la primera no fue al vestíbulo: %s", marcados[0])
 	}
 	if marcados[1] != netip.MustParseAddr("100.87.3.1") {
@@ -512,7 +521,7 @@ func TestElHostAbreLaPuertaYLaSalaPorSeparado(t *testing.T) {
 	scope := b.control.scope
 	b.control.mu.Unlock()
 
-	if scope.Lobby != domain.RendezvousHostAddress {
+	if scope.Lobby != lobbyDe(b) {
 		t.Errorf("la puerta no está en la dirección conocida del vestíbulo: %s", scope.Lobby)
 	}
 	if scope.Room != b.sesión.Status().LocalIP {
@@ -524,7 +533,7 @@ func TestElHostAbreLaPuertaYLaSalaPorSeparado(t *testing.T) {
 	if len(pasos) != 2 || pasos[0] != "host" || pasos[1] != "vestíbulo" {
 		t.Fatalf("pasos del motor al crear = %v", pasos)
 	}
-	if b.motor.rdvSpec.Address != domain.RendezvousHostAddress {
+	if b.motor.rdvSpec.Address != lobbyDe(b) {
 		t.Errorf("el host no tomó su dirección fija en el vestíbulo: %s", b.motor.rdvSpec.Address)
 	}
 }
@@ -533,8 +542,8 @@ func TestElHostAbreLaPuertaYLaSalaPorSeparado(t *testing.T) {
 // cortaría la conexión que se está usando para pedir la credencial.
 func TestElVestíbuloNoSeLeEntregaAUnaSala(t *testing.T) {
 	b := salaCreada(t)
-	if b.sesión.Status().Subnet == domain.RendezvousSubnet {
-		t.Fatal("la sala se quedó con el /24 del vestíbulo")
+	if domain.LobbySpace.Overlaps(b.sesión.Status().Subnet) {
+		t.Fatal("la sala cayó en el espacio de los vestíbulos")
 	}
 }
 
@@ -1099,9 +1108,9 @@ func TestUnHostModificadoNoPuedeMandarCualquierCredencial(t *testing.T) {
 		{"la IP fuera de su propia subred", func(c *domain.Credential) {
 			c.VirtualIP = netip.MustParseAddr("10.4.4.4")
 		}},
-		{"la sala en el rango del vestíbulo", func(c *domain.Credential) {
-			c.Subnet = domain.RendezvousSubnet
-			c.VirtualIP = netip.MustParseAddr("100.127.255.7")
+		{"la sala en el espacio de los vestíbulos", func(c *domain.Credential) {
+			c.Subnet = netip.MustParsePrefix("198.19.7.0/24")
+			c.VirtualIP = netip.MustParseAddr("198.19.7.7")
 		}},
 		{"me da la dirección del host", func(c *domain.Credential) {
 			c.VirtualIP = netip.MustParseAddr("100.87.3.1")
@@ -1999,7 +2008,7 @@ func TestExpulsarNoEsBloquear(t *testing.T) {
 	b.control.mu.Lock()
 	puerta := b.control.scope.Lobby
 	b.control.mu.Unlock()
-	if puerta != domain.RendezvousHostAddress {
+	if puerta != lobbyDe(b) {
 		t.Fatal("expulsar cerró la puerta de la sala")
 	}
 	if b.sesión.Status().Room.InviteID != códigoAntes {
@@ -2032,7 +2041,7 @@ func TestElHostAbreElCanalDeControlDesdeQueTieneSala(t *testing.T) {
 
 	var puerta bool
 	for _, r := range b.firewall.estado().Rules {
-		if r.IsControl() && r.Local == domain.RendezvousHostAddress {
+		if r.IsControl() && r.Local == lobbyDe(b) {
 			puerta = true
 			if r.From != domain.ControlPort {
 				t.Errorf("la puerta no está en el puerto del canal: %+v", r)

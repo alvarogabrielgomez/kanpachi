@@ -59,6 +59,12 @@ type RoomView struct {
 	HostGoneForMS int64 `json:"host_gone_for_ms"`
 	// ReconnectingForMS es lo mismo para el túnel.
 	ReconnectingForMS int64 `json:"reconnecting_for_ms"`
+	// Rejoining es que este invitado está volviendo a pedir credencial ahora.
+	//
+	// Va aparte de los otros dos porque no es ninguno: el host puede estar
+	// presente y el túnel en pie, y aun así estar pasando esto. Ver
+	// [domain.RoomState.Rejoining].
+	Rejoining bool `json:"rejoining,omitempty"`
 
 	Game        string `json:"game,omitempty"`
 	GameName    string `json:"game_name,omitempty"`
@@ -158,6 +164,7 @@ func roomView(st domain.RoomState, missing string, now time.Time) RoomView {
 		Name:        st.Name,
 		Peers:       make([]PeerView, 0, len(st.Peers)),
 		HostPresent: st.HostPresent,
+		Rejoining:   st.Rejoining,
 		Game:        st.Game.ID,
 		GameName:    st.Game.Name,
 		MissingGame: missing,

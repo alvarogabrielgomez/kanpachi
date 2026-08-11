@@ -154,6 +154,10 @@ func luidFalso(name string) (uint64, error) {
 
 func salaDePrueba() netip.Prefix { return netip.MustParsePrefix("100.64.1.0/24") }
 
+// lobbyDePrueba es el /24 del vestíbulo de una sala cualquiera. Escrito a mano
+// y no derivado de un código: acá se prueba el cableado, no la derivación.
+func lobbyDePrueba() netip.Prefix { return netip.MustParsePrefix("198.19.7.0/24") }
+
 func reglaDePrueba() domain.FirewallRule {
 	return domain.FirewallRule{
 		Name:   "kanpachi-udp-16261",
@@ -314,7 +318,7 @@ func TestWithNoAdapterTheEmptySetStillApplies(t *testing.T) {
 func TestBindRoomResolvesTheDomainAdaptersAndCoversTheLobby(t *testing.T) {
 	fw, _, p, _ := armado(t)
 
-	if err := fw.BindRoom(context.Background(), salaDePrueba(), domain.BindRoomAndLobby); err != nil {
+	if err := fw.BindRoom(context.Background(), salaDePrueba(), lobbyDePrueba(), domain.BindRoomAndLobby); err != nil {
 		t.Fatal(err)
 	}
 	if fw.scope.Iface != luidDePrueba {
@@ -329,7 +333,7 @@ func TestBindRoomResolvesTheDomainAdaptersAndCoversTheLobby(t *testing.T) {
 
 	// Y con la sala sola el vestíbulo queda fuera, que es el caso del invitado
 	// después de soltarlo.
-	if err := fw.BindRoom(context.Background(), salaDePrueba(), domain.BindRoomOnly); err != nil {
+	if err := fw.BindRoom(context.Background(), salaDePrueba(), netip.Prefix{}, domain.BindRoomOnly); err != nil {
 		t.Fatal(err)
 	}
 	if fw.scope.HasLobby() {

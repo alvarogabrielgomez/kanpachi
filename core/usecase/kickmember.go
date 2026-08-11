@@ -233,7 +233,7 @@ func (s *Session) authorizedControlIPsLocked() []netip.Addr {
 // controlScope arma el alcance del oyente del host. Asume el candado tomado.
 func (s *Session) controlScope() domain.ControlScope {
 	return domain.ControlScope{
-		Lobby:   domain.RendezvousHostAddress,
+		Lobby:   s.lobbyHostAddrLocked(),
 		Room:    s.state.LocalIP,
 		Members: s.authorizedControlIPsLocked(),
 	}
@@ -304,7 +304,166 @@ func (s *Session) onPeersChangedLocked(ctx context.Context) (domain.RoomState, e
 		s.announceLocked(ctx)
 	}
 	s.logMemberDiffLocked(antes)
+	s.tellStaleMembersLocked(ctx)
 	return s.snapshot(), nil
+}
+
+// OnMemberChannelUp lo llama el supervisor cuando un miembro abre su canal de
+// control con este host.
+//
+// Existe por una sola cosa: es el primer instante en que se le puede hablar. Lo
+// que hay que decirle, si su credencial no está, es justo lo que no se pudo
+// decir antes. Ver [Session.tellStaleMembersLocked] y [domain.NoticeStale].
+//
+// Se le borra el plazo para que el aviso salga AHORA y no cuando venza el
+// reintento: ese plazo se puso porque no había canal, y acaba de haberlo.
+func (s *Session) OnMemberChannelUp(ctx context.Context, ip netip.Addr) domain.RoomState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.state.IsHost() || !s.state.Conn.InRoom() {
+		return s.snapshot()
+	}
+	delete(s.staleProxAviso, ip)
+	s.tellStaleMembersLocked(ctx)
+	return s.snapshot()
+}
+
+// StaleNoticeCooldown es cada cuánto se le repite a un miembro que el host no
+// tiene su credencial, cuando el aviso SÍ salió.
+//
+// Hace falta porque el disparador es un cambio de miembros, y el motor los emite
+// en ráfagas: un invitado sin credencial produce además un parpadeo de un
+// segundo, entrando y saliendo de la tabla. Sin freno, eso serían decenas de
+// avisos por minuto a la misma máquina.
+//
+// Treinta segundos son de sobra: reingresar tarda unos diez, así que un solo
+// aviso suele bastar y el siguiente solo llega si el primero no sirvió de nada.
+const StaleNoticeCooldown = 30 * time.Second
+
+// StaleNoticeRetry es cada cuánto se reintenta cuando el aviso NO salió.
+//
+// # Por qué no vale el enfriamiento largo, medido
+//
+// El 2026-08-11 el host volvió a las 20:21:23. El motor le puso a los dos
+// invitados en la tabla a las 20:21:22.365, y ahí mismo se les intentó avisar y
+// los dos fallaron con "no hay canal abierto". Es lo ESPERABLE y no un
+// accidente: el host acaba de arrancar, su servidor de control lleva
+// milisegundos escuchando y los invitados todavía no lo redialaron. Uno de ellos
+// reconectó trece segundos después.
+//
+// O sea que el primer intento del caso que esto existe para arreglar falla
+// SIEMPRE, y sin un reintento corto el aviso no llega nunca. Aquella medición
+// dio recuperaciones de 1m51s y 1m56s, que fue exactamente lo que tardó el
+// invitado en darse cuenta solo: el aviso no aportó nada.
+//
+// Dos segundos alcanzan porque lo que se está esperando es que el otro lado
+// redial, y el coste de errar es una línea de log.
+const StaleNoticeRetry = 2 * time.Second
+
+// StaleNoticeTries es cuántas veces seguidas se reintenta rápido antes de pasar
+// al plazo largo.
+//
+// Diez por dos segundos son veinte de insistencia, y los trece que tardó el
+// invitado medido en redialar caben con margen. El tope existe por un caso que
+// no es el del reinicio: un miembro puede estar en la tabla del motor sin canal
+// de control durante mucho rato, y sin tope eso sería una línea de aviso cada
+// dos segundos para siempre.
+const StaleNoticeTries = 10
+
+// avisoStale es cuándo se le puede volver a hablar a un miembro sin credencial,
+// y cuántos intentos rápidos seguidos lleva fallados.
+//
+// Los intentos se cuentan porque el plazo solo no distingue los dos casos que
+// hay que tratar distinto: el otro lado todavía no redialó, que se resuelve en
+// segundos, y no hay por dónde hablarle, que no se resuelve.
+type avisoStale struct {
+	prox     time.Time
+	intentos int
+}
+
+// tellStaleMembersLocked le avisa a quien está en la sala y no tiene credencial
+// de este host.
+//
+// # El caso que arregla, medido
+//
+// El host reinicia. Sus credenciales viven en la memoria del motor y mueren con
+// el proceso, así que al volver no reconoce a nadie aunque reabra la MISMA sala
+// con el MISMO código. Los invitados quedan en un estado que **no pueden
+// diagnosticar solos**: el 2026-08-11 uno tuvo canal de control con el host
+// noventa segundos seguidos, con la pantalla normal, y su credencial ya no
+// existía del otro lado. Todo lo que él podía mirar decía que estaba bien.
+//
+// El host sí lo sabe, y es el único: tiene esa dirección entre sus miembros y
+// ninguna credencial emitida para ella. Decirlo convierte una espera de minutos,
+// que dependía de que el invitado acabara notando la ausencia por su cuenta, en
+// un reingreso inmediato.
+//
+// Solo el HOST, y solo hacia miembros presentes. A quien no está no hay por
+// dónde avisarle, y su credencial vencida se limpia sola.
+//
+// Que falle no rompe nada: el invitado sigue teniendo su propio camino, que es
+// notar que el host no está y volver a pedir. Esto lo acelera, no lo sustituye.
+//
+// Lo llaman los dos sitios que pueden: el cambio de miembros, que es lo que da
+// la inmediatez, y el latido, que es lo que hace que un intento fallido se
+// reintente. Con solo el primero, el aviso del caso principal no llega nunca.
+//
+// Asume el candado tomado.
+func (s *Session) tellStaleMembersLocked(ctx context.Context) {
+	if !s.state.IsHost() {
+		return
+	}
+	ahora := s.deps.Clock.Now()
+	for _, p := range s.state.Peers {
+		if p.Self || !p.VirtualIP.IsValid() {
+			continue
+		}
+		if c, hay := s.issued[p.VirtualIP]; hay && !c.Expired(ahora) {
+			continue
+		}
+		estado := s.staleProxAviso[p.VirtualIP]
+		if !estado.prox.IsZero() && ahora.Before(estado.prox) {
+			continue
+		}
+		if s.staleProxAviso == nil {
+			s.staleProxAviso = make(map[netip.Addr]avisoStale)
+		}
+
+		err := s.deps.Control.Notify(ctx, p.VirtualIP, domain.RoomNotice{
+			Kind:   domain.NoticeStale,
+			Reason: "el host reinició y no tiene tu credencial, vuelve a pedirla",
+		})
+		switch {
+		case err == nil:
+			s.deps.Log.Info("se le avisó a un miembro de que este host no tiene su credencial",
+				"nombre", p.Name.String(), "ip", p.VirtualIP.String())
+			s.staleProxAviso[p.VirtualIP] = avisoStale{prox: ahora.Add(StaleNoticeCooldown)}
+		case estado.intentos+1 < StaleNoticeTries:
+			s.deps.Log.Warn("no se le pudo avisar a un miembro sin credencial, se reintenta",
+				"ip", p.VirtualIP.String(), "error", err, "en", StaleNoticeRetry)
+			s.staleProxAviso[p.VirtualIP] = avisoStale{
+				prox: ahora.Add(StaleNoticeRetry), intentos: estado.intentos + 1,
+			}
+		default:
+			// Se agotaron los intentos rápidos. Esto ya no es "todavía no
+			// redialó", es un miembro al que no hay por dónde hablarle, y para
+			// ése el aviso no es el camino: su propio reingreso lo es. Se pasa al
+			// plazo largo para no llenar el log con lo mismo.
+			s.deps.Log.Warn("no se le pudo avisar a un miembro sin credencial, se deja de insistir",
+				"ip", p.VirtualIP.String(), "error", err, "intentos", estado.intentos+1)
+			s.staleProxAviso[p.VirtualIP] = avisoStale{prox: ahora.Add(StaleNoticeCooldown)}
+		}
+	}
+	// Y se olvida lo que ya no frena nada, para que el mapa no crezca con la
+	// sala. Borrar un plazo cumplido es además lo que devuelve los intentos
+	// rápidos: quien siga sin credencial dentro de un rato vuelve a tener su
+	// ráfaga corta en vez de quedar condenado al plazo largo para siempre.
+	for ip, e := range s.staleProxAviso {
+		if ahora.After(e.prox) {
+			delete(s.staleProxAviso, ip)
+		}
+	}
 }
 
 // logMemberDiffLocked anota QUIÉN entró y quién salió, y no anota nada cuando

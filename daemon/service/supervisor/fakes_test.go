@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"context"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -32,8 +33,13 @@ type salaFalsa struct {
 	rondas         []bool // trasAplicar de cada ronda
 	pedidosCanario []domain.CanaryRequest
 	// bloquear detiene la ronda hasta que se cierre, para probar que el latido
-	// sigue corriendo mientras tanto.
+	// sigue corriendo mientras tanto. Lo comparten el canario y el reingreso,
+	// que son los dos trabajos largos que corren fuera del despachador.
 	bloquear chan struct{}
+
+	// Lo del reingreso del invitado.
+	reingresoToca bool
+	reingresos    int
 }
 
 func (r *salaFalsa) anota(s string) {
@@ -121,6 +127,11 @@ func (r *salaFalsa) OnCodeRotated(context.Context, domain.Room) domain.RoomState
 	return r.Status()
 }
 
+func (r *salaFalsa) OnMemberChannelUp(context.Context, netip.Addr) domain.RoomState {
+	r.anota("canal-de-miembro")
+	return r.Status()
+}
+
 func (r *salaFalsa) SetHostPresent(present bool) domain.RoomState {
 	if present {
 		r.anota("presente")
@@ -155,6 +166,25 @@ func (r *salaFalsa) RunCanaryRound(_ context.Context, trasAplicar bool) domain.C
 		<-bloquear
 	}
 	return domain.CanaryCheck{}
+}
+
+func (r *salaFalsa) RejoinDue() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.reingresoToca
+}
+
+func (r *salaFalsa) Rejoin(_ context.Context) error {
+	r.mu.Lock()
+	bloquear := r.bloquear
+	r.reingresos++
+	r.mu.Unlock()
+
+	r.anota("reingreso")
+	if bloquear != nil {
+		<-bloquear
+	}
+	return nil
 }
 
 func (r *salaFalsa) OnCanaryRequest(_ context.Context, req domain.CanaryRequest) error {
@@ -228,6 +258,7 @@ type controlFalso struct {
 	avisos    chan domain.RoomNotice
 	códigos   chan domain.Room
 	pedidos   chan domain.CanaryRequest
+	miembros  chan netip.Addr
 }
 
 func nuevoControl() *controlFalso {
@@ -237,6 +268,7 @@ func nuevoControl() *controlFalso {
 		avisos:    make(chan domain.RoomNotice, 4),
 		códigos:   make(chan domain.Room, 4),
 		pedidos:   make(chan domain.CanaryRequest, 4),
+		miembros:  make(chan netip.Addr, 4),
 	}
 }
 
@@ -246,6 +278,8 @@ func (c *controlFalso) Notices() <-chan domain.RoomNotice         { return c.avi
 func (c *controlFalso) Codes() <-chan domain.Room                 { return c.códigos }
 
 func (c *controlFalso) CanaryRequests() <-chan domain.CanaryRequest { return c.pedidos }
+
+func (c *controlFalso) MemberChannels() <-chan netip.Addr { return c.miembros }
 
 type sistemaFalso struct {
 	red      chan struct{}

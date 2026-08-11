@@ -18,6 +18,7 @@ func roomScope() Scope          { return Scope{Iface: 0x47008000000000, Net: pfx
 func bothScope() Scope {
 	s := roomScope()
 	s.Lobby = 0x47008000000001
+	s.LobbyNet = lobbyDePrueba
 	return s
 }
 
@@ -199,8 +200,8 @@ func TestTheLobbyDoorLivesOutsideTheRoomRange(t *testing.T) {
 		Proto: domain.ProtoTCP,
 		From:  domain.ControlPort,
 		To:    domain.ControlPort,
-		Local: domain.RendezvousSubnet.Addr().Next(),
-		Nets:  []netip.Prefix{domain.RendezvousSubnet},
+		Local: domain.HostAddress(lobbyDePrueba),
+		Nets:  []netip.Prefix{lobbyDePrueba},
 	}
 	if roomScope().Net.Contains(r.Local) {
 		t.Fatalf("este test no prueba nada: %v cae dentro de %v", r.Local, roomScope().Net)
@@ -446,11 +447,13 @@ func TestTheLobbyGetsItsOwnBlocks(t *testing.T) {
 	if porRanura[SlotLobbyIface].Conditions.Iface != bothScope().Lobby {
 		t.Error("el bloqueo por adaptador del vestíbulo no lleva el adaptador del vestíbulo")
 	}
-	// El rango del vestíbulo NO viaja en el alcance: es constante para todas las
-	// salas, y un campo por el que pasarlo sería un campo por el que ensancharlo.
-	if porRanura[SlotLobbyNet].Conditions.LocalNet != domain.RendezvousSubnet {
+	// El rango del vestíbulo viaja en el alcance desde que cada sala deriva el
+	// suyo del código, y el bloqueo tiene que acotar el de ESTA sala. Acotar
+	// otro dejaría el vestíbulo cubierto solo por adaptador, que en Linux no
+	// alcanza: ver la cabecera de [Scope].
+	if porRanura[SlotLobbyNet].Conditions.LocalNet != lobbyDePrueba {
 		t.Errorf("el bloqueo por rango del vestíbulo acota %v, y el vestíbulo es %v",
-			porRanura[SlotLobbyNet].Conditions.LocalNet, domain.RendezvousSubnet)
+			porRanura[SlotLobbyNet].Conditions.LocalNet, lobbyDePrueba)
 	}
 }
 
@@ -594,3 +597,10 @@ func TestTheMirrorNamesTheRuleItMirrors(t *testing.T) {
 		}
 	}
 }
+
+// lobbyDePrueba es el /24 de un vestíbulo cualquiera.
+//
+// Escrito a mano y no derivado de un código: lo que se prueba acá es que la
+// regla de la puerta acabe en el adaptador del vestíbulo, y para eso solo hace
+// falta una dirección dentro de [domain.LobbySpace].
+var lobbyDePrueba = netip.MustParsePrefix("198.19.7.0/24")

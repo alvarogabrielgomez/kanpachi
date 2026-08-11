@@ -28,7 +28,14 @@ type motorFalso struct {
 	peers       []domain.Peer
 	credentials []domain.Credential
 	revocadas   []domain.CredentialID
+	renovadas   []domain.CredentialID
 	eventos     chan domain.EngineEvent
+
+	// ahora es el reloj con el que este falso fecha lo que renueva. El banco le
+	// pasa el mismo que ve la sesión, para que adelantarlo mueva las dos cosas.
+	// En nil usa el de verdad, que sirve para los tests a los que la fecha les
+	// da igual.
+	ahora func() time.Time
 
 	// visitó guarda el orden de las llamadas. El orden importa en al menos un
 	// sitio de verdad: salir del vestíbulo antes de entrar a la red real.
@@ -44,6 +51,7 @@ type motorFalso struct {
 	errRdv     error
 	errJoin    error
 	errRevocar error
+	errRenovar error
 }
 
 func nuevoMotor() *motorFalso {
@@ -98,6 +106,23 @@ func (m *motorFalso) IssueCredential(context.Context, domain.CredentialRequest) 
 		return m.credenciales(), nil
 	}
 	return domain.Credential{}, nil
+}
+
+func (m *motorFalso) RenewCredential(_ context.Context, id domain.CredentialID, ttl time.Duration) (time.Time, error) {
+	m.anota("renovar")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.errRenovar != nil {
+		return time.Time{}, m.errRenovar
+	}
+	m.renovadas = append(m.renovadas, id)
+	// Fecha contada desde AHORA, como el motor de verdad, y con el reloj del
+	// banco para que adelantarlo mueva las dos cosas a la vez.
+	ahora := time.Now
+	if m.ahora != nil {
+		ahora = m.ahora
+	}
+	return ahora().Add(ttl), nil
 }
 
 func (m *motorFalso) RevokeCredential(_ context.Context, id domain.CredentialID) error {
@@ -165,9 +190,12 @@ type firewallFalso struct {
 	cuarentenaTrasPurgas []int
 
 	// acotado es a qué está acotada la compuerta ahora, y vacío es sin acotar.
-	acotado  netip.Prefix
-	vínculo  domain.RoomBinding
-	vínculos []domain.RoomBinding
+	acotado netip.Prefix
+	// acotadoLobby es el /24 del vestíbulo con el que se acotó. Vacío es que se
+	// pidió solo la sala, que es lo normal en un invitado.
+	acotadoLobby netip.Prefix
+	vínculo      domain.RoomBinding
+	vínculos     []domain.RoomBinding
 	// abrióSinCompuerta es la afirmación que este falso existe para poder hacer:
 	// si alguna vez se pidió abrir puertos con la compuerta suelta, la lista de
 	// permitidos volvió a ser aditiva y la sala no estaba contenida.
@@ -192,13 +220,16 @@ func (f *firewallFalso) Apply(_ context.Context, rs domain.RuleSet) error {
 	return nil
 }
 
-func (f *firewallFalso) BindRoom(_ context.Context, room netip.Prefix, with domain.RoomBinding) error {
+func (f *firewallFalso) BindRoom(
+	_ context.Context, room, lobby netip.Prefix, with domain.RoomBinding,
+) error {
 	if f.errBind != nil {
 		return f.errBind
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.acotado, f.vínculo = room, with
+	f.acotadoLobby = lobby
 	f.vínculos = append(f.vínculos, with)
 	return nil
 }

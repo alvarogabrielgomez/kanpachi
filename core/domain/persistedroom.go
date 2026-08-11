@@ -324,8 +324,9 @@ func checkRoomSubnet(p netip.Prefix) error {
 		return fmt.Errorf("%w: la subred guardada no es IPv4", ErrPersistedShape)
 	case p.Bits() != RoomPrefixBits:
 		return fmt.Errorf("%w: la subred guardada no es un /%d", ErrPersistedShape, RoomPrefixBits)
-	case p == RendezvousSubnet:
-		return fmt.Errorf("%w: la subred guardada es el rango reservado del vestíbulo", ErrPersistedShape)
+	// El caso del vestíbulo desapareció de acá al mudarlo fuera de los espacios
+	// de sala: la comprobación de abajo, que exige estar dentro de uno de los
+	// dos, ya lo excluye entero. Ver [LobbySpace].
 	case !SharedSpace.Overlaps(p) && !FallbackSpace.Overlaps(p):
 		return fmt.Errorf("%w: la subred guardada, %s, está fuera de los rangos que Kanpachi usa", ErrPersistedShape, p)
 	}

@@ -60,6 +60,30 @@ const (
 	// cierre la app. Es molestia, no riesgo, y quien lo haría ya está dentro de
 	// la sala. Ver el modelo de amenazas de la decisión 23.
 	NoticeRoomClosed
+
+	// NoticeStale: el host te ve en la sala y NO tiene credencial tuya, así que
+	// vuelve a pedirle una.
+	//
+	// # Por qué hace falta decirlo, si el invitado ya mira si el host está
+	//
+	// Porque el invitado no puede notar esto por su cuenta. Medido el
+	// 2026-08-11: tras reiniciar el host, un invitado tuvo canal de control con
+	// él NOVENTA segundos seguidos, con la sala pintada normal, mientras su
+	// credencial ya no existía del otro lado. Todas las señales que el invitado
+	// tiene decían que estaba bien. El único que sabía la verdad era el host,
+	// que tenía esa IP entre sus miembros y ninguna credencial para ella.
+	//
+	// Es el caso normal de un host que reinicia: sus credenciales viven en la
+	// memoria del motor y mueren con el proceso, así que al volver no reconoce a
+	// nadie aunque reabra la MISMA sala con el MISMO código.
+	//
+	// **También es cortesía, como los otros dos, y por eso no es peligroso.** No
+	// autoriza nada ni cambia ninguna política: lo único que provoca del otro
+	// lado es que alguien pida una credencial, cosa que ya puede hacer cualquiera
+	// con el código. Un miembro que lo falsifique consigue que otro se rehaga la
+	// entrada, o sea la misma molestia que ya consigue quien manda un
+	// NoticeRoomClosed falso.
+	NoticeStale
 )
 
 func (k NoticeKind) String() string {
@@ -68,6 +92,8 @@ func (k NoticeKind) String() string {
 		return "expulsado"
 	case NoticeRoomClosed:
 		return "la sala se cerró"
+	case NoticeStale:
+		return "el host no tiene tu credencial"
 	default:
 		return "aviso desconocido"
 	}

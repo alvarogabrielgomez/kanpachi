@@ -66,9 +66,15 @@ func (s *Session) RotateInviteCode(ctx context.Context) (domain.RoomState, error
 	//
 	// La red REAL no se toca. Los que están dentro viven ahí y no en el
 	// vestíbulo, así que la partida no se entera.
+	//
+	// Y el código nuevo cambia también el RANGO del vestíbulo, no solo su
+	// nombre: los dos salen de la misma derivación. Ver
+	// [domain.Rendezvous.LobbySubnet]. Eso es lo que convierte esta operación en
+	// la salida para un invitado cuya máquina choca con el rango de esta sala.
+	rdv := domain.DeriveRendezvous(room.InviteID)
 	if err := s.deps.Engine.JoinRendezvous(ctx, domain.RendezvousSpec{
-		Rendezvous: domain.DeriveRendezvous(room.InviteID),
-		Address:    domain.RendezvousHostAddress,
+		Rendezvous: rdv,
+		Address:    rdv.LobbyHostAddress(),
 		Name:       s.nick,
 		Seeds:      seedsFor(room),
 	}); err != nil {
@@ -76,6 +82,37 @@ func (s *Session) RotateInviteCode(ctx context.Context) (domain.RoomState, error
 		// levantado es el suyo. Publicar el nuevo dejaría a la UI mostrando una
 		// puerta que no existe.
 		return domain.RoomState{}, fmt.Errorf("abriendo la puerta con el código nuevo: %w", err)
+	}
+	// La identidad de encuentro se guarda ANTES de reacotar, porque de ella
+	// salen el rango y la dirección que las dos líneas de abajo van a leer.
+	s.hostSpec.Rendezvous = rdv
+
+	// La compuerta se vuelve a acotar al vestíbulo NUEVO, y esto es obligatorio.
+	//
+	// El motor acaba de reemplazar la red del vestíbulo, así que el bloqueo por
+	// rango seguiría nombrando el /24 viejo. Lo que quedaría cubriendo al nuevo
+	// es solo el bloqueo por adaptador, y en Linux eso NO alcanza: con el modelo
+	// de host débil, un paquete que llega por la interfaz física con destino a la
+	// dirección virtual no casa con una regla acotada por adaptador. Está medido
+	// en la cabecera de [gate.Scope]. O sea que saltarse esto abre justo la
+	// puerta por donde llega gente que todavía no es miembro.
+	if err := s.deps.Firewall.BindRoom(
+		ctx, s.state.Subnet, rdv.LobbySubnet(), domain.BindRoomAndLobby,
+	); err != nil {
+		return domain.RoomState{}, fmt.Errorf("acotando la contención al vestíbulo nuevo: %w", err)
+	}
+
+	// El oyente de la puerta se muda a la dirección nueva, y esto tampoco es
+	// opcional desde que el rango se deriva del código: antes la .1 del vestíbulo
+	// era la misma antes y después de renovar, así que el socket seguía valiendo.
+	// Ahora no, y quedarse en la vieja deja la puerta escuchando en una dirección
+	// que su propio adaptador ya no tiene.
+	s.restrictControlChannel(ctx)
+	// Y las reglas, que anclan el permiso de la puerta en esa misma dirección.
+	// Que falle no deshace la renovación: el código nuevo ya es el bueno. Se
+	// anota, que es lo que hace el resto de esta función con lo no fatal.
+	if err := s.applyPolicy(ctx); err != nil {
+		s.deps.Log.Error("no se pudieron rehacer las reglas tras renovar el código", "error", err)
 	}
 
 	s.state.Room = room

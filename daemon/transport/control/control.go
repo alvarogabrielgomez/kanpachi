@@ -149,6 +149,11 @@ type Channel struct {
 	// mirar el rol para saber qué llegó.
 	canaryReqs    chan domain.CanaryRequest
 	canaryReports chan domain.CanaryReport
+	// joins es el lado del HOST: qué miembro acaba de abrir su canal.
+	//
+	// Es el único sitio del programa que sabe ese instante, y hay una cosa que
+	// solo se puede hacer entonces: hablarle. Ver [Channel.MemberChannels].
+	joins chan netip.Addr
 }
 
 // New arma el canal. Todavía no escucha ni marca nada.
@@ -168,6 +173,7 @@ func New(deps Deps) *Channel {
 
 		canaryReqs:    make(chan domain.CanaryRequest, outBuffer),
 		canaryReports: make(chan domain.CanaryReport, outBuffer),
+		joins:         make(chan netip.Addr, outBuffer),
 	}
 }
 
@@ -200,7 +206,27 @@ func (c *Channel) CanaryRequests() <-chan domain.CanaryRequest { return c.canary
 // Igual que arriba, el remitente sale de la conexión. Es una PISTA y no una
 // prueba: lo que el host da por cierto es lo que vio su propio canario.
 func (c *Channel) CanaryReports() <-chan domain.CanaryReport { return c.canaryReports }
-func (c *Channel) log() port.Logger                          { return c.deps.Log }
+
+// MemberChannels avisa, en el HOST, de que un miembro acaba de abrir su canal.
+//
+// # Para qué hace falta un evento y no basta con preguntar cada tanto
+//
+// Porque lo que se hace con él tiene una ventana, y fuera de la ventana falla.
+// Cuando el host reabre su sala tras reiniciar, el motor le pone a todos los
+// miembros en la tabla en el mismo segundo, ANTES de que ninguno haya vuelto a
+// marcar el canal de control; el host quiere avisarles de que perdió sus
+// credenciales, y en ese instante no tiene por dónde. Medido el 2026-08-11: el
+// primer intento falla siempre.
+//
+// Sin este evento eso queda dependiendo de cuándo vuelva a correr el latido, que
+// es cada quince segundos, y de la suerte de que algún evento del motor lo
+// adelante. En dos mediciones del mismo caso dio 6 y 29 segundos. Con el evento
+// es en cuanto se puede, que es el único momento correcto.
+//
+// Lleva la dirección y no la conexión: el que lo consume razona sobre miembros.
+func (c *Channel) MemberChannels() <-chan netip.Addr { return c.joins }
+
+func (c *Channel) log() port.Logger { return c.deps.Log }
 func (c *Channel) now() time.Time                            { return c.deps.Clock.Now() }
 func (c *Channel) dial(ctx context.Context, to netip.AddrPort) (net.Conn, error) {
 	return c.deps.Dial(ctx, to)

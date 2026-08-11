@@ -176,6 +176,13 @@ var (
 	ipUno   = netip.MustParseAddr("100.87.3.2")
 	ipDos   = netip.MustParseAddr("100.87.3.3")
 	ipNadie = netip.MustParseAddr("100.87.3.99")
+
+	// ipPuerta es el host EN EL VESTÍBULO, que es otra red y otra dirección.
+	//
+	// Tiene que caer dentro de [domain.LobbySpace]: de eso depende que el
+	// cliente sepa que está marcando la puerta y no la sala. Ver el campo
+	// `puerta` en client.go.
+	ipPuerta = netip.MustParseAddr("198.19.7.1")
 )
 
 func nuevoBanco(t *testing.T, miembros ...netip.Addr) *banco {
@@ -188,7 +195,7 @@ func nuevoBanco(t *testing.T, miembros ...netip.Addr) *banco {
 	host := New(Deps{Clock: reloj, Log: logMudo{}, Listen: r.listen, Dial: r.desde(ipHost)})
 	host.Attach(emisor)
 	if err := host.Serve(context.Background(), domain.ControlScope{
-		Lobby: domain.RendezvousHostAddress, Room: ipHost, Members: miembros,
+		Lobby: ipPuerta, Room: ipHost, Members: miembros,
 	}); err != nil {
 		t.Fatal(err)
 	}

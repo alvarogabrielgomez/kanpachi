@@ -255,6 +255,7 @@ func canaryReportFromWire(from netip.Addr, m canaryReportMsg) domain.CanaryRepor
 var noticeKinds = map[string]domain.NoticeKind{
 	"kicked":      domain.NoticeKicked,
 	"room_closed": domain.NoticeRoomClosed,
+	"stale":       domain.NoticeStale,
 }
 
 func noticeKindName(k domain.NoticeKind) (string, bool) {

@@ -125,52 +125,97 @@ func TestSeIgnoranLosPrefijosIPv6(t *testing.T) {
 	}
 }
 
-// TestElVestíbuloNoSeEntregaComoSubredDeSala.
+// TestNingunaSalaCaeEnElEspacioDeVestíbulos.
 //
-// Si coincidieran, entrar a la sala cortaría la conexión que se está usando
-// para pedir la credencial. Se ocupa todo el espacio compartido menos ese /24,
-// para que sea el único candidato posible.
-func TestElVestíbuloNoSeEntregaComoSubredDeSala(t *testing.T) {
-	// 100.64.0.0/10 partido en trozos que cubren todo salvo 100.127.255.0/24.
-	local := prefijos(
-		"100.64.0.0/11", "100.96.0.0/12", "100.112.0.0/13", "100.120.0.0/14",
-		"100.124.0.0/15", "100.126.0.0/16", "100.127.0.0/17", "100.127.128.0/18",
-		"100.127.192.0/19", "100.127.224.0/20", "100.127.240.0/21", "100.127.248.0/22",
-		"100.127.252.0/23", "100.127.254.0/24",
-	)
-	// Con el espacio compartido ocupado el plan se va a la reserva, así que lo
-	// que se prueba de verdad es pickSubnet sobre el espacio compartido.
-	sub, err := pickSubnet(SharedSpace, local, lectorFijo(0xff))
-	if err == nil {
-		t.Fatalf("se entregó %s, que solo puede ser el /24 del vestíbulo", sub)
+// Si una sala cayera dentro, entrar cortaría la conexión que se está usando para
+// pedir la credencial. Antes hacía falta saltar un /24 concreto dentro del
+// espacio compartido; ahora lo garantiza que los vestíbulos vivan en otro
+// espacio, y esto es lo que vigila que siga siendo cierto si alguien mueve
+// cualquiera de los tres rangos.
+func TestNingunaSalaCaeEnElEspacioDeVestíbulos(t *testing.T) {
+	if LobbySpace.Overlaps(SharedSpace) {
+		t.Fatalf("%v y %v se solapan, así que una sala puede caer en un vestíbulo",
+			LobbySpace, SharedSpace)
 	}
-	if !errors.Is(err, ErrNoSubnet) {
-		t.Fatalf("error inesperado: %v", err)
+	if LobbySpace.Overlaps(FallbackSpace) {
+		t.Fatalf("%v y %v se solapan, así que una sala puede caer en un vestíbulo",
+			LobbySpace, FallbackSpace)
+	}
+}
+
+// TestElEspacioDeVestíbulosNoEsCGNAT es la regresión del 2026-08-11.
+//
+// El vestíbulo vivía en 100.127.255.0/24, dentro del espacio que reparten los
+// ISP con CGNAT y del que Tailscale saca las IP de sus nodos. Un invitado en
+// Venezuela se quedó colgado esperando a que su adaptador tomara una dirección
+// de ahí. Que no vuelva a estar en ese espacio es la mitad del arreglo.
+func TestElEspacioDeVestíbulosNoEsCGNAT(t *testing.T) {
+	if LobbySpace.Overlaps(SharedSpace) {
+		t.Fatalf("los vestíbulos volvieron a %v, que es CGNAT", SharedSpace)
 	}
 }
 
 // TestSeAvisaSiLaCasaPisaElVestíbulo. No se puede esquivar, se puede decir.
 func TestSeAvisaSiLaCasaPisaElVestíbulo(t *testing.T) {
-	plan, err := PlanAddresses(prefijos("192.168.1.0/24", "100.127.255.0/24"), lectorFijo(0))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !plan.LobbyConflict.IsValid() {
+	lobby := netip.MustParsePrefix("198.19.7.0/24")
+	if p := LobbyOverlap(prefijos("192.168.1.0/24", "198.19.7.0/24"), lobby); !p.IsValid() {
 		t.Fatal("no se avisó del conflicto con el vestíbulo")
 	}
-	// Y la sala igual se crea: crear no necesita el vestíbulo del otro.
-	if !plan.Subnet.IsValid() {
-		t.Fatal("el conflicto del vestíbulo impidió elegir subred de sala")
+	// Y una red que solo lo CONTIENE no cuenta, porque pierde por prefijo más
+	// largo. Es el caso de Tailscale, que instala 100.64.0.0/10 en cada nodo: sin
+	// esta distinción, toda máquina con Tailscale daría conflicto.
+	if p := LobbyOverlap(prefijos("198.18.0.0/15"), lobby); p.IsValid() {
+		t.Fatalf("se marcó conflicto con %v, que es más ancho que el vestíbulo", p)
 	}
 }
 
 func TestSinConflictoNoSeAvisaDeNada(t *testing.T) {
-	plan, err := PlanAddresses(prefijos("192.168.1.0/24"), lectorFijo(0))
+	p := LobbyOverlap(prefijos("192.168.1.0/24"), netip.MustParsePrefix("198.19.7.0/24"))
+	if p.IsValid() {
+		t.Fatalf("aviso falso: %s", p)
+	}
+}
+
+// TestElVestíbuloSeMueveConElCódigo es la otra mitad del arreglo del
+// 2026-08-11, y la que de verdad da salida a un conflicto.
+//
+// Elegir bien el rango baja la probabilidad y no la anula: no hay forma de saber
+// qué tiene la máquina de cada invitado. Lo que convierte "este producto no te
+// sirve" en "que el host renueve el código" es que dos códigos distintos den
+// vestíbulos distintos.
+func TestElVestíbuloSeMueveConElCódigo(t *testing.T) {
+	uno, err := ParseInviteID("ABCD-2345")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.LobbyConflict.IsValid() {
-		t.Fatalf("aviso falso: %s", plan.LobbyConflict)
+	otro, err := ParseInviteID("WXYZ-6789")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b := DeriveRendezvous(uno).LobbySubnet(), DeriveRendezvous(otro).LobbySubnet()
+	if a == b {
+		t.Fatalf("los dos códigos dan el mismo vestíbulo (%v), así que renovar no mueve nada", a)
+	}
+	// Y los dos dentro del espacio, que es lo que la compuerta exige.
+	for _, p := range []netip.Prefix{a, b} {
+		if !LobbySpace.Contains(p.Addr()) {
+			t.Fatalf("el vestíbulo %v cayó fuera de %v", p, LobbySpace)
+		}
+		if p.Bits() != RoomPrefixBits {
+			t.Fatalf("el vestíbulo %v no es un /%d", p, RoomPrefixBits)
+		}
+	}
+}
+
+// TestElMismoCódigoDaSiempreElMismoVestíbulo, que es lo que permite que las dos
+// máquinas se encuentren sin hablarse.
+func TestElMismoCódigoDaSiempreElMismoVestíbulo(t *testing.T) {
+	id, err := ParseInviteID("ABCD-2345")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, b := DeriveRendezvous(id).LobbySubnet(), DeriveRendezvous(id).LobbySubnet(); a != b {
+		t.Fatalf("la derivación no es estable: %v y %v", a, b)
 	}
 }
 

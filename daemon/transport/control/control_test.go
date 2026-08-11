@@ -92,7 +92,7 @@ func TestServirSinEmisorNoAceptaNada(t *testing.T) {
 	r := nuevaRed()
 	c := New(Deps{Clock: &relojFalso{t: time.Now()}, Log: logMudo{}, Listen: r.listen, Dial: r.desde(ipHost)})
 
-	err := c.Serve(ctx(), domain.ControlScope{Lobby: domain.RendezvousHostAddress, Room: ipHost})
+	err := c.Serve(ctx(), domain.ControlScope{Lobby: ipPuerta, Room: ipHost})
 	if !errors.Is(err, ErrNotAttached) {
 		t.Fatalf("Serve sin emisor = %v", err)
 	}
@@ -110,7 +110,7 @@ func TestElCanjeDeCredencialVaSelladoPorLaPuerta(t *testing.T) {
 	invitado := New(Deps{Clock: b.reloj, Log: logMudo{}, Listen: b.red.listen, Dial: espía.desde(ipUno)})
 	defer invitado.Close()
 
-	if err := invitado.Dial(ctx(), domain.RendezvousHostAddress); err != nil {
+	if err := invitado.Dial(ctx(), ipPuerta); err != nil {
 		t.Fatal(err)
 	}
 	cred, err := invitado.RequestCredential(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")})
@@ -144,7 +144,7 @@ func TestElCanjeDeCredencialVaSelladoPorLaPuerta(t *testing.T) {
 func TestLaPuertaSoloAdmiteUnPedidoDeCredencial(t *testing.T) {
 	b := nuevoBanco(t)
 
-	conn, err := b.red.desde(ipNadie)(ctx(), netip.AddrPortFrom(domain.RendezvousHostAddress, domain.ControlPort))
+	conn, err := b.red.desde(ipNadie)(ctx(), netip.AddrPortFrom(ipPuerta, domain.ControlPort))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestRecortarElAlcanceCierraLaConexiónDelExpulsado(t *testing.T) {
 
 	// Se recorta el alcance dejando solo a ipDos, que es lo que hace KickMember.
 	if err := b.host.Serve(ctx(), domain.ControlScope{
-		Lobby: domain.RendezvousHostAddress, Room: ipHost, Members: []netip.Addr{ipDos},
+		Lobby: ipPuerta, Room: ipHost, Members: []netip.Addr{ipDos},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -245,13 +245,13 @@ func TestRecortarElAlcanceCierraLaConexiónDelExpulsado(t *testing.T) {
 func TestLaPuertaSigueAbiertaParaElExpulsado(t *testing.T) {
 	b := nuevoBanco(t, ipUno)
 	if err := b.host.Serve(ctx(), domain.ControlScope{
-		Lobby: domain.RendezvousHostAddress, Room: ipHost, Members: nil,
+		Lobby: ipPuerta, Room: ipHost, Members: nil,
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	vuelve := b.invitado(t, ipNadie)
-	if err := vuelve.Dial(ctx(), domain.RendezvousHostAddress); err != nil {
+	if err := vuelve.Dial(ctx(), ipPuerta); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := vuelve.RequestCredential(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")}); err != nil {
@@ -310,7 +310,7 @@ func TestUnaConexiónQueLlegaYNoHablaSeCorta(t *testing.T) {
 	b := nuevoBanco(t)
 	b.reloj.mueve(time.Now().Add(-time.Hour))
 
-	conn, err := b.red.desde(ipNadie)(ctx(), netip.AddrPortFrom(domain.RendezvousHostAddress, domain.ControlPort))
+	conn, err := b.red.desde(ipNadie)(ctx(), netip.AddrPortFrom(ipPuerta, domain.ControlPort))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -389,7 +389,7 @@ func TestSinAcuseSeSigueIgualAlVencerElTope(t *testing.T) {
 func TestElCódigoNuevoLlegaSoloPorSuCanalYSoloAQuienEs(t *testing.T) {
 	b := nuevoBanco(t)
 	uno := b.invitado(t, ipUno)
-	if err := uno.Dial(ctx(), domain.RendezvousHostAddress); err != nil {
+	if err := uno.Dial(ctx(), ipPuerta); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := uno.RequestCredential(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")}); err != nil {
@@ -397,7 +397,7 @@ func TestElCódigoNuevoLlegaSoloPorSuCanalYSoloAQuienEs(t *testing.T) {
 	}
 	// Con la credencial emitida, el host ya conoce a ipUno y su llave.
 	if err := b.host.Serve(ctx(), domain.ControlScope{
-		Lobby: domain.RendezvousHostAddress, Room: ipHost, Members: []netip.Addr{ipUno},
+		Lobby: ipPuerta, Room: ipHost, Members: []netip.Addr{ipUno},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -575,7 +575,7 @@ func TestElHostQueNoEmiteDevuelveElMotivoYNoSeCuelga(t *testing.T) {
 	b.emisor.err = errors.New("la sala no tiene direcciones libres")
 
 	invitado := b.invitado(t, ipUno)
-	if err := invitado.Dial(ctx(), domain.RendezvousHostAddress); err != nil {
+	if err := invitado.Dial(ctx(), ipPuerta); err != nil {
 		t.Fatal(err)
 	}
 	_, err := invitado.RequestCredential(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")})
@@ -674,7 +674,7 @@ func TestCerrarNoFugaGoroutines(t *testing.T) {
 		host := New(Deps{Clock: reloj, Log: logMudo{}, Listen: r.listen, Dial: r.desde(ipHost)})
 		host.Attach(&emisorFalso{siguiente: ipUno, subred: netip.MustParsePrefix("100.87.3.0/24")})
 		if err := host.Serve(ctx(), domain.ControlScope{
-			Lobby: domain.RendezvousHostAddress, Room: ipHost, Members: []netip.Addr{ipUno},
+			Lobby: ipPuerta, Room: ipHost, Members: []netip.Addr{ipUno},
 		}); err != nil {
 			t.Fatal(err)
 		}

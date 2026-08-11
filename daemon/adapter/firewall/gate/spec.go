@@ -173,20 +173,29 @@ type Scope struct {
 	Net netip.Prefix
 	// Lobby identifica el adaptador del VESTÍBULO, y cero cuando no lo hay.
 	//
-	// # Por qué el vestíbulo no trae su rango
-	//
-	// Porque no es suyo: el vestíbulo vive siempre en [domain.RendezvousSubnet],
-	// igual para todas las salas de todo el mundo. Un campo por el que pasarlo
-	// sería un campo por el que ensancharlo, y este es el adaptador donde llega
-	// gente que TODAVÍA NO ES MIEMBRO, o sea el que menos puede permitírselo.
-	//
 	// Cero es un estado normal y frecuente: el invitado suelta el vestíbulo al
 	// entrar, y el host lo tiene solo mientras acepta gente.
 	Lobby uint64
-}
 
-// LobbyNet es el rango del vestíbulo, y no se pide: es constante.
-func (s Scope) LobbyNet() netip.Prefix { return domain.RendezvousSubnet }
+	// LobbyNet es el /24 del vestíbulo de ESTA sala.
+	//
+	// # Por qué pasó de constante a campo
+	//
+	// Porque el vestíbulo dejó de vivir siempre en el mismo sitio. Cada sala
+	// deriva el suyo de su invite code, así que la compuerta ya no lo puede saber
+	// sola. Ver [domain.Rendezvous.LobbySubnet].
+	//
+	// El riesgo que traía no tenerlo sigue vigente y ahora lo cubre otra cosa: un
+	// campo por el que pasar el rango es un campo por el que ENSANCHARLO, y este
+	// es el adaptador donde llega gente que todavía no es miembro, o sea el que
+	// menos se lo puede permitir. Quien lo llena no elige: sale de la misma
+	// derivación que usa el motor para entrar, y [Scope.Valid] exige que sea un
+	// /24 dentro de [domain.LobbySpace], así que un rango ancho no llega a
+	// emitirse.
+	//
+	// Cero cuando [Scope.Lobby] también lo es.
+	LobbyNet netip.Prefix
+}
 
 // HasLobby dice si el alcance cubre también el adaptador del vestíbulo.
 func (s Scope) HasLobby() bool { return s.Lobby != 0 }
@@ -229,6 +238,19 @@ func (s Scope) Valid() error {
 		// gente que todavía no es miembro.
 		return fmt.Errorf("la sala y el vestíbulo llegaron con el mismo adaptador (%d), "+
 			"y son dos redes distintas", s.Iface)
+	}
+	// Y al rango del vestíbulo se le exige lo mismo que al de la sala, por lo
+	// mismo: desde que se deriva por sala es un valor que VIAJA, y un /16 acá
+	// bloquearía los vestíbulos de 255 salas ajenas. Ver [Scope.LobbyNet].
+	if s.Lobby != 0 {
+		if s.LobbyNet.Bits() != domain.RoomPrefixBits {
+			return fmt.Errorf("el rango del vestíbulo es %v, y tiene que ser un /%d",
+				s.LobbyNet, domain.RoomPrefixBits)
+		}
+		if !domain.LobbySpace.Contains(s.LobbyNet.Addr()) {
+			return fmt.Errorf("el rango del vestíbulo es %v, fuera de %v, que es donde "+
+				"viven los vestíbulos", s.LobbyNet, domain.LobbySpace)
+		}
 	}
 	return nil
 }
@@ -454,7 +476,7 @@ func SpecsFor(desired domain.RuleSet, scope Scope) ([]Spec, error) {
 			newSpec(SlotLobbyIface, "bloqueo de todo, por adaptador del vestíbulo", InboundV4, Block, WeightBlockAll,
 				Conditions{Iface: scope.Lobby}),
 			newSpec(SlotLobbyNet, "bloqueo de todo, por rango del vestíbulo", InboundV4, Block, WeightBlockAll,
-				Conditions{LocalNet: scope.LobbyNet()}),
+				Conditions{LocalNet: scope.LobbyNet}),
 			newSpec(SlotLobbyV6, "bloqueo de todo IPv6, por adaptador del vestíbulo", InboundV6, Block, WeightBlockAll,
 				Conditions{Iface: scope.Lobby}),
 		)
@@ -500,25 +522,32 @@ func SpecsFor(desired domain.RuleSet, scope Scope) ([]Spec, error) {
 // # Cuál de los dos adaptadores
 //
 // Lo dice la dirección LOCAL de la regla, y no un campo que alguien rellena:
-// una dirección dentro de [domain.RendezvousSubnet] solo puede estar en el
-// adaptador del vestíbulo, y cualquier otra en el de la sala. Deducirlo de la
-// dirección es lo que impide que el permiso de la puerta acabe acotado al
-// adaptador equivocado, donde no casaría con nada y dejaría la puerta cerrada
-// con la compuerta diciendo que está puesta.
+// una dirección dentro de [domain.LobbySpace] solo puede estar en el adaptador
+// del vestíbulo, y cualquier otra en el de la sala. Deducirlo de la dirección es
+// lo que impide que el permiso de la puerta acabe acotado al adaptador
+// equivocado, donde no casaría con nada y dejaría la puerta cerrada con la
+// compuerta diciendo que está puesta.
+//
+// Se pregunta por el ESPACIO y no por el /24 concreto, y eso lo hace además
+// robusto a lo que antes era imposible: desde que cada sala deriva su vestíbulo,
+// el /24 del alcance y el de la regla podrían no ser el mismo si alguien mezcla
+// dos salas, y ahí lo correcto sigue siendo mandarla al adaptador del vestíbulo.
+// Que casen entre sí lo garantiza [ControlRules], que saca los dos de la misma
+// dirección.
 func permitFor(slot int, r domain.FirewallRule, scope Scope) (Spec, error) {
 	if !r.Local.IsValid() {
 		return Spec{}, fmt.Errorf("regla %q: sin dirección local", r.Name)
 	}
 
 	iface := scope.Iface
-	if domain.RendezvousSubnet.Contains(r.Local) {
+	if domain.LobbySpace.Contains(r.Local) {
 		if !scope.HasLobby() {
 			// Fallar es lo correcto: acotarla a la sala pondría el permiso donde
 			// no casa, y emitirla sin adaptador la pondría en TODOS. El primero
 			// deja la puerta cerrada en silencio, el segundo abre el puerto del
 			// canal en la red de casa del usuario.
 			return Spec{}, fmt.Errorf("regla %q: está en %v, o sea en el vestíbulo, "+
-				"y el alcance llegó sin adaptador de vestíbulo", r.Name, domain.RendezvousSubnet)
+				"y el alcance llegó sin adaptador de vestíbulo", r.Name, domain.LobbySpace)
 		}
 		iface = scope.Lobby
 	}

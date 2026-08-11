@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/hex"
+	"net/netip"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -98,6 +99,52 @@ func (r Rendezvous) NetworkName() string {
 // motor. Único punto del programa que expone este valor.
 func (r Rendezvous) EngineSecret() string {
 	return hex.EncodeToString(r.secret[:])
+}
+
+// LobbySubnet es el /24 donde se encuentran host e invitado, derivado del mismo
+// invite ID que el resto de la identidad de encuentro.
+//
+// # Qué problema resuelve que sea derivado y no una constante
+//
+// Los dos lados tienen que llegar al MISMO /24 sin haber hablado antes: el
+// invitado necesita una dirección a la que marcar para pedir la credencial, y la
+// subred de la sala viene dentro de esa credencial, o sea después. Una constante
+// cumple eso, y por eso fue lo primero. Lo que no cumple es poder moverse.
+//
+// Derivarlo del código cumple las dos cosas. Sigue siendo una función pura de un
+// valor que las dos máquinas ya tienen, así que nadie negocia nada, y **renovar
+// el código cambia el vestíbulo**. Eso convierte un rango que le choca a alguien
+// de "este producto no le sirve" a "que el host le dé al botón que ya existe".
+//
+// La diferencia importa porque no se puede acertar a ciegas: no hay forma de
+// saber qué rangos tiene la máquina de cada invitado, así que el diseño no puede
+// depender de haber elegido bien. Elegir [LobbySpace] fuera de CGNAT baja mucho
+// la probabilidad; poder moverse es lo que hace que equivocarse tenga salida.
+//
+// Sale de networkID, que ya está calculado, y no de un Argon2id nuevo: es el
+// mismo secreto derivado del mismo código, y gastar otro pase de memoria dura
+// para elegir 256 posibilidades no compra nada.
+//
+// Que el /24 sea público no filtra nada, por lo mismo que la red de encuentro no
+// filtra nada: quien tenga el invite ID puede derivar las dos, y una IP dentro de
+// un overlay cifrado no dice de qué sala es.
+func (r Rendezvous) LobbySubnet() netip.Prefix {
+	base := LobbySpace.Addr().As4()
+	// El tercer octeto elige entre los 256 /24 de la mitad alta de RFC 2544. Un
+	// byte del networkID basta: no es una elección con requisitos
+	// criptográficos, es un reparto parejo.
+	base[2] = r.networkID[0]
+	base[3] = 0
+	return netip.PrefixFrom(netip.AddrFrom4(base), RoomPrefixBits)
+}
+
+// LobbyHostAddress es la .1 del vestíbulo, que es a la que marca el invitado.
+//
+// Va junto a la subred y no como constante aparte por lo que enseñó tenerlas
+// separadas: eran dos verdades sobre la misma cosa y nada obligaba a que
+// coincidieran.
+func (r Rendezvous) LobbyHostAddress() netip.Addr {
+	return HostAddress(r.LobbySubnet())
 }
 
 // String redacta el secreto a propósito.

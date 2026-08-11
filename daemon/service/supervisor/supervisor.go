@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"runtime/debug"
 	"time"
 
@@ -40,6 +41,7 @@ type Room interface {
 	OnRoomAnnounce(ctx context.Context, a domain.RoomAnnounce) (domain.RoomState, error)
 	OnRoomNotice(ctx context.Context, n domain.RoomNotice) domain.RoomState
 	OnCodeRotated(ctx context.Context, r domain.Room) domain.RoomState
+	OnMemberChannelUp(ctx context.Context, ip netip.Addr) domain.RoomState
 	SetHostPresent(present bool) domain.RoomState
 	ReapplyAdapter(ctx context.Context) error
 
@@ -53,6 +55,15 @@ type Room interface {
 	// OnCanaryRequest es el lado del invitado: marca al host y contesta. Tarda
 	// hasta seis segundos, por lo mismo.
 	OnCanaryRequest(ctx context.Context, req domain.CanaryRequest) error
+
+	// RejoinDue es BARATO: mira relojes y estado, no habla con nadie. Lo
+	// pregunta el latido para no lanzar una gorrutina que se conteste sola que
+	// no tocaba.
+	RejoinDue() bool
+	// Rejoin le vuelve a pedir credencial al host cuando reinició y ya no
+	// reconoce a nadie. Es LARGO, hasta un minuto, y por eso corre fuera del
+	// despachador. Ver [Supervisor.reingreso].
+	Rejoin(ctx context.Context) error
 }
 
 // EngineSource es lo único que el supervisor le puede pedir al motor.
@@ -81,6 +92,14 @@ type ControlSource interface {
 	// adaptador descarta con aviso en vez de bloquear, que es lo correcto: un
 	// informe sin ronda abierta es el de un canario ya cerrado.
 	CanaryRequests() <-chan domain.CanaryRequest
+
+	// MemberChannels es el lado del HOST: quién acaba de abrir su canal.
+	//
+	// Es lo contrario de HostPresence, que es lo mismo visto por el invitado.
+	// Van por separado porque nunca están los dos vivos en la misma máquina y
+	// porque lo que llevan no es lo mismo: aquello es un booleano sobre uno
+	// solo, y esto es qué miembro, de varios.
+	MemberChannels() <-chan netip.Addr
 }
 
 // ErrNotWired es que falta algún puerto. Un supervisor a medias no arranca:
@@ -176,6 +195,9 @@ const (
 	tagSweep    tag = "barrido"
 	tagRestart  tag = "reinicio"
 
+	// tagMemberUp es un miembro abriendo su canal con este host.
+	tagMemberUp tag = "canal-de-miembro"
+
 	// tagCanaryDue es "se aplicó la protección, toca comprobarla".
 	tagCanaryDue tag = "canario-tras-aplicar"
 	// tagCanaryAsk es el host pidiéndole a este invitado que marque.
@@ -186,6 +208,10 @@ const (
 	// canarioVivo lo siga tocando SOLO el despachador, igual que intentos y
 	// latidos. Así el supervisor sigue siendo de un solo hilo para su estado.
 	tagCanaryDone tag = "canario-terminado"
+
+	// tagRejoinDone vuelve cuando el reingreso del invitado termina, por el
+	// mismo motivo que [tagCanaryDone].
+	tagRejoinDone tag = "reingreso-terminado"
 )
 
 type item struct {
@@ -229,6 +255,15 @@ type Supervisor struct {
 	// el host se queda sin informe de ese miembro y lo cuenta como sin confirmar,
 	// que es el lado seguro.
 	canarioVivo bool
+
+	// reingresoVivo es el single-flight del reingreso del invitado.
+	//
+	// Bandera propia y no la del canario, aunque las dos protejan trabajo largo
+	// fuera del despachador: el canario descarta un pedido cuando hay uno en
+	// vuelo porque perderlo solo cuesta un informe, y este NO se puede descartar
+	// contra el otro, porque perderlo cuesta que el invitado no vuelva a la sala
+	// y se caiga a los veinte minutos.
+	reingresoVivo bool
 }
 
 // New arma el supervisor con sus relojes de verdad.
@@ -381,10 +416,20 @@ func (s *Supervisor) manejar(ctx context.Context, it item) {
 	case tagNotice:
 		n, _ := it.value.(domain.RoomNotice)
 		s.deps.Room.OnRoomNotice(ctx, n)
+		// Un aviso puede dejar pedido un reingreso, y esperar al latido para
+		// lanzarlo cuesta hasta [Beat] de nada. Medido el 2026-08-11: quince
+		// segundos de los treinta y uno que tardó la recuperación entera eran
+		// esto. La comprobación es barata y no reingresa sola: [Room.RejoinDue]
+		// solo mira relojes, y si no toca, esto no hace nada.
+		s.reingreso(ctx)
 
 	case tagCode:
 		r, _ := it.value.(domain.Room)
 		s.deps.Room.OnCodeRotated(ctx, r)
+
+	case tagMemberUp:
+		ip, _ := it.value.(netip.Addr)
+		s.deps.Room.OnMemberChannelUp(ctx, ip)
 
 	case tagNetID:
 		// Windows acaba de identificar una red, o sea que acaba de revertir la
@@ -411,6 +456,9 @@ func (s *Supervisor) manejar(ctx context.Context, it item) {
 	case tagCanaryDone:
 		s.canarioVivo = false
 
+	case tagRejoinDone:
+		s.reingresoVivo = false
+
 	case tagRestart:
 		s.reiniciarMotor(ctx)
 	}
@@ -435,6 +483,12 @@ func (s *Supervisor) evento(ctx context.Context, ev domain.EngineEvent) {
 func (s *Supervisor) latido(ctx context.Context) {
 	s.latidos++
 	s.deps.Room.Tick(ctx)
+
+	// El reingreso va DESPUÉS del Tick y no antes, y el orden es el que hace
+	// que no se pisen: el Tick es el que puede sacar de la sala por ausencia del
+	// host, y preguntar después significa preguntar sobre el estado de ahora. Al
+	// revés se lanzaría un reingreso a una sala de la que se acaba de salir.
+	s.reingreso(ctx)
 
 	// Reaplicar el adaptador cada tantos latidos es el respaldo de la
 	// suscripción a los eventos de Windows, que puede morirse sin avisar.
@@ -525,6 +579,53 @@ func (s *Supervisor) terminóElCanario(ctx context.Context) {
 	case s.work <- item{tag: tagCanaryDone}:
 	case <-ctx.Done():
 	}
+}
+
+// reingreso vuelve a pedirle credencial al host, FUERA del despachador.
+//
+// # Por qué no puede correr dentro
+//
+// Porque son hasta un minuto de red: levantar el vestíbulo, marcar al host,
+// canjear, y reemplazar la instancia de sala del motor. Corriéndolo dentro, el
+// latido de quince segundos se quedaría esperando, y ese latido es el que hace
+// vencer el corte de los veinte minutos por ausencia del host, o sea justo el
+// plazo dentro del cual esto tiene que ganar.
+//
+// # Por qué se pregunta antes de lanzar
+//
+// `RejoinDue` solo mira relojes y estado, así que cuesta un candado y vuelve. Sin
+// esa pregunta habría que lanzar una gorrutina en cada latido para que se
+// contestara ella misma que no tocaba, y en una sala sana eso son cuatro
+// gorrutinas por minuto sin nada que hacer. La sesión lo vuelve a comprobar con
+// el candado ya tomado, porque entre una cosa y la otra el host pudo volver.
+//
+// El recover es propio por lo mismo que el del canario: el de [Supervisor.atender]
+// cubre la llamada a esto, no la gorrutina que esto lanza.
+func (s *Supervisor) reingreso(ctx context.Context) {
+	if s.reingresoVivo || !s.deps.Room.RejoinDue() {
+		return
+	}
+	s.reingresoVivo = true
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				s.deps.Log.Error("pánico volviendo a entrar a la sala, el bucle sigue",
+					"pánico", fmt.Sprint(r), "pila", string(debug.Stack()))
+			}
+			// Se libera SIEMPRE y por el canal de trabajo. Un pánico que dejara
+			// la bandera puesta apagaría el reingreso para el resto de la vida
+			// del proceso, en silencio, y con él la única forma que tiene el
+			// invitado de volver sin que su usuario pegue el código otra vez.
+			select {
+			case s.work <- item{tag: tagRejoinDone}:
+			case <-ctx.Done():
+			}
+		}()
+		// El error ya se registró dentro, con su causa. Acá no hay nada que
+		// decidir: el intento siguiente lo programa la sesión.
+		_ = s.deps.Room.Rejoin(ctx)
+	}()
 }
 
 func (s *Supervisor) reaplicarAdaptador(ctx context.Context, motivo string) {
@@ -660,6 +761,7 @@ func (s *Supervisor) resuscribir(ctx context.Context) {
 	drenarSi(s, ctx, tagAnnounce, s.deps.Control.Announcements())
 	drenarSi(s, ctx, tagNotice, s.deps.Control.Notices())
 	drenarSi(s, ctx, tagCode, s.deps.Control.Codes())
+	drenarSi(s, ctx, tagMemberUp, s.deps.Control.MemberChannels())
 	drenarSi(s, ctx, tagCanaryDue, s.deps.Room.CanaryDue())
 	drenarSi(s, ctx, tagCanaryAsk, s.deps.Control.CanaryRequests())
 	drenarSi(s, ctx, tagNetID, s.deps.System.NetworkIdentified())

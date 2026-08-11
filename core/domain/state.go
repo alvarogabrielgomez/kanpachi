@@ -190,6 +190,20 @@ type RoomState struct {
 	// HostGoneSince: aquello es que falta una persona, esto es que falta la red.
 	ReconnectingSince time.Time
 
+	// Rejoining dice que este invitado está volviendo a pedir credencial AHORA.
+	//
+	// Existe para la pantalla y nada más. Sin esto, un reingreso son diez
+	// segundos en los que lo único que se ve es el cartel de que el host no está,
+	// que además ya es falso cuando el reingreso lo dispara el aviso del host.
+	//
+	// **No es un estado de conexión y por eso no está en la máquina de estados.**
+	// Pasar a Reconectando arrancaría el corte de diez minutos, y acá el túnel del
+	// invitado nunca se cayó. Ver [usecase.Rejoin].
+	//
+	// Se publica ANTES de empezar, que es el único momento en que sirve: el
+	// reingreso tiene el candado de la sesión tomado mientras corre.
+	Rejoining bool
+
 	// Game es el juego activo, y el cero es un estado válido y el que trae una
 	// sala recién creada: red cifrada, cero puertos abiertos.
 	Game GameProfile

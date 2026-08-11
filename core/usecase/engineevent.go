@@ -122,7 +122,7 @@ func (s *Session) OnEngineRestarted(ctx context.Context) error {
 	if !s.state.Conn.InRoom() {
 		return nil
 	}
-	if err := s.deps.Firewall.BindRoom(ctx, s.state.Subnet, s.bindingLocked()); err != nil {
+	if err := s.deps.Firewall.BindRoom(ctx, s.state.Subnet, s.lobbyNetLocked(), s.bindingLocked()); err != nil {
 		return fmt.Errorf("reacotando la contención tras el reinicio del motor: %w", err)
 	}
 	// Y se reaplica, porque los filtros que se hayan escrito durante la carrera
@@ -161,7 +161,7 @@ func (s *Session) tunnelUpLocked(ctx context.Context, reason string) (domain.Roo
 	// una sala que no volvía nunca: medido, la sala se quedaba en reconectando
 	// con las dos redes ya arriba. Quien cierra el caso de verdad es
 	// `OnEngineRestarted`, que corre cuando el motor terminó de levantar las dos.
-	if err := s.deps.Firewall.BindRoom(ctx, s.state.Subnet, s.bindingLocked()); err != nil {
+	if err := s.deps.Firewall.BindRoom(ctx, s.state.Subnet, s.lobbyNetLocked(), s.bindingLocked()); err != nil {
 		s.deps.Log.Warn("todavía no se pudo reacotar la contención, se reintenta al terminar el reinicio",
 			"error", err)
 	}

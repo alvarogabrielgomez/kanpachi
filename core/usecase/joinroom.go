@@ -90,57 +90,12 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 		return domain.RoomState{}, err
 	}
 
-	// Se deriva en el cliente y no se le pregunta al seed. El seed podría
-	// decir cuál es la red de encuentro, derivarla acá hace que llegar al
-	// vestíbulo no dependa de que su API esté viva ni de que diga la verdad.
-	rdv := domain.DeriveRendezvous(room.InviteID)
-	seeds := seedsFor(room)
-
 	if err := s.state.Transition(domain.StateConnecting, "buscando al host"); err != nil {
 		return domain.RoomState{}, err
 	}
-	lobbyIP, err := domain.RendezvousGuestAddress(s.deps.Rand)
+	cred, err := s.joinRealNetworkLocked(ctx, room, nick)
 	if err != nil {
 		return domain.RoomState{}, err
-	}
-	s.deps.Progress.Step(domain.ScopeEngine, "entrando al vestíbulo, que es donde espera el host")
-	if err := s.deps.Engine.JoinRendezvous(ctx, domain.RendezvousSpec{
-		Rendezvous: rdv, Address: lobbyIP, Name: nick, Seeds: seeds,
-	}); err != nil {
-		return domain.RoomState{}, fmt.Errorf("entrando al vestíbulo de la sala: %w", err)
-	}
-
-	s.deps.Progress.Step(domain.ScopeDaemon, "pidiéndole al host la credencial de la sala")
-	cred, err := s.exchangeForCredential(ctx, nick)
-	if err != nil {
-		return domain.RoomState{}, err
-	}
-	s.deps.Progress.Stepf(domain.ScopeDaemon, "credencial recibida, tu dirección será %s", cred.VirtualIP)
-	// La subred la eligió el host mirando SU máquina, no esta. Antes de
-	// instalarla hay que comprobarla contra la tabla de rutas de acá: una sala
-	// en 192.168.1.0/24 rompe la LAN de casa de quien tenga ese rango, y el
-	// síntoma sería que entrar a la sala te deja sin internet.
-	//
-	// Se rechaza en vez de avisar por el mismo motivo por el que el plan de
-	// direcciones prefiere fallar a forzar un rango: pisar una ruta existente
-	// rompe conectividad que el usuario ya tenía, y eso es peor que no entrar.
-	s.deps.Progress.Stepf(domain.ScopeDaemon, "comprobando que %s no pise ninguna red de esta máquina", cred.Subnet)
-	if err := s.checkSubnetAgainstLocal(ctx, cred.Subnet); err != nil {
-		return domain.RoomState{}, err
-	}
-
-	// Salir del vestíbulo antes de entrar a la red real. No es higiene: el
-	// vestíbulo es observable por cualquiera que tenga el código, y quedarse
-	// ahí después de haber entrado mantendría abierta una vía por la que un
-	// desconocido ve que esta máquina está en esa sala.
-	if err := s.deps.Engine.LeaveRendezvous(ctx); err != nil {
-		s.deps.Log.Warn("el motor no salió limpio del vestíbulo", "error", err)
-	}
-	s.deps.Progress.Step(domain.ScopeEngine, "saliendo del vestíbulo y entrando a la red real")
-	if err := s.deps.Engine.JoinWithCredential(ctx, domain.GuestSpec{
-		Credential: cred, Name: nick, Seeds: seeds,
-	}); err != nil {
-		return domain.RoomState{}, fmt.Errorf("entrando a la sala: %w", err)
 	}
 
 	s.state.Role = domain.RoleGuest
@@ -183,7 +138,7 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 	// escribe permisos, y también necesita quién los acote frente a los demás
 	// miembros de la sala. Va con la SALA SOLA: el vestíbulo se soltó unas
 	// líneas más arriba, a propósito, y ya no existe adaptador que acotar.
-	if err := s.deps.Firewall.BindRoom(ctx, cred.Subnet, domain.BindRoomOnly); err != nil {
+	if err := s.deps.Firewall.BindRoom(ctx, cred.Subnet, netip.Prefix{}, domain.BindRoomOnly); err != nil {
 		return domain.RoomState{}, fmt.Errorf("acotando la contención a la sala: %w", err)
 	}
 
@@ -209,6 +164,86 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 	s.deps.Log.Info("dentro de la sala",
 		"código", room.InviteID.String(), "seed", room.Seed, "ip", cred.VirtualIP.String())
 	return s.snapshot(), nil
+}
+
+// joinRealNetworkLocked es el canje por el vestíbulo y la entrada a la red real.
+//
+// Está aparte porque tiene DOS llamadores y las dos veces es exactamente lo
+// mismo: entrar por primera vez, y volver a entrar solo cuando el host se cayó y
+// volvió sin recordar a nadie. Ver [Session.Rejoin]. Dos copias de esta
+// secuencia serían dos formas de entrar a una sala que se separan en silencio, y
+// la parte que menos se puede duplicar es la validación de lo que manda el host.
+//
+// Lo que NO hace, y por eso sirve a los dos: no toca la máquina de estados, no
+// fija el rol, no guarda nada en disco y no marca al canal de control. Cada
+// llamador tiene su propia idea de qué significa haber llegado hasta acá.
+//
+// Asume el candado tomado.
+func (s *Session) joinRealNetworkLocked(ctx context.Context, room domain.Room, nick domain.Nickname) (domain.Credential, error) {
+	// Se deriva en el cliente y no se le pregunta al seed. El seed podría
+	// decir cuál es la red de encuentro, derivarla acá hace que llegar al
+	// vestíbulo no dependa de que su API esté viva ni de que diga la verdad.
+	rdv := domain.DeriveRendezvous(room.InviteID)
+	seeds := seedsFor(room)
+
+	// La tabla de rutas se lee UNA vez y sirve a las dos cosas que dependen de
+	// ella: avisar del conflicto de rango y esquivar las direcciones que esta
+	// máquina ya tiene. Un fallo al leerla no impide entrar, solo deja el
+	// diagnóstico sin datos, así que se sigue con la lista vacía.
+	local, err := s.deps.Routes.LocalPrefixes(ctx)
+	if err != nil {
+		s.deps.Log.Warn("no se pudo leer la tabla de rutas antes del vestíbulo", "error", err)
+		local = nil
+	}
+	// Antes de entrar, porque el paso siguiente es el que se cuelga treinta
+	// segundos si esto pasa, y sin decirlo el síntoma es un adaptador que no toma
+	// su dirección y ninguna pista de por qué.
+	s.noteLobbyConflictLocked(domain.LobbyOverlap(local, rdv.LobbySubnet()))
+
+	lobbyIP, err := domain.RendezvousGuestAddress(s.deps.Rand, rdv.LobbySubnet(), local)
+	if err != nil {
+		return domain.Credential{}, err
+	}
+	s.deps.Progress.Step(domain.ScopeEngine, "entrando al vestíbulo, que es donde espera el host")
+	if err := s.deps.Engine.JoinRendezvous(ctx, domain.RendezvousSpec{
+		Rendezvous: rdv, Address: lobbyIP, Name: nick, Seeds: seeds,
+	}); err != nil {
+		return domain.Credential{}, fmt.Errorf("entrando al vestíbulo de la sala: %w", err)
+	}
+
+	s.deps.Progress.Step(domain.ScopeDaemon, "pidiéndole al host la credencial de la sala")
+	cred, err := s.exchangeForCredential(ctx, rdv, nick)
+	if err != nil {
+		return domain.Credential{}, err
+	}
+	s.deps.Progress.Stepf(domain.ScopeDaemon, "credencial recibida, tu dirección será %s", cred.VirtualIP)
+	// La subred la eligió el host mirando SU máquina, no esta. Antes de
+	// instalarla hay que comprobarla contra la tabla de rutas de acá: una sala
+	// en 192.168.1.0/24 rompe la LAN de casa de quien tenga ese rango, y el
+	// síntoma sería que entrar a la sala te deja sin internet.
+	//
+	// Se rechaza en vez de avisar por el mismo motivo por el que el plan de
+	// direcciones prefiere fallar a forzar un rango: pisar una ruta existente
+	// rompe conectividad que el usuario ya tenía, y eso es peor que no entrar.
+	s.deps.Progress.Stepf(domain.ScopeDaemon, "comprobando que %s no pise ninguna red de esta máquina", cred.Subnet)
+	if err := s.checkSubnetAgainstLocal(ctx, cred.Subnet); err != nil {
+		return domain.Credential{}, err
+	}
+
+	// Salir del vestíbulo antes de entrar a la red real. No es higiene: el
+	// vestíbulo es observable por cualquiera que tenga el código, y quedarse
+	// ahí después de haber entrado mantendría abierta una vía por la que un
+	// desconocido ve que esta máquina está en esa sala.
+	if err := s.deps.Engine.LeaveRendezvous(ctx); err != nil {
+		s.deps.Log.Warn("el motor no salió limpio del vestíbulo", "error", err)
+	}
+	s.deps.Progress.Step(domain.ScopeEngine, "saliendo del vestíbulo y entrando a la red real")
+	if err := s.deps.Engine.JoinWithCredential(ctx, domain.GuestSpec{
+		Credential: cred, Name: nick, Seeds: seeds,
+	}); err != nil {
+		return domain.Credential{}, fmt.Errorf("entrando a la sala: %w", err)
+	}
+	return cred, nil
 }
 
 // checkRoomExists le pregunta al registro si ese código existe, y solo se cree
@@ -268,14 +303,16 @@ func (s *Session) checkRoomExists(ctx context.Context, room domain.Room) error {
 // se intercambia acá va firmado contra la llave del host y cifrado contra la
 // del invitado, porque el vestíbulo es observable: un observador ve que
 // alguien pidió entrar, y no obtiene la credencial ni la identidad de la sala.
-func (s *Session) exchangeForCredential(ctx context.Context, nick domain.Nickname) (domain.Credential, error) {
-	// La dirección del host en el vestíbulo es fija y la conocen los dos lados
-	// sin hablarse, que es justo lo que hace falta acá: la subred de la sala
-	// llega DENTRO de la credencial, o sea después de esta conexión.
+func (s *Session) exchangeForCredential(
+	ctx context.Context, rdv domain.Rendezvous, nick domain.Nickname,
+) (domain.Credential, error) {
+	// La dirección del host en el vestíbulo la derivan los dos lados del mismo
+	// código, sin hablarse, que es justo lo que hace falta acá: la subred de la
+	// sala llega DENTRO de la credencial, o sea después de esta conexión.
 	//
 	// Marcar hacia una dirección conocida, y no aceptar conexiones entrantes,
 	// es lo que hace imposible que un miembro se haga pasar por el host.
-	if err := s.deps.Control.Dial(ctx, domain.RendezvousHostAddress); err != nil {
+	if err := s.deps.Control.Dial(ctx, rdv.LobbyHostAddress()); err != nil {
 		// El host no está alcanzable. Es el costo aceptado de la decisión 2 y
 		// merece un mensaje propio, porque "no se pudo conectar" mandaría a
 		// alguien a revisar su internet cuando el problema es que el host está
@@ -303,9 +340,12 @@ func (s *Session) exchangeForCredential(ctx context.Context, nick domain.Nicknam
 		return domain.Credential{}, fmt.Errorf(
 			"el host asignó %s, que está fuera de la subred %s que él mismo declaró", cred.VirtualIP, cred.Subnet)
 
-	case cred.Subnet == domain.RendezvousSubnet:
-		// Poner la sala en el /24 del vestíbulo cortaría la conexión por la que
-		// acaba de llegar esta credencial.
+	case domain.LobbySpace.Overlaps(cred.Subnet):
+		// Poner la sala dentro del espacio de los vestíbulos cortaría la conexión
+		// por la que acaba de llegar esta credencial. Se comprueba contra el
+		// espacio entero y no contra el /24 de ESTA sala, que es más estricto y
+		// correcto: ahí no vive ninguna sala legítima, y un host modificado que
+		// eligiera el vestíbulo de otra sala tampoco tendría por qué.
 		return domain.Credential{}, fmt.Errorf("el host puso la sala en el rango reservado del vestíbulo")
 
 	case cred.VirtualIP == domain.HostAddress(cred.Subnet):

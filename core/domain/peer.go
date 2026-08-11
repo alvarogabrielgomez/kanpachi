@@ -229,37 +229,71 @@ type HostSpec struct {
 // que cualquiera con el invite ID puede derivar, y lo único que hace ahí es
 // pedirle la credencial al host. Después sale y entra a la red real.
 //
-// La subred es [RendezvousSubnet], fija para todas las salas, porque el
-// invitado necesita una dirección conocida a la que marcar antes de tener nada
-// del host. La de la sala llega dentro de la credencial, o sea después.
+// La subred la deriva cada sala de su código, y las dos máquinas llegan a la
+// misma sin hablarse, porque el invitado necesita una dirección a la que marcar
+// antes de tener nada del host. Ver [Rendezvous.LobbySubnet].
 type RendezvousSpec struct {
 	Rendezvous Rendezvous
 	// Address es la dirección que este nodo toma en el vestíbulo. El host
-	// siempre [RendezvousHostAddress], para que lo encuentren; el invitado,
-	// cualquier otra.
+	// siempre [Rendezvous.LobbyHostAddress], para que lo encuentren; el
+	// invitado, cualquier otra.
 	Address netip.Addr
 	Name    Nickname
 	Seeds   []string
 }
 
-// RendezvousGuestAddress reparte una dirección al que entra al vestíbulo.
+// RendezvousGuestAddress reparte una dirección al que entra al vestíbulo,
+// esquivando las que esta máquina ya tiene.
 //
-// Al azar dentro del /24 y sin coordinación. Un choque es posible y no
-// importa: la estancia dura lo que tarda un canje de credencial, el motor
-// resuelve el duplicado por su cuenta, y el precio de equivocarse es
-// reintentar. Coordinarlo exigiría un canal, y el canal es lo que se está
-// montando.
-func RendezvousGuestAddress(r io.Reader) (netip.Addr, error) {
+// Al azar dentro del /24 y sin coordinación con la otra punta. Un choque con
+// OTRO invitado es posible y no importa: la estancia dura lo que tarda un canje
+// de credencial, el motor resuelve el duplicado por su cuenta, y el precio de
+// equivocarse es reintentar. Coordinarlo exigiría un canal, y el canal es lo que
+// se está montando.
+//
+// # Por qué sí importa chocar consigo mismo
+//
+// Porque eso no lo resuelve nadie. Si la dirección sorteada ya existe en otra
+// interfaz de ESTA máquina, el sistema no se la deja poner al adaptador virtual,
+// y lo que se ve es el arranque colgado treinta segundos esperando una dirección
+// que no va a llegar, sin nada que explique por qué. Se descarta acá, que es
+// gratis y determinista, en vez de reintentar a ciegas.
+//
+// `local` son las rutas y direcciones de la máquina, las mismas que mira
+// [LobbyOverlap]. Vacío es válido y significa no esquivar nada.
+func RendezvousGuestAddress(r io.Reader, lobby netip.Prefix, local []netip.Prefix) (netip.Addr, error) {
 	var b [1]byte
 	if _, err := io.ReadFull(r, b[:]); err != nil {
 		return netip.Addr{}, fmt.Errorf("domain: leyendo aleatoriedad para la dirección del vestíbulo: %w", err)
 	}
+	base := lobby.Addr().As4()
 	// De la .2 a la .254: la .1 es del host, la .0 es la red y la .255 el
-	// broadcast.
-	last := 2 + int(b[0])%253
-	a := RendezvousSubnet.Addr().As4()
-	a[3] = byte(last)
-	return netip.AddrFrom4(a), nil
+	// broadcast. Se arranca en el sorteo y se avanza en círculo, igual que
+	// [pickSubnet]: así esquivar una ocupada no sesga el reparto.
+	start := int(b[0]) % 253
+	for i := 0; i < 253; i++ {
+		base[3] = byte(2 + (start+i)%253)
+		cand := netip.AddrFrom4(base)
+		if !occupied(local, cand) {
+			return cand, nil
+		}
+	}
+	// Las 253 ocupadas significa que esta máquina tiene el /24 entero, que es el
+	// conflicto que [LobbyOverlap] ya nombra. Se devuelve la sorteada para que
+	// falle donde se entiende, con el aviso del conflicto ya puesto, en vez de
+	// con un error de aritmética de direcciones.
+	base[3] = byte(2 + start)
+	return netip.AddrFrom4(base), nil
+}
+
+// occupied dice si alguna red local ya contiene esa dirección.
+func occupied(local []netip.Prefix, a netip.Addr) bool {
+	for _, p := range local {
+		if p.IsValid() && p.Contains(a) {
+			return true
+		}
+	}
+	return false
 }
 
 // GuestSpec es lo que el motor necesita para entrar como nodo temporal a la

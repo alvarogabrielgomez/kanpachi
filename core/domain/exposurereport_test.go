@@ -105,7 +105,7 @@ func TestElHuecoDelCanalSeDistingueDeUnPuertoDeJuego(t *testing.T) {
 
 	canal, err := ControlRules(
 		RoleHost,
-		RendezvousSubnet.Addr().Next(),
+		lobbyDePrueba,
 		netip.MustParseAddr("100.64.1.1"),
 		[]netip.Addr{netip.MustParseAddr("100.64.1.5")},
 	)

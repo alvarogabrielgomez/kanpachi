@@ -70,6 +70,32 @@ type EnginePort interface {
 	IssueCredential(ctx context.Context, req domain.CredentialRequest) (domain.Credential, error)
 	RevokeCredential(ctx context.Context, id domain.CredentialID) error
 
+	// RenewCredential empuja el vencimiento de una credencial ya emitida
+	// CONSERVANDO su llave, y devuelve la fecha nueva.
+	//
+	// # Por qué no alcanza con volver a emitir
+	//
+	// Porque el secreto de la credencial ES la llave estática con la que el
+	// invitado tiene abierta su conexión. Emitir otra vez produce una llave
+	// nueva, que el invitado solo puede adoptar rehaciendo su instancia del
+	// motor, o sea un corte. Renovar cambia una fecha y nada más, y es lo que
+	// hace que una sala pueda durar más que una credencial sin que todos
+	// reconecten por reloj.
+	//
+	// Solo un nodo admin, igual que emitir y revocar: quien publica la lista de
+	// confianza es el único que puede decir que alguien sigue en ella.
+	//
+	// **Un id que no existe es un ERROR.** Es lo que contesta el motor cuando la
+	// credencial se revocó o venció entre dos latidos, y quien llama tiene que
+	// poder distinguirlo de que el motor no conteste, que es el caso donde
+	// reintentar sirve.
+	//
+	// La fecha vuelve del motor en vez de calcularse acá como `ahora + ttl`. Es
+	// la misma lección que la dirección del invitado: dos lados calculando lo
+	// mismo por separado coinciden hasta que dejan de hacerlo, y acá la
+	// discrepancia sería un host convencido de que a alguien le queda un día.
+	RenewCredential(ctx context.Context, id domain.CredentialID, ttl time.Duration) (time.Time, error)
+
 	// ListCredentials devuelve las credenciales vivas SIN dirección virtual.
 	//
 	// El cero en `VirtualIP` no es un descuido del adaptador: el motor no
@@ -203,16 +229,21 @@ type FirewallPort interface {
 	// quien la levantó.
 	//
 	// El nombre del adaptador NO viaja: son [domain.AdapterName] y
-	// [domain.LobbyAdapterName], constantes del dominio. Lo que viaja es la
-	// subred de la sala, que se elige en tiempo de ejecución, y cuántos
-	// adaptadores hay ahora.
+	// [domain.LobbyAdapterName], constantes del dominio. Lo que viaja son los
+	// dos rangos, que se eligen en tiempo de ejecución, y cuántos adaptadores
+	// hay ahora.
+	//
+	// `lobby` es el /24 del vestíbulo de esta sala, y solo hace falta con
+	// [domain.BindRoomAndLobby]. Viaja desde que dejó de ser una constante: lo
+	// deriva cada sala de su código, así que el firewall no lo puede saber solo.
+	// Ver [domain.Rendezvous.LobbySubnet].
 	//
 	// **Falla en la cara y hay que tratarlo como fatal.** No es como los
 	// ajustes del adaptador, donde un fallo degrada la partida: sin compuerta
 	// la lista de permitidos vuelve a ser ADITIVA, o sea que una regla ajena de
 	// escritorio remoto alcanza al usuario por la red virtual. Una sala que no
 	// se abre es mejor que una que dice estar contenida y no lo está.
-	BindRoom(ctx context.Context, room netip.Prefix, with domain.RoomBinding) error
+	BindRoom(ctx context.Context, room, lobby netip.Prefix, with domain.RoomBinding) error
 
 	// UnbindRoom olvida los adaptadores. Se llama al salir de la sala, DESPUÉS
 	// de cerrar lo que estuviera abierto: al revés quedaría un instante con

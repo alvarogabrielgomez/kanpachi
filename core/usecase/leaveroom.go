@@ -99,6 +99,27 @@ func (s *Session) OnRoomNotice(ctx context.Context, n domain.RoomNotice) domain.
 		// ajustes del adaptador y cerrar el motor limpio en vez de que se caiga
 		// solo, y que la pantalla diga qué pasó.
 		return s.leaveLocked(ctx, "el host expulsó a esta máquina", domain.ExitKicked, cerrarDeVerdad)
+	case domain.NoticeStale:
+		// El host dice que no tiene credencial de esta máquina. Es el ÚNICO que
+		// lo puede saber, así que esto sustituye a esperar a notarlo por cuenta
+		// propia, que en la medición del 2026-08-11 tardó tres minutos porque el
+		// canal de control seguía en pie mientras la credencial ya no existía.
+		//
+		// No se reingresa acá dentro: esto corre en el despachador del
+		// supervisor y volver a entrar tarda hasta un minuto. Lo que se hace es
+		// dejarlo PEDIDO, y el latido siguiente lo lanza fuera del despachador,
+		// que es donde tiene que correr. Ver [Session.Rejoin].
+		//
+		// Y se pide con un motivo propio, no apagando la presencia del host.
+		// Apagarla fue el primer intento y no funcionó, medido: el host SÍ está
+		// presente, tanto que el aviso llegó por su canal, así que la siguiente
+		// prueba de vida la volvía a encender y el reingreso no llegaba a
+		// dispararse nunca. Ver [Session.credencialMuerta].
+		s.credencialMuerta = true
+		s.lastRejoin = time.Time{}
+		s.rejoinWait = 0
+		s.deps.Log.Info("el host avisa que no tiene la credencial de esta máquina, se le vuelve a pedir")
+		return s.snapshot()
 	case domain.NoticeRoomClosed:
 		return s.leaveLocked(ctx, "el host cerró la sala", domain.ExitRoomClosed, cerrarDeVerdad)
 	default:
@@ -187,6 +208,7 @@ func (s *Session) leaveLocked(
 	// Y la firma del último conjunto de reglas, para que la primera aplicación
 	// de la sala siguiente se anote aunque por casualidad pida lo mismo.
 	s.appliedRules = ""
+	s.credencialMuerta = false
 	s.announcedGame = ""
 	s.lastAnnounce = time.Time{}
 	s.lastPublish = time.Time{}

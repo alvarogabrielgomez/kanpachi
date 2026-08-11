@@ -10,6 +10,12 @@ var (
 	ipLocal = netip.MustParseAddr("100.87.3.1")
 	ipUno   = netip.MustParseAddr("100.87.3.2")
 	ipDos   = netip.MustParseAddr("100.87.3.3")
+
+	// El vestíbulo de una sala cualquiera. Se escribe a mano en vez de derivarlo
+	// de un código porque lo que se prueba acá es la regla, no la derivación:
+	// eso tiene sus propios tests en addressing_test.go.
+	lobbyNetDePrueba = netip.MustParsePrefix("198.19.7.0/24")
+	lobbyDePrueba    = HostAddress(lobbyNetDePrueba)
 )
 
 func perfilEstrella() GameProfile {
@@ -195,7 +201,7 @@ func TestElHuecoDelCanalNoDependeDeQueHayaJuego(t *testing.T) {
 		t.Fatalf("sin juego activo apareció una regla de juego: %+v", juego.Rules)
 	}
 
-	canal, err := ControlRules(RoleHost, RendezvousHostAddress, ipLocal, []netip.Addr{ipUno})
+	canal, err := ControlRules(RoleHost, lobbyDePrueba, ipLocal, []netip.Addr{ipUno})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,13 +221,13 @@ func TestElHuecoDelCanalNoDependeDeQueHayaJuego(t *testing.T) {
 // TestLaPuertaAbreAlVestíbuloYLaSalaSoloALosPresentes: son dos alcances porque
 // son dos conversaciones con dos modelos de confianza distintos.
 func TestLaPuertaAbreAlVestíbuloYLaSalaSoloALosPresentes(t *testing.T) {
-	canal, err := ControlRules(RoleHost, RendezvousHostAddress, ipLocal, []netip.Addr{ipUno, ipDos})
+	canal, err := ControlRules(RoleHost, lobbyDePrueba, ipLocal, []netip.Addr{ipUno, ipDos})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	puerta, sala := canal[0], canal[1]
-	if puerta.Local != RendezvousHostAddress || len(puerta.Nets) != 1 || puerta.Nets[0] != RendezvousSubnet {
+	if puerta.Local != lobbyDePrueba || len(puerta.Nets) != 1 || puerta.Nets[0] != lobbyNetDePrueba {
 		t.Fatalf("la puerta no está anclada al vestíbulo: %+v", puerta)
 	}
 	if len(puerta.Remote) != 0 {
@@ -241,18 +247,18 @@ func TestLaPuertaAbreAlVestíbuloYLaSalaSoloALosPresentes(t *testing.T) {
 // reglas de juego: una regla sin destinatarios abre el puerto a todo el mundo.
 // La puerta sí queda, porque justamente existe para quien todavía no llegó.
 func TestConLaSalaVacíaSoloQuedaLaPuerta(t *testing.T) {
-	canal, err := ControlRules(RoleHost, RendezvousHostAddress, ipLocal, nil)
+	canal, err := ControlRules(RoleHost, lobbyDePrueba, ipLocal, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(canal) != 1 || canal[0].Local != RendezvousHostAddress {
+	if len(canal) != 1 || canal[0].Local != lobbyDePrueba {
 		t.Fatalf("con la sala vacía las reglas del canal son %+v", canal)
 	}
 }
 
 // TestUnInvitadoNoAbreElCanal: no escucha, así que su deny-all queda intacto.
 func TestUnInvitadoNoAbreElCanal(t *testing.T) {
-	canal, err := ControlRules(RoleGuest, RendezvousHostAddress, ipLocal, []netip.Addr{ipUno})
+	canal, err := ControlRules(RoleGuest, lobbyDePrueba, ipLocal, []netip.Addr{ipUno})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +296,7 @@ func TestLasReglasDelCanalNoSeMezclanConLasDelJuego(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	canal, err := ControlRules(RoleHost, RendezvousHostAddress, ipLocal, []netip.Addr{ipUno})
+	canal, err := ControlRules(RoleHost, lobbyDePrueba, ipLocal, []netip.Addr{ipUno})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +354,7 @@ func TestElConjuntoVacíoNoPermiteNada(t *testing.T) {
 // puerto es el que más caro sale pisar: el canario ligándose ahí competiría con
 // el oyente de la sala, y su respuesta se leería como una fuga.
 func TestElHuecoDelCanalDeLaSalaCuentaComoPermitido(t *testing.T) {
-	canal, err := ControlRules(RoleHost, RendezvousHostAddress, ipLocal, []netip.Addr{ipUno})
+	canal, err := ControlRules(RoleHost, lobbyDePrueba, ipLocal, []netip.Addr{ipUno})
 	if err != nil {
 		t.Fatalf("ControlRules: %v", err)
 	}

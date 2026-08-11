@@ -69,7 +69,11 @@ func (c *Channel) Dial(ctx context.Context, host netip.Addr) error {
 	cli := &client{
 		ch:     c,
 		at:     netip.AddrPortFrom(host, domain.ControlPort),
-		puerta: host == domain.RendezvousHostAddress,
+		// Marcar a una dirección del espacio de vestíbulos ES marcar la puerta.
+		// Antes se comparaba contra una dirección constante; ahora cada sala
+		// deriva la suya del código, así que lo que distingue es el espacio. Las
+		// salas no viven ahí, así que no hay ambigüedad. Ver [domain.LobbySpace].
+		puerta: domain.LobbySpace.Contains(host),
 		llaves: llaves,
 		creds:  make(chan credentialResponseMsg, 1),
 	}

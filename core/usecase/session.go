@@ -288,6 +288,46 @@ type Session struct {
 	// error de este lado y con un "ese código no existe" del otro.
 	lastPublish time.Time
 
+	// lastRenew es cuándo el host empujó por última vez el vencimiento de las
+	// credenciales de los presentes.
+	//
+	// Es el tercer reloj de esta familia, y los tres refrescan un plazo que
+	// vence solo: [lastAnnounce] el silencio que ve el otro lado, [lastPublish]
+	// la ventana del registro, y este la vida de las credenciales. Estaban los
+	// dos primeros y faltaba éste, así que una sala que durase más de
+	// [CredentialTTL] echaba a sus miembros uno por uno.
+	lastRenew time.Time
+
+	// staleProxAviso es, por miembro, DESDE CUÁNDO se le puede volver a decir
+	// que este host no tiene su credencial.
+	//
+	// Guarda el próximo intento y no el último, y esa elección es lo que arregla
+	// el fallo medido el 2026-08-11: guardando el último, un aviso que no salió
+	// quemaba igual el enfriamiento entero. Ver
+	// [Session.tellStaleMembersLocked], que pone plazos distintos según haya
+	// salido o no.
+	staleProxAviso map[netip.Addr]avisoStale
+
+	// lastRejoin y rejoinWait son el reloj del reingreso del INVITADO.
+	//
+	// La espera se guarda en vez de ser una constante porque lleva jitter, y el
+	// jitter tiene que fijarse al programar el intento y no al comprobarlo: si
+	// se sorteara en cada latido, la condición cambiaría cada quince segundos y
+	// la dispersión no dispersaría nada. Ver [RejoinInterval].
+	lastRejoin time.Time
+	rejoinWait time.Duration
+
+	// credencialMuerta dice que el HOST avisó de que no tiene la credencial de
+	// esta máquina. Solo del lado del invitado.
+	//
+	// Es un motivo de reingreso APARTE de la ausencia, y tiene que serlo porque
+	// la ausencia no lo cubre: el aviso viaja por un canal de control vivo, así
+	// que llega con el host presente y con su reloj de ausencia recién puesto a
+	// cero por la prueba de vida que es el propio mensaje. Reusar aquel reloj
+	// para esto, que fue el primer intento, resultó en un aviso que llegaba y no
+	// hacía nada. Ver [Session.rejoinDueLocked].
+	credencialMuerta bool
+
 	// cardPublishFailing dice si la última republicación falló.
 	//
 	// Existe solo para no repetir el mismo aviso en cada latido. Se avisa en el
@@ -587,21 +627,71 @@ func (s *Session) planSubnet(ctx context.Context) (domain.AddressPlan, error) {
 	if err != nil {
 		return domain.AddressPlan{}, err
 	}
-	if plan.LobbyConflict.IsValid() {
-		// No hay nada que corregir: el /24 del vestíbulo es el mismo en las dos
-		// máquinas por necesidad. Lo único que se puede hacer es decirlo, y
-		// decirlo vale, porque el síntoma sin aviso es "entrar a salas ajenas no
-		// funciona" sin ninguna pista de por qué.
-		s.state.Alerts = append(s.state.Alerts, domain.Alert{
-			Kind: domain.AlertLobbyConflict,
-			Detail: fmt.Sprintf(
-				"una red de esta máquina (%s) usa el mismo rango que el vestíbulo de Kanpachi (%s), entrar a salas ajenas puede fallar",
-				plan.LobbyConflict, domain.RendezvousSubnet),
-		})
-		s.deps.Log.Warn("conflicto de rango con el vestíbulo",
-			"local", plan.LobbyConflict.String(), "vestíbulo", domain.RendezvousSubnet.String())
-	}
 	return plan, nil
+}
+
+// warnLobbyConflictLocked mira si esta máquina pisa el /24 del vestíbulo de esta
+// sala, y lo dice.
+//
+// # Por qué lo necesitan los dos roles, y antes solo se miraba al crear
+//
+// Porque el vestíbulo dejó de ser el mismo para todas las salas. Antes su /24
+// era una constante y el conflicto solo rompía al invitado, así que el aviso
+// vivía, mal, en el único camino donde no cambiaba nada. Ahora cada sala deriva
+// el suyo del código, y eso reparte el riesgo: al invitado le impide entrar a
+// ESA sala, y al host le impide levantar su propia puerta.
+//
+// Lo que se ve sin esto, medido el 2026-08-11 en la máquina de un invitado:
+// "esperando a que kanpachi1 tome la dirección 100.127.255.102" y treinta
+// segundos de nada.
+//
+// **Avisa y sigue.** No aborta porque el solape no garantiza el fallo: depende
+// de qué haga el sistema con dos interfaces que reclaman el mismo rango, y
+// negarle la entrada a alguien a quien quizá le funcione es peor que dejarlo
+// intentar con el aviso puesto.
+//
+// Asume el candado tomado.
+func (s *Session) warnLobbyConflictLocked(ctx context.Context, lobby netip.Prefix) {
+	local, err := s.deps.Routes.LocalPrefixes(ctx)
+	if err != nil {
+		// Sin la tabla de rutas no se puede comprobar. No es motivo para no
+		// seguir: esto es un diagnóstico, y quedarse sin él deja las cosas como
+		// estaban antes de que existiera.
+		s.deps.Log.Warn("no se pudo comprobar el conflicto con el vestíbulo", "error", err)
+		return
+	}
+	s.noteLobbyConflictLocked(domain.LobbyOverlap(local, lobby))
+}
+
+// noteLobbyConflictLocked levanta la alerta si hay solape. El cero no es
+// conflicto y no dice nada.
+//
+// En un solo sitio para que los dos caminos digan lo MISMO: son el mismo hecho
+// sobre la misma máquina, y dos textos distintos para él serían dos defectos
+// distintos a los ojos de quien lo lea.
+//
+// Asume el candado tomado.
+func (s *Session) noteLobbyConflictLocked(conflicto netip.Prefix) {
+	if !conflicto.IsValid() {
+		return
+	}
+	// El /24 no se puede cambiar desde esta máquina: los dos lados lo derivan del
+	// mismo código y tienen que llegar al mismo. Lo que sí se puede es DECIRLO, y
+	// decirlo ahora vale doble, porque hay una salida real que nombrar: el código
+	// nuevo mueve el vestíbulo. Ver [domain.Rendezvous.LobbySubnet].
+	detalle := fmt.Sprintf(
+		"una red de esta máquina (%s) usa el mismo rango que el vestíbulo de esta sala, "+
+			"que puede fallar. Pídele al host que renueve el código: eso mueve el vestíbulo",
+		conflicto)
+	s.state.Alerts = append(s.state.Alerts, domain.Alert{
+		Kind:   domain.AlertLobbyConflict,
+		Detail: detalle,
+	})
+	s.deps.Log.Warn("conflicto de rango con el vestíbulo", "local", conflicto.String())
+	// Y al diario, que es lo que la pantalla enseña mientras esto pasa. La
+	// alerta sola llega tarde: se lee en otra pantalla, y para entonces el
+	// intento ya falló.
+	s.deps.Progress.Step(domain.ScopeNetwork, detalle)
 }
 
 // applyPolicy regenera el RuleSet completo y aplica la diferencia.
@@ -650,7 +740,7 @@ func (s *Session) desiredRuleSetLocked() (domain.RuleSet, error) {
 	if s.state.Conn.InRoom() {
 		canal, err := domain.ControlRules(
 			s.state.Role,
-			domain.RendezvousHostAddress,
+			s.lobbyHostAddrLocked(),
 			s.state.LocalIP,
 			s.authorizedControlIPsLocked(),
 		)
@@ -824,6 +914,41 @@ func (s *Session) bindingLocked() domain.RoomBinding {
 		return domain.BindRoomAndLobby
 	}
 	return domain.BindRoomOnly
+}
+
+// lobbyNetLocked es el /24 del vestíbulo de esta sala, o el cero si esta máquina
+// no tiene vestíbulo levantado.
+//
+// Sale de [Session.hostSpec], que solo llena el host, y ahí está la simetría con
+// [Session.bindingLocked]: el vestíbulo lo sostiene quien hospeda, y el invitado
+// lo suelta en cuanto tiene su credencial. Un invitado devuelve cero y pide
+// [domain.BindRoomOnly], que es justo el caso donde el rango no hace falta.
+//
+// Se lee de lo ya calculado y no se vuelve a derivar del código: la derivación
+// pasa por Argon2id con memoria dura, y esto lo llama cada cambio de miembros.
+//
+// Asume el candado tomado.
+func (s *Session) lobbyNetLocked() netip.Prefix {
+	if !s.state.IsHost() {
+		return netip.Prefix{}
+	}
+	return s.hostSpec.Rendezvous.LobbySubnet()
+}
+
+// lobbyHostAddrLocked es la .1 del vestíbulo de esta sala, o el cero si esta
+// máquina no hospeda.
+//
+// El cero es un valor con significado y no un hueco: [domain.ControlRules] se
+// salta las direcciones inválidas sin error, y un invitado no tiene puerta que
+// abrir. Devolver la .1 de un vestíbulo derivado de un [domain.HostSpec] vacío
+// sería una dirección que parece legítima y no es de nadie.
+//
+// Asume el candado tomado.
+func (s *Session) lobbyHostAddrLocked() netip.Addr {
+	if !s.state.IsHost() {
+		return netip.Addr{}
+	}
+	return s.hostSpec.Rendezvous.LobbyHostAddress()
 }
 
 // requireHost es la comprobación de las tres operaciones del host. Asume el

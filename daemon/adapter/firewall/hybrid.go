@@ -219,7 +219,13 @@ func (f *Firewall) ClearScope() {
 //
 // Que el vestíbulo falte no es un fallo: el invitado lo suelta al entrar. Que
 // falte cuando se pidió, sí.
-func (f *Firewall) BindRoom(ctx context.Context, room netip.Prefix, with domain.RoomBinding) error {
+//
+// `lobbyNet` es el /24 del vestíbulo de ESTA sala, que cada una deriva de su
+// código. Se recibe en vez de leerse de una constante desde que el vestíbulo
+// dejó de vivir en un rango fijo. Ver [domain.Rendezvous.LobbySubnet].
+func (f *Firewall) BindRoom(
+	ctx context.Context, room, lobbyNet netip.Prefix, with domain.RoomBinding,
+) error {
 	_ = ctx // resolver un nombre a un número de interfaz no espera por nada
 
 	if f.ifaceOf == nil {
@@ -234,12 +240,20 @@ func (f *Firewall) BindRoom(ctx context.Context, room netip.Prefix, with domain.
 	scope := gate.Scope{Iface: iface, Net: room}
 
 	if with == domain.BindRoomAndLobby {
+		// Sin el rango no se puede emitir el bloqueo por red del vestíbulo, y
+		// emitir el resto igual dejaría el adaptador del vestíbulo acotado solo
+		// por interfaz. Se corta acá en vez de degradar en silencio.
+		if !lobbyNet.IsValid() {
+			return fmt.Errorf("se pidió acotar también el vestíbulo y no vino su rango, " +
+				"así que la compuerta no lo podría bloquear por red")
+		}
 		lobby, err := f.ifaceOf(domain.LobbyAdapterName)
 		if err != nil {
 			return fmt.Errorf("no se encontró el adaptador %s del vestíbulo, que es donde "+
 				"llega gente que todavía no es miembro: %w", domain.LobbyAdapterName, err)
 		}
 		scope.Lobby = lobby
+		scope.LobbyNet = lobbyNet
 	}
 
 	if err := f.setScope(scope, domain.AdapterName); err != nil {

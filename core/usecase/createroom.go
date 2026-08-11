@@ -150,10 +150,14 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 	// El host se queda TAMBIÉN en el vestíbulo mientras la sala esté abierta.
 	// Es su puerta: el invitado no tiene forma de alcanzarlo en la red real
 	// antes de tener la credencial, y la credencial es justo lo que va a pedir.
+	// El host también puede chocar con el rango de SU vestíbulo, desde que cada
+	// sala deriva el suyo del código. Se avisa antes de intentarlo, que es
+	// mientras la pantalla todavía enseña los pasos.
+	s.warnLobbyConflictLocked(ctx, spec.Rendezvous.LobbySubnet())
 	s.deps.Progress.Step(domain.ScopeEngine, "abriendo el vestíbulo, que es por donde va a entrar quien tenga el código")
 	if err := s.deps.Engine.JoinRendezvous(ctx, domain.RendezvousSpec{
 		Rendezvous: spec.Rendezvous,
-		Address:    domain.RendezvousHostAddress,
+		Address:    spec.Rendezvous.LobbyHostAddress(),
 		Name:       nick,
 		Seeds:      spec.Seeds,
 	}); err != nil {
@@ -169,7 +173,7 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 	// usuario por la red virtual. Una sala que no abre es mejor que una que dice
 	// estar contenida y no lo está.
 	s.deps.Progress.Step(domain.ScopeFirewall, "acotando la contención a la sala y al vestíbulo")
-	if err := s.deps.Firewall.BindRoom(ctx, plan.Subnet, domain.BindRoomAndLobby); err != nil {
+	if err := s.deps.Firewall.BindRoom(ctx, plan.Subnet, spec.Rendezvous.LobbySubnet(), domain.BindRoomAndLobby); err != nil {
 		return domain.RoomState{}, fmt.Errorf("acotando la contención a la sala: %w", err)
 	}
 

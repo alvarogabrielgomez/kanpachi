@@ -33,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
@@ -111,6 +112,9 @@ func (Engine) Leave(context.Context) error { return nil }
 func (Engine) IssueCredential(context.Context, domain.CredentialRequest) (domain.Credential, error) {
 	return domain.Credential{}, falla("emitir una credencial")
 }
+func (Engine) RenewCredential(context.Context, domain.CredentialID, time.Duration) (time.Time, error) {
+	return time.Time{}, falla("renovar una credencial")
+}
 func (Engine) RevokeCredential(context.Context, domain.CredentialID) error {
 	return falla("revocar una credencial")
 }
@@ -158,7 +162,7 @@ func (Firewall) SuspendForeign(context.Context, []domain.ForeignRule) error {
 	return falla("desactivar reglas ajenas")
 }
 func (Firewall) RestoreForeign(context.Context) error { return falla("restaurar reglas ajenas") }
-func (Firewall) BindRoom(context.Context, netip.Prefix, domain.RoomBinding) error {
+func (Firewall) BindRoom(context.Context, netip.Prefix, netip.Prefix, domain.RoomBinding) error {
 	return falla("acotar la compuerta a los adaptadores")
 }
 

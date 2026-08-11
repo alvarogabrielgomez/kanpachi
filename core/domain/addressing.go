@@ -30,23 +30,38 @@ var (
 // vistazo.
 const RoomPrefixBits = 24
 
-// El vestíbulo vive en un /24 FIJO, el último del espacio compartido.
+// LobbySpace es donde viven los vestíbulos, y deliberadamente NO es CGNAT.
 //
-// Fijo y no negociado porque los dos lados tienen que llegar al mismo sin
-// hablarse: el invitado necesita una dirección conocida a la que marcar ANTES
-// de tener nada del host, y la subred de la sala llega dentro de la
-// credencial, o sea después. Elegirlo al azar exigiría un canal para
-// comunicarlo, y ese canal es justamente el que se está montando.
+// # Por qué se mudó de 100.127.255.0/24, que era donde estaba
 //
-// Que sea el mismo para todas las salas no filtra nada: el vestíbulo ya es
-// público por definición, su red la deriva cualquiera que tenga el invite ID,
-// y una dirección IP dentro de un overlay cifrado no dice de qué sala es.
+// Porque aquel era un /24 fijo dentro de 100.64.0.0/10, y ese espacio tiene dos
+// ocupantes enormes que lo hacen mal sitio para algo que no se puede mover:
 //
-// Es momentáneo. Se entra, se pide la credencial y se sale.
-var (
-	RendezvousSubnet      = netip.MustParsePrefix("100.127.255.0/24")
-	RendezvousHostAddress = netip.MustParseAddr("100.127.255.1")
-)
+//   - **Los ISP.** CGNAT es dominante en América Latina, que es donde vive el
+//     grupo. Medido el 2026-08-11: un invitado en Venezuela se quedó colgado
+//     esperando a que su adaptador tomara 100.127.255.102 mientras otro en
+//     Brasil entraba sin nada.
+//   - **Tailscale.** Reparte las IP de sus nodos por TODO el /10 y solo reserva
+//     100.100.0.0/24, 100.100.100.0/24 y 100.115.92.0/23 para sí misma, o sea
+//     que nada le impide asignarle a un nodo una dirección dentro del /24 que
+//     el vestíbulo tenía fijo.
+//
+// Y el remedio de Tailscale para su propio conflicto no sirve acá. Su
+// documentación ofrece uno solo, apagar IPv4 y quedarse en IPv6, y este producto
+// no puede: el descubrimiento LAN y el netcode viejo de los juegos son IPv4.
+//
+// # Por qué esta mitad y no la otra
+//
+// 198.18.0.0/15 es de RFC 2544, reservado para bancos de pruebas: no se enruta
+// en internet y las empresas no lo usan. La mitad baja, 198.18.0.0/16, es el
+// rango por defecto del modo fake-ip de Clash y sing-box, que es software de
+// proxy muy usado justamente donde más falta hace esto. Así que se usa la alta.
+//
+// **Elegir bien el rango no es el arreglo.** No hay forma de saber qué tiene
+// cada máquina, y dar por buena una suposición es exactamente el error que se
+// está corrigiendo. Lo que arregla es que el vestíbulo sea MOVIBLE: ver
+// [Rendezvous.LobbySubnet].
+var LobbySpace = netip.MustParsePrefix("198.19.0.0/16")
 
 // ControlPort es donde escucha el canal de la sala de la decisión 23, en la
 // interfaz virtual y en ninguna otra.
@@ -77,24 +92,53 @@ var ErrNoSubnet = errors.New("no hay ningún /24 libre en los dos espacios de di
 // El motivo viaja hasta Diagnostics para que un conflicto de rango sea
 // diagnosticable en un renglón, en vez de que alguien tenga que deducir por
 // qué su sala está en 10.99 mirando la tabla de rutas.
+//
+// Ya NO lleva nada del vestíbulo, y esa ausencia es el resultado de haberlo
+// sacado de CGNAT: mientras vivía dentro del espacio de las salas, elegir el /24
+// de una sala y comprobar el del vestíbulo eran la misma consulta a la misma
+// tabla. Ahora son sitios distintos, la comprobación del vestíbulo depende del
+// código de la sala a la que se entra, y quien la necesita es el invitado. Vive
+// en [LobbyOverlap], que es a quien se le puede pasar el /24 correcto.
 type AddressPlan struct {
 	Subnet netip.Prefix
 	Reason string
+}
 
-	// LobbyConflict es un prefijo local que pisa el /24 del vestíbulo. El cero
-	// significa que no hay ninguno.
-	//
-	// Es el hueco que la subred fija del vestíbulo deja abierto y no se puede
-	// cerrar: el /24 tiene que ser el mismo en las dos máquinas para que el que
-	// entra sepa a dónde marcar, así que no hay forma de esquivar el de esta.
-	// Requiere que el router del usuario reparta exactamente 100.127.255.0/24,
-	// que es raro y no imposible.
-	//
-	// Lo que sí se puede hacer es DECIRLO. Un "entrar a salas ajenas no
-	// funciona" sin explicación es indiagnosticable; con esto, el diagnóstico
-	// lo dice en un renglón. Crear una sala propia sigue funcionando, porque el
-	// vestíbulo del host solo hace falta cuando alguien está entrando.
-	LobbyConflict netip.Prefix
+// LobbyOverlap devuelve el prefijo local que le puede GANAR al vestíbulo de
+// ESTA sala, o el cero si no hay ninguno.
+//
+// Recibe el /24 porque ya no hay uno solo: lo deriva cada sala de su código. Ver
+// [Rendezvous.LobbySubnet].
+//
+// Es el invitado quien lo necesita, y esa asimetría no es casual: el host que
+// tiene un conflicto abre su sala igual, porque su vestíbulo solo hace falta
+// cuando alguien está entrando. Quien no puede entrar es el otro.
+//
+// # Por qué no vale con que se solapen, que fue el primer intento
+//
+// Porque solaparse no es competir. El reenvío elige por prefijo más largo, y el
+// del vestíbulo es un /24: cualquier ruta MÁS CORTA que lo contenga pierde
+// contra él y no rompe nada.
+//
+// Eso no es teórico y tiene un caso enorme: **Tailscale instala una ruta a
+// 100.64.0.0/10 entera en cada nodo**. Cuando el vestíbulo vivía ahí dentro,
+// contar el solape a secas marcaba conflicto en toda máquina con Tailscale
+// puesto, que es justo la máquina donde está medido que entrar funciona.
+//
+// Así que solo cuentan los prefijos de /24 o más largos: los que empatan con el
+// del vestíbulo o le ganan. Ahí entran los tres casos que sí rompen, un rango
+// ajeno que reparta exactamente este /24, una dirección de esta máquina dentro
+// de él, y una ruta más específica que lo parta.
+func LobbyOverlap(local []netip.Prefix, lobby netip.Prefix) netip.Prefix {
+	for _, p := range local {
+		if !p.IsValid() || !p.Addr().Is4() {
+			continue
+		}
+		if p.Bits() >= RoomPrefixBits && p.Overlaps(lobby) {
+			return p
+		}
+	}
+	return netip.Prefix{}
 }
 
 // PlanAddresses elige la subred de la sala esquivando lo que ya existe en la
@@ -118,17 +162,14 @@ func PlanAddresses(local []netip.Prefix, r io.Reader) (AddressPlan, error) {
 	// hoy no se solapen. El caso común, con el router en 100.64.x.x del lado
 	// WAN y la LAN en 192.168.x.x, no aparece en la tabla del PC y no dispara
 	// nada de esto.
-	lobby, _ := firstOverlap(local, RendezvousSubnet)
-
 	if p, occupied := firstOverlap(local, SharedSpace); occupied {
 		sub, err := pickSubnet(FallbackSpace, local, r)
 		if err != nil {
 			return AddressPlan{}, err
 		}
 		return AddressPlan{
-			Subnet:        sub,
-			Reason:        fmt.Sprintf("esta máquina ya usa %s dentro del espacio compartido, la sala va en %s", p, FallbackSpace),
-			LobbyConflict: lobby,
+			Subnet: sub,
+			Reason: fmt.Sprintf("esta máquina ya usa %s dentro del espacio compartido, la sala va en %s", p, FallbackSpace),
 		}, nil
 	}
 
@@ -142,15 +183,13 @@ func PlanAddresses(local []netip.Prefix, r io.Reader) (AddressPlan, error) {
 			return AddressPlan{}, err
 		}
 		return AddressPlan{
-			Subnet:        sub,
-			Reason:        fmt.Sprintf("no quedaba un /24 libre en %s, la sala va en %s", SharedSpace, FallbackSpace),
-			LobbyConflict: lobby,
+			Subnet: sub,
+			Reason: fmt.Sprintf("no quedaba un /24 libre en %s, la sala va en %s", SharedSpace, FallbackSpace),
 		}, nil
 	}
 	return AddressPlan{
-		Subnet:        sub,
-		Reason:        "sin conflictos, la sala va en el espacio compartido",
-		LobbyConflict: lobby,
+		Subnet: sub,
+		Reason: "sin conflictos, la sala va en el espacio compartido",
 	}, nil
 }
 
@@ -185,12 +224,11 @@ func pickSubnet(space netip.Prefix, local []netip.Prefix, r io.Reader) (netip.Pr
 		binary.BigEndian.PutUint32(b[:], base+idx*256)
 		candidate := netip.PrefixFrom(netip.AddrFrom4(b), RoomPrefixBits)
 
-		// El /24 del vestíbulo nunca se entrega a una sala. Si coincidieran,
-		// entrar a la sala rompería la conexión que se está usando para pedir
-		// la credencial, y el fallo aparecería una vez de cada dieciséis mil.
-		if candidate == RendezvousSubnet {
-			continue
-		}
+		// Antes acá se saltaba el /24 del vestíbulo, porque vivía dentro de este
+		// mismo espacio y entregárselo a una sala habría roto la conexión por la
+		// que se estaba pidiendo la credencial. Ya no hace falta: [LobbySpace]
+		// está fuera de los dos espacios de salas, así que no hay coincidencia
+		// posible. Es la simplificación que compró mudarlo.
 		if _, hit := firstOverlap(local, candidate); !hit {
 			return candidate, nil
 		}

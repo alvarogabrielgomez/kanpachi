@@ -244,8 +244,8 @@ func TestTheLobbyDoorGoesOnTheLobbyAdapter(t *testing.T) {
 		Proto: domain.ProtoTCP,
 		From:  domain.ControlPort,
 		To:    domain.ControlPort,
-		Local: domain.RendezvousSubnet.Addr().Next(),
-		Nets:  []netip.Prefix{domain.RendezvousSubnet},
+		Local: domain.HostAddress(lobbyDePrueba),
+		Nets:  []netip.Prefix{lobbyDePrueba},
 	}
 	s, err := specFor(puerta, domain.AdapterName)
 	if err != nil {
@@ -268,3 +268,6 @@ func TestTheLobbyDoorGoesOnTheLobbyAdapter(t *testing.T) {
 		t.Errorf("una regla de la sala quedó en %v", s.Interfaces)
 	}
 }
+
+// lobbyDePrueba es el /24 de un vestíbulo cualquiera. Ver el gemelo en `gate`.
+var lobbyDePrueba = netip.MustParsePrefix("198.19.7.0/24")

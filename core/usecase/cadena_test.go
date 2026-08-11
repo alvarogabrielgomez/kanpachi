@@ -89,7 +89,7 @@ func TestElExpulsadoVuelveAEntrarConElMismoCódigo(t *testing.T) {
 	}
 	// La puerta del vestíbulo no se recortó: sigue siendo la dirección fija del
 	// host, abierta a cualquiera que tenga el código.
-	if b.control.scope.Lobby != domain.RendezvousHostAddress {
+	if b.control.scope.Lobby != lobbyDe(b) {
 		t.Fatalf("expulsar tocó la puerta del vestíbulo: %v", b.control.scope.Lobby)
 	}
 

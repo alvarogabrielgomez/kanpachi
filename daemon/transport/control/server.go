@@ -313,6 +313,17 @@ func (s *server) serveRoom(conn net.Conn) {
 		anterior.close()
 	}
 
+	// Y se avisa de que ahora sí hay por dónde hablarle. Ver
+	// [Channel.MemberChannels]: es el instante que nadie más conoce.
+	//
+	// Sin bloquear, como todo lo que sale de acá: el canal está amortiguado y si
+	// estuviera lleno, perder el aviso cuesta que el reintento periódico lo haga
+	// más tarde. Bloquear costaría este miembro sin servir.
+	select {
+	case s.ch.joins <- ip:
+	default:
+	}
+
 	s.read(pc)
 }
 

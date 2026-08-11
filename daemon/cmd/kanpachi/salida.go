@@ -89,6 +89,12 @@ func pintarSala(w io.Writer, st protocol.RoomView) {
 	if st.Role == "guest" && !st.HostPresent {
 		fmt.Fprintf(w, "  Host     gone for %s\n", milis(st.HostGoneForMS))
 	}
+	// Before the tunnel line: this is the one that explains the pause. A room
+	// that goes quiet for ten seconds looks like a hang, and this is the daemon
+	// saying it is asking the host for a new credential right now.
+	if st.Rejoining {
+		fmt.Fprintln(w, "  Room     asking the host for a credential again")
+	}
 	if st.ReconnectingForMS > 0 {
 		fmt.Fprintf(w, "  Tunnel   reconnecting for %s\n", milis(st.ReconnectingForMS))
 	}

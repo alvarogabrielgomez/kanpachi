@@ -55,6 +55,7 @@ type command struct {
 	Join             *guestArgs  `json:"join,omitempty"`
 	Leave            *emptyArgs  `json:"leave,omitempty"`
 	IssueCredential  *issueArgs  `json:"issue_credential,omitempty"`
+	RenewCredential  *renewArgs  `json:"renew_credential,omitempty"`
 	RevokeCredential *revokeArgs `json:"revoke_credential,omitempty"`
 	ListCredentials  *emptyArgs  `json:"list_credentials,omitempty"`
 	Peers            *emptyArgs  `json:"peers,omitempty"`
@@ -105,6 +106,16 @@ type issueArgs struct {
 	TTLSeconds int64 `json:"ttl_seconds"`
 }
 
+// renewArgs empuja el vencimiento de una credencial ya emitida.
+//
+// El plazo se cuenta desde AHORA y no desde el vencimiento viejo, así que
+// renovar tarde no acumula: una credencial de 24 h renovada al minuto veinte
+// vuelve a valer 24 h desde ese minuto, y no 47:40.
+type renewArgs struct {
+	CredentialID string `json:"credential_id"`
+	TTLSeconds   int64  `json:"ttl_seconds"`
+}
+
 type revokeArgs struct {
 	CredentialID string `json:"credential_id"`
 }
@@ -119,6 +130,7 @@ type response struct {
 
 type responseData struct {
 	Credential  *credentialOut      `json:"credential,omitempty"`
+	Renewed     *renewedOut         `json:"renewed,omitempty"`
 	Credentials []credentialSummary `json:"credentials,omitempty"`
 	Peers       []peerOut           `json:"peers,omitempty"`
 	Diagnostics *diagnosticsOut     `json:"diagnostics,omitempty"`
@@ -127,6 +139,16 @@ type responseData struct {
 type credentialOut struct {
 	CredentialID     string `json:"credential_id"`
 	CredentialSecret string `json:"credential_secret"`
+}
+
+// renewedOut es la fecha que el motor GUARDÓ, no la que el daemon esperaba.
+//
+// Viaja en vez de calcularse acá como `ahora + ttl` por lo mismo que la
+// dirección del invitado viaja en la orden de entrar: dos lados calculando el
+// mismo valor por separado coinciden hasta que dejan de hacerlo, y acá el
+// desacuerdo sería un host convencido de que a alguien le queda un día.
+type renewedOut struct {
+	ExpiryUnix int64 `json:"expiry_unix"`
 }
 
 type credentialSummary struct {
@@ -279,7 +301,11 @@ func lobbyRequest(id uint64, spec domain.RendezvousSpec, uris []string, dirLog s
 			},
 			NetworkName:   spec.Rendezvous.NetworkName(),
 			NetworkSecret: spec.Rendezvous.EngineSecret(),
-			IPv4:          netip.PrefixFrom(spec.Address, domain.RendezvousSubnet.Bits()).String(),
+			// El prefijo es el de una sala, que es el tamaño de todo /24 de
+			// Kanpachi, vestíbulos incluidos. Sale de la constante y no del
+			// vestíbulo concreto porque lo que se está diciendo acá es la máscara
+			// de la dirección, no a qué red pertenece.
+			IPv4: netip.PrefixFrom(spec.Address, domain.RoomPrefixBits).String(),
 		}},
 	}
 }

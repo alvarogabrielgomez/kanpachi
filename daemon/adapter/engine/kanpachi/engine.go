@@ -591,6 +591,31 @@ func (e *Engine) IssueCredential(ctx context.Context, req domain.CredentialReque
 	}, nil
 }
 
+// RenewCredential empuja el vencimiento conservando la llave. Ver el contrato
+// en [port.EnginePort].
+//
+// El plazo sale de la MISMA constante que usa emitir. Que fueran dos números
+// sería la forma de que renovar dejara credenciales con una vida distinta de la
+// que el producto declara, sin que nadie lo notara hasta que alguien se cae.
+func (e *Engine) RenewCredential(ctx context.Context, id domain.CredentialID, ttl time.Duration) (time.Time, error) {
+	if id == "" {
+		return time.Time{}, fmt.Errorf("no se puede renovar una credencial sin id")
+	}
+	data, err := e.call(ctx, func(reqID uint64) request {
+		return request{ID: reqID, Cmd: command{RenewCredential: &renewArgs{
+			CredentialID: string(id),
+			TTLSeconds:   int64(ttl / time.Second),
+		}}}
+	})
+	if err != nil {
+		return time.Time{}, err
+	}
+	if data == nil || data.Renewed == nil {
+		return time.Time{}, fmt.Errorf("el motor renovó %s y no dijo hasta cuándo", id)
+	}
+	return time.Unix(data.Renewed.ExpiryUnix, 0), nil
+}
+
 func (e *Engine) RevokeCredential(ctx context.Context, id domain.CredentialID) error {
 	_, err := e.call(ctx, func(reqID uint64) request {
 		return request{ID: reqID, Cmd: command{RevokeCredential: &revokeArgs{CredentialID: string(id)}}}

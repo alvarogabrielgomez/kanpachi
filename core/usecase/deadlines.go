@@ -71,6 +71,7 @@ func (s *Session) enforceDeadlinesLocked(ctx context.Context) bool {
 	}
 	now := s.deps.Clock.Now()
 	s.forgetOldKicks(now)
+	s.forgetExpiredCredentialsLocked(now)
 
 	// El silencio se comprueba ANTES que la ausencia, porque es lo que la arma
 	// en el caso que el flanco del socket no cubre.
@@ -105,6 +106,27 @@ func (s *Session) enforceDeadlinesLocked(ctx context.Context) bool {
 	// gente nueva sin que nadie de este lado se entere.
 	if s.state.IsHost() && now.Sub(s.lastPublish) >= RepublishInterval {
 		s.republishCardLocked(ctx)
+	}
+
+	// Y el tercero de la familia, que le habla al MOTOR. El anuncio refresca lo
+	// que ven los que están dentro, la republicación lo que ve el registro, y
+	// esto la vida de las credenciales con las que los de dentro siguen dentro.
+	// Sin él, una sala más larga que [CredentialTTL] echa a sus miembros uno por
+	// uno al cumplirse las 24 h de cada ingreso.
+	if s.state.IsHost() && now.Sub(s.lastRenew) >= RenewInterval {
+		s.renewCredentialsLocked(ctx)
+	}
+
+	// Y el aviso a quien está en la sala sin credencial de este host. No tiene
+	// reloj propio porque el suyo es por miembro y vive en el propio mapa; esto
+	// solo le da la oportunidad de correr.
+	//
+	// Va acá ADEMÁS de en el cambio de miembros, y sin esto el aviso no llega en
+	// el caso que existe para arreglar: al reabrir la sala el motor pone a todos
+	// en la tabla antes de que ninguno haya redialado el canal de control, así
+	// que el primer intento falla siempre. Medido el 2026-08-11.
+	if s.state.IsHost() {
+		s.tellStaleMembersLocked(ctx)
 	}
 	return false
 }
