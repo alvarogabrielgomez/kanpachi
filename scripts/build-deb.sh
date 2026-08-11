@@ -81,11 +81,11 @@ mkdir -p "$out"
 # checkout. Acá pasa siempre, y no es motivo para no poder armar un paquete de
 # prueba.
 compilar() {
-	local destino=$1 paquete=$2
-	if go build -trimpath -tags "$VARIANTE" -o "$destino" "$paquete" 2>/dev/null; then
+	local destino=$1 paquete=$2 ldflags=${3:-}
+	if go build -trimpath -tags "$VARIANTE" -ldflags "$ldflags" -o "$destino" "$paquete" 2>/dev/null; then
 		return 0
 	fi
-	if go build -trimpath -tags "$VARIANTE" -buildvcs=false -o "$destino" "$paquete"; then
+	if go build -trimpath -tags "$VARIANTE" -ldflags "$ldflags" -buildvcs=false -o "$destino" "$paquete"; then
 		echo "  --  sin sellado de git: este checkout es de otro usuario." >&2
 		return 0
 	fi
@@ -95,13 +95,13 @@ compilar() {
 compilar "$out/kanpachid" "$raiz/daemon/cmd/kanpachid"
 bien "kanpachid"
 
-# PROVISIONAL: `/usr/bin/kanpachi` es todavía `kanpctl`, que es la herramienta de
-# diagnóstico, no el CLI. Habla el protocolo entero y pide el método por nombre
-# con el JSON crudo en `-params`, o sea sirve para probar el paquete y no para
-# dárselo a nadie. Lo reemplaza el CLI de verdad, con sus subcomandos y su
-# asistente interactivo.
-compilar "$out/kanpachi" "$raiz/internal/kanpctl"
-bien "kanpachi (provisional: todavía es kanpctl)"
+# La versión se le sella al CLI, que es el único de los tres que la dice en voz
+# alta. El mecanismo es el mismo que ya usa el seed. Sin esto el binario contesta
+# `dev`, que es la verdad para uno compilado a mano y una mentira dentro de un
+# paquete: el informe de un fallo apuntaría a una versión publicada que no es la
+# que falló.
+compilar "$out/kanpachi" "$raiz/daemon/cmd/kanpachi" "-X main.Version=$version"
+bien "kanpachi"
 
 paso "armando el árbol del paquete"
 arbol="$out/kanpachi-deb"
@@ -119,12 +119,24 @@ install -m 0755 "$engine" "$arbol/usr/libexec/kanpachi/kanpachi-engine"
 
 # El catálogo que viene con el paquete. Es de SOLO LECTURA para el daemon: lo
 # actualiza el paquete, y lo propio del usuario vive aparte en /var/lib.
-if [ -f "$raiz/catalog/builtin.json" ]; then
-	install -m 0644 "$raiz/catalog/builtin.json" "$arbol/usr/share/kanpachi/builtin.json"
-	bien "builtin.json"
-else
-	echo "  --  no hay catalog/builtin.json, el paquete va sin catálogo" >&2
-fi
+#
+# # Falta el catálogo, falla el paquete
+#
+# Esto era un aviso y tenía que ser un corte. La primera versión miraba
+# `catalog/builtin.json`, que no existe en este repositorio —el fichero vive
+# junto a su parser, que es donde lo buscan los cuatro scripts de Windows— así
+# que la rama del aviso se tomaba SIEMPRE y el paquete salía sin un solo juego.
+# Medido el 2026-08-10 con `kanpachi games`, que contestó que el catálogo estaba
+# vacío. Con `dpkg-deb --contents` no se ve: lo que hay que mirar es lo que NO
+# está.
+catalogo="$raiz/daemon/adapter/catalog/jsonfile/builtin.json"
+[ -f "$catalogo" ] || {
+	echo "no está el catálogo: $catalogo" >&2
+	echo "  Sin él la sala se abre y no hay ni un juego que activar." >&2
+	exit 1
+}
+install -m 0644 "$catalogo" "$arbol/usr/share/kanpachi/builtin.json"
+bien "builtin.json ($(grep -c '"id"' "$catalogo") perfiles)"
 
 install -m 0644 "$raiz/packaging/systemd/kanpachid.service" "$arbol/lib/systemd/system/"
 install -m 0644 "$raiz/packaging/systemd/kanpachi-quarantine.service" "$arbol/lib/systemd/system/"

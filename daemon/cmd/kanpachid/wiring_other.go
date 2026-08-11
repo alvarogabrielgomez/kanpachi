@@ -18,6 +18,7 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
+	"github.com/accentiostudios/kanpachi/daemon/paths"
 )
 
 // sistemaDeCuarentena queda en cero, que es lo que `validate` rechaza con su
@@ -25,12 +26,10 @@ import (
 // una de las dos listas sería fingir que sí.
 const sistemaDeCuarentena domain.QuarantineSystem = 0
 
-// defaultDataDir contesta la ruta de Unix aunque acá no arranque nada.
-//
-// El directorio de datos se resuelve ANTES que el firewall, así que devolver
-// vacío haría que el fallo saliera como "no está el directorio" en vez del
-// "este binario no es de tu sistema" que corresponde. Ver [realFirewall].
-func defaultDataDir() string { return "/var/lib/kanpachi" }
+// defaultDataDir sale de [paths.Data], que contesta la ruta de Unix aunque acá
+// no arranque nada. El porqué vive allá; quien de verdad se niega es
+// [realFirewall].
+func defaultDataDir() string { return paths.Data() }
 
 // engineExe no lo alcanza nadie acá: [realFirewall] falla antes. Se declara
 // porque `main.go` lo nombra sin preguntar en qué sistema corre.

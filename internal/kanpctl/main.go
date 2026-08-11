@@ -1,8 +1,15 @@
-// Command kanpctl le habla al daemon por el named pipe.
+// Command kanpctl le habla al daemon por el canal local, a pelo.
 //
 // Vive en `internal/` para que el producto no lo pueda importar y el instalador
-// no lo distribuya: es la herramienta con la que se prueba el pipe a mano, y de
-// paso la implementación de referencia del cliente.
+// no lo distribuya: es la herramienta con la que se prueba el canal a mano, y de
+// paso la que puede mandar lo que el daemon tiene que RECHAZAR.
+//
+// # En qué se diferencia del CLI, ahora que hay uno
+//
+// `kanpachi` es el cliente: subcomandos con nombre, parámetros validados y
+// salida para leer. Esto pide el método por su nombre de cable con el JSON crudo
+// en `-params`, y sabe saludar con un token que no vale. O sea que sirve para
+// probar la frontera, no para dárselo a nadie.
 //
 // Uso:
 //
@@ -11,13 +18,12 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
-	"net"
 	"os"
 	"time"
 
+	"github.com/accentiostudios/kanpachi/daemon/transport/client"
 	"github.com/accentiostudios/kanpachi/daemon/transport/pipe"
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
 )
@@ -34,16 +40,7 @@ func main() {
 	// con esquema estricto y tope de tamaño, y esta herramienta existe para
 	// poder mandarle también lo que va a rechazar.
 	params := flag.String("params", "", "JSON crudo para el campo params del método")
-	// El plazo era de 10 s fijos, y `create_room` lo pasaba de largo con el
-	// daemon trabajando bien: cada adaptador tarda unos 5 s en tomar dirección,
-	// una sala levanta DOS (la sala y el vestíbulo), y encima va el sondeo del
-	// MTU. El cliente cortaba, el daemon terminaba, y el síntoma era un
-	// `i/o timeout` con la sala creada.
-	//
-	// El techo real lo pone el motor: `engine.AddressDeadline` son 30 s por
-	// adaptador. Este plazo cubre los dos con margen para el sondeo, y es
-	// ajustable porque una máquina lenta es un caso, no un fallo.
-	plazo := flag.Duration("timeout", 90*time.Second, "cuánto esperar la respuesta del daemon")
+	plazo := flag.Duration("timeout", client.DefaultTimeout, "cuánto esperar la respuesta del daemon")
 	flag.Parse()
 
 	metodo := "status"
@@ -58,46 +55,25 @@ func main() {
 }
 
 func hablar(datos, nombre, metodo, params string, sinToken bool, plazo time.Duration) error {
-	// El token se relee en CADA conexión: el daemon lo rota al arrancar, así que
-	// uno recordado de la sesión anterior es siempre el equivocado.
-	token := "token-invalido-a-proposito"
-	if !sinToken {
-		var err error
-		if token, err = pipe.ReadToken(datos); err != nil {
-			return err
+	abrir := func() (*client.Client, error) {
+		if sinToken {
+			return client.OpenWithToken(nombre, "token-invalido-a-proposito")
 		}
+		return client.Open(nombre, datos)
 	}
-
-	conn, err := marcar(nombre)
+	c, err := abrir()
 	if err != nil {
-		return fmt.Errorf("no se pudo abrir %s: %w\n  ¿está corriendo kanpachid --console?", nombre, err)
+		return fmt.Errorf("%w\n  ¿está corriendo kanpachid --console?", err)
 	}
-	defer func() { _ = conn.Close() }()
+	defer func() { _ = c.Close() }()
+	c.Plazo = plazo
 
-	w := protocol.NewWriter(conn)
-	r := protocol.NewReader(conn)
-	pedir := func(id uint64, m protocol.Method, params string) error {
-		req := protocol.Request{ID: id, Method: m}
-		if params != "" {
-			req.Params = json.RawMessage(params)
-		}
-		if err := w.Write(req); err != nil {
-			return err
-		}
-		_ = conn.SetReadDeadline(time.Now().Add(plazo))
-		linea, err := r.ReadLine()
-		if err != nil {
-			return err
-		}
-		fmt.Printf("%s → %s\n", m, linea)
-		return nil
+	// El JSON crudo va tal cual, sin pasar por `json.Marshal`: envolverlo en un
+	// `any` lo re-serializaría normalizado, y entonces esta herramienta no podría
+	// mandar el JSON malformado que existe para poder mandar.
+	raw, err := c.CallRaw(protocol.Method(metodo), []byte(params))
+	if len(raw) > 0 {
+		fmt.Printf("%s → %s\n", metodo, raw)
 	}
-
-	// El saludo va PRIMERO: el daemon rechaza cualquier método antes de él.
-	if err := pedir(1, protocol.MethodHello, fmt.Sprintf(`{"token":%q}`, token)); err != nil {
-		return err
-	}
-	return pedir(2, protocol.Method(metodo), params)
+	return err
 }
-
-func marcar(nombre string) (net.Conn, error) { return dial(nombre) }

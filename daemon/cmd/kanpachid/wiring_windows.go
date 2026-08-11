@@ -11,8 +11,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"golang.org/x/sys/windows"
 
@@ -20,6 +18,7 @@ import (
 	"github.com/accentiostudios/kanpachi/core/port"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windows/netfw"
+	"github.com/accentiostudios/kanpachi/daemon/paths"
 )
 
 // sistemaDeCuarentena es qué lista de puertos cierra la cuarentena de base.
@@ -45,16 +44,9 @@ const packageRemovesData = false
 // daemon y lo actualiza el instalador. Ver [catalogstore.Store].
 func builtinCatalogDir() string { return dirDelBinario() }
 
-// defaultDataDir es dónde viven el token, la llave y la sala del producto
-// instalado.
-//
-// Lo crea el INSTALADOR con una ACL propia, y por eso el arranque se niega si no
-// está en vez de crearlo: esa ACL es la mitad de la protección de todo lo que hay
-// dentro, y crearlo por accidente la perdería en silencio. Ver el rechazo en
-// `main.go` y el porqué en [protegerFichero].
-func defaultDataDir() string {
-	return filepath.Join(os.Getenv("ProgramData"), "Kanpachi")
-}
+// defaultDataDir sale de [paths.Data], que es el paquete que los DOS binarios
+// importan. El porqué de la ruta y de su ACL vive allá.
+func defaultDataDir() string { return paths.Data() }
 
 // protegerFichero le pone a un fichero su ACL PROPIA: solo SYSTEM y
 // Administradores, sin heredar nada.

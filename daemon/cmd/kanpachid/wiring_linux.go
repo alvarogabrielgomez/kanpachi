@@ -17,6 +17,7 @@ import (
 	"github.com/accentiostudios/kanpachi/core/port"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/linux/nftpermits"
+	"github.com/accentiostudios/kanpachi/daemon/paths"
 )
 
 // sistemaDeCuarentena es qué lista de puertos cierra la cuarentena de base.
@@ -31,19 +32,14 @@ import (
 // servidor. Ver [domain.QuarantineSystem].
 const sistemaDeCuarentena = domain.QuarantineLinux
 
-// DataDir es dónde viven el token, la llave y la sala.
+// defaultDataDir sale de [paths.Data], que es el paquete que los DOS binarios
+// importan.
 //
-// `/var/lib/kanpachi` es lo que dice el estándar para el estado que un servicio
-// tiene que conservar entre reinicios, y es lo que el `.deb` crea. No es
-// `/etc/kanpachi`, que es solo para configuración, ni `/run/kanpachi`, que se
-// borra al arrancar: la llave de identidad no puede perderse en un reinicio o el
-// equipo deja de ser el mismo para quienes ya jugaron con él.
-//
-// Exportada porque el `.deb` y el CLI tienen que decir exactamente esta ruta, y
-// dos constantes que se copian son dos constantes que se desincronizan.
-const DataDir = "/var/lib/kanpachi"
-
-func defaultDataDir() string { return DataDir }
+// Vivía acá, como constante exportada, con un comentario que decía que el `.deb`
+// y el CLI tenían que nombrar exactamente esta ruta. Exportarla desde
+// `package main` no dejaba que nadie la usara, así que la promesa la sostenía
+// que dos ficheros dijeran lo mismo.
+func defaultDataDir() string { return paths.Data() }
 
 // engineExe es cómo se llama el motor al lado de este binario.
 //
