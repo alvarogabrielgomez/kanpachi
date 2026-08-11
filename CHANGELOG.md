@@ -8,18 +8,28 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Added
+
+- Keep a guest in the room past the first day: the host now renews the credentials of everyone present, which used to expire twenty-four hours after each person joined and drop them one by one ([a885036](https://github.com/alvarogabrielgomez/kanpachi/commit/a885036), with [f1eeca3](https://github.com/alvarogabrielgomez/kanpachi-engine/commit/f1eeca3) in `kanpachi-engine`)
+- Bring guests back by themselves when the host restarts: it no longer recognises anyone, so it says so and each guest asks for a new credential, which took three minutes of waiting before and now takes about twenty seconds ([a885036](https://github.com/alvarogabrielgomez/kanpachi/commit/a885036))
+- Say on screen that the room is being re-entered, instead of showing a room that looks frozen ([f31c0a0](https://github.com/alvarogabrielgomez/kanpachi/commit/f31c0a0))
+- Say "Saliendo de la sala" in the tray menu while it happens, and refuse a second click that would arrive with the room half closed ([f31c0a0](https://github.com/alvarogabrielgomez/kanpachi/commit/f31c0a0))
+- Talk during the long waits, with phrases that move with the real steps, so opening a room stops looking like a hang ([f31c0a0](https://github.com/alvarogabrielgomez/kanpachi/commit/f31c0a0))
+
 ### Changed
 
 - Say what each Kanpachi process is in Task Manager, which listed bare executable names with a blank icon ([d8e3902](https://github.com/alvarogabrielgomez/kanpachi/commit/d8e3902))
-- Describe what every Kanpachi executable does in its file properties, and say it in the service list too
-- Give the service and the tunnel engine an icon of their own, so the four Kanpachi processes are told apart at a glance instead of by reading
-
-- Blink the tray icon while a room is up, so a running room is visible without opening the window
+- Describe what every Kanpachi executable does in its file properties, and say it in the service list too ([3f1c599](https://github.com/alvarogabrielgomez/kanpachi/commit/3f1c599))
+- Give the service and the tunnel engine an icon of their own, so the four Kanpachi processes are told apart at a glance instead of by reading ([550911d](https://github.com/alvarogabrielgomez/kanpachi/commit/550911d))
+- Blink the tray icon while a room is up, so a running room is visible without opening the window ([32bfc9f](https://github.com/alvarogabrielgomez/kanpachi/commit/32bfc9f))
+- Hide the scrollbars ([f31c0a0](https://github.com/alvarogabrielgomez/kanpachi/commit/f31c0a0))
 
 ### Fixed
 
+- Let people whose internet provider uses the same address range as Kanpachi's lobby into a room: entering hung with no explanation, and each room now takes its lobby from its own invite code, so renewing the code moves it out of the way ([a885036](https://github.com/alvarogabrielgomez/kanpachi/commit/a885036))
+- Say when this machine's own network clashes with the lobby of the room being entered, which used to be a silent thirty-second wait ([a885036](https://github.com/alvarogabrielgomez/kanpachi/commit/a885036))
 - Finish shutting down before quitting: leaving Kanpachi could exit while the room was still being closed, so the firewall rules, the engine process and the API token were left behind until the next start cleaned them up
-- Stop Windows from asking for administrator on its own for the tunnel engine, which needed no privileges and was being elevated on a guess
+- Stop Windows from asking for administrator on its own for the tunnel engine, which needed no privileges and was being elevated on a guess ([3f1c599](https://github.com/alvarogabrielgomez/kanpachi/commit/3f1c599))
 - Stop the window from crashing every twenty to sixty minutes: it corrupted its own memory reading the daemon's pipe, and the pipe now lives in native code that owns its buffers ([e8000ca](https://github.com/alvarogabrielgomez/kanpachi/commit/e8000ca))
 - Reconnect to the daemon after it drops an idle link, instead of leaving the window frozen on what it last knew ([40a260d](https://github.com/alvarogabrielgomez/kanpachi/commit/40a260d))
 - Name the engine log `kanpachi-engine.log`, which shipped with no extension at all and left Windows asking what to open it with ([e6a5ca7](https://github.com/alvarogabrielgomez/kanpachi-engine/commit/e6a5ca7), in `kanpachi-engine`)

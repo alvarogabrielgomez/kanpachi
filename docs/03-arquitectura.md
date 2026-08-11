@@ -2221,15 +2221,34 @@ El caso más común, con el router en `100.64.x.x` del lado WAN y la LAN en `192
 
 El disparador es que la máquina **ya viva** en `100.64.0.0/10`, no que el `/24` elegido choque: si la LAN de casa reparte ese rango, cualquier `/24` de ahí compite con la ruta del router del usuario aunque hoy no se solapen.
 
-### El vestíbulo tiene un /24 fijo
+### Cada sala deriva el /24 de su vestíbulo
 
-`100.127.255.0/24`, el último del espacio compartido, con el host siempre en la `.1`.
+Un `/24` dentro de `198.19.0.0/16`, elegido por el invite code, con el host siempre en la `.1`.
 
-Fijo y no negociado porque los dos lados tienen que llegar al mismo sin hablarse: **el invitado necesita una dirección conocida a la que marcar antes de tener nada del host**, y la subred de la sala llega dentro de la credencial, o sea después. Elegirlo al azar exigiría un canal para comunicarlo, y ese canal es justamente el que se está montando.
+Derivado y no negociado porque los dos lados tienen que llegar al mismo sin hablarse: **el invitado necesita una dirección conocida a la que marcar antes de tener nada del host**, y la subred de la sala llega dentro de la credencial, o sea después. Acordarlo exigiría un canal para comunicarlo, y ese canal es justamente el que se está montando. Sale de `networkID`, que ya se calcula del código con Argon2id, así que es la tercera cosa que las dos máquinas derivan del mismo valor.
 
-Que sea el mismo para todas las salas no filtra nada. El vestíbulo ya es público por definición, su red la deriva cualquiera que tenga el invite ID, y una dirección dentro de un overlay cifrado no dice de qué sala es. La estancia dura lo que tarda un canje de credencial.
+Que el `/24` sea público no filtra nada. El vestíbulo ya es público por definición, su red la deriva cualquiera que tenga el invite ID, y una dirección dentro de un overlay cifrado no dice de qué sala es. La estancia dura lo que tarda un canje de credencial.
 
-Ese `/24` **nunca se le entrega a una sala**. Si coincidieran, entrar a la sala cortaría la conexión que se está usando para pedir la credencial, y el fallo aparecería una vez de cada dieciséis mil.
+`198.19.0.0/16` **no se solapa con los espacios donde viven las salas**, así que ninguna sala puede caer sobre un vestíbulo. Antes hacía falta saltarse un `/24` concreto al elegir subred; ahora es una propiedad de los rangos y lo vigila un test.
+
+#### Por qué se mudó desde `100.127.255.0/24`
+
+Estaba en el último `/24` del espacio compartido, y era **el mismo para todas las salas de todo el mundo**. Ese espacio tiene dos ocupantes que lo hacen mal sitio para algo que no se puede mover:
+
+- **Los ISP.** CGNAT es dominante en América Latina, que es donde vive el grupo. Medido el 2026-08-11: un invitado en Venezuela se quedó colgado en `esperando a que kanpachi1 tome la dirección 100.127.255.102` mientras otro en Brasil entraba sin nada.
+- **Tailscale.** Reparte las IP de sus nodos por todo `100.64.0.0/10` y solo reserva `100.100.0.0/24`, `100.100.100.0/24` y `100.115.92.0/23` para sí misma, así que nada le impedía asignarle a un nodo una dirección dentro del `/24` que el vestíbulo tenía fijo.
+
+Y el remedio de Tailscale para su propio conflicto no sirve acá. [Su documentación](https://tailscale.com/docs/reference/troubleshooting/network-configuration/cgnat-conflicts) ofrece uno solo, apagar IPv4 y quedarse en IPv6, y este producto no puede: el descubrimiento LAN y el netcode viejo de los juegos son IPv4.
+
+Se usa la mitad alta de `198.18.0.0/15`, que es el rango de RFC 2544 para bancos de pruebas: no se enruta en internet y las empresas no lo usan. La mitad baja se descarta porque es el rango por defecto del modo fake-ip de Clash y sing-box.
+
+#### Elegir bien el rango no es el arreglo
+
+No hay forma de saber qué rangos tiene la máquina de cada invitado, y dar por buena una suposición es exactamente el error que se corrigió. Lo que arregla es que el vestíbulo sea **movible**: renovar el código cambia el `/24`, y eso convierte "este producto no te sirve" en "que el host le dé al botón que ya existe".
+
+Por eso renovar el código hace tres cosas más que cambiar la llave de búsqueda: rehospeda el vestíbulo en el rango nuevo, vuelve a acotar la compuerta a ese rango, y muda el oyente del canal de control a la nueva `.1`. Saltarse la segunda dejaría el vestíbulo cubierto solo por adaptador, que en Linux no alcanza por el modelo de host débil.
+
+Cuando el conflicto existe, se detecta y se dice, en las dos puntas: al invitado antes de entrar y al host antes de abrir su puerta. Solo cuentan los prefijos de `/24` o más largos, que son los que le pueden ganar por prefijo más largo; contar cualquier solape marcaría conflicto en toda máquina con Tailscale, que instala una ruta a `100.64.0.0/10` entera.
 
 ## Auditoría de ciberseguridad
 
