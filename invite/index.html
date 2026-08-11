@@ -398,7 +398,14 @@
     </ul>
   </main>
 
-  <!-- Invite ID válido, plataforma que no es Windows -->
+  <!--
+    Invite ID válido, plataforma que no es Windows.
+
+    Sirve para DOS casos que dicen cosas distintas, y por eso su texto se decide
+    en JS en vez de estar escrito acá: en Linux hay cliente y lo que falta es
+    instalarlo; en macOS y en el móvil no lo hay, y lo único que se puede hacer
+    es llevarse el código a otra máquina.
+  -->
   <main class="card narrow hidden" id="sec-nowin">
     <div class="mark sm" id="nowin-mark">
       <svg class="glyph" id="nowin-glyph" viewBox="0 0 27.3 40.78" aria-hidden="true"><use href="#kp-mark"/></svg>
@@ -410,7 +417,7 @@
       <div class="cap">CÓDIGO DE SALA</div>
       <div class="val" id="nowin-code"></div>
     </div>
-    <p class="lede" style="font-size:13px">Kanpachi todavía es solo para Windows. Copia el código y abre este enlace desde tu PC.</p>
+    <p class="lede" style="font-size:13px" id="nowin-lede"></p>
     <button type="button" class="primary" id="nowin-copy">Copiar código</button>
     <a class="escape" id="anyway" href="/download">Ábrelo igual en esta máquina</a>
     <div class="cardfoot" style="justify-content:center">
@@ -490,6 +497,10 @@
   // fichero no lleva la versión, así que publicar un tag actualiza esta página
   // sin tocarla. Sale del MISMO release que el instalador.
   var PORTABLE = REPO + "/releases/latest/download/kanpachi-portable.exe";
+  // El paquete de Linux, por la misma URL permanente y por el mismo motivo. Sin
+  // versión en el nombre: la lleva dentro, en el campo `Version` del control,
+  // que es de donde la lee dpkg.
+  var DEB = REPO + "/releases/latest/download/kanpachi-amd64.deb";
   var RELEASES = REPO + "/releases/latest";
 
   var $ = function (id) { return document.getElementById(id); };
@@ -615,9 +626,18 @@
     cardKey = "";
   }
 
-  var isWindows = /Windows NT/i.test(navigator.userAgent);
+  // Qué sistema mira, para elegir qué se le ofrece PRIMERO.
+  //
+  // Android sale de Linux a propósito, y hay que decirlo porque la cadena de
+  // user agent de Android contiene "Linux" y sin esta línea un móvil recibiría
+  // un `.deb` de escritorio. Es justo el caso frecuente: alguien abre el enlace
+  // en el teléfono para pasárselo a su PC.
+  var ua = navigator.userAgent || "";
+  var isWindows = /Windows NT/i.test(ua);
+  var isLinux = /Linux/i.test(ua) && !/Android/i.test(ua);
   if (navigator.userAgentData && navigator.userAgentData.platform) {
     isWindows = navigator.userAgentData.platform === "Windows";
+    isLinux = navigator.userAgentData.platform === "Linux";
   }
 
   // ---- Enrutado de pantalla ------------------------------------------------
@@ -746,32 +766,102 @@
       text("get-note", "Windows 10 y 11 · 64-bit · un solo UAC");
       return;
     }
+    if (isLinux) {
+      boton.textContent = "Descargar Kanpachi para Linux";
+      text("get-note", "Ubuntu 22.04 o más nueva · amd64 · sin ventana, se usa " +
+        "desde la terminal con el comando kanpachi");
+      return;
+    }
     boton.textContent = "Descargar el instalador de Windows";
-    text("get-note", "Kanpachi todavía es solo para Windows. Puedes bajarlo desde " +
+    text("get-note", "Kanpachi es para Windows y para Linux. Puedes bajarlo desde " +
       "acá y pasarlo a tu PC, o pedir el código y abrirlo allá.");
   }
 
+  // renderDownload elige el paquete por el sistema del visitante.
+  //
+  // **Elige el botón primario, y JAMÁS bloquea.** El otro paquete se sigue
+  // alcanzando desde la página de la publicación, que es adonde lleva la nota.
+  // La detección se equivoca, y el caso en que se equivoca es real: alguien
+  // abre esto en el móvil para pasarle el instalador a su PC.
   function renderDownload() {
-    text("dl-sub", "Windows 10 y 11 · 64-bit · se instala con un solo UAC");
     var b = $("dl-button");
     b.textContent = "Descargar la última versión";
+
+    if (isLinux) {
+      text("dl-sub", "Ubuntu 22.04 o más nueva · amd64 · sin ventana");
+      b.setAttribute("href", DEB);
+      // El portable se ESCONDE, y no es cosmética: en Linux ese artefacto no
+      // se publica. Ofrecerlo sería un enlace a un 404, y encima prometiendo
+      // algo que se decidió no hacer, porque un binario suelto pediría
+      // CAP_NET_ADMIN igual, o sea `sudo` en cada arranque a cambio de nada.
+      hide("dl-portable");
+      notaDeDescarga("Después de bajarlo:  sudo apt install ./kanpachi-amd64.deb");
+      show("sec-download");
+      versionEnElBoton();
+      return;
+    }
+
+    text("dl-sub", "Windows 10 y 11 · 64-bit · se instala con un solo UAC");
     b.setAttribute("href", SETUP);
     $("dl-portable").setAttribute("href", PORTABLE);
-    // El hash NO se escribe acá. Esta página no lo puede saber sin que alguien
-    // la edite en cada publicación, y un hash desactualizado es peor que
-    // ninguno: verificar contra él daría por manipulado un instalador bueno.
-    // Vive donde se genera, en la release, junto a su SHA256SUMS.
+    notaDeDescarga("");
+    show("sec-download");
+    versionEnElBoton();
+  }
+
+  // aplicarNoWindows decide qué dice la pantalla de un invite fuera de Windows.
+  //
+  // Son DOS situaciones distintas y decirlas igual sería falso en las dos:
+  //
+  //   Linux   hay cliente, y lo único que falta es instalarlo
+  //   resto   no lo hay, y lo que se puede hacer es llevarse el código
+  //
+  // En Linux **no se ofrece el enlace `kanpachi://`**, y esa ausencia es la
+  // parte que importa: el paquete de Linux es headless y no registra ningún
+  // manejador de esquema, así que ese botón no haría nada y el navegador
+  // devolvería un error que no explica por qué. Lo que sí funciona es instalar
+  // y escribir el comando.
+  //
+  // `target` puede llegar vacío desde la vista previa, que no tiene sala.
+  function aplicarNoWindows(pretty, target) {
+    var ir = $("anyway");
+    if (isLinux) {
+      text("nowin-lede", "Kanpachi para Linux se instala con un comando. Después, " +
+        "para entrar:  sudo kanpachi join " + pretty);
+      ir.setAttribute("href", "/download");
+      ir.textContent = "Descargar Kanpachi para Linux";
+      return;
+    }
+    text("nowin-lede", "Kanpachi es para Windows y para Linux. Copia el código y " +
+      "abre este enlace desde esa máquina.");
+    ir.setAttribute("href", target || "/download");
+  }
+
+  // notaDeDescarga escribe el pie, con el enlace a la publicación siempre.
+  //
+  // El hash NO se escribe acá, y en ninguna de las dos ramas. Esta página no lo
+  // puede saber sin que alguien la edite en cada publicación, y un hash
+  // desactualizado es peor que ninguno: verificar contra él daría por manipulado
+  // un paquete bueno. Vive donde se genera, en la release, junto a su
+  // SHA256SUMS.
+  //
+  // Se arma con nodos y no con una cadena de HTML porque un guardián de
+  // `internal/arch` prohíbe `innerHTML` en esta página entera. Acá el texto es
+  // nuestro, y la regla no distingue: la que se salta una vez es la que no
+  // protege la vez que importa.
+  function notaDeDescarga(antesDelEnlace) {
     var nota = $("dl-note");
     nota.textContent = "";
-    var antes = document.createTextNode("El número de versión y el SHA256 están en ");
+    if (antesDelEnlace) {
+      nota.appendChild(document.createTextNode(antesDelEnlace));
+      nota.appendChild(document.createElement("br"));
+    }
+    nota.appendChild(document.createTextNode("El número de versión y el SHA256 están en "));
     var enlace = document.createElement("a");
     enlace.setAttribute("href", RELEASES);
     enlace.textContent = "la página de la publicación";
-    nota.appendChild(antes);
     nota.appendChild(enlace);
     nota.appendChild(document.createTextNode("."));
-    show("sec-download");
-    versionEnElBoton();
   }
 
   // Le pregunta al seed cuál es la última versión y la escribe en el botón.
@@ -827,8 +917,8 @@
 
     if (!isWindows) {
       text("nowin-code", pretty);
-      $("anyway").setAttribute("href", target);
       wireCopy("nowin-copy", pretty, "Copiar código");
+      aplicarNoWindows(pretty, target);
       show("sec-nowin");
       loadCard(id, "nowin-eyebrow", "nowin-room");
       return;
@@ -1011,6 +1101,10 @@
       text("nowin-code", demo);
       setInitial("nowin", "Humberto");
       wireCopy("nowin-copy", demo, "Copiar código");
+      // Sin sala que abrir, así que sin `target`: la vista previa enseña el
+      // texto que le toque al sistema desde el que se la mire, que es para lo
+      // que sirve mirarla.
+      aplicarNoWindows(demo, "");
       show("sec-nowin");
       return;
     }
