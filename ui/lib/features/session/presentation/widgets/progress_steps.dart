@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
+import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 
@@ -35,28 +36,30 @@ class ProgressSteps extends StatelessWidget {
   const ProgressSteps({
     required this.progress,
     this.maxHeight = 240,
-    this.showHeader = true,
-    this.fadePast = false,
+    this.live = false,
     super.key,
   });
 
   final Progress progress;
 
-  /// Si se pinta la fila de arriba con el nombre de la operación y su reloj.
+  /// Si esto se está mirando MIENTRAS pasa, o después.
   ///
-  /// La pantalla de espera la apaga porque ya trae cabecera propia (DETALLE ·
-  /// MODO VERBOSO) y dos cabeceras encima de la misma caja son una de más. El
-  /// aviso de fallo la deja puesta: ahí el panel llega sin contexto ninguno y
-  /// el nombre de la operación es lo primero que hay que saber.
-  final bool showHeader;
-
-  /// Apaga los pasos ya pasados y deja entero sólo el último.
+  /// Es una sola bandera y no cuatro porque las cuatro diferencias son la misma
+  /// idea. En vivo (la pantalla de espera):
   ///
-  /// Es para cuando el panel se está mirando EN VIVO: lo que importa es dónde
-  /// va, y la lista entera al mismo peso obliga a buscar el final cada vez que
-  /// cae una línea. En el aviso de fallo va al revés — ahí ya no hay "último",
-  /// hay un historial que se lee completo.
-  final bool fadePast;
+  ///  - **sin cabecera propia**: la pantalla ya trae la suya, DETALLE · MODO
+  ///    VERBOSO, y dos encima de la misma caja son una de más;
+  ///  - **los pasos viejos apagados**: lo que importa es dónde va, y la lista
+  ///    entera al mismo peso obliga a buscar el final cada vez que cae una;
+  ///  - **más aire entre líneas**, los 7 px del diseño: se lee de un vistazo
+  ///    mientras cambia, no párrafo a párrafo;
+  ///  - **cada línea entra**, subiendo 8 px mientras aparece, para que se vea
+  ///    CUÁL es la nueva sin tener que compararla con la de antes.
+  ///
+  /// Apagado (el aviso de fallo): ahí ya no hay "último" ni hay nada llegando;
+  /// hay un historial que se lee completo, con el nombre de la operación
+  /// delante porque el panel llega sin ningún contexto.
+  final bool live;
 
   /// How tall the list of steps gets before it starts scrolling.
   ///
@@ -75,7 +78,7 @@ class ProgressSteps extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        if (showHeader) ...<Widget>[
+        if (!live) ...<Widget>[
           Row(
             children: <Widget>[
               Expanded(
@@ -96,7 +99,7 @@ class ProgressSteps extends StatelessWidget {
         // notice hangs from a `Positioned` with no top, so its height arrives
         // UNBOUNDED, and a flex child under an unbounded main axis throws. The
         // cap lives inside the list itself, which works in both places.
-        _StepList(progress: progress, maxHeight: maxHeight, fadePast: fadePast),
+        _StepList(progress: progress, maxHeight: maxHeight, live: live),
         if (progress.dropped > 0) ...<Widget>[
           const SizedBox(height: AppSpacing.sm),
           // Said out loud on purpose. A list cut in silence reads as a
@@ -125,12 +128,12 @@ class _StepList extends StatefulWidget {
   const _StepList({
     required this.progress,
     required this.maxHeight,
-    required this.fadePast,
+    required this.live,
   });
 
   final Progress progress;
   final double maxHeight;
-  final bool fadePast;
+  final bool live;
 
   @override
   State<_StepList> createState() => _StepListState();
@@ -183,7 +186,8 @@ class _StepListState extends State<_StepList> {
             for (int i = 0; i < widget.progress.steps.length; i++)
               _Linea(
                 step: widget.progress.steps[i],
-                dim: widget.fadePast && i < widget.progress.steps.length - 1,
+                live: widget.live,
+                dim: widget.live && i < widget.progress.steps.length - 1,
               ),
           ],
         ),
@@ -197,61 +201,133 @@ class _StepListState extends State<_StepList> {
 /// A class and not a `Widget _line()` helper, by the house rule: with a method
 /// the parent's rebuild redoes every line, and this panel rebuilds every 400 ms
 /// while a room is opening.
-class _Linea extends StatelessWidget {
-  const _Linea({required this.step, this.dim = false});
+class _Linea extends StatefulWidget {
+  const _Linea({required this.step, this.live = false, this.dim = false});
 
   final ProgressStep step;
+
+  /// Si la lista se está mirando mientras crece. Ver [ProgressSteps.live].
+  final bool live;
 
   /// Un paso que ya pasó, cuando la lista se mira en vivo.
   final bool dim;
 
+  @override
+  State<_Linea> createState() => _LineaState();
+}
+
+class _LineaState extends State<_Linea> with SingleTickerProviderStateMixin {
+  /// La entrada de ESTA línea, que corre una sola vez.
+  ///
+  /// Se apoya en que las líneas sólo se AÑADEN al final y nunca se reordenan:
+  /// las que ya estaban conservan su `State` cuando la lista se reconstruye, y
+  /// sólo la recién llegada estrena controlador. Sin eso, cada muestra de
+  /// progreso volvería a animar la lista entera.
+  late final AnimationController _entrada = AnimationController(
+    vsync: this,
+    duration: AppMotion.stepIn,
+  );
+
+  /// Cuánto sube mientras aparece. Los 8 px del `kp-in` del diseño.
+  static const double _rise = 8;
+
   /// Cuánto se apagan los pasos anteriores. El mismo .6 del diseño.
   static const double _dimAlpha = 0.6;
+
+  /// El aire entre líneas cuando se miran en vivo, contra el que llevan
+  /// apretadas dentro del aviso de fallo.
+  static const double _liveGap = 7;
+  static const double _tightGap = 3;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.live) {
+      _entrada.forward();
+    } else {
+      _entrada.value = 1;
+    }
+  }
+
+  @override
+  void dispose() {
+    _entrada.dispose();
+    super.dispose();
+  }
 
   /// El alfa va en el COLOR y no en un `Opacity` alrededor, por lo mismo que en
   /// las manchas del fondo: `Opacity` empuja una capa fuera de pantalla, y acá
   /// serían hasta trece capas reconstruidas dos veces por segundo.
-  Color _apagado(Color c) => dim ? c.withValues(alpha: c.a * _dimAlpha) : c;
+  Color _apagado(Color c, double entrada) {
+    final double factor = (widget.dim ? _dimAlpha : 1) * entrada;
+    return c.withValues(alpha: c.a * factor);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _entrada,
+      builder: (BuildContext context, Widget? _) {
+        final double t = AppMotion.enter.transform(_entrada.value);
+        return Padding(
+          padding: EdgeInsets.only(bottom: widget.live ? _liveGap : _tightGap),
+          child: Transform.translate(
+            offset: Offset(0, _rise * (1 - t)),
+            child: _Fila(step: widget.step, tinta: (Color c) => _apagado(c, t)),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Las tres columnas de un paso, ya con su tinta resuelta.
+class _Fila extends StatelessWidget {
+  const _Fila({required this.step, required this.tinta});
+
+  final ProgressStep step;
+
+  /// Aplica el apagado del paso viejo y el de la entrada, en ese orden.
+  final Color Function(Color) tinta;
+
+  Color _apagado(Color c) => tinta(c);
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 3),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          SizedBox(
-            width: 52,
-            child: Text(
-              _tiempo(step.since),
-              textAlign: TextAlign.right,
-              style: context.type.monoXs.copyWith(
-                color: _apagado(colors.textMuted),
-              ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        SizedBox(
+          width: 52,
+          child: Text(
+            _tiempo(step.since),
+            textAlign: TextAlign.right,
+            style: context.type.monoXs.copyWith(
+              color: _apagado(colors.textMuted),
             ),
           ),
-          const SizedBox(width: AppSpacing.lg),
-          SizedBox(
-            width: 62,
-            child: Text(
-              _etiqueta(step.scope),
-              style: context.type.monoXs.copyWith(
-                color: _apagado(_color(context, step.scope)),
-              ),
+        ),
+        const SizedBox(width: AppSpacing.lg),
+        SizedBox(
+          width: 62,
+          child: Text(
+            _etiqueta(step.scope),
+            style: context.type.monoXs.copyWith(
+              color: _apagado(_color(context, step.scope)),
             ),
           ),
-          const SizedBox(width: AppSpacing.lg),
-          Expanded(
-            child: Text(
-              step.text,
-              style: context.type.monoXs.copyWith(
-                color: _apagado(colors.textOnChip),
-              ),
+        ),
+        const SizedBox(width: AppSpacing.lg),
+        Expanded(
+          child: Text(
+            step.text,
+            style: context.type.monoXs.copyWith(
+              color: _apagado(colors.textOnChip),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

@@ -18,6 +18,29 @@ import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.da
 import 'package:kanpachi_ui/features/session/presentation/widgets/progress_steps.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 
+/// El halo que despega el texto suelto de las manchas del fondo.
+///
+/// # Por qué existe
+///
+/// Porque acá el texto NO va sobre una superficie: va sobre el lienzo, y por
+/// detrás pasan manchas de 340 px. El rótulo y la frase caen encima de ellas la
+/// mitad de las veces, y ahí el contraste que el tema garantiza contra el fondo
+/// deja de estar garantizado.
+///
+/// # Por qué es del color del fondo
+///
+/// Para que no se vea. Sobre el lienzo desnudo es fondo sobre fondo y no existe;
+/// sólo aparece cuando hay una mancha debajo, que es exactamente cuando hace
+/// falta. Es un contorno difuso, no una sombra proyectada: no hay luz ni relieve
+/// que insinuar, sólo separar la letra de lo que tiene detrás.
+///
+/// Dos capas y no una: la corta cierra el borde de la letra y la larga apaga la
+/// mancha alrededor. Con una sola, o queda un cerco duro o no despega nada.
+List<Shadow> _halo(ColorTokens colors) => <Shadow>[
+  Shadow(color: colors.background, blurRadius: 10),
+  Shadow(color: colors.background, blurRadius: 30),
+];
+
 /// Cuánto lleva hecho la espera, de 0 a 1.
 ///
 /// Sale de los pasos que el daemon ya terminó contra los que suele emitir esa
@@ -138,7 +161,10 @@ class _Kicker extends StatelessWidget {
         const SizedBox(width: 9),
         Text(
           loadingKicker(flow, closing: closing),
-          style: context.type.kickerSm.copyWith(color: colors.textMuted),
+          style: context.type.kickerSm.copyWith(
+            color: colors.textMuted,
+            shadows: _halo(colors),
+          ),
         ),
       ],
     );
@@ -307,6 +333,7 @@ class _Line extends StatelessWidget {
             textAlign: TextAlign.center,
             style: context.type.flavor.copyWith(
               color: colors.text.withValues(alpha: colors.text.a * fade),
+              shadows: _halo(colors),
             ),
           ),
         ),
@@ -368,6 +395,7 @@ class _DotsState extends State<_Dots> with SingleTickerProviderStateMixin {
             color: colors.text.withValues(
               alpha: colors.text.a * latido * widget.fade,
             ),
+            shadows: _halo(colors),
           ),
         );
       },
@@ -427,56 +455,120 @@ class _DetailPanel extends StatelessWidget {
     final Progress? p = session.progress;
     if (p == null || p.isEmpty) return const SizedBox.shrink();
 
+    return _DetailBox(progress: p);
+  }
+}
+
+/// La caja del diario, con su entrada.
+///
+/// Clase aparte de [_DetailPanel] para que la entrada corra UNA vez: este
+/// widget nace cuando llega el primer paso, así que su `initState` es
+/// exactamente el momento en que el panel aparece. Puesta en el panel, que
+/// existe siempre y sólo cambia de hijo, la animación no tendría dónde
+/// arrancar.
+class _DetailBox extends StatefulWidget {
+  const _DetailBox({required this.progress});
+
+  final Progress progress;
+
+  @override
+  State<_DetailBox> createState() => _DetailBoxState();
+}
+
+class _DetailBoxState extends State<_DetailBox>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _entrada = AnimationController(
+    vsync: this,
+    duration: AppMotion.screen,
+  )..forward();
+
+  /// Sube lo mismo que las líneas que va a contener.
+  static const double _rise = 8;
+
+  @override
+  void dispose() {
+    _entrada.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final ColorTokens colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Text(
-                'DETALLE',
-                style: context.type.kickerXs.copyWith(color: colors.textMuted),
-              ),
-              const SizedBox(width: AppSpacing.lg),
-              Expanded(
-                child: ColoredBox(
-                  color: colors.border,
-                  child: const SizedBox(height: AppStroke.hairline),
+    final Progress p = widget.progress;
+
+    return AnimatedBuilder(
+      animation: _entrada,
+      builder: (BuildContext context, Widget? caja) {
+        final double t = AppMotion.enter.transform(_entrada.value);
+        // Acá SÍ va un `Opacity` y no el alfa en cada color: son dos textos, un
+        // filete, un borde y una superficie, y teñirlos de a uno sería pasar el
+        // factor por cinco sitios. Es una capa y dura 300 ms, una sola vez.
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(
+            offset: Offset(0, _rise * (1 - t)),
+            child: caja,
+          ),
+        );
+      },
+      child: Padding(
+        // Aire arriba y abajo. El de abajo lo pone el panel y no el botón, que
+        // sigue sin hueco propio: el diseño deja el «Cancelar» pegado a la caja
+        // y ahí se lee como parte de ella.
+        padding: const EdgeInsets.only(
+          top: AppSpacing.lg,
+          bottom: AppSpacing.x8l,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Text(
+                  'DETALLE',
+                  style: context.type.kickerXs.copyWith(
+                    color: colors.textMuted,
+                  ),
                 ),
+                const SizedBox(width: AppSpacing.lg),
+                Expanded(
+                  child: ColoredBox(
+                    color: colors.border,
+                    child: const SizedBox(height: AppStroke.hairline),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.lg),
+                Text(
+                  'MODO VERBOSO',
+                  style: context.type.kickerXs.copyWith(
+                    color: colors.textMuted,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: _DetailPanel._headerGap),
+            Container(
+              height: _DetailPanel._boxHeight,
+              padding: const EdgeInsets.symmetric(
+                horizontal: _DetailPanel._padH,
+                vertical: _DetailPanel._padV,
               ),
-              const SizedBox(width: AppSpacing.lg),
-              Text(
-                'MODO VERBOSO',
-                style: context.type.kickerXs.copyWith(color: colors.textMuted),
+              decoration: BoxDecoration(
+                color: colors.surfaceSunken,
+                border: Border.all(color: colors.border),
+                borderRadius: AppRadius.allLg,
               ),
-            ],
-          ),
-          const SizedBox(height: _headerGap),
-          Container(
-            height: _boxHeight,
-            padding: const EdgeInsets.symmetric(
-              horizontal: _padH,
-              vertical: _padV,
+              child: ProgressSteps(
+                progress: p,
+                // La caja ya acota; el tope de la lista es lo que queda dentro.
+                maxHeight: p.dropped > 0
+                    ? _DetailPanel._listHeight - _DetailPanel._droppedNote
+                    : _DetailPanel._listHeight,
+                live: true,
+              ),
             ),
-            decoration: BoxDecoration(
-              color: colors.surfaceSunken,
-              border: Border.all(color: colors.border),
-              borderRadius: AppRadius.allLg,
-            ),
-            child: ProgressSteps(
-              progress: p,
-              // La caja ya acota; el tope de la lista es lo que queda dentro.
-              maxHeight: p.dropped > 0
-                  ? _listHeight - _droppedNote
-                  : _listHeight,
-              // La cabecera de la operación la pone la fila de arriba.
-              showHeader: false,
-              fadePast: true,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -503,17 +595,30 @@ class _CancelButton extends StatelessWidget {
     // barra lo pone la barra, que en el diseño lleva 26 de margen inferior. Los
     // tenía los dos y sumaban 52, o sea el doble del diseño — medido con
     // `scratch/loading_check.dart`, que imprime los huecos reales.
-    return AppButton(
-      label: 'Cancelar',
-      variant: AppButtonVariant.ghost,
-      // Las dos órdenes juntas: el daemon deshace lo que alcanzó a hacer y la
-      // ventana vuelve a la portada. Navegar sin lo primero dejaría el motor
-      // arriba y las reglas puestas por una sala que la app ya no cree estar
-      // abriendo.
-      onPressed: () {
-        context.read<SessionCubit>().cancelPending();
-        context.read<ShellCubit>().go(AppScreen.home);
-      },
+    // **Un relleno detrás, del color del lienzo.** Es el mismo problema que el
+    // halo del texto y la misma respuesta: un ghost es contorno y nada más, y
+    // sobre una mancha de 340 px el contorno se pierde. Translúcido y del color
+    // del fondo, así que sobre el lienzo desnudo no existe y sólo aparece
+    // cuando hay mancha debajo. Va envolviendo y no dentro de [AppButton]
+    // porque el arquetipo ghost es correcto en las otras siete pantallas, donde
+    // no hay nada moviéndose por detrás.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: context.colors.background.withValues(alpha: 0.65),
+        borderRadius: AppRadius.pill,
+      ),
+      child: AppButton(
+        label: 'Cancelar',
+        variant: AppButtonVariant.ghost,
+        // Las dos órdenes juntas: el daemon deshace lo que alcanzó a hacer y
+        // la ventana vuelve a la portada. Navegar sin lo primero dejaría el
+        // motor arriba y las reglas puestas por una sala que la app ya no cree
+        // estar abriendo.
+        onPressed: () {
+          context.read<SessionCubit>().cancelPending();
+          context.read<ShellCubit>().go(AppScreen.home);
+        },
+      ),
     );
   }
 }

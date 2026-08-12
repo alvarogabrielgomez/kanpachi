@@ -69,6 +69,12 @@ abstract final class AppMotion {
   /// El latido de los puntos suspensivos que siguen a la frase.
   static const Duration dots = Duration(milliseconds: 1200);
 
+  /// La entrada de un paso nuevo en el diario del daemon.
+  ///
+  /// Corta a propósito: en una creación caen trece, y una entrada larga los
+  /// convertiría en una cascada en vez de en una lista que crece.
+  static const Duration stepIn = Duration(milliseconds: 220);
+
   static const Curve enter = Curves.easeOut;
   static const Curve standard = Curves.easeInOut;
 
