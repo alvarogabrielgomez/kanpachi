@@ -28,6 +28,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 - Let people whose internet provider uses the same address range as Kanpachi's lobby into a room: entering hung with no explanation, and each room now takes its lobby from its own invite code, so renewing the code moves it out of the way ([a885036](https://github.com/alvarogabrielgomez/kanpachi/commit/a885036))
 - Say when this machine's own network clashes with the lobby of the room being entered, which used to be a silent thirty-second wait ([a885036](https://github.com/alvarogabrielgomez/kanpachi/commit/a885036))
+- Say that the virtual adapter was never created when that is what happened, instead of reporting it as an address that could not be taken: the two are different problems and only one of them is about addresses
 - Finish shutting down before quitting: leaving Kanpachi could exit while the room was still being closed, so the firewall rules, the engine process and the API token were left behind until the next start cleaned them up
 - Stop Windows from asking for administrator on its own for the tunnel engine, which needed no privileges and was being elevated on a guess ([3f1c599](https://github.com/alvarogabrielgomez/kanpachi/commit/3f1c599))
 - Stop the window from crashing every twenty to sixty minutes: it corrupted its own memory reading the daemon's pipe, and the pipe now lives in native code that owns its buffers ([e8000ca](https://github.com/alvarogabrielgomez/kanpachi/commit/e8000ca))

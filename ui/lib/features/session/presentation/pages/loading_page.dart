@@ -160,6 +160,21 @@ class _Kicker extends StatelessWidget {
 /// el índice se mueve por un temporizador propio y **como mucho un paso por
 /// tic**: aunque la barra salte del 10% al 80%, las frases se encadenan de a
 /// una y cada una se alcanza a leer. Nunca retrocede.
+///
+/// # La entrada NO es un cruce
+///
+/// La frase que se va desaparece en seco y la que llega entra sola, subiendo 7
+/// píxeles mientras aparece. No hay un instante con las dos en pantalla, y eso
+/// es literal en el diseño: es UN elemento cuyo texto cambia, y lo que se
+/// anima es él. El truco de la maqueta lo delata — alterna entre `kp-fade-a` y
+/// `kp-fade-b`, dos animaciones de keyframes IDÉNTICOS, y la única razón para
+/// tener dos iguales es que CSS no reinicia una animación cuyo nombre no
+/// cambió. O sea: el diseño está pidiendo un reinicio, no una transición entre
+/// dos hijos.
+///
+/// Por eso acá no hay `AnimatedSwitcher`: ese apila la frase vieja y la nueva
+/// durante 420 ms y saca la vieja hacia abajo mientras entra la otra. Se veía
+/// bien y no era esto.
 class _Flavor extends StatefulWidget {
   const _Flavor({required this.flow});
 
@@ -169,14 +184,26 @@ class _Flavor extends StatefulWidget {
   State<_Flavor> createState() => _FlavorState();
 }
 
-class _FlavorState extends State<_Flavor> {
+class _FlavorState extends State<_Flavor> with SingleTickerProviderStateMixin {
   /// Sin semilla fija: lo que se busca es que dos esperas seguidas no cuenten
   /// la misma historia.
   static final math.Random _azar = math.Random();
 
+  /// Cuánto sube la frase mientras aparece. Los 7 px del diseño.
+  static const double _rise = 7;
+
   late LoadingTopic _topic = _sortear();
   int _index = 0;
   Timer? _reloj;
+
+  /// La entrada de la frase que está puesta AHORA.
+  ///
+  /// Se reinicia con `forward(from: 0)` en cada cambio, que es el equivalente
+  /// exacto de lo que la maqueta consigue alternando dos nombres de animación.
+  late final AnimationController _entrada = AnimationController(
+    vsync: this,
+    duration: AppMotion.phraseFade,
+  )..forward();
 
   LoadingTopic _sortear() =>
       kLoadingTopics[_azar.nextInt(kLoadingTopics.length)];
@@ -197,12 +224,14 @@ class _FlavorState extends State<_Flavor> {
         _topic = _sortear();
         _index = 0;
       });
+      _entrada.forward(from: 0);
     }
   }
 
   @override
   void dispose() {
     _reloj?.cancel();
+    _entrada.dispose();
     super.dispose();
   }
 
@@ -220,11 +249,11 @@ class _FlavorState extends State<_Flavor> {
     );
     if (_index >= destino) return;
     setState(() => _index++);
+    _entrada.forward(from: 0);
   }
 
   @override
   Widget build(BuildContext context) {
-    final ColorTokens colors = context.colors;
     final List<String> frases = _topic.phrases(widget.flow);
     final String frase = frases[math.min(_index, frases.length - 1)];
 
@@ -233,39 +262,56 @@ class _FlavorState extends State<_Flavor> {
     return SizedBox(
       height: 52,
       child: Center(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Flexible(
-              child: AnimatedSwitcher(
-                duration: AppMotion.phraseFade,
-                switchInCurve: AppMotion.enter,
-                switchOutCurve: AppMotion.enter,
-                transitionBuilder: (Widget child, Animation<double> t) =>
-                    FadeTransition(
-                      opacity: t,
-                      child: SlideTransition(
-                        position: Tween<Offset>(
-                          begin: const Offset(0, 0.21),
-                          end: Offset.zero,
-                        ).animate(t),
-                        child: child,
-                      ),
-                    ),
-                child: Text(
-                  frase,
-                  key: ValueKey<String>(frase),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: context.type.flavor.copyWith(color: colors.text),
-                ),
-              ),
-            ),
-            const _Dots(),
-          ],
+        child: AnimatedBuilder(
+          animation: _entrada,
+          builder: (BuildContext context, Widget? _) {
+            final double t = AppMotion.enter.transform(_entrada.value);
+            // El desplazamiento envuelve a los puntos también, igual que en la
+            // maqueta: ahí la animación está en el div que los CONTIENE, así
+            // que la línea entera sube junta.
+            return Transform.translate(
+              offset: Offset(0, _rise * (1 - t)),
+              child: _Line(text: frase, fade: t),
+            );
+          },
         ),
       ),
+    );
+  }
+}
+
+/// La frase y sus puntos, con el desvanecido de entrada ya resuelto.
+///
+/// El alfa va en el COLOR y no en un `Opacity` alrededor, la misma regla que en
+/// las manchas del fondo: `Opacity` empuja una capa fuera de pantalla, y esto
+/// se reconstruye sesenta veces por segundo cada vez que entra una frase.
+class _Line extends StatelessWidget {
+  const _Line({required this.text, required this.fade});
+
+  final String text;
+
+  /// Cuánto ha entrado la frase, de 0 a 1.
+  final double fade;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorTokens colors = context.colors;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: context.type.flavor.copyWith(
+              color: colors.text.withValues(alpha: colors.text.a * fade),
+            ),
+          ),
+        ),
+        _Dots(fade: fade),
+      ],
     );
   }
 }
@@ -275,16 +321,27 @@ class _FlavorState extends State<_Flavor> {
 /// Widget aparte y no parte del texto: laten sin parar, y metidos en el mismo
 /// `Text` obligarían a repintar la frase entera sesenta veces por segundo.
 class _Dots extends StatefulWidget {
-  const _Dots();
+  const _Dots({required this.fade});
+
+  /// Cuánto ha entrado la frase a la que acompañan. Se multiplica con el
+  /// latido, igual que en la maqueta: ahí la animación del padre y la del span
+  /// componen sus opacidades.
+  final double fade;
 
   @override
   State<_Dots> createState() => _DotsState();
 }
 
 class _DotsState extends State<_Dots> with SingleTickerProviderStateMixin {
+  /// **Media vuelta, no una entera.**
+  ///
+  /// El keyframe del diseño va de .25 a 1 y otra vez a .25 DENTRO de sus 1,2 s
+  /// (`0%,100%{opacity:.25} 50%{opacity:1}`). Un controlador que repite con
+  /// vuelta atrás recorre el ciclo dos veces en su duración, así que con los
+  /// 1,2 s puestos enteros latía al doble de lento.
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: AppMotion.dots,
+    duration: AppMotion.dots ~/ 2,
   )..repeat(reverse: true);
 
   /// Lo más apagados que llegan a estar. Nunca desaparecen del todo: un hueco
@@ -304,11 +361,12 @@ class _DotsState extends State<_Dots> with SingleTickerProviderStateMixin {
       animation: _controller,
       builder: (BuildContext context, Widget? child) {
         final double t = AppMotion.standard.transform(_controller.value);
+        final double latido = _minAlpha + (1 - _minAlpha) * t;
         return Text(
           '…',
           style: context.type.flavor.copyWith(
             color: colors.text.withValues(
-              alpha: _minAlpha + (1 - _minAlpha) * t,
+              alpha: colors.text.a * latido * widget.fade,
             ),
           ),
         );

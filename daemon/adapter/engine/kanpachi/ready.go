@@ -2,9 +2,11 @@ package kanpachi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
+	"strings"
 	"time"
 )
 
@@ -67,11 +69,45 @@ func waitForAddress(ctx context.Context, addrs addrLister, adapter string, want 
 
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("el adaptador %q no tomó la dirección %v en %s: %w (%v)",
-				adapter, want, deadline, ctx.Err(), last)
+			return agotado(adapter, want, deadline, last)
 		case <-time.After(addressPoll):
 		}
 	}
+}
+
+// agotado convierte lo último que se vio en la frase que nombra la CAUSA.
+//
+// # Por qué hace falta traducirlo
+//
+// Porque los dos finales posibles son problemas distintos y se leían igual. El
+// mensaje que salía terminaba en `(route ip+net: no such network interface)`,
+// que es lo que dice Go cuando el adaptador NO EXISTE, y quien lo recibe no
+// tiene por qué saber que eso significa "el driver no llegó a crear nada" y no
+// "la dirección no se pudo poner".
+//
+// Medido el 2026-08-11 en la máquina de un invitado que no podía entrar: treinta
+// segundos, ese mensaje, y una ronda entera de diagnóstico buscando un conflicto
+// de rangos que no existía. La información para descartarlo ya estaba en el
+// error, ilegible.
+//
+// Los dos casos y lo que significan:
+//
+//   - **El adaptador no existe.** Es wintun, no direccionamiento: el driver no
+//     está, no se pudo cargar, o algo lo bloqueó. Nada de lo que Kanpachi elija
+//     lo cambia.
+//   - **El adaptador existe con otras direcciones.** Ahí sí es direccionamiento,
+//     y las direcciones que tiene son la pista, así que se dicen.
+func agotado(adapter string, want netip.Addr, deadline time.Duration, last error) error {
+	if last != nil && errors.Is(last, errSinInterfaz) {
+		return fmt.Errorf("el adaptador virtual %q no llegó a existir en %s. "+
+			"No es la dirección %v: el sistema dice que esa interfaz no está, o sea que "+
+			"el driver de red virtual (wintun) no la creó. Suele ser un antivirus que lo "+
+			"bloquea o que Kanpachi no corre como administrador; kanpachi-engine.log "+
+			"tiene el motivo exacto",
+			adapter, deadline, want)
+	}
+	return fmt.Errorf("el adaptador %q existe y no tomó la dirección %v en %s: %v",
+		adapter, want, deadline, last)
 }
 
 // addrLister reads the addresses configured on one adapter.
@@ -81,11 +117,44 @@ func waitForAddress(ctx context.Context, addrs addrLister, adapter string, want 
 // the system call.
 type addrLister func(adapter string) ([]netip.Addr, error)
 
+// errSinInterfaz es que el adaptador NO EXISTE, y va aparte de cualquier otro
+// fallo al leerlo.
+//
+// Se marca acá, en el único sitio que sabe qué preguntó, en vez de reconocer el
+// texto de Go más arriba. Quien puede afirmar "no está" es quien lo buscó, y así
+// la cadena frágil queda en UNA línea en vez de repartida.
+var errSinInterfaz = errors.New("el adaptador no existe")
+
+// sinInterfaz reconoce ese caso en lo que devuelve `net`, que es por texto
+// porque no hay otra forma. **Medido**, no supuesto:
+//
+//	texto      : route ip+net: no such network interface
+//	tipo       : *net.OpError
+//	errors.As  : false        ← con net.UnknownNetworkError
+//	op="route" net="ip+net" err=no such network interface
+//
+// El error de dentro es `net.errNoSuchInterface`, que no se exporta, así que no
+// hay centinela contra el que comparar y ningún tipo público que distinga este
+// fallo de los otros del mismo `OpError`. La primera versión de esto probaba
+// también `errors.As` contra `net.UnknownNetworkError`; se quitó al medir que no
+// casa nunca, porque una rama muerta hace creer que hay un camino tipado.
+//
+// El coste de equivocarse es un mensaje menos preciso, nunca un comportamiento
+// distinto: quien lo llama ya está en el camino de fallo.
+func sinInterfaz(err error) bool {
+	return strings.Contains(err.Error(), "no such network interface")
+}
+
 // addressesOf is the real one. It is `net` and not a Windows call, so it needs
 // no build tag and no privileges: reading an interface is not listening on one.
 func addressesOf(adapter string) ([]netip.Addr, error) {
 	iface, err := net.InterfaceByName(adapter)
 	if err != nil {
+		// El caso de no encontrarlo se distingue del resto, porque significa una
+		// cosa distinta y con otro culpable. Ver [agotado].
+		if sinInterfaz(err) {
+			return nil, fmt.Errorf("%w: %s: %w", errSinInterfaz, adapter, err)
+		}
 		return nil, err
 	}
 	raw, err := iface.Addrs()
