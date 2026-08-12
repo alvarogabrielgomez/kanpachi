@@ -89,8 +89,15 @@ type Deps struct {
 // Los topes del relanzamiento.
 //
 // Sin ellos, una interfaz que revienta al arrancar deja al daemon relanzándola
-// para siempre. Con ellos, tres caídas rápidas se leen como "esto no va a
-// arrancar" y se apaga todo, que es lo que la invariante pide.
+// para siempre. Con ellos, una cadena de caídas rápidas se lee como "esto no va
+// a arrancar" y se apaga todo, que es lo que la invariante pide.
+//
+// **Se rinde en la CUARTA caída, no en la tercera**, y conviene decirlo porque
+// el número engaña: `maxRelaunches` son los relanzamientos que se conceden, y
+// [relanzador.murió] compara `seguidas > maxRelaunches`. O sea que tres caídas
+// gastan los tres relanzamientos y la cuarta ya no tiene ninguno. Es lo que fija
+// `TestCuatroCaídasRápidasApaganElDaemon`, y el texto que se le enseña al
+// usuario decía "tres" hasta el 2026-08-11.
 const (
 	maxRelaunches = 3
 	// quickDeath es qué se considera "se cayó enseguida". Una interfaz que
@@ -227,6 +234,19 @@ func (h *Host) Show() error {
 // needs it: a service that cannot show its interface has no other way to say
 // so. See the implementation for why a plain MessageBox does not work here.
 func Warn(text string) { avisarEnSesión("Kanpachi", text) }
+
+// Stop puts a message on the user desktop and WAITS for it to be acknowledged.
+//
+// For the messages that ANNOUNCE Kanpachi shutting down, which today are two:
+// this machine cannot build a virtual adapter, and the interface will not stay
+// up. The caller shuts Kanpachi down right after, and that is exactly why this
+// one waits: a box that appears at the same instant everything closes reads as
+// a crash, not as an explanation. The wait is also the only time left to a game
+// still in progress.
+//
+// The wait is bounded, because nobody may be at the machine. See the
+// implementation.
+func Stop(text string) { avisarYEsperarEnSesión("Kanpachi", text) }
 
 // Close se lleva a la interfaz por delante.
 //

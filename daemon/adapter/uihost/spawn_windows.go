@@ -350,8 +350,19 @@ func (h *Host) watch() {
 			h.deps.Log.Error("la interfaz se cayó demasiadas veces seguidas y no se relanza más",
 				"intentos", intento, "código de salida", fmt.Sprintf("0x%X", salida),
 				"vivió", vivió.Round(time.Millisecond).String())
-			Warn("Kanpachi va a cerrarse porque no consigue mantener su ventana abierta.\n\n" +
-				"Se abrió y se cerró sola tres veces seguidas, así que se deja de " +
+			// `Stop` y no `Warn`: esto ANUNCIA el apagado que viene en la línea
+			// siguiente, así que espera a que alguien lo lea. Con `Warn`, que no
+			// espera, el cuadro aparecía en el mismo instante en que Kanpachi
+			// desaparecía, que se lee como que reventó y no como una
+			// explicación. La espera es además el único rato que le queda a una
+			// partida en curso.
+			//
+			// **Cuatro y no tres**, que es lo que decía este texto: el tope es
+			// `maxRelaunches = 3` y la comparación es `seguidas > maxRelaunches`,
+			// o sea que se rinde en la CUARTA caída. Lo confirma el nombre del
+			// test que fija la regla, `TestCuatroCaídasRápidasApaganElDaemon`.
+			Stop("Kanpachi va a cerrarse porque no consigue mantener su ventana abierta.\n\n" +
+				"Se abrió y se cerró sola cuatro veces seguidas, así que se deja de " +
 				"intentar. Al cerrarse, Kanpachi cierra también la sala y todo lo " +
 				"que hubiera abierto en el firewall.\n\n" +
 				"Qué hacer: vuelve a abrirlo desde su acceso directo.")
@@ -450,7 +461,32 @@ var procWTSSendMessage = windows.NewLazySystemDLL("wtsapi32.dll").NewProc("WTSSe
 const mbErrorEnFrente = 0x0 | 0x10 | 0x10000
 
 // avisarEnSesión pops the message on the user desktop. Best effort.
-func avisarEnSesión(título, texto string) {
+func avisarEnSesión(título, texto string) { mostrarEnSesión(título, texto, 0) }
+
+// esperaDelAviso es how long a waiting message box is given before it gives up.
+//
+// Bounded rather than infinite because the reason NOT to wait is real: nobody
+// may be at the machine. Five minutes is long enough for somebody who is there
+// and short enough that a goroutine does not outlive the reason it exists.
+// WTSSendMessageW returns IDTIMEOUT on expiry, which reads the same as a
+// dismissal to the only caller that waits.
+const esperaDelAviso = 300
+
+// avisarYEsperarEnSesión is the same box, and it does NOT return until somebody
+// presses OK or [esperaDelAviso] runs out.
+//
+// Separate from [avisarEnSesión] because the two callers want opposite things
+// and the difference is not a detail. The caller that cannot show the interface
+// wants to say so and get out of the way. The caller that found this MACHINE
+// unable to build a virtual adapter wants the person to read it BEFORE Kanpachi
+// goes away, because Kanpachi going away is the next thing that happens.
+func avisarYEsperarEnSesión(título, texto string) {
+	mostrarEnSesión(título, texto, esperaDelAviso)
+}
+
+// mostrarEnSesión is the call itself. `espera` in seconds, zero meaning do not
+// wait at all.
+func mostrarEnSesión(título, texto string, espera uint32) {
 	sesión := windows.WTSGetActiveConsoleSessionId()
 	if sesión == 0xFFFFFFFF {
 		return
@@ -463,17 +499,21 @@ func avisarEnSesión(título, texto string) {
 	if err != nil {
 		return
 	}
+	var espera32 uintptr
+	var esperar uintptr
+	if espera > 0 {
+		espera32 = uintptr(espera)
+		esperar = 1
+	}
 	var respuesta uint32
-	// Timeout 0 with bWait FALSE = show and return. Waiting would park a
-	// daemon goroutine on a dialog nobody may be there to close.
 	_, _, _ = procWTSSendMessage.Call(
 		0, // WTS_CURRENT_SERVER_HANDLE
 		uintptr(sesión),
 		uintptr(unsafe.Pointer(&t[0])), uintptr(len(t)*2),
 		uintptr(unsafe.Pointer(&m[0])), uintptr(len(m)*2),
 		uintptr(mbErrorEnFrente),
-		0, // timeout, ignored when not waiting
+		espera32,
 		uintptr(unsafe.Pointer(&respuesta)),
-		0, // bWait FALSE
+		esperar,
 	)
 }

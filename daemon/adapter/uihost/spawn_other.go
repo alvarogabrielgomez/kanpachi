@@ -22,3 +22,5 @@ func (h *Host) signalWake()   {}
 func (h *Host) closeHandles() {}
 
 func avisarEnSesión(string, string) {}
+
+func avisarYEsperarEnSesión(string, string) {}

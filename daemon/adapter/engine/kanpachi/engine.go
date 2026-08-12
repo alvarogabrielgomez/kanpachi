@@ -61,6 +61,30 @@ type Deps struct {
 	// ninguno de estos adaptadores existe.
 	Addrs func(adapter string) ([]netip.Addr, error)
 
+	// Preflight comprueba que la máquina PUEDA construir un adaptador virtual.
+	//
+	// Se inyecta por lo mismo que Addrs: lo que hace de verdad es privativo de
+	// Windows, y este fichero tiene que compilar y probarse en los dos sitios.
+	// Fuera de Windows la implementación no comprueba nada, y ahí eso es la
+	// respuesta correcta. Ver `preflight_other.go`.
+	Preflight func(engineDir string) error
+
+	// OnFatal avisa de que esta MÁQUINA no sirve, y de nada más.
+	//
+	// Hoy lo dispara una sola cosa, [ErrPreflight], y esa es toda su
+	// competencia: no es un canal de errores. Un fallo al abrir una sala vuelve
+	// por donde vino y lo enseña quien la pidió; esto es para el caso en que no
+	// hay sala posible en esta máquina y seguir abierto solo sirve para que la
+	// persona lo intente otras seis veces.
+	//
+	// Se llama en una goroutine y a propósito: quien lo implementa levanta un
+	// cuadro de diálogo que no vuelve hasta que alguien pulsa Aceptar, y esta
+	// llamada sale de debajo del mutex del adaptador.
+	//
+	// Nil vale, y es lo que hace la variante sin ventana: en un servidor no hay
+	// a quién enseñárselo, así que el error vuelve por el canal y ya está.
+	OnFatal func(error)
+
 	// LogDir es dónde el MOTOR escribe su propio log, y viaja en cada orden de
 	// arranque.
 	//
@@ -173,7 +197,40 @@ type Engine struct {
 	// escrita acá: es si el vestíbulo sigue levantado, que es justo lo que este
 	// campo dice.
 	lastLobby *request
+
+	// preflightRan y preflightErr recuerdan el sondeo de la máquina.
+	//
+	// Se guarda el resultado, y el fallo TAMBIÉN, porque las dos respuestas son
+	// estables: un driver que no se deja instalar no se va a dejar en el intento
+	// siguiente, y el sondeo cuesta un par de segundos y crea un dispositivo. Sin
+	// esto, cada reintento del watchdog pagaría el sondeo entero para volver a
+	// enterarse de lo mismo.
+	//
+	// Los dos campos van bajo `mu`, que es el que tiene tomado [Engine.ensureLocked].
+	preflightRan bool
+	preflightErr error
 }
+
+// ErrPreflight marca que esta MÁQUINA no puede construir un adaptador virtual.
+//
+// Va aparte de cualquier otro fallo del arranque porque se responde distinto: no
+// es una sala que salió mal ni un motor que se cayó, es que acá no hay red
+// virtual posible y no la va a haber reintentando. Quien lo recibe lo enseña y
+// apaga, en vez de mandar al watchdog a reintentar ocho veces algo que no
+// depende de nosotros.
+var ErrPreflight = errors.New("esta máquina no puede crear el adaptador virtual")
+
+// preflightError lleva el texto LARGO y contesta que sí a [ErrPreflight].
+//
+// Son las dos cosas a la vez y por eso no basta un `fmt.Errorf("%w: %w")`: ese
+// texto va derecho a un cuadro de diálogo que lee alguien que quería jugar, y
+// anteponerle una frase de clasificación lo empeora. Quien decide qué hacer
+// pregunta con `errors.Is`, que es una pregunta y no una lectura.
+type preflightError struct{ err error }
+
+func (p preflightError) Error() string        { return p.err.Error() }
+func (p preflightError) Unwrap() error        { return p.err }
+func (p preflightError) Is(target error) bool { return target == ErrPreflight }
 
 // New arma el adaptador. No lanza nada todavía: el proceso arranca con la
 // primera orden que lo necesite.
@@ -187,8 +244,21 @@ func New(deps Deps) (*Engine, error) {
 	if deps.Addrs == nil {
 		deps.Addrs = addressesOf
 	}
+	// El sondeo de la máquina va PEGADO al lanzador de verdad, y no es
+	// organización: lo que mide es la máquina donde ese lanzador va a correr.
+	// Quien sustituye el lanzador no tiene máquina que medir —su hijo es un par
+	// de tuberías— y sondear la de verdad ahí haría que un test del protocolo
+	// dependiera de que el anfitrión tenga wintun. `spawn` no se exporta, así que
+	// ese "quien" solo puede ser un test de este paquete: en producción son
+	// siempre los dos reales, y no hay forma de pedir uno sin el otro.
 	if deps.spawn == nil {
 		deps.spawn = spawn
+		if deps.Preflight == nil {
+			deps.Preflight = Preflight
+		}
+	}
+	if deps.Preflight == nil {
+		deps.Preflight = func(string) error { return nil }
 	}
 	// Un sumidero que no anota es mejor que un nil comprobado en cada llamada:
 	// esa comprobación es la que un día falta en el camino nuevo.
@@ -283,6 +353,68 @@ func (e *Engine) emitLocked(ev domain.EngineEvent) {
 	}
 }
 
+// preflightLocked sondea la máquina UNA vez y recuerda lo que contestó.
+//
+// # Por qué se recuerda también el fallo
+//
+// Porque las dos respuestas son estables. Un almacén de drivers que rechaza el
+// `.inf` lo va a rechazar igual dentro de un minuto, y el sondeo no es gratis:
+// crea un dispositivo de verdad, medido en 678 ms y 952 ms en esta máquina. Sin
+// recordar el fallo, cada reintento del watchdog volvería a pagarlo entero para
+// enterarse de lo mismo.
+//
+// # Por qué acá y no al arrancar el daemon
+//
+// Porque el daemon arranca con la máquina, antes de que haya nadie delante, y un
+// sondeo ahí crearía un adaptador en cada encendido para una sala que quizá
+// nadie abra. Acá corre en la primera orden que necesita el motor, que es
+// exactamente cuando la respuesta importa y hay alguien mirando.
+func (e *Engine) preflightLocked() error {
+	if e.preflightRan {
+		return e.preflightErr
+	}
+	e.preflightRan = true
+
+	e.deps.Progress.Step(domain.ScopeEngine, "comprobando el adaptador virtual")
+	err := e.deps.Preflight(filepath.Dir(e.deps.Exe))
+	if err != nil {
+		// Se anota acá además de devolverlo: quien llama lo va a enseñar en una
+		// ventana, y una ventana no se puede adjuntar a un reporte.
+		e.warn("la máquina no puede crear un adaptador virtual", "error", err)
+		e.preflightErr = preflightError{err}
+		if e.deps.OnFatal != nil {
+			// En una goroutine porque acá está tomado `mu` y quien escucha abre
+			// una ventana modal: hacerlo en línea dejaría el adaptador entero
+			// bloqueado hasta que alguien pulse Aceptar, y el apagado que viene
+			// después necesita ese mismo mutex.
+			go e.deps.OnFatal(e.preflightErr)
+		}
+	}
+	return e.preflightErr
+}
+
+// CheckMachine corre el sondeo AHORA, en vez de esperar a la primera sala.
+//
+// # Por qué existe si [Engine.ensureLocked] ya lo hace
+//
+// Porque cuándo se sabe es la mitad del valor. `ensureLocked` corre en la
+// primera orden que necesita el motor, o sea cuando alguien ya eligió un juego,
+// escribió un código de ocho caracteres y está esperando. Y lo que el sondeo
+// mide no depende de esa sala ni de ninguna: depende de la máquina, que estaba
+// disponible desde el primer segundo.
+//
+// Lo llama el arranque del daemon. La comprobación de `ensureLocked` se queda
+// igual y no es redundante: cubre a quien construya el adaptador sin pasar por
+// ese arranque, y con la caché no cuesta nada.
+//
+// El resultado queda cacheado, así que la sala siguiente no vuelve a pagarlo.
+// Llamarlo es adelantar el sondeo, nunca añadir uno.
+func (e *Engine) CheckMachine() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.preflightLocked()
+}
+
 // ensureLocked deja el proceso vivo, arrancándolo si hace falta.
 //
 // El contexto que recibe es el de la LLAMADA y solo acota el arranque. El que
@@ -291,6 +423,13 @@ func (e *Engine) emitLocked(ev domain.EngineEvent) {
 func (e *Engine) ensureLocked(context.Context) error {
 	if e.proc != nil {
 		return nil
+	}
+	// Antes de lanzar nada: si esta máquina no puede construir un adaptador
+	// virtual, el motor arrancaría igual, aceptaría la orden, y el fallo llegaría
+	// treinta segundos después disfrazado de problema de direcciones. Ver
+	// [Engine.preflightLocked].
+	if err := e.preflightLocked(); err != nil {
+		return err
 	}
 	// Solo la PRIMERA vez deja rastro, que es justo lo que hace útil el paso:
 	// las llamadas siguientes reusan el proceso, y verlo aparecer dos veces en

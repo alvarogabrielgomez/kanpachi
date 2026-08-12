@@ -1801,6 +1801,32 @@ El diff se lee de un vistazo a propósito, y por eso el motor vive en su repo y 
 
 Lo que el fork NO reemplaza es la compuerta. Su enemigo nunca fue EasyTier: son las reglas permisivas **ajenas**, de escritorio remoto y de instaladores de juegos, que alcanzan al usuario por la red virtual. Eso no lo quita ningún fork.
 
+#### Antes de lanzarlo: comprobar que esta máquina pueda
+
+El adaptador virtual lo crea `wintun.dll`, que instala un driver en el almacén de drivers de Windows. Ese paso puede negarse, y cuando se niega no hay adaptador, no hay red virtual y no hay sala posible en esa máquina.
+
+**El daemon lo comprueba al arrancar, con `CheckMachine`, antes de que nadie elija un juego.** Tres pasos, y solo el tercero contesta la pregunta:
+
+| Paso | Qué atrapa |
+|---|---|
+| `wintun.dll` y `Packet.dll` al lado del motor | un antivirus que borró un fichero, una copia incompleta |
+| `LoadLibrary` de la DLL y sus dos funciones | arquitectura equivocada, DLL dañada, dependencia ausente |
+| **crear un adaptador desechable y cerrarlo** | el almacén de drivers, que es el que falla de verdad |
+
+**Comprobar que los ficheros están NO alcanza, y esto se midió.** El 2026-08-11, la máquina de un invitado tenía los tres ficheros en su sitio, wintun cargó y llegó a `Installing driver 0.14`. Lo que falló fue guardar el `.inf` en el almacén, con `0x000000CB`, `ERROR_ENVVAR_NOT_FOUND`. Un chequeo de presencia habría dado verde y esa persona habría seguido sin poder entrar. wintun no expone «¿se podría instalar?», expone `WintunCreateAdapter`, así que la única forma de saberlo es intentarlo.
+
+Coste medido en esta máquina, elevado: 678 ms y 952 ms en dos corridas seguidas, con cero adaptadores dejados atrás según `Get-NetAdapter -IncludeHidden`. Se paga una vez por arranque del daemon y el resultado queda cacheado, así que la primera sala no lo vuelve a pagar. De paso deja el driver instalado antes de que haga falta.
+
+**Se engancha `WintunSetLogger`**, y esa es la mitad del valor. Sin ese callback, las líneas propias de wintun no existen en ningún sitio: no van a un fichero, no van a stderr, no van al visor de eventos. Con él, el texto que nombra el fichero y la operación que lo rechazó entra en el mensaje que ve la persona.
+
+El consejo se bifurca por código, porque hay dos fallos medidos que quieren cosas opuestas. `0x05`, acceso denegado, es permisos y reiniciar no arregla nada. `0xCB` es el almacén de drivers, y lo que hay que mirar es `DevicePath`, que tiene que ser `REG_EXPAND_SZ` con valor `%SystemRoot%\inf`. Cualquier otro código cae en el consejo general, que empieza por reiniciar porque se lleva por delante un dispositivo a medio crear.
+
+Cuando falla, el daemon lo enseña con `uihost.Stop`, que **espera** a que alguien pulse Aceptar con un plazo de cinco minutos, y recién entonces apaga Kanpachi. La espera es el punto: un cuadro que aparece en el mismo instante en que todo se cierra se lee como que reventó, no como una explicación. Sin interfaz que hospedar el gancho es nulo, y el error vuelve por el canal: en un servidor no hay a quién enseñárselo, y apagar el servicio por eso sería quitarle la máquina a quien lo administra.
+
+El arranque **no se aborta** desde ahí. Abortar mataría el canal por el que `kanpachi doctor` y la ventana explican qué pasó, justo cuando hace falta explicarlo.
+
+`kanpachi doctor` corre exactamente la misma función, y ahí sí se rinde sin elevación: crear un adaptador es privilegiado, así que sin permisos contesta que no lo puede saber en vez de un rojo que mandaría a buscar un problema inexistente. Es el análogo en Windows de la comprobación de `/dev/net/tun` que doctor hace en Linux. **En Linux esto no existe** y devolver nulo es la respuesta correcta: el nodo de TUN lo pone el kernel, no hay almacén, no hay `.inf` y no hay instalación que pueda fallar a medias.
+
 Responsabilidades:
 
 - Traducir `domain.HostSpec`, `domain.RendezvousSpec` y `domain.GuestSpec` a órdenes del motor, que viajan por **el tubo de entrada del proceso hijo** y jamás por la línea de comandos. Medido: el `CommandLine` del proceso hijo solo muestra la ruta del ejecutable, así que el secreto de la red deja de ser legible con el Administrador de tareas por cualquier usuario de la máquina.

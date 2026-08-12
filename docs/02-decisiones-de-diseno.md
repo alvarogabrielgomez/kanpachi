@@ -1420,3 +1420,28 @@ La cadena entera, de la causa al síntoma:
 Porque **nada en el repositorio ejercitaba el camino del invitado**. `medir-motor-punta-a-punta.ps1` y `engineprobe` crean salas, que es la mitad que funciona; el `join` con credencial no lo corría nadie. El primer intento real fue el de una persona instalando el instalador, y es el que lo encontró.
 
 Y costó encontrarlo más de lo debido por una segunda razón: **el motor del cliente no deja rastro**. No instala ningún `subscriber` de `tracing`, y su `stderr` va al del daemon, que como servicio con `-H windowsgui` no existe. Todo lo que EasyTier dijo del fallo se tiró. En el droplet, la misma causa estaba escrita en una línea.
+
+## 32. La máquina se comprueba creando un adaptador, y se comprueba al arrancar
+
+**Alternativas:** comprobar que los ficheros del driver estén donde tienen que estar. Cargar `wintun.dll` y verificar que exporte lo que hace falta. Crear un adaptador desechable y cerrarlo. Cualquiera de las tres, en el arranque del daemon o en la primera sala.
+
+**Elección:** **las tres, en ese orden, y al arrancar el daemon.**
+
+**Las dos primeras solas habrían dado verde en el caso que motivó esto.** Medido el 2026-08-11 en la máquina de un invitado que no podía entrar: los tres ficheros estaban en su sitio, `wintun.dll` cargó, y el log del motor llegó hasta `Installing driver 0.14`. Lo que falló fue el paso siguiente:
+
+```
+ERROR WinTun: Could not install driver ...\wintun.inf to store:
+The system could not find the environment option that was entered. (Code 0x000000CB)
+```
+
+`0xCB` es `ERROR_ENVVAR_NOT_FOUND`: el almacén de drivers de Windows rechazó el `.inf`. Nada de eso es de Kanpachi, y en esa máquina WireGuard o Tailscale fallarían igual. wintun no expone una pregunta del tipo «¿se podría instalar?», expone `WintunCreateAdapter`, así que la única medición posible es intentarlo de verdad.
+
+Los dos pasos baratos se quedan igual porque contestan otra cosa. Convierten «no se pudo crear» en «no se pudo crear porque falta esta DLL», que es otro problema con otro arreglo.
+
+**Por qué al arrancar y no en la primera sala.** La primera versión lo dejaba para cuando el motor hiciera falta, o sea con la persona ya dentro de la ventana, con el juego elegido y el código de ocho caracteres escrito. El fallo no depende de qué sala sea: depende de la máquina, y la máquina está disponible desde el primer segundo. Costaba 678 ms medidos, una vez por arranque del daemon, y de paso deja el driver instalado antes de que haga falta.
+
+**Y hubo una versión intermedia que estuvo mal por un supuesto sin verificar.** Ató la comprobación a la bandera `--show`, con el argumento de que arrancando con la máquina no hay nadie mirando. `--show` no dice eso: dice si la ventana se abre de una o si Kanpachi se queda en la bandeja, y la interfaz es hija del daemon en los dos casos. Estaba escrito en este mismo repositorio, en `03-arquitectura.md` y en `04-flujos-y-configuracion.md`, y la condición se escribió sin leerlo. Queda anotado acá porque el modo de fallo se repite: una condición razonable colgada de una bandera cuyo significado se dio por sabido.
+
+**Lo que se enseña cuando falla.** El daemon lo dice él mismo, con `uihost.Stop`, sin pasar por la interfaz de Flutter ni por el protocolo. Espera a que alguien pulse Aceptar, con plazo de cinco minutos, y recién entonces apaga Kanpachi. La espera importa: un cuadro que aparece justo cuando todo se cierra se lee como que reventó. Y el arranque no se aborta desde ahí, porque abortar mataría el canal por el que `doctor` y la ventana explican qué pasó.
+
+**Lo que no cubre.** Nada de esto arregla el almacén de drivers, que es del sistema operativo y no nuestro. Se nombra, se dice qué mirar, y se para ahí. Es la misma regla que hace que en Linux `SuspendForeign` niegue en vez de tocar el firewall de quien administra el servidor.

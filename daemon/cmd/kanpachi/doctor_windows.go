@@ -12,16 +12,27 @@ package main
 // terminal, y lo que hace falta ahí es lo mismo que en Linux: saber si el canal
 // contesta y si las piezas están donde tienen que estar.
 //
-// Lo que NO se replica es el nivel del sistema —el nodo de TUN, la
-// configuración del kernel, las unidades— porque en Windows esas cosas no son
-// ficheros que se puedan mirar sin privilegios ni tienen un arreglo que se
+// Lo que NO se replica es la configuración del sistema operativo, porque en
+// Windows no son ficheros que se puedan mirar ni tienen un arreglo que se
 // escriba en una línea. Inventar comprobaciones que contesten "no se sabe"
-// llenaría la pantalla de ruido y escondería las tres que sí contestan.
+// llenaría la pantalla de ruido y escondería las que sí contestan.
+//
+// # Lo que ese razonamiento decía de más, y quedó desmentido
+//
+// Decía que en Windows NO hay nivel de sistema que mirar, y por eso acá no había
+// nada equivalente a `/dev/net/tun`. Lo hay: el driver de red virtual, que se
+// instala en el almacén de drivers y puede negarse a hacerlo. Medido el
+// 2026-08-11 en la máquina de un invitado, con todos los ficheros en su sitio y
+// sin adaptador posible. Ver `chequeoDelAdaptadorVirtual`.
 
 import (
 	"context"
 	"os"
 	"path/filepath"
+
+	"golang.org/x/sys/windows"
+
+	kanpachiengine "github.com/accentiostudios/kanpachi/daemon/adapter/engine/kanpachi"
 )
 
 func chequeosDelSistema() []chequeo {
@@ -29,6 +40,42 @@ func chequeosDelSistema() []chequeo {
 		chequeoDelDirectorioDeDatos(),
 		chequeoDelCanal(),
 		chequeoDelMotor(motorAlLadoDelDaemon()),
+		chequeoDelAdaptadorVirtual(),
+	}
+}
+
+// chequeoDelAdaptadorVirtual es el análogo de `/dev/net/tun` en Windows.
+//
+// Corre el MISMO sondeo que el daemon corre antes de levantar el motor, y eso es
+// lo que lo hace valer: una comprobación escrita aparte contestaría sobre otra
+// cosa parecida, y la que importa es la que el producto va a hacer de verdad.
+//
+// # Por qué se rinde sin elevación en vez de fallar
+//
+// Porque crear un adaptador es una operación privilegiada, y sin permisos el
+// sondeo devuelve acceso denegado. Eso NO significa que la máquina esté rota,
+// significa que esta corrida no puede saberlo. Doctor se lee cuando algo va mal,
+// y un rojo que solo dice que lo corriste como tú mismo mandaría a la gente a
+// buscar un problema que no existe. Es la única comprobación de este binario que
+// pide elevación, y por eso lo dice en vez de suponerlo.
+//
+// **No tiene arreglo**, y es la misma regla de siempre: el almacén de drivers de
+// Windows es del sistema y no nuestro. Se nombra, se dice qué mirar, y se para.
+func chequeoDelAdaptadorVirtual() chequeo {
+	return chequeo{
+		nombre: "the virtual adapter",
+		mirar: func(context.Context, opciones) veredicto {
+			if !windows.GetCurrentProcessToken().IsElevated() {
+				return noSeSabe("creating an adapter needs elevation, so this one " +
+					"cannot be answered from here").
+					con("Run this in an elevated terminal to have it checked.")
+			}
+			dir := filepath.Dir(motorAlLadoDelDaemon())
+			if err := kanpachiengine.Preflight(dir); err != nil {
+				return fallar("this machine cannot build one").con(err.Error())
+			}
+			return ok("built one and took it down again")
+		},
 	}
 }
 

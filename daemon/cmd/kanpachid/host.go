@@ -86,3 +86,47 @@ func (h *procesoHost) Shutdown() {
 	h.log.Info("apagado pedido desde la interfaz")
 	go h.apagar()
 }
+
+// fatalDeMáquina devuelve qué hacer cuando esta MÁQUINA no puede con Kanpachi.
+//
+// # Qué cuenta como esto, y qué no
+//
+// Solo lo que no depende de nosotros y no cambia reintentando: hoy, que el
+// driver de red virtual no se pueda instalar. Ver `ErrPreflight` en el
+// adaptador del motor. Una sala que sale mal NO pasa por acá: vuelve por donde
+// vino y la enseña quien la pidió, porque la sala siguiente puede ir bien.
+//
+// # Por qué se apaga en vez de dejarlo abierto
+//
+// Porque lo que queda si no es una ventana que acepta clics y falla en todos
+// igual, cada vez con treinta segundos de espera. La primera versión de este
+// fallo, medida en la máquina de un invitado el 2026-08-11, fueron dos días de
+// intentos: no había forma de distinguir «esta máquina no puede» de «esta sala
+// no anda», y sin esa distinción lo razonable es seguir probando.
+//
+// # Por qué nil sin ventana
+//
+// Sin interfaz que hospedar no hay a quién enseñárselo, y apagar un servicio
+// por un error que su operador va a leer en el canal sería quitarle la máquina
+// de debajo. En consola y en la variante headless, el error vuelve y ya está.
+func fatalDeMáquina(ui *uihost.Host, host *procesoHost, log port.Logger) func(error) {
+	if ui == nil {
+		return nil
+	}
+	return func(err error) {
+		log.Error("esta máquina no puede crear un adaptador virtual, apagando", "error", err)
+		// Bloquea hasta que alguien pulse Aceptar, con plazo. Es lo que hace que
+		// el mensaje se lea ANTES de que todo se cierre: al revés, una ventana
+		// que aparece en el mismo instante en que Kanpachi desaparece se lee
+		// como que se rompió, no como una explicación.
+		uihost.Stop(err.Error())
+		if host.apagar == nil {
+			// Se apunta y no se calla: sin esto el proceso se queda vivo
+			// después de haber dicho que se iba, que es la forma más rara de
+			// las dos de fallar acá.
+			log.Error("no hay apagado cableado todavía, así que Kanpachi se queda abierto")
+			return
+		}
+		host.apagar()
+	}
+}

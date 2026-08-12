@@ -616,6 +616,7 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 		// que se borra al salir. Ver `carpetaDelLog`.
 		LogDir:   carpetaLog,
 		Progress: diary,
+		OnFatal:  fatalDeMáquina(ui, host, log),
 	})
 	if err != nil {
 		return abortar(err)
@@ -625,6 +626,37 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 	// Es el orden que hace falta: primero se va el motor y con él la red
 	// virtual, y solo entonces se sueltan las reglas que la contenían.
 	cierres = append(cierres, func() { _ = motor.Close() })
+
+	// Acá se comprueba que esta máquina PUEDA construir un adaptador virtual, y
+	// se comprueba siempre.
+	//
+	// # Por qué al arrancar y no en la primera sala
+	//
+	// Porque es lo único que Kanpachi puede saber antes de que alguien invierta
+	// nada. Dejarlo para la primera sala significa que la persona abre la
+	// ventana, elige su juego, escribe un código de ocho caracteres y espera, y
+	// recién ahí se entera de que su máquina no podía desde el principio. El
+	// fallo no depende de qué sala sea: depende de esta máquina, y esta máquina
+	// ya está acá.
+	//
+	// # Por qué sin condición
+	//
+	// Una versión anterior lo ataba a `mostrarUI`, con el argumento de que
+	// arrancando con la máquina no hay nadie mirando. El argumento estaba mal:
+	// `--show` no dice si hay alguien, dice si la ventana se abre de una o si
+	// Kanpachi se queda en la bandeja, y la interfaz es hija del daemon en los
+	// dos casos. Lo que sí cambia es lo que cuesta, y cuesta poco: 678 ms
+	// medidos, una vez por arranque del daemon, y de paso deja el driver
+	// instalado antes de que haga falta.
+	//
+	// # Por qué no se mira el error
+	//
+	// A propósito: quien lo enseña y apaga es `OnFatal`, que ya está cableado y
+	// es el único sitio donde eso se decide. Mirarlo también acá daría dos
+	// avisos para un solo fallo. Y el arranque NO se aborta desde acá: abortar
+	// mataría el canal por el que `kanpachi doctor` y la ventana explican qué
+	// pasa, justo cuando hace falta explicarlo.
+	_ = motor.CheckMachine()
 
 	// NewSession PURGA el firewall antes de devolver, así que a partir de acá la
 	// máquina está en el estado que este arranque decidió y no en el que dejó el
