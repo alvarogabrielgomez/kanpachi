@@ -137,6 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
             nameHint: _nameHint,
             canJoin: canJoin,
             daemonDown: session.daemonDown,
+            seedDown: session.health.seedDown,
             alerts: session.health.alerts,
             onCodeChanged: _onCodeChanged,
             onJoin: _join,
@@ -160,6 +161,7 @@ class _JoinAndCreate extends StatelessWidget {
     required this.nameHint,
     required this.canJoin,
     required this.daemonDown,
+    required this.seedDown,
     required this.alerts,
     required this.onCodeChanged,
     required this.onJoin,
@@ -174,6 +176,14 @@ class _JoinAndCreate extends StatelessWidget {
   /// No se pudo hablar con el servicio. Va PRIMERO, por delante de cualquier
   /// aviso: sin servicio los demás avisos son de una medición que no se hizo.
   final bool daemonDown;
+
+  /// El servidor de encuentro no contesta, así que los dos botones de arriba
+  /// van a fallar.
+  ///
+  /// Decirlo acá es el punto entero: crear y entrar fallan rápido sin registro,
+  /// y sin este aviso eso se descubre después de elegir un juego y escribir
+  /// ocho caracteres. No lleva acción porque no hay ninguna: se cura solo.
+  final bool seedDown;
 
   /// Los avisos que mandó el daemon. Si no mandó ninguno no se pinta nada, que
   /// es el caso normal en una máquina sana.
@@ -242,9 +252,20 @@ class _JoinAndCreate extends StatelessWidget {
         if (daemonDown) ...<Widget>[
           const SizedBox(height: AppSpacing.x5l),
           const AppMessageNotice(message: AppMessages.daemonDown),
-        ] else if (alerts.isNotEmpty) ...<Widget>[
-          const SizedBox(height: AppSpacing.x5l),
-          _HealthAlerts(alerts: alerts),
+        ] else ...<Widget>[
+          // El registro va por delante de los avisos de salud, y detrás del
+          // servicio caído. Es el orden de lo que impide usar Kanpachi: sin
+          // servicio no hay nada, sin registro no se puede abrir ni entrar a
+          // ninguna sala, y los avisos de salud describen una máquina que sí
+          // funciona. Se pintan los dos cuando toca: hablan de cosas distintas.
+          if (seedDown) ...<Widget>[
+            const SizedBox(height: AppSpacing.x5l),
+            const AppMessageNotice(message: AppMessages.seedDown),
+          ],
+          if (alerts.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSpacing.x5l),
+            _HealthAlerts(alerts: alerts),
+          ],
         ],
       ],
     );

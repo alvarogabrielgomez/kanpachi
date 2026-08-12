@@ -937,7 +937,7 @@ inviteID (8 chars, emitido por el seed)
 | Una tarjeta que no puede descifrar | Nombres de sala ni nicks en claro |
 | Un contador por red | Quién es cada miembro. Los nicks viven dentro de la red cifrada |
 
-En memoria, con TTL. Muere con la sala, salvo la llave fijada del host, que sobrevive semanas para que reabrir con el mismo ID siga siendo del host.
+Con TTL: la tarjeta muere con la sala, y la llave fijada del host sobrevive semanas para que reabrir con el mismo ID siga siendo del host. **Se guarda en disco**, ver la decisión 33.
 
 ### El contador sale de EasyTier, verificado
 
@@ -968,7 +968,7 @@ Se evaluó que lo generara el host y el seed solo verificara disponibilidad. Emi
 
 ### Costos aceptados
 
-- El seed deja de ser apátrida. Estado en memoria, con TTL, sin base de datos y sin disco.
+- El seed deja de ser apátrida. Se aceptó con estado en memoria, sin base de datos y sin disco, y eso último **no se sostuvo**: la decisión 33 lo corrige y explica qué se rompía.
 - Superficie HTTP nueva expuesta a internet. Límite de tasa obligatorio en resolución y en registro, porque 40 bits son enumerables sin él.
 - Quien se autohospeda necesita este binario. Va dentro de la misma imagen, así que le sale configurado de fábrica.
 - Los logs pasan a contener invite IDs, ver decisión 17.
@@ -1445,3 +1445,39 @@ Los dos pasos baratos se quedan igual porque contestan otra cosa. Convierten «n
 **Lo que se enseña cuando falla.** El daemon lo dice él mismo, con `uihost.Stop`, sin pasar por la interfaz de Flutter ni por el protocolo. Espera a que alguien pulse Aceptar, con plazo de cinco minutos, y recién entonces apaga Kanpachi. La espera importa: un cuadro que aparece justo cuando todo se cierra se lee como que reventó. Y el arranque no se aborta desde ahí, porque abortar mataría el canal por el que `doctor` y la ventana explican qué pasó.
 
 **Lo que no cubre.** Nada de esto arregla el almacén de drivers, que es del sistema operativo y no nuestro. Se nombra, se dice qué mirar, y se para ahí. Es la misma regla que hace que en Linux `SuspendForeign` niegue en vez de tocar el firewall de quien administra el servidor.
+
+## 33. Sin registro no hay sala, y por eso el registro recuerda
+
+**El problema.** Tres afirmaciones que este documento y el código sostenían por separado, y que juntas no se sostienen:
+
+1. El registro es solo presentación, así que crear una sala no depende de que ningún servidor esté vivo.
+2. Entrar a una sala solo se detiene cuando el registro **afirma** que ese código no existe.
+3. El registro guarda las salas en memoria, y su unidad lleva `Restart=always`.
+
+La tercera convierte a la segunda en una trampa: un `systemctl restart`, o cualquier despliegue, vaciaba el almacén, y a partir de ahí el registro contestaba que no conoce salas abiertas y alcanzables. **Un reinicio del seed dejaba fuera a todo invitado de toda sala abierta.** El host tampoco lo podía reponer, porque publicar actualiza y no crea, que es la regla que impide que quien se quedó con un código se apropie de la sala. El único arreglo desde el producto era renovar el código, que mata los enlaces ya repartidos.
+
+Y la primera era falsa de raíz. Se siguió la cadena entera el 2026-08-12: sin respuesta del registro, el invite ID se generaba en la máquina del host, con el seed por defecto porque no hay forma de saber a cuál pertenecería. Ese seed es el mismo que consulta el invitado, así que la comprobación de arriba no se salta: pregunta, le contestan que no existe, y rechaza el ingreso. El host se quedaba con un código de aspecto normal, lo repartía, y no entraba nadie, sin un solo error en su pantalla.
+
+**Alternativas:** relajar la comprobación del invitado para que no se crea el "no". Recrear la sala desde el cliente cuando el registro la haya olvidado. Sostener la sala sin registro. Persistir el registro y endurecer las dos operaciones.
+
+**Elección: persistir el registro y endurecer las dos.** Sin registro no se abre una sala ni se entra a ninguna, y se dice en el primer segundo.
+
+**Por qué persistir en vez de relajar.** Porque la política del producto es fallar rápido, y **fallar rápido exige que la autoridad sea confiable**. Un registro que olvida contesta "no existe" sobre salas que están abiertas, y endurecer encima de eso convierte una molestia en un muro. Relajar la comprobación devolvería el minuto de ruedita que la comprobación existe para eliminar.
+
+**Por qué no recrear la sala desde el cliente.** Reabriría la carrera que el fijado de la llave del host existe para cerrar, decisión 24. Lo que se arregla es que la entrada siga estando, no que se pueda recrear desde fuera.
+
+**Por qué no sostener la sala sin registro.** Es lo que parecía que pasaba y nunca pasó. La máquina del registro es también el punto de encuentro: viaja como par en la configuración del motor, así que sin ella el vestíbulo no se forma. La sala vive en las máquinas de sus miembros, y llegar a ellas no.
+
+Es una consecuencia aceptada y es una decisión de producto, dicha por su dueño: mejor fallar rápido que dejar que alguien se entere de que no va a funcionar después de mucho rato.
+
+**Lo que cuesta, y se acepta:**
+
+| Costo | Por qué se acepta |
+|---|---|
+| Con el seed caído no se puede jugar, y antes parecía que sí | Nunca se pudo. Lo que cambia es que ahora se dice, en un segundo y con un texto que explica qué hacer |
+| El seed escribe en disco, así que su unidad necesita un sitio donde escribir | `StateDirectory=kanpseed` con `DynamicUser=yes`. `ProtectSystem=strict` sigue dejando el resto del sistema en solo lectura |
+| Un fichero de estado más que puede corromperse | Se escribe entero y atómico, se valida entrada por entrada al cargar, y uno ilegible no impide arrancar |
+
+**Se avisa antes de que nadie invierta nada.** Las dos operaciones que descubren esto son las que alguien lanza después de elegir un juego y escribir ocho caracteres, así que el daemon sondea el registro por su cuenta y lo enseña en la portada con la pantalla todavía vacía. Es el mismo argumento de la decisión 32. La diferencia con aquella es qué hace el aviso: el del adaptador virtual cierra Kanpachi al aceptar, porque el almacén de drivers necesita que alguien toque la máquina; este no cierra nada, porque se cura solo en cuanto el registro vuelva.
+
+**Los dos fallos son códigos distintos**, `no_such_room` y `no_registry`, y esa separación es la mitad del valor. Con el primero hay que conseguir otro código y reintentar no sirve de nada; con el segundo el código puede estar perfecto y lo único que corresponde es esperar. Un solo texto para los dos manda a la mitad de la gente a hacer justo lo que no funciona.

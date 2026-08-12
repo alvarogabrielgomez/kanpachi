@@ -347,11 +347,38 @@ Entrar a una sala con un código inventado o vencido se descubría al final: se 
 
 Así que `JoinRoom` le pregunta primero al registro. La forma exacta de esa pregunta es lo que la hace segura:
 
-- **Solo un "no existe" detiene el ingreso.** El registro es solo presentación y que no conteste jamás puede impedir entrar a una sala, porque la sala vive en las máquinas de sus miembros. Sin red, con un 500, con un plazo vencido: se anota y se sigue. Confundir las dos mitades rompería la promesa en la dirección cara, que es un seed caído dejando a la gente sin entrar a salas abiertas.
-- Ese "no existe" viaja como centinela propio, `port.ErrUnknownRoom`, y es la única respuesta del registro que lo lleva.
+- **Sin respuesta del registro no se entra**, y las dos formas de parar dicen cosas distintas. Que el registro **afirme** que ese invite ID no existe viaja como centinela propio, `port.ErrUnknownRoom`, y llega al usuario como `no_such_room`: el código está mal o venció, y reintentar no cambia nada. Que el registro **no conteste** llega como `no_registry`: el código puede estar perfecto, y lo que corresponde es volver a intentarlo en un rato.
 - **Se comprueba antes que el seed sea el mismo.** Un invite ID solo significa algo en el registro que lo emitió: preguntarle a este por un código servido por otro devolvería "no existe" sobre una sala que existe perfectamente. Cuando no coinciden, la comprobación se salta y se entra como siempre.
 
 Medido: un código inexistente falla en **0,8 s** con el código `no_such_room`, sin arrancar el motor y sin escribir una sola regla.
+
+**Parar cuando no contesta es un cambio del 2026-08-12, y este documento decía lo contrario.** La versión anterior era: *"Solo un 'no existe' detiene el ingreso. El registro es solo presentación y que no conteste jamás puede impedir entrar a una sala, porque la sala vive en las máquinas de sus miembros"*. La segunda mitad sigue siendo cierta y la conclusión era falsa: **la máquina del registro es también el punto de encuentro**, y viaja como par en la configuración del motor. Sin ella el vestíbulo no se forma, así que seguir a ciegas costaba alrededor de un minuto de ruedita con una red virtual arriba, para terminar en un fallo genérico sobre una sala a la que nunca se iba a llegar.
+
+Es la política del producto, dicha por su dueño: mejor fallar rápido que dejar que alguien se entere de que no va a funcionar después de mucho rato. La misma razón por la que el adaptador virtual se sondea al arrancar el daemon en vez de descubrirse al abrir la primera sala.
+
+**Lo que esto exigió primero, y por eso no se pudo hacer antes:** que el "no" del registro sea confiable. Con el almacén en memoria y `Restart=always`, un reinicio le hacía contestar que no conoce salas abiertas y alcanzables. Endurecer esta comprobación encima de eso convertía una molestia en un muro, así que el registro persiste primero.
+
+### Sin registro no hay sala que abrir
+
+La otra mitad de lo mismo, y la que escondía un fallo más caro. `CreateRoom` pide un invite ID al registro, y cuando no contestaba **se generaba uno acá**, con el argumento de que crear una sala no debía depender de que un servidor estuviera vivo y de que lo único perdido era la página de invitación.
+
+Se siguió la cadena entera el 2026-08-12 y ese código no le sirve a nadie:
+
+1. Al no haber respuesta no hay forma de saber a qué registro pertenecería, así que el ID se emitía con el seed por defecto.
+2. Ese seed es **el mismo** que consulta el invitado, así que no se salta la comprobación de arriba: pregunta, le contestan que esa sala no existe, y rechaza el ingreso antes de arrancar el motor.
+3. El host se quedaba con un código de aspecto normal, lo repartía, y no entraba nadie. Sin ningún error en su pantalla.
+
+Así que crear **falla**, y falla antes de levantar el motor y antes de escribir una sola regla, con un mensaje que dice qué pasó y qué hacer. Los códigos los emite el registro, y uno inventado en la máquina del host no lo reconoce nadie.
+
+### El registro se comprueba antes de que nadie invierta nada
+
+Las dos cosas de arriba se descubren justo después de que alguien eligió un juego y escribió ocho caracteres. Eso se puede saber antes, con la pantalla todavía vacía, y es el mismo argumento que puso el sondeo del adaptador virtual en el arranque del daemon.
+
+`RoomDirectory.Reachable` pide `GET /healthz` y nada más. **No lleva invite ID a propósito:** preguntar por uno inventado ensuciaría el registro con consultas de salas que no existen, gastaría límite de tasa y mediría otra cosa. Lo sondea el barrido de alertas, que es el que ya sale a la red, y el resultado viaja como `seed_down` hasta el aviso de la portada.
+
+Va en el barrido **antes** del corte por vencimientos, y esa colocación importa: lo demás que se calcula ahí describe una sala, esto describe la máquina y vale igual sin ninguna sala abierta, que es justo cuando el aviso sirve.
+
+**No apaga Kanpachi, a diferencia del preflight del adaptador.** Son dos fallos con dos formas distintas: un almacén de drivers roto necesita que alguien toque la máquina, y un registro caído se arregla solo cuando vuelve. Cerrar la app por algo que se cura sin intervención sería quitarle a la persona la ventana donde va a ver que ya se curó.
 
 ### Salir de Kanpachi
 
@@ -855,7 +882,9 @@ Cuatro cosas de esa cadena tienen razón y no son detalle:
 
 **El fragmento sigue sin decidir a qué sala se entra.** `ParseRoom` lo descarta antes de mirar la forma, como siempre, y la clave se recorta aparte y solo sirve para descifrar la tarjeta. Una clave equivocada deja la vista genérica; jamás cambia el destino.
 
-**Dos casos no ofrecen el botón de entrar**, y son distintos: que el enlace no se entienda, porque lo mandó una web y puede traer cualquier cosa, y que el registro AFIRME que esa sala no existe. El segundo es un hecho, no un silencio: un registro que no contesta deja la sala como desconocida y el botón puesto, porque entrar no pasa por él.
+**Dos casos no ofrecen el botón de entrar**, y son distintos: que el enlace no se entienda, porque lo mandó una web y puede traer cualquier cosa, y que el registro AFIRME que esa sala no existe. Un registro que no contesta deja la sala como desconocida y el botón puesto.
+
+**Ese botón se queda aunque entrar sí dependa del registro**, y conviene decir por qué. Esta pantalla es una medición de un instante, y el registro puede estar de vuelta cuando la persona pulse. Quitarlo por un fallo de hace un momento sería tratar la ausencia de información como una respuesta, que es la distinción que sostiene todo el ingreso temprano. Si sigue caído, entrar lo dice en el primer segundo con su propio mensaje, y el aviso de la portada ya lo venía anunciando por su lado.
 
 ### Punto de extensión de identidad
 
@@ -872,14 +901,20 @@ type RendezvousProvider interface {
 
 `LocalDerivation` es la v1: Argon2id sobre el invite ID, sin red y sin preguntarle a nadie. Un proveedor remoto daría salas con identidad de encuentro rotativa sin tocar UI ni daemon.
 
-El registro del seed se consume por un puerto aparte, porque es opcional por diseño: entrar funciona sin él, lo que se pierde es la tarjeta de presentación.
+El registro del seed se consume por un puerto aparte, porque resuelve otra cosa: la identidad de encuentro se deriva en la máquina y el registro emite y guarda los invite IDs. Que sean dos puertos es lo que permite cambiar uno sin tocar el otro.
+
+**El puerto no es opcional, y este documento decía que sí.** La cabecera anterior era *"Solo presentación. Que falle no impide entrar a ninguna sala"*. La tarjeta sí es presentación; el registro no: los códigos los emite él, y su máquina es el punto de encuentro al que llegan host e invitado.
 
 ```go
-// Solo presentación. Que falle no impide entrar a ninguna sala.
+// El punto de encuentro. Sin él no se abre una sala ni se entra a ninguna.
 type RoomDirectory interface {
+    Seed() string
     Open(ctx context.Context, sealed []byte) (domain.Room, error)
     Lookup(ctx context.Context, id domain.InviteID) (sealed []byte, members int, err error)
     Publish(ctx context.Context, id domain.InviteID, sealed []byte) error
+    // Dice si CONTESTA, sin preguntarle por ninguna sala: no lleva invite ID,
+    // porque preguntar por uno inventado mediría otra cosa.
+    Reachable(ctx context.Context) error
 }
 ```
 
@@ -2112,7 +2147,9 @@ Y lo que Docker aportaba, systemd lo da igual o mejor:
 
 El tercero es el que más se gana: `Restart=always` solo actúa cuando el proceso MUERE, y un proceso vivo pero colgado se queda colgado para siempre. El registro late mientras se responda a sí mismo por HTTP, y dejar de latir es la señal. **Verificado con un `SIGSTOP`: systemd lo reinició a los 29 segundos**, con la ventana de 30. Eso hace innecesario el vigilante externo, que era un proceso más que podía caerse por su cuenta.
 
-El aislamiento también sale mejor, no peor: en Docker el registro corría como root dentro del contenedor, y con `DynamicUser=` corre como un usuario efímero sin casa, sin disco escribible y con `CapabilityBoundingSet` vacío.
+El aislamiento también sale mejor, no peor: en Docker el registro corría como root dentro del contenedor, y con `DynamicUser=` corre como un usuario efímero sin casa y con `CapabilityBoundingSet` vacío. `ProtectSystem=strict` le deja el sistema entero en solo lectura, y el único sitio donde escribe se lo abre `StateDirectory=kanpseed`, que es donde guarda las salas.
+
+**`StateDirectory=` con `DynamicUser=yes` es la combinación que hace que el dato sobreviva al UID.** El directorio real vive bajo `/var/lib/private/kanpseed`, systemd lo crea si falta y le ajusta el dueño en cada arranque, y le pasa la ruta al proceso en `STATE_DIRECTORY`. De ahí la lee `kanpseed serve`, así que la ruta no está escrita en dos sitios que se puedan desincronizar.
 
 **Lo que cuesta:** rompe la convención del droplet, donde todo lo demás vive en Docker. Es el único argumento real en contra.
 
@@ -2130,7 +2167,11 @@ El aislamiento también sale mejor, no peor: en Docker el registro corría como 
 
 **Límite de tasa de 30 peticiones por minuto y por IP.** Es la defensa que reemplazó a los 60 bits de entropía del diseño anterior: 40 bits son enumerables sin freno y seguros con freno. Lee `X-Forwarded-For`, lo cual solo es sensato porque el proceso vive detrás del proxy inverso del droplet. Exponerlo directo a internet permitiría falsificar esa cabecera y anular el límite entero.
 
-**Todo en memoria, sin base de datos y sin disco.** Reiniciar el registro cuesta que los invitados vean la tarjeta genérica hasta que el host vuelva a publicar, y jamás impide entrar, porque entrar no pasa por él.
+**Las salas sobreviven a un reinicio, y esa es la condición de todo lo demás.** Este párrafo decía lo contrario, textual: *"Todo en memoria, sin base de datos y sin disco. Reiniciar el registro cuesta que los invitados vean la tarjeta genérica hasta que el host vuelva a publicar, y jamás impide entrar, porque entrar no pasa por él"*. Las dos mitades eran falsas desde que existe la comprobación temprana del ingreso.
+
+Lo que pasaba de verdad: la unidad lleva `Restart=always`, así que un reinicio del proceso vaciaba el almacén, y a partir de ahí el registro contestaba **que no conoce salas abiertas y alcanzables**. El invitado se cree ese "no" y rechaza el ingreso. El host tampoco lo podía reponer, porque publicar actualiza y no crea, que es la regla que impide que quien se quedó con un código se apropie de la sala.
+
+Ahora el almacén se respalda en disco en los tres puntos donde cambia: al emitir un código, al publicar una tarjeta y cuando el barrido borra algo. Lo que eso exige está en el apartado siguiente.
 
 **Qué ve el seed:** invite IDs vivos, networkIDs de encuentro, llaves públicas de hosts, tarjetas que no puede descifrar, e IPs públicas de quienes están en cada red.
 
@@ -2138,7 +2179,22 @@ El aislamiento también sale mejor, no peor: en Docker el registro corría como 
 
 **Funciones en orden de frecuencia:** presentar endpoints entre miembros del mismo networkID, sincronizar el disparo del hole punch, resolver invite IDs, relevar paquetes cifrados como último recurso.
 
-El registro vive en memoria con TTL, sin base de datos y sin disco, salvo la llave fijada del host, que sobrevive semanas para que reabrir con el mismo invite ID siga siendo del host. Ver decisión 24.
+El registro vive con TTL: la tarjeta 6 horas y la llave fijada del host 21 días, para que reabrir con el mismo invite ID siga siendo del host. Ver decisión 24.
+
+### Cómo se guardan las salas, y qué se decidió no hacer
+
+El almacén sigue siendo el mapa en memoria. Lo que se agrega es un respaldo del mapa entero a un único `rooms.json`, sin base de datos, con este reparto:
+
+| Decisión | Por qué |
+|---|---|
+| **Un JSON versionado, no una base de datos** | Son decenas de salas con TTL de horas. Una base de datos agregaría un proceso, un esquema y migraciones para un dato que caduca solo. La versión viaja dentro para que un formato futuro se reconozca en vez de adivinarse; una desconocida se descarta entera, y el peor caso vuelve a ser el de antes |
+| **Se escribe entero, jamás por partes** | Temporal en el MISMO directorio, `chmod 0600`, `Sync`, `rename` encima. Es el único patrón que deja el fichero o entero o intacto. Un temporal en `/tmp` no serviría: cruzar sistemas de ficheros convierte el rename en copia |
+| **Se respalda con el lock del almacén SUELTO** | Es el punto que más importa y no es obvio. Escribir con el lock tomado dejaría parados `/healthz`, la resolución de invite IDs y la página mientras el disco contesta. Es el mismo fallo que ya obligó a sacar la derivación de Argon2id fuera del lock, donde encima se disfrazaba de proceso colgado, porque el vigilante late pidiendo `/healthz`. Publicar se partió en dos justo para esto: la foto se toma bajo lock y se escribe fuera |
+| **Se valida cada entrada al cargar** | Longitud de llave, tamaño de tarjeta, red, tiempos distintos de cero, fijado vivo, invite ID que parsea. Lo que no se sostiene se descarta, y lo demás entra |
+| **Un fichero ilegible no impide arrancar** | Un registro que no arranca es peor que uno con una sala menos, y el `BindsTo` de la unidad se llevaría el motor con él. Se dice fuerte en el diario y se sigue |
+| **Publicar sigue sin crear** | Lo que se arregla es que la entrada siga estando, no que se pueda recrear desde fuera. Crear reabriría la carrera que el fijado existe para cerrar, ver decisión 24 |
+
+El directorio lo elige `--state-dir`, que por defecto lee `STATE_DIRECTORY` del entorno. Sin ninguno de los dos el registro corre volátil, que es lo que usan los tests.
 
 ## Flujo de una conexión
 

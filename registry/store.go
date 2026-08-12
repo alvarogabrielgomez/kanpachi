@@ -13,6 +13,7 @@ package registry
 import (
 	"crypto/ed25519"
 	"errors"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -59,23 +60,30 @@ type Room struct {
 	PinUntil  time.Time
 }
 
-// Store guarda las salas vivas en memoria, sin base de datos y sin disco.
+// Store guarda las salas vivas, en memoria, y las respalda en disco cuando se le
+// da dónde.
 //
-// Que sea volátil es una elección, no una limitación: una sala muere cuando se
-// va el último, así que persistir su tarjeta solo alargaría la vida de un dato
-// que ya no describe nada. Reiniciar el registro **jamás impide entrar**, porque
-// entrar no pasa por acá.
+// # Por qué el disco, si una sala muere cuando se va el último
 //
-// # Lo que cuesta reiniciar, dicho con precisión
+// Esta cabecera decía que ser volátil era una elección y que **reiniciar el
+// registro jamás impide entrar, porque entrar no pasa por acá**. Eso fue cierto
+// hasta que existió `checkRoomExists`: hoy el invitado le pregunta al registro
+// antes de levantar nada y **se cree el "no"**. Con el almacén en RAM y la unidad
+// en `Restart=always`, cualquier reinicio contestaba que no conoce salas que
+// están abiertas y alcanzables, y dejaba fuera a todos sus invitados.
 //
-// Los invitados ven la tarjeta genérica, y **el host no la puede reponer solo**:
-// [Store.Publish] exige que la entrada exista, así que tras un reinicio contesta
-// que no conoce la sala. El host la recupera renovando el código, que pide un
-// invite ID nuevo y vuelve a fijar su llave.
+// El host tampoco lo podía reponer: [Store.Publish] exige que la entrada exista,
+// y **no debe crear**, porque crear reabriría la carrera que el fijado existe
+// para cerrar, o sea que quien se quedó con el código llegaría primero. El único
+// arreglo desde el producto era renovar el código, que mata los enlaces ya
+// repartidos.
 //
-// Decir "hasta que el host vuelva a publicar" era falso y estuvo escrito acá:
-// publicar no crea. Y no debe crear, porque eso reabriría la carrera que el
-// fijado existe para cerrar: quien se quedó con el código llegaría primero.
+// Persistir es lo que hace que su "no" signifique lo que dice, y eso es la
+// condición de la política de fallar rápido. Ver la cabecera de `persist.go`.
+//
+// # Lo que sigue igual
+//
+// `Publish` no crea. Lo que se arregla es que la entrada siga estando.
 type Store struct {
 	mu    sync.RWMutex
 	rooms map[string]*Room
@@ -83,10 +91,17 @@ type Store struct {
 	// nuevoID se inyecta para poder probar la emisión y el agotamiento sin
 	// depender de la aleatoriedad real.
 	nuevoID func() (domain.InviteID, error)
+
+	// disco es nil en un registro volátil, que es lo que usan los tests y
+	// `kanpseed serve` sin directorio de estado. Ver [Store.respaldar].
+	disco *keeper
+	// avisar cuenta lo que sale mal al escribir. Nil se traga los fallos en
+	// silencio, y por eso el servidor de verdad siempre le pasa uno.
+	avisar func(error)
 }
 
-// NewStore construye un registro vacío. ahora y nuevoID pueden ser nil, y en
-// ese caso se usan el reloj real y la aleatoriedad real.
+// NewStore construye un registro vacío y VOLÁTIL. ahora y nuevoID pueden ser
+// nil, y en ese caso se usan el reloj real y la aleatoriedad real.
 func NewStore(ahora func() time.Time, nuevoID func() (domain.InviteID, error)) *Store {
 	if ahora == nil {
 		ahora = time.Now
@@ -95,6 +110,57 @@ func NewStore(ahora func() time.Time, nuevoID func() (domain.InviteID, error)) *
 		nuevoID = randomInviteID
 	}
 	return &Store{rooms: map[string]*Room{}, ahora: ahora, nuevoID: nuevoID}
+}
+
+// OpenStore construye un registro respaldado por `dir`, cargando lo que haya.
+//
+// Devuelve cuántas entradas se cargaron y cuántas se descartaron por no
+// sostenerse, que es lo que el arranque anota. Un fichero ilegible NO impide
+// arrancar: se dice y se sigue con el registro vacío, porque un registro que no
+// arranca es peor que uno con una sala menos.
+//
+// `avisar` recibe los fallos de escritura posteriores. Se inyecta porque este
+// paquete no tiene logger propio y no va a tenerlo: quien sabe adónde va una
+// línea es el binario.
+func OpenStore(dir string, avisar func(error)) (*Store, int, int, error) {
+	s := NewStore(nil, nil)
+	s.disco = &keeper{path: filepath.Join(dir, stateFile)}
+	s.avisar = avisar
+
+	rooms, descartadas, err := s.disco.load(s.ahora())
+	if err != nil {
+		// Se arranca igual, con el registro vacío. Quien llama decide qué tan
+		// fuerte lo dice.
+		return s, 0, descartadas, err
+	}
+	s.rooms = rooms
+	return s, len(rooms), descartadas, nil
+}
+
+// respaldar vuelca el estado a disco. **Se llama con el lock SUELTO, siempre.**
+//
+// Escribir con el lock del almacén tomado dejaría parados `/healthz`, la
+// resolución de invite IDs y la página mientras el disco contesta. Es el mismo
+// fallo que ya obligó a sacar la derivación de Argon2id fuera del lock, y ahí
+// además se disfrazaba de proceso colgado porque el watchdog late pidiendo
+// `/healthz`. Ver [redDeEncuentro].
+//
+// El snapshot se toma bajo lectura y la escritura la serializa el mutex propio
+// del keeper, así que dos mutaciones a la vez no se pisan el fichero.
+func (s *Store) respaldar() {
+	if s.disco == nil {
+		return
+	}
+	s.mu.RLock()
+	copia := make(map[string]*Room, len(s.rooms))
+	for k, r := range s.rooms {
+		copia[k] = r
+	}
+	s.mu.RUnlock()
+
+	if err := s.disco.save(copia); err != nil && s.avisar != nil {
+		s.avisar(err)
+	}
 }
 
 // Issue emite un invite ID libre y lo fija a la llave del host.
@@ -129,6 +195,8 @@ func (s *Store) Issue(hostKey ed25519.PublicKey, card, sig []byte) (domain.Invit
 		// sin bloquear a nadie, y sale barato.
 		red := redDeEncuentro(id)
 		if s.insertar(id, hostKey, card, red) {
+			// Fuera del lock que `insertar` acaba de soltar. Ver [Store.respaldar].
+			s.respaldar()
 			return id, nil
 		}
 	}
@@ -209,6 +277,17 @@ func (s *Store) Publish(id domain.InviteID, hostKey ed25519.PublicKey, card, sig
 		return ErrBadSig
 	}
 
+	if err := s.publicarBajoLock(id, hostKey, card); err != nil {
+		return err
+	}
+	// Fuera del lock, y solo cuando algo cambió de verdad. Ver [Store.respaldar].
+	s.respaldar()
+	return nil
+}
+
+// publicarBajoLock es el cuerpo de [Store.Publish]. Va aparte para que el
+// respaldo a disco ocurra con el lock ya soltado.
+func (s *Store) publicarBajoLock(id domain.InviteID, hostKey ed25519.PublicKey, card []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.limpiar()
@@ -261,10 +340,19 @@ func (s *Store) Networks() []string {
 }
 
 // Sweep descarta lo que ya no le pertenece a nadie. Se llama desde un ticker.
+//
+// Solo respalda cuando borró algo. El barrido corre a menudo y casi siempre no
+// encuentra nada, así que escribir el fichero en cada vuelta sería un disco
+// ocupado para dejarlo igual que estaba.
 func (s *Store) Sweep() int {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.limpiar()
+	n := s.limpiar()
+	s.mu.Unlock()
+
+	if n > 0 {
+		s.respaldar()
+	}
+	return n
 }
 
 // limpiar exige el lock tomado. Solo borra cuando el FIJADO expiró: mientras

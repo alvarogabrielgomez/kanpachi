@@ -41,6 +41,40 @@ func recargarConHUP(ctx context.Context, page *registry.Page) {
 	}
 }
 
+// abrirRegistro construye el almacén, con respaldo en disco si hay dónde.
+//
+// # Por qué un fichero ilegible no impide arrancar
+//
+// Porque un registro que no arranca es peor que uno con una sala menos. Sin
+// registro no se resuelve ningún código, no se sirve la página y el motor se
+// para con él por el `BindsTo` de la unidad. Con el fichero descartado se
+// pierden las salas guardadas, que es exactamente el estado que había antes de
+// que esto existiera.
+//
+// Se dice fuerte igualmente: es la única señal de que alguien va a llamar
+// diciendo que su código dejó de valer.
+func abrirRegistro(dir string) (*registry.Store, error) {
+	if dir == "" {
+		log.Print("kanpseed: sin directorio de estado, el registro de salas NO sobrevive a un reinicio")
+		return registry.NewStore(nil, nil), nil
+	}
+
+	avisar := func(err error) {
+		log.Printf("kanpseed: no se pudo respaldar el registro de salas: %v", err)
+	}
+	store, cargadas, descartadas, err := registry.OpenStore(dir, avisar)
+	if err != nil {
+		log.Printf("kanpseed: el registro guardado no se pudo leer, se arranca vacío "+
+			"y las salas abiertas van a dejar de resolver: %v", err)
+		return store, nil
+	}
+	if descartadas > 0 {
+		log.Printf("kanpseed: %d entradas del registro guardado se descartaron por no sostenerse", descartadas)
+	}
+	log.Printf("kanpseed: registro de salas cargado desde %s, %d salas", dir, cargadas)
+	return store, nil
+}
+
 // cmdServe es lo que arranca systemd. No está pensado para invocarse a mano,
 // y por eso sus valores por defecto salen de la configuración instalada en vez
 // de ser constantes: así `kanpseed serve` a secas hace lo correcto en una
@@ -60,6 +94,12 @@ func cmdServe(args []string) error {
 	cli := fs.String("easytier-cli", setup.DirLib+"/easytier-cli", "ruta al binario easytier-cli")
 	portal := fs.String("rpc-portal", fmt.Sprintf("127.0.0.1:%d", cfg.PuertoRPC), "portal RPC de easytier-core")
 	cada := fs.Duration("poll", 3*time.Second, "cada cuánto se refresca el contador de miembros")
+	// Vacío significa registro volátil, que es el comportamiento de antes. La
+	// unidad lo llena con `StateDirectory=`, y systemd exporta esa ruta en
+	// `STATE_DIRECTORY`, así que no hay una ruta escrita en dos sitios que se
+	// puedan desincronizar.
+	estado := fs.String("state-dir", os.Getenv("STATE_DIRECTORY"),
+		"directorio donde el registro de salas sobrevive a los reinicios")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -69,7 +109,10 @@ func cmdServe(args []string) error {
 		return err
 	}
 
-	store := registry.NewStore(nil, nil)
+	store, err := abrirRegistro(*estado)
+	if err != nil {
+		return err
+	}
 	counter := registry.NewCounter(*cli, *portal)
 	srv := &http.Server{
 		Addr:              *addr,

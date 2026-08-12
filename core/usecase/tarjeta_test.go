@@ -144,27 +144,27 @@ func TestUnaSalaGuardadaSinTarjetaNoLlamaAlRegistro(t *testing.T) {
 	}
 }
 
-// Crear SIN registro no guarda ninguna tarjeta.
+// Crear SIN registro no deja NADA guardado.
 //
-// Es la segunda invariante del par: solo se persiste una tarjeta que el registro
-// ACEPTÓ. La del respaldo se selló acá y nadie la recibió, así que guardarla
-// haría que cada reapertura intentara republicar algo que del otro lado no
-// existe.
-func TestCrearSinRegistroNoGuardaTarjeta(t *testing.T) {
+// Es la segunda invariante del par: solo se persiste una sala que el registro
+// aceptó. Antes esto comprobaba algo más flojo, que la tarjeta del respaldo no
+// se guardara, porque crear sin registro producía una sala con un código
+// generado en esta máquina. Ese camino ya no existe: sin registro no hay sala,
+// así que tampoco hay nada que escribir en disco.
+//
+// Lo que sigue protegiendo es lo mismo de siempre, y por eso vale conservarlo:
+// una sala guardada se reabre sola al arrancar, y guardar una que el registro
+// nunca conoció haría que cada reapertura intentara republicar algo que del otro
+// lado no existe.
+func TestCrearSinRegistroNoGuardaNada(t *testing.T) {
 	b := nuevoBanco(t)
 	b.registro.err = errors.New("el registro no está")
 
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
-		t.Fatal(err)
+	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); !errors.Is(err, ErrNoRegistry) {
+		t.Fatalf("sin registro se creó la sala, o falló por otra cosa: %v", err)
 	}
-	guardada := loGuardado(t, b)
-	if len(guardada.Card) != 0 {
-		t.Errorf("se guardó una tarjeta de %d bytes que el registro nunca aceptó", len(guardada.Card))
-	}
-	// Y la clave sí se guarda, porque el enlace se arma igual: la tarjeta viaja
-	// cifrada con ella el día que el registro vuelva y alguien renombre.
-	if guardada.CardKey == ([domain.CardKeyLen]byte{}) {
-		t.Error("no se guardó la clave de la tarjeta")
+	if raw, err := b.estado.LoadRoom(); err == nil && len(raw) > 0 {
+		t.Errorf("quedó una sala guardada de %d bytes que el registro nunca conoció", len(raw))
 	}
 }
 

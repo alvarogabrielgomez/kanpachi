@@ -183,6 +183,19 @@ func (d *Directory) Publish(ctx context.Context, id domain.InviteID, sealed []by
 	return d.do(ctx, http.MethodPut, "/api/i/"+id.Raw(), cuerpo, nil, http.StatusNoContent)
 }
 
+// Reachable asks the registry whether it is answering at all.
+//
+// `/healthz` and not any of the room endpoints, on purpose: it carries no
+// invite ID, so it cannot be confused with asking about a room, and it is the
+// same endpoint the registry's own watchdog uses to decide it is alive. See
+// [port.RoomDirectory.Reachable].
+//
+// The body is discarded and only the status is read. What matters is that
+// something on the other side spoke HTTP.
+func (d *Directory) Reachable(ctx context.Context) error {
+	return d.do(ctx, http.MethodGet, "/healthz", nil, nil, http.StatusOK)
+}
+
 // firmar signs the sealed card with this installation's key.
 //
 // The signature is over the RAW bytes of the sealed blob, which is what the

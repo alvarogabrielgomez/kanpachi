@@ -251,6 +251,13 @@ enum FailureCode {
   /// El registro contestó que ese código no existe.
   noSuchRoom('no_such_room'),
 
+  /// El registro no contestó nada, así que no se pudo abrir ni entrar.
+  ///
+  /// Es el hermano de [noSuchRoom] y son dos códigos a propósito: allá hay
+  /// respuesta y el código está mal, acá no hay respuesta y el código puede
+  /// estar perfecto. Lo que hay que hacer es lo contrario en cada caso.
+  noRegistry('no_registry'),
+
   /// El usuario canceló la operación mientras corría.
   canceled('canceled'),
 

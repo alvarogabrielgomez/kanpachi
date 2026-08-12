@@ -495,19 +495,44 @@ type RendezvousProvider interface {
 //
 // # Por qué es un centinela y no un error más
 //
-// Porque es la única respuesta del registro que un caso de uso tiene derecho a
-// creerse. Todo lo demás que puede salir mal —que no haya red, que el servidor
-// devuelva 500, que venza el plazo— es ausencia de información, y este puerto
-// es presentación: ante la duda se sigue adelante. Un "no existe" es distinto,
-// es el registro contestando, y es lo que permite parar en el primer segundo en
-// vez de al final de un minuto esperando en un vestíbulo vacío.
+// Porque es la única respuesta del registro que AFIRMA algo. Todo lo demás que
+// puede salir mal —que no haya red, que el servidor devuelva 500, que venza el
+// plazo— es ausencia de información. Hoy las dos paran el ingreso, así que la
+// distinción ya no está en si se sigue: está en qué se le dice a quien esperaba
+// jugar, y en si insistir tiene sentido.
 //
-// Confundir los dos es lo que rompería la promesa de este puerto: un seed caído
-// impediría entrar a salas que están abiertas.
+//	"no existe"    → el código está mal o venció. Volver a intentarlo no cambia
+//	                 nada, hay que pedir uno nuevo.
+//	no contestó    → el registro está caído. El código puede estar perfecto, y
+//	                 lo que corresponde es reintentar en un rato.
+//
+// Confundirlos manda a la persona a hacer justo lo contrario de lo que sirve.
+//
+// # Lo que cambió, y por qué se pudo cambiar
+//
+// Antes esto era el único fallo que detenía a `JoinRoom`, con el argumento de
+// que el registro es presentación y la sala vive en las máquinas de sus
+// miembros. La segunda mitad sigue siendo cierta y la conclusión era falsa: la
+// máquina del registro es la MISMA que hace de punto de encuentro, así que sin
+// ella el vestíbulo no se forma. Ver `Session.checkRoomExists`.
+//
+// Eso exige que el "no" sea confiable, y por eso el registro persiste sus salas
+// en disco antes que esto endureciera. Ver la cabecera de `registry/persist.go`.
 var ErrUnknownRoom = errors.New("el registro no conoce esa sala")
 
-// RoomDirectory es el registro del seed, y es SOLO PRESENTACIÓN. Que falle no
-// impide entrar a ninguna sala: lo que se pierde es la tarjeta.
+// RoomDirectory es el registro del seed, y es EL PUNTO DE ENCUENTRO. Sin él no
+// se abre una sala ni se entra a ninguna.
+//
+// # Por qué esto no es "solo presentación", que es lo que decía acá
+//
+// Porque la tarjeta es lo de menos. La misma máquina que sirve este registro es
+// la que viaja como par en la configuración del motor, o sea el sitio al que
+// llegan el host y el invitado para encontrarse. Y los invite IDs los emite
+// este registro: un código inventado en el cliente no lo reconoce nadie, ni
+// siquiera el invitado que lo pegue. Ver `Session.publishCard`.
+//
+// De ahí que crear y entrar fallen rápido cuando no contesta, y que exista
+// [RoomDirectory.Reachable] para saberlo antes de que alguien invierta nada.
 //
 // Recibe y devuelve la tarjeta CIFRADA, en bytes opacos. El cifrado ocurre en
 // el dominio, con [domain.SealRoomCard], y la clave se queda en la máquina del
@@ -556,6 +581,23 @@ type RoomDirectory interface {
 	// de la tarjeta se deriva del enlace, así que cualquiera que lo recibió
 	// puede fabricar una tarjeta que la página descifra.
 	Publish(ctx context.Context, id domain.InviteID, sealed []byte) error
+	// Reachable dice si el registro CONTESTA, sin preguntarle por ninguna sala.
+	//
+	// # Por qué hace falta preguntarlo aparte
+	//
+	// Porque desde que crear y entrar fallan rápido sin registro, no tenerlo es
+	// la diferencia entre poder usar Kanpachi y no poder. Y las dos operaciones
+	// que lo descubren son justo las que la persona lanza DESPUÉS de elegir un
+	// juego y escribir ocho caracteres. Esto se puede saber antes, con la
+	// pantalla todavía vacía.
+	//
+	// # Qué NO es
+	//
+	// No es un sondeo de salas y no lleva ningún invite ID: preguntar por uno
+	// inventado ensuciaría el registro y mediría otra cosa. Un error acá
+	// significa "no contesta" y nunca "esa sala no existe", que es la
+	// distinción que sostiene [ErrUnknownRoom].
+	Reachable(ctx context.Context) error
 }
 
 // ControlChannel es el canal de la sala de la decisión 23.

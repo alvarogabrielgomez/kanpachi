@@ -213,16 +213,32 @@ func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName
 // unicidad es él, así que emitir evita el ida y vuelta de proponer y ser
 // rechazado.
 //
-// Que el registro no conteste NO impide crear la sala. Es solo presentación:
-// lo que se pierde es que la página muestre el nombre de la sala y quién se
-// identifica como host, y lo que se gana al seguir sin él es que crear una
-// sala no dependa de que un servidor esté vivo. En ese caso el ID se genera
-// acá, con el mismo alfabeto, y la sala funciona igual.
+// # Sin registro no hay sala, y antes sí la había
 //
-// Devuelve también el blob SELLADO, y solo cuando el registro lo aceptó. Con el
-// respaldo devuelve nada: ese invite ID no lo emitió el registro, así que no
-// tiene ninguna tarjeta suya que restaurar, y guardar una haría que cada
-// reapertura intentara republicarla y se llevara un "esa sala no existe".
+// Esto decía que el registro no contestara NO impedía crear la sala, y que lo
+// único que se perdía era la página de invitación. **Era falso**, y se verificó
+// siguiendo la cadena entera el 2026-08-12:
+//
+//  1. Sin respuesta, el ID se generaba acá, con `Seed: DefaultSeedHost` porque
+//     no hay forma de saber a qué registro pertenecería.
+//  2. Ese seed es EL MISMO que consulta el invitado, así que no se salta la
+//     comprobación: `checkRoomExists` pregunta, le contestan que no existe, y
+//     rechaza el ingreso antes de arrancar el motor.
+//  3. El host se quedaba con un código de aspecto normal, lo repartía, y no
+//     entraba nadie.
+//
+// El propio comentario de acá ya rozaba el problema al explicar por qué no se
+// guardaba tarjeta con el respaldo: *"cada reapertura intentaría republicarla y
+// se llevaría un esa sala no existe"*. Lo que no se siguió es que al invitado le
+// pasa lo mismo y encima antes.
+//
+// Así que ahora **falla**, y falla acá, que es antes de levantar el motor y
+// antes de escribir una sola regla. Es la política del producto: mejor decirlo
+// en el primer segundo que dejar que alguien reparta un código muerto. La misma
+// razón por la que el adaptador virtual se sondea al arrancar el daemon.
+//
+// Devuelve también el blob SELLADO, que ahora siempre es el que el registro
+// aceptó.
 func (s *Session) publishCard(ctx context.Context, nick domain.Nickname, roomName string) (domain.Room, [domain.CardKeyLen]byte, []byte, error) {
 	var key [domain.CardKeyLen]byte
 
@@ -236,17 +252,12 @@ func (s *Session) publishCard(ctx context.Context, nick domain.Nickname, roomNam
 	s.deps.Progress.Stepf(domain.ScopeSeed, "pidiéndole un código al registro (%s)", domain.DefaultSeedHost)
 	room, err := s.deps.Directory.Open(ctx, sealed)
 	if err != nil {
-		s.deps.Log.Warn("el registro del seed no respondió, la sala va sin tarjeta", "error", err)
-		s.deps.Progress.Stepf(domain.ScopeSeed, "el registro no contestó (%v), se sigue con un código local", err)
-		id, err := domain.NewInviteID(s.deps.Rand)
-		if err != nil {
-			return domain.Room{}, key, nil, fmt.Errorf("generando un código sin registro: %w", err)
-		}
-		s.deps.Progress.Stepf(domain.ScopeDaemon, "código generado aquí: %s, sin tarjeta ni página de invitación", id)
-		// Sin registro que conteste no hay forma de saber a qué seed pertenece
-		// el código, y el por defecto es el único que el otro lado va a probar
-		// con un ID pelado.
-		return domain.Room{InviteID: id, Seed: domain.DefaultSeedHost}, key, nil, nil
+		s.deps.Log.Error("el registro no contestó, así que no se abre la sala", "error", err)
+		s.deps.Progress.Stepf(domain.ScopeSeed, "el registro no contestó (%v)", err)
+		return domain.Room{}, key, nil, fmt.Errorf("%w: %v.\n\n"+
+			"Sin él no hay código que repartir: los códigos los emite el registro, y uno "+
+			"generado acá no le serviría a nadie para entrar.\n\n"+
+			"Qué hacer: vuelve a intentarlo en un momento", ErrNoRegistry, err)
 	}
 	s.deps.Progress.Stepf(domain.ScopeSeed, "código reservado: %s", room.InviteID)
 	return room, key, sealed, nil

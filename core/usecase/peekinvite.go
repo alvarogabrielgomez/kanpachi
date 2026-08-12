@@ -17,8 +17,17 @@ import (
 // se decide después, siempre.
 //
 // Todos los campos salvo [InvitePreview.Room] pueden venir vacíos, y ninguno
-// impide entrar. La tarjeta es presentación, y el registro puede estar caído:
-// entrar a una sala no pasa por él.
+// impide entrar. La tarjeta es presentación, y esta pantalla no decide nada:
+// quien decide es `JoinRoom`, cuando alguien pulsa.
+//
+// **Que el registro no conteste acá tampoco quita el botón**, y ahora que
+// entrar exige registro conviene decir por qué. Esto es UNA medición de un
+// instante, y el registro puede estar de vuelta cuando la persona pulse. Quitar
+// el botón por un fallo de hace un momento sería tratar la ausencia de
+// información como una respuesta, que es justo lo que [InvitePreview.Unknown]
+// existe para distinguir. Si sigue caído, `JoinRoom` lo dice en el primer
+// segundo con el mensaje correcto, y el aviso de la portada ya lo venía
+// anunciando por su lado.
 type InvitePreview struct {
 	// Room es el invite ID y su seed, ya validados. Es lo único garantizado.
 	Room domain.Room
@@ -60,8 +69,11 @@ func (s *Session) PeekInvite(ctx context.Context, link string) (InvitePreview, e
 	}
 	out := InvitePreview{Room: room}
 
-	// El registro de esta app sirve UN seed. Un enlace de otro se acepta igual
-	// —entrar no pasa por el registro— y lo único que se pierde es la tarjeta.
+	// El registro de esta app sirve UN seed. Un enlace de otro se acepta igual y
+	// lo único que se pierde es la tarjeta: un invite ID solo significa algo en
+	// el registro que lo emitió, así que preguntarle a este por un código de
+	// otro daría "no existe" sobre una sala que existe. Es la misma excepción
+	// que conserva `checkRoomExists`.
 	if room.Seed != s.deps.Directory.Seed() {
 		s.deps.Log.Info("el enlace apunta a otro registro, se enseña sin tarjeta",
 			"seed", room.Seed, "nuestro", s.deps.Directory.Seed())

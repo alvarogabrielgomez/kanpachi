@@ -96,6 +96,15 @@ type RoomView struct {
 	// La sala sigue funcionando para los que están dentro; lo que se rompió es
 	// que entre alguien nuevo. Lo cierra renovar el código.
 	CodeLost bool `json:"code_lost"`
+
+	// SeedDown es que el registro NO CONTESTA. Es el hermano transitorio de
+	// CodeLost y viaja aparte por lo mismo que allá arriba: uno se arregla solo
+	// y el otro no se arregla nunca.
+	//
+	// Importa desde que crear y entrar fallan rápido sin registro: con esto en
+	// cierto, los dos botones van a fallar, y la pantalla puede decirlo antes de
+	// que alguien escriba un código.
+	SeedDown bool `json:"seed_down"`
 }
 
 // InviteView es lo que trajo un enlace `kanpachi://`, ya resuelto.
@@ -177,6 +186,7 @@ func roomView(st domain.RoomState, missing string, now time.Time) RoomView {
 		Alerts:   make([]AlertView, 0, len(st.Alerts)),
 		LastExit: exitName(st.LastExit),
 		CodeLost: st.CodeLost,
+		SeedDown: st.SeedDown,
 	}
 	if !st.Room.InviteID.IsZero() {
 		v.Code = st.Room.InviteID.String()

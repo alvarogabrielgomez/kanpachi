@@ -68,9 +68,15 @@ var (
 // RoomCard es la tarjeta de presentación de una sala.
 //
 // Es SOLO presentación: quién se identifica como host y cómo se llama la sala.
-// Que no llegue no impide entrar, porque entrar no pasa por el registro. Lo
-// único que se pierde es que la página muestre algo mejor que "una sala de
-// Kanpachi".
+// Que no llegue no impide entrar, y lo único que se pierde es que la página
+// muestre algo mejor que "una sala de Kanpachi".
+//
+// **Ojo con la lectura fácil de eso.** Que la tarjeta sea prescindible no hace
+// prescindible al registro: sin registro no se entra a ninguna sala, ver la
+// cabecera de `RoomDirectory` en core/port. Falta tarjeta también con el
+// registro perfectamente
+// vivo, por un código dictado por teléfono, un enlace sin fragmento o un seed
+// ajeno, y esos son los casos que este párrafo describe.
 //
 // El seed guarda esto CIFRADO y no puede leerlo: la clave viaja en el
 // fragmento de la URL, que el navegador no manda al servidor. Ver decisión 17.

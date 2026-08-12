@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/netip"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -198,6 +199,29 @@ type Engine struct {
 	// campo dice.
 	lastLobby *request
 
+	// tunFail late cerrado cuando el motor reportó que un adaptador virtual
+	// FALLÓ, y tunFailMsg lleva su motivo.
+	//
+	// # El fallo que esto corta, medido
+	//
+	// El motor emite `TunDeviceError` con la causa exacta en el primer segundo
+	// —`Could not install driver ... (0x000000CB)` en la máquina de un invitado
+	// el 2026-08-11— y [Engine.awaitAddress] se quedaba los treinta segundos
+	// enteros mirando una dirección que no iba a llegar, para terminar en un
+	// mensaje sobre direcciones. El pestillo es lo que deja que la espera se
+	// corte con la causa de verdad.
+	//
+	// # Por qué es un PESTILLO y no un canal de paso
+	//
+	// Porque el evento puede llegar ANTES de que la espera empiece: entre la
+	// respuesta a la orden de arranque y el primer sondeo hay una ventana, y en
+	// el caso medido el fallo cayó dentro. Un canal cerrado se observa después
+	// de cerrado; un mensaje mandado a nadie se pierde. Se rearma en cada orden
+	// de arranque, bajo `mu`, para que el fallo de un intento anterior no mate
+	// el intento nuevo.
+	tunFail    chan struct{}
+	tunFailMsg string
+
 	// preflightRan y preflightErr recuerdan el sondeo de la máquina.
 	//
 	// Se guarda el resultado, y el fallo TAMBIÉN, porque las dos respuestas son
@@ -270,9 +294,55 @@ func New(deps Deps) (*Engine, error) {
 		deps:       deps,
 		pending:    map[uint64]chan response{},
 		events:     make(chan domain.EngineEvent, 32),
+		tunFail:    make(chan struct{}),
 		procCtx:    ctx,
 		procCancel: cancel,
 	}, nil
+}
+
+// tunFailPrefix es cómo empieza el motivo del evento con el que el motor cuenta
+// que un adaptador virtual falló.
+//
+// Es la otra mitad de un contrato entre repos: la cadena la arma `pump` en
+// `kanpachi-engine/src/engine.rs`, sobre `TunDeviceError`. Casar por prefijo y
+// no por igualdad deja que el motor añada detalle detrás sin romper esto, y el
+// coste de que la cadena cambie entera es volver al comportamiento de antes,
+// esperar el plazo completo: peor mensaje, jamás un fallo nuevo.
+const tunFailPrefix = "the virtual adapter failed"
+
+// armTunLatch deja el pestillo listo para el intento que empieza.
+func (e *Engine) armTunLatch() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.tunFail = make(chan struct{})
+	e.tunFailMsg = ""
+}
+
+// tunFailed cierra el pestillo, una sola vez por armado.
+func (e *Engine) tunFailed(reason string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	select {
+	case <-e.tunFail:
+		// Ya estaba cerrado: se conserva el PRIMER motivo, que es el del fallo
+		// original y no el de un eco posterior.
+	default:
+		e.tunFailMsg = reason
+		close(e.tunFail)
+	}
+}
+
+// tunFailState devuelve el canal y el motivo actuales, para observarlos sin
+// carreras con el rearmado.
+func (e *Engine) tunFailState() (<-chan struct{}, func() string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	ch := e.tunFail
+	return ch, func() string {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		return e.tunFailMsg
+	}
 }
 
 func resolveWithNet(host string) ([]netip.Addr, error) {
@@ -472,6 +542,12 @@ func (e *Engine) read(p child) {
 				e.warn("evento del motor descartado", "error", err)
 				continue
 			}
+			// El pestillo va ANTES de emitir, y aunque el búfer esté lleno: la
+			// espera del adaptador tiene que cortarse aunque el supervisor vaya
+			// atrasado leyendo eventos.
+			if kind == domain.EngineDisconnected && strings.HasPrefix(in.Reason, tunFailPrefix) {
+				e.tunFailed(in.Reason)
+			}
 			// Si el búfer está lleno se descarta, y no se bloquea el lector:
 			// bloquearlo dejaría de repartir también las RESPUESTAS, y con eso
 			// la sala entera se cuelga por un aviso.
@@ -606,6 +682,9 @@ func (e *Engine) HostNetwork(ctx context.Context, spec domain.HostSpec) error {
 	if err != nil {
 		return err
 	}
+	// Antes de mandar la orden, no antes de esperar: el fallo del adaptador
+	// puede llegar entre la respuesta y el primer sondeo. Ver [Engine.tunFail].
+	e.armTunLatch()
 	if err := e.startCall(ctx, func(id uint64) request { return hostRequest(id, spec, uris, e.deps.LogDir) }); err != nil {
 		return err
 	}
@@ -624,6 +703,11 @@ func (e *Engine) JoinRendezvous(ctx context.Context, spec domain.RendezvousSpec)
 	if err != nil {
 		return err
 	}
+	// Antes de mandar la orden, no antes de esperar. Ver [Engine.tunFail]. Este
+	// es además el camino donde el pestillo pagó su costo de entrada: para un
+	// invitado el vestíbulo es la PRIMERA orden, y su fallo era el que se
+	// tiraba.
+	e.armTunLatch()
 	if _, err := e.call(ctx, func(id uint64) request { return lobbyRequest(id, spec, uris, e.deps.LogDir) }); err != nil {
 		return err
 	}
@@ -641,14 +725,42 @@ func (e *Engine) JoinRendezvous(ctx context.Context, spec domain.RendezvousSpec)
 //
 // El aviso vale porque una sala que tarda quince segundos en abrir y una que
 // falla se ven igual desde fuera mientras pasa.
+//
+// # La espera se corta si el motor ya dijo por qué no va a llegar
+//
+// El sondeo de direcciones solo puede distinguir "todavía no" de "nunca"
+// agotando el plazo. El motor sí lo sabe antes: cuando wintun no puede crear el
+// adaptador emite `TunDeviceError` con la causa exacta en el primer segundo, y
+// esperar los treinta enteros para contestar con un mensaje sobre direcciones
+// es justo lo que costó dos días de diagnóstico el 2026-08-11. Ver
+// [Engine.tunFail].
 func (e *Engine) awaitAddress(ctx context.Context, adapter string, want netip.Addr) error {
 	inicio := time.Now()
 	// Antes de esperar y no después: es el paso más largo de crear una sala, y
 	// anotarlo al terminar dejaría la pantalla quieta justo mientras dura.
 	e.deps.Progress.Step(domain.ScopeEngine,
 		fmt.Sprintf("esperando a que %s tome la dirección %s", adapter, want))
-	if err := waitForAddress(ctx, e.deps.Addrs, adapter, want, AddressDeadline); err != nil {
-		return fmt.Errorf("la red arrancó y el adaptador no quedó utilizable: %w", err)
+
+	fallo, motivo := e.tunFailState()
+	ctxEspera, cancelar := context.WithCancel(ctx)
+	defer cancelar()
+	// La goroutine muere sola en los dos finales: si gana la espera, el
+	// resultado ya está en el canal con búfer; si gana el pestillo, `cancelar`
+	// la hace volver y el canal con búfer recibe su error sin lector.
+	res := make(chan error, 1)
+	go func() {
+		res <- waitForAddress(ctxEspera, e.deps.Addrs, adapter, want, AddressDeadline)
+	}()
+
+	select {
+	case err := <-res:
+		if err != nil {
+			return fmt.Errorf("la red arrancó y el adaptador no quedó utilizable: %w", err)
+		}
+	case <-fallo:
+		cancelar()
+		e.deps.Progress.Step(domain.ScopeEngine, "el motor reportó que el adaptador falló")
+		return fmt.Errorf("el motor no pudo crear el adaptador %q: %s", adapter, motivo())
 	}
 	tardó := time.Since(inicio).Round(time.Millisecond)
 	e.deps.Log.Info("adaptador virtual listo",
@@ -678,6 +790,8 @@ func (e *Engine) JoinWithCredential(ctx context.Context, spec domain.GuestSpec) 
 	if err != nil {
 		return err
 	}
+	// Antes de mandar la orden, no antes de esperar. Ver [Engine.tunFail].
+	e.armTunLatch()
 	if err := e.startCall(ctx, func(id uint64) request { return guestRequest(id, spec, uris, e.deps.LogDir) }); err != nil {
 		return err
 	}
@@ -809,6 +923,9 @@ func (e *Engine) Restart(ctx context.Context) error {
 	// las redes todavía a medio levantar, y quien reacciona a la vuelta del
 	// túnel se encontraba adaptadores que aún no existían.
 	repetir := func(r *request) error {
+		// Un pestillo por orden y no uno para las dos: el `TunDeviceError` de la
+		// sala no puede cortar la espera del vestíbulo que viene después.
+		e.armTunLatch()
 		if _, err := e.call(ctx, func(id uint64) request {
 			copia := *r
 			copia.ID = id

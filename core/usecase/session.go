@@ -59,6 +59,27 @@ var (
 	// donde no espera nadie.
 	ErrNoSuchRoom = errors.New("ese código no existe en el registro")
 
+	// ErrNoRegistry es que el registro NO CONTESTA, que es distinto de contestar
+	// que no.
+	//
+	// # Por qué corta, si el registro es solo presentación
+	//
+	// Porque dejó de serlo, y hay que decirlo entero. El seed es el punto de
+	// encuentro: los códigos los emite él, los resuelve él, y su máquina es la
+	// que aparece como par en la configuración del motor. Sin él no hay adónde
+	// llegar.
+	//
+	// Lo que había antes era peor de lo que parece. Crear una sala con el
+	// registro caído generaba un invite ID aquí mismo, y ese código **no le
+	// servía a nadie**: el invitado le pregunta al mismo registro por defecto,
+	// le contestan que no existe, y lo rechaza antes de arrancar el motor. El
+	// host se quedaba con un código de aspecto normal, lo repartía, y nadie
+	// entraba.
+	//
+	// Vale para las dos puntas, crear y entrar, y por eso vive acá y no en uno
+	// de los dos ficheros.
+	ErrNoRegistry = errors.New("el registro de Kanpachi no contesta")
+
 	// ErrCanceled es que el usuario canceló la operación mientras corría.
 	//
 	// No es un error de nada: es la respuesta a un botón. Va aparte para que la

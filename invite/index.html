@@ -992,8 +992,13 @@
 
   // Una sola petición, al MISMO origen, y solo si el servidor no resolvió ya.
   // Si falla, la página se queda como está: tarjeta genérica, contador oculto,
-  // y el botón de entrar intacto. Que el registro esté caído no puede impedir
-  // que alguien entre a una sala, porque entrar no pasa por él.
+  // y el botón de entrar intacto.
+  //
+  // El botón se queda aunque entrar SÍ dependa del registro. Esta página no
+  // entra a ninguna sala: abre `kanpachi://` y ahí decide la app, que vuelve a
+  // preguntar y tiene un mensaje para cada caso. Quitarlo acá cambiaría un
+  // fallo explicado por un botón que no está, y encima sobre una medición de
+  // hace un instante.
   function loadCard(id, eyebrowID, nameID) {
     var ya = estadoDelServidor();
     if (ya) { applyCard(ya, eyebrowID, nameID); return; }

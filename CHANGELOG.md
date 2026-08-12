@@ -15,6 +15,7 @@ This file is in English, like commit messages and release notes, because a relea
 - Say on screen that the room is being re-entered, instead of showing a room that looks frozen ([f31c0a0](https://github.com/alvarogabrielgomez/kanpachi/commit/f31c0a0))
 - Say "Saliendo de la sala" in the tray menu while it happens, and refuse a second click that would arrive with the room half closed ([f31c0a0](https://github.com/alvarogabrielgomez/kanpachi/commit/f31c0a0))
 - Talk during the long waits, with phrases that move with the real steps, so opening a room stops looking like a hang ([f31c0a0](https://github.com/alvarogabrielgomez/kanpachi/commit/f31c0a0))
+- Warn on the home screen when the meeting server is not answering, so a dead registry is known before a game is picked and a code is typed, and not after
 
 ### Changed
 
@@ -26,6 +27,8 @@ This file is in English, like commit messages and release notes, because a relea
 - Give the service and the tunnel engine an icon of their own, so the four Kanpachi processes are told apart at a glance instead of by reading ([550911d](https://github.com/alvarogabrielgomez/kanpachi/commit/550911d))
 - Blink the tray icon while a room is up, so a running room is visible without opening the window ([32bfc9f](https://github.com/alvarogabrielgomez/kanpachi/commit/32bfc9f))
 - Hide the scrollbars ([f31c0a0](https://github.com/alvarogabrielgomez/kanpachi/commit/f31c0a0))
+- Refuse to open a room in the first second when the meeting server does not answer, instead of handing out a code that looks fine and that nobody can use to get in
+- Refuse to enter a room in the first second when the meeting server does not answer, instead of a minute of spinning against a lobby that cannot form, and say it in words that differ from a code that does not exist, because one is worth retrying and the other is not
 
 ### Fixed
 
@@ -39,6 +42,13 @@ This file is in English, like commit messages and release notes, because a relea
 - Reconnect to the daemon after it drops an idle link, instead of leaving the window frozen on what it last knew ([40a260d](https://github.com/alvarogabrielgomez/kanpachi/commit/40a260d))
 - Name the engine log `kanpachi-engine.log`, which shipped with no extension at all and left Windows asking what to open it with ([e6a5ca7](https://github.com/alvarogabrielgomez/kanpachi-engine/commit/e6a5ca7), in `kanpachi-engine`)
 - Keep more of the engine log before it wraps, which at two megabytes rolled over mid-session ([e6a5ca7](https://github.com/alvarogabrielgomez/kanpachi-engine/commit/e6a5ca7), in `kanpachi-engine`)
+- Keep open rooms reachable when the meeting server restarts, which used to empty its list of rooms and tell every guest of every open room that the room did not exist, with no way for the host to put it back but to renew the code and kill the links already handed out
+- Say why the virtual adapter failed while entering a room, which was the one moment the reason was thrown away, and stop waiting thirty seconds for an address that is never coming
+
+### Security
+
+- Keep the room secret and the private key out of `kanpachi-engine.log`, which the engine wrote in clear and which is the file people are asked to send over chat ([in `kanpachi-engine`](https://github.com/alvarogabrielgomez/kanpachi-engine))
+- Keep them out of a crash too, which bypassed the log entirely and printed straight to standard error ([in `kanpachi-engine`](https://github.com/alvarogabrielgomez/kanpachi-engine))
 
 ## [0.1.9] - 2026-08-09
 

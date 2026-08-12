@@ -90,21 +90,39 @@ func TestElSecretoDeLaRedRealNoDerivaDelCódigo(t *testing.T) {
 	}
 }
 
-// TestSiElRegistroNoRespondeLaSalaSeCreaIgual. Es solo presentación: lo que se
-// pierde es la tarjeta, no la sala.
-func TestSiElRegistroNoRespondeLaSalaSeCreaIgual(t *testing.T) {
+// TestSinRegistroNoSeCreaLaSala fija que crear FALLA cuando el registro no
+// contesta, y que falla sin haber tocado nada.
+//
+// Este test decía lo contrario, y lo que protegía era un fallo. Con el respaldo,
+// el invite ID lo generaba la propia máquina y salía marcado con el seed por
+// defecto, que es EL MISMO que consulta el invitado: le preguntaban al registro,
+// contestaba que no existe, y lo rechazaba antes de arrancar el motor. O sea que
+// el host se quedaba con un código de aspecto normal que no le servía a nadie.
+//
+// Lo que se comprueba además del error es que no quede nada a medias: el motor
+// sin arrancar y el firewall sin escribir. Es lo que separa fallar rápido de
+// fallar tarde.
+func TestSinRegistroNoSeCreaLaSala(t *testing.T) {
 	b := nuevoBanco(t)
 	b.registro.err = errors.New("504")
 
-	st, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas")
-	if err != nil {
-		t.Fatalf("el registro caído impidió crear la sala: %v", err)
+	_, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas")
+	if !errors.Is(err, ErrNoRegistry) {
+		t.Fatalf("sin registro la sala se creó igual, o falló por otra cosa: %v", err)
 	}
-	if st.Room.InviteID.IsZero() {
-		t.Fatal("la sala quedó sin código")
+	if st := b.sesión.Status(); !st.Room.InviteID.IsZero() {
+		t.Fatalf("quedó un código repartible de una sala que no existe: %s", st.Room.InviteID)
 	}
-	if st.Conn != domain.StateConnected {
-		t.Fatalf("estado = %s", st.Conn)
+	// Por el SECRETO y no por el struct entero, que lleva slices y no se puede
+	// comparar, ni por `RealNetworkName`, que sobre un spec en cero devuelve
+	// `kanpachi-` más ceros en vez de vacío. Un secreto en cero es que nadie
+	// llamó a `HostNetwork`: uno de verdad siempre sale aleatorio, y hay un test
+	// aparte que lo fija.
+	if b.motor.hostSpec.NetworkSecret != [32]byte{} {
+		t.Fatal("se levantó la red de una sala que no se pudo registrar")
+	}
+	if reglas := b.firewall.estado().GameRules(); len(reglas) > 0 {
+		t.Fatalf("se escribieron reglas de una sala que no se pudo registrar: %+v", reglas)
 	}
 }
 

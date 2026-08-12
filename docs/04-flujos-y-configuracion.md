@@ -8,6 +8,8 @@ Objetivo: menos de 3 minutos desde recibir el link del instalador hasta estar de
 2. Siguiente, siguiente. Un solo UAC. La barra termina y Kanpachi abre solo.
 3. La app ya muestra sus juegos detectados arriba, con la biblioteca completa un click más abajo.
 4. Pega el código que le pasaron por Telegram: `A7K2-M9QX`. El campo acepta cualquier formato, con o sin guiones, en minúsculas o mayúsculas.
+
+   **Antes de levantar nada se le pregunta al registro si ese código existe**, y sin respuesta suya no se entra. Los dos fallos posibles llegan en menos de un segundo y dicen cosas distintas: que ese código no existe, o sea que hay que pedir uno nuevo, y que el servidor de encuentro no responde, o sea que el código puede estar bien y hay que reintentar en un rato. Ver decisión 33.
 5. En segundos aparece la sala: los panas en verde (directo) o ámbar (relay).
 6. Abre el juego:
    - Juegos con `lan_discovery` (Minecraft, los clásicos): la partida aparece sola en el menú de LAN.
@@ -21,6 +23,8 @@ Lo que nunca ve: una terminal, un archivo de configuración, una pregunta del fi
 ## El flujo del host
 
 1. Abre Kanpachi, botón **Crear sala**. Pide un nombre para la sala, y nada más: **crear no pide juego**, porque la sala es independiente del juego activo. Nace con red cifrada y cero puertos abiertos, que es un estado válido. Ver decisión 20.
+
+   **Lo primero que hace es pedirle un código al registro, y sin él no hay sala.** Falla en el primer segundo, antes de levantar el motor y antes de escribir una sola regla, con el texto que dice que el servidor de encuentro no responde y que hay que probar en un rato. Los códigos los emite el registro: uno inventado en esta máquina no le sirve a nadie para entrar. Ver decisión 33. Si el registro ya estaba caído antes de pulsar, la portada lo venía avisando.
 2. Ya dentro, elige el juego. Arriba aparecen los detectados como instalados, abajo la biblioteca completa del catálogo con buscador. Si la detección no encontró el juego, se elige de la biblioteca y funciona igual. Kanpachi abre los puertos del perfil, solo en la interfaz virtual, solo hacia los miembros presentes. Cambiar de juego después no toca la sala: nadie se reconecta ni vuelve a pegar un código.
 3. Copia el código con un click y lo pega en Telegram.
 4. Arranca el servidor del juego como siempre: el dedicado de Zomboid, "Open to LAN" en Minecraft, lo que el juego pida.
@@ -128,6 +132,8 @@ Actualizar no es intercambiar el binario. El seed son cinco cosas que tienen que
 **Costó un despliegue, el 2026-08-07.** Se agregó `--secure-mode true` a la unit del motor, se publicó, se corrió `upgrade` en el droplet, y la unit quedó sin la bandera: el seed anunciaba la versión con el arreglo y seguía rechazando a todos los invitados. El apaño fue `kanpseed init` a mano, que sí corre con el binario nuevo, y de ahí salió la creencia de que actualizar el seed eran dos comandos.
 
 Ahora `upgrade` reemplaza el binario y la página, y **le cede el resto a `kanpseed reconfigure` ejecutando el binario que acaba de poner**. Un comando, como decía la documentación que era. `reconfigure` queda además disponible a mano: no instala nada ni pregunta nada, lee la configuración que ya hay y devuelve las units a lo que esta versión dice, útil si alguien editó una a mano.
+
+**`kanpseed config` sin argumentos NO reescribe nada, solo muestra.** Reescribe cuando se le cambia un puerto o el dominio, y aun así solo si el valor cambia de verdad. El comando que devuelve las units a lo que dice el binario es `reconfigure`, y hay que decirlo porque la confusión lleva a creer que un despliegue quedó aplicado cuando no se tocó una línea.
 
 El pin de EasyTier viaja dentro del binario nuevo, así que subirlo en un release llega al droplet por esta vía. Para que eso funcione, `/usr/local/lib/kanpachi/easytier.version` guarda qué versión quedó instalada: antes "ya están" se contestaba mirando solo si los archivos existían, de modo que subir el pin no reemplazaba nada.
 
@@ -285,7 +291,8 @@ Esquema **`http`** hacia `127.0.0.1:<puerto>`: el TLS termina en el proxy y haci
 
 - **`WatchdogSec=30s` con `sd_notify`.** `Restart=always` solo actúa cuando el proceso muere; el latido cubre el proceso vivo pero colgado. Verificado con un `SIGSTOP`: systemd lo reinició a los 29 segundos.
 - **`BindsTo=` del registro hacia el motor.** Si el motor se detiene, el registro se detiene con él y vuelve con él, en vez de quedarse sirviendo páginas sin contador para siempre.
-- **`DynamicUser=yes`, `ProtectSystem=strict`, `CapabilityBoundingSet=` vacío.** Ninguno de los dos procesos escribe en disco ni necesita capacidades. El motor escucha en un puerto público y habla con desconocidos, así que es el que más lo merece.
+- **`DynamicUser=yes`, `ProtectSystem=strict`, `CapabilityBoundingSet=` vacío.** Ninguno de los dos necesita capacidades, y el sistema entero les queda en solo lectura. El motor escucha en un puerto público y habla con desconocidos, así que es el que más lo merece.
+- **`StateDirectory=kanpseed`, solo en el registro.** Es el único sitio donde escribe, y ahí guardan las salas su vida entre reinicios. Con `DynamicUser=yes` el directorio real vive bajo `/var/lib/private/kanpseed`: systemd lo crea, le ajusta el dueño en cada arranque y le pasa la ruta en `STATE_DIRECTORY`, que es de donde la lee `serve`. **Quitarlo devuelve el fallo de la decisión 33**, que es un reinicio del seed dejando fuera a todo invitado de toda sala abierta.
 - **`MemoryMax` y `CPUQuota`.** El droplet comparte casa con Vaultwarden, Logto y varias bases de datos.
 
 ### Lo que el motor lleva, y por qué

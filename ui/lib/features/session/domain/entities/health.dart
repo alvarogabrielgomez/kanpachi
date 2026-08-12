@@ -23,6 +23,7 @@ class HealthReport {
     this.alerts = const <HealthAlert>[],
     this.canary = const CanaryCheck.blind(),
     this.net = const NetDiagnostics.unknown(),
+    this.seedDown = false,
   });
 
   /// Antes de haber preguntado. Ni avisos ni comprobación, que no es lo mismo
@@ -30,7 +31,11 @@ class HealthReport {
   const HealthReport.unknown()
     : alerts = const <HealthAlert>[],
       canary = const CanaryCheck.blind(),
-      net = const NetDiagnostics.unknown();
+      net = const NetDiagnostics.unknown(),
+      // Falso porque no se preguntó, no porque conteste. Es el mismo criterio
+      // que el resto de este constructor: no saber jamás se pinta como un
+      // hallazgo.
+      seedDown = false;
 
   /// Los avisos vivos, **en el orden que los mandó el daemon**.
   ///
@@ -44,6 +49,28 @@ class HealthReport {
 
   /// Lo que el daemon sabe de la red por la que va el túnel.
   final NetDiagnostics net;
+
+  /// El servidor de encuentro no le contesta al daemon.
+  ///
+  /// # Por qué acá y no en [alerts]
+  ///
+  /// Porque `alerts` es un conjunto cerrado de hallazgos de EXPOSICIÓN: cosas
+  /// que dejan la máquina alcanzable y que anulan la promesa del producto si
+  /// nadie las mira. Esto es disponibilidad, y meterlo ahí diría que la máquina
+  /// quedó expuesta cuando lo que pasa es que no se pueden abrir salas nuevas.
+  /// Convive con [net] por el mismo motivo: son datos que el daemon produjo
+  /// solo y que no son avisos de seguridad.
+  ///
+  /// # Por qué no en [Room]
+  ///
+  /// Porque hace falta justo cuando NO hay sala. Es el aviso de la portada, el
+  /// que dice que crear y entrar van a fallar antes de que alguien escriba un
+  /// código, y en `Room` sería inalcanzable en el único momento en que sirve.
+  ///
+  /// Distinto de que el daemon no conteste: ahí no se pudo preguntar nada. Acá
+  /// el daemon contesta perfectamente y lo que informa es que el registro no le
+  /// contesta a él. Se apaga solo en cuanto el registro vuelva.
+  final bool seedDown;
 
   bool get hasAlerts => alerts.isNotEmpty;
 
@@ -66,6 +93,7 @@ class HealthReport {
     net: NetDiagnostics.fromJson(
       (json['net'] as Map<String, Object?>?) ?? const <String, Object?>{},
     ),
+    seedDown: json['seed_down'] as bool? ?? false,
   );
 }
 

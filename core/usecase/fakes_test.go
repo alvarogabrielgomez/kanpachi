@@ -414,6 +414,17 @@ func (r *registroFalso) Seed() string {
 	return r.seed
 }
 
+// Reachable contesta que sí salvo que el test haya declarado al registro
+// caído, que es lo mismo que hacen los otros tres métodos con `err`.
+//
+// Un campo aparte sería otra palanca que recordar: con `err` puesto, este falso
+// representa un registro que no contesta A NADA, que es el caso que importa.
+func (r *registroFalso) Reachable(context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.err
+}
+
 func (r *registroFalso) Open(_ context.Context, sealed []byte) (domain.Room, error) {
 	if r.err != nil {
 		return domain.Room{}, r.err

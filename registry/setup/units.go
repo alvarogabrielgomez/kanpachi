@@ -151,18 +151,33 @@ ExecStart=%s serve \
 Restart=always
 RestartSec=2s
 
-# Recargar es releer la PAGINA, y nada mas. El registro de salas vive en
-# memoria: reiniciar para publicar un cambio de la pagina tiraria todas las
-# salas registradas, y quien tuviera un enlace repartido se quedaria con un
-# codigo que el servidor ya no conoce.
+# Recargar es releer la PAGINA, y nada mas. Sigue siendo lo correcto aunque el
+# registro ya sobreviva a un reinicio: recargar la pagina no corta ninguna
+# conexion y no tiene por que costar un arranque.
 ExecReload=/bin/kill -HUP $MAINPID
+
+# Donde el registro de salas sobrevive a un reinicio. systemd lo crea, lo pone a
+# nombre del usuario dinamico y exporta su ruta en STATE_DIRECTORY, que es de
+# donde la lee el subcomando serve: asi la ruta no esta escrita en dos sitios
+# que se puedan desincronizar.
+#
+# Con DynamicUser=yes el directorio real vive bajo /var/lib/private y systemd le
+# ajusta el dueno en cada arranque, que es lo que hace que el dato sobreviva
+# aunque el UID cambie.
+#
+# Sin esto, el almacen se perdia en cada reinicio y el invitado recibia "esa
+# sala no existe" sobre salas abiertas y alcanzables, porque la comprobacion del
+# invitado se cree el no. El host tampoco lo podia reponer: publicar exige que
+# la entrada exista y no debe crearla.
+StateDirectory=kanpseed
 
 # Un proceso vivo pero colgado no lo detecta Restart=always. El registro manda
 # WATCHDOG=1 mientras responda, y si deja de hacerlo systemd lo reinicia.
 WatchdogSec=30s
 
-# Guarda todo en memoria y no escribe nada, así que puede correr sin casa,
-# sin disco escribible y sin ninguna capacidad.
+# Corre sin casa y sin ninguna capacidad. ProtectSystem=strict le deja el
+# sistema entero en solo lectura, y el ÚNICO sitio donde escribe es el que le
+# abre StateDirectory de arriba.
 DynamicUser=yes
 NoNewPrivileges=yes
 CapabilityBoundingSet=

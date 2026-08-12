@@ -196,6 +196,7 @@ const (
 	CodeProbeNoHost Code = "probe_no_host" // no se sabe dónde está el host
 	CodeNoPending   Code = "no_pending"    // no hay sala del arranque anterior
 	CodeNoSuchRoom  Code = "no_such_room"  // el registro dice que ese código no existe
+	CodeNoRegistry  Code = "no_registry"   // el registro no contestó nada
 	CodeCanceled    Code = "canceled"      // el usuario canceló la operación
 	CodeBadNickname Code = "bad_nickname"  // el nombre no cumple la decisión 21
 	CodeBadCode     Code = "bad_code"      // el invite ID no tiene forma de código
@@ -272,6 +273,12 @@ func errorFor(err error) *Error {
 		code = CodeNoPending
 	case errors.Is(err, usecase.ErrNoSuchRoom):
 		code = CodeNoSuchRoom
+	// Va DESPUÉS del de arriba y son dos códigos, no uno. El registro afirmando
+	// que no conoce un código y el registro sin contestar paran las dos
+	// operaciones igual, y lo que la persona tiene que hacer es lo contrario:
+	// pedir un código nuevo, contra volver a intentarlo en un rato.
+	case errors.Is(err, usecase.ErrNoRegistry):
+		code = CodeNoRegistry
 	case errors.Is(err, usecase.ErrCanceled):
 		code = CodeCanceled
 	case errors.Is(err, domain.ErrNicknameEmpty), errors.Is(err, domain.ErrNicknameTooLong),

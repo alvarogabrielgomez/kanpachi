@@ -311,6 +311,7 @@ class Room {
   /// existe». Lo cierra renovar el código.
   final bool codeLost;
 
+
   /// Si la regla ajena impide abrir la sala.
   ///
   /// Se deriva de la clase acá y no viene aparte porque el que decide es el

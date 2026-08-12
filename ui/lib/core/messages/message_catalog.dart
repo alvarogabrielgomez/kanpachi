@@ -340,6 +340,15 @@ abstract final class AppMessages {
           'Ese código no existe. Puede estar mal copiado, o la sala se cerró '
           'y el host tiene que pasarte uno nuevo.',
     ),
+    // El hermano del de arriba, con el texto al revés en lo que importa: allá
+    // hay que conseguir otro código, acá el que se tiene puede estar perfecto.
+    // Sirve para crear y para entrar, que fallan por lo mismo.
+    FailureCode.noRegistry => const AppMessage(
+      severity: MessageSeverity.warn,
+      body:
+          'El servidor de encuentro no responde, así que ahora mismo no se '
+          'puede crear una sala ni entrar a una. Prueba de nuevo en un rato.',
+    ),
     // Neutral y no advertencia: no falló nada, se pulsó un botón.
     FailureCode.canceled => const AppMessage(
       severity: MessageSeverity.neutral,
@@ -546,6 +555,26 @@ abstract final class AppMessages {
         'La app no pudo hablar con el servicio que hace el trabajo, así que '
         'no puede abrir salas ni leer el catálogo. Comprueba que Kanpachi '
         'esté instalado y que su servicio esté arrancado.',
+  );
+
+  /// El registro no contesta, así que no se puede abrir ni entrar a ninguna
+  /// sala.
+  ///
+  /// **No es [codeLost] y la diferencia manda el texto.** Allá el registro
+  /// contestó que no conoce un código, eso no se arregla nunca y hay un botón
+  /// que lo cierra. Acá no contestó nada, se arregla solo en cuanto vuelva, y
+  /// no hay nada que pulsar: por eso este mensaje no lleva acción y lo dice.
+  ///
+  /// Existe desde que crear y entrar fallan rápido sin registro. Antes esto se
+  /// descubría al final de una espera, después de elegir un juego y escribir
+  /// ocho caracteres; el aviso lo pone delante, con la pantalla todavía vacía.
+  static const AppMessage seedDown = AppMessage(
+    severity: MessageSeverity.warn,
+    title: 'El servidor de encuentro no responde',
+    body:
+        'Es la máquina por la que las salas se encuentran, así que ahora mismo '
+        'no se puede crear ninguna ni entrar a una. No hay nada que hacer de '
+        'tu lado: en cuanto vuelva, esto se va solo.',
   );
 
   /// El de reserva, para una clave que esta versión de la app no conoce.

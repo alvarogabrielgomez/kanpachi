@@ -59,6 +59,22 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 		}
 	}
 
+	// El registro se sondea en el mismo barrido y no en el latido, por lo que
+	// dice la cabecera de este fichero: un latido para el tiempo, un barrido
+	// para el mundo. Esto sale a la red.
+	//
+	// Su fallo NO entra en `sinRespuesta`: aquello es la auditoría de exposición
+	// dejando de vigilar, o sea seguridad, y esto es disponibilidad. Juntarlos
+	// diría que la máquina quedó sin vigilar cuando lo que pasa es que no se
+	// pueden abrir salas nuevas. Va a su propio campo del estado, que es
+	// transitorio y se apaga solo. Ver [domain.RoomState.SeedDown].
+	caído := false
+	if err := s.deps.Directory.Reachable(ctx); err != nil {
+		s.deps.Log.Warn("el registro no contesta, así que no se pueden abrir ni entrar salas",
+			"seed", s.deps.Directory.Seed(), "error", err)
+		caído = true
+	}
+
 	// Las reglas propias se MIDEN acá, suelto, igual que las otras dos
 	// consultas. El veredicto se calcula más abajo con el candado tomado,
 	// porque comparar contra el estado deseado exige leer el estado de la
@@ -110,6 +126,12 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Antes del corte por vencimientos, y a propósito. Lo demás que se calcula
+	// acá describe una SALA, así que sin sala sobra; esto describe la MÁQUINA y
+	// vale igual sin sala, que es justamente cuando más sirve: es el estado que
+	// dice si se va a poder abrir una.
+	s.state.SeedDown = caído
 
 	// El barrido es una entrada que OBSERVA, así que también hace vencer los
 	// plazos. Si salió de la sala, los hallazgos recién calculados describen

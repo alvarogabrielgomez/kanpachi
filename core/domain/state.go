@@ -236,6 +236,27 @@ type RoomState struct {
 	// Lo cierra renovar el código, que saca una entrada nueva.
 	CodeLost bool
 
+	// SeedDown dice que el registro NO CONTESTA, que es el hermano transitorio
+	// de [RoomState.CodeLost].
+	//
+	// La distinción es toda la razón de que sean dos campos y no uno. Que el
+	// registro afirme no conocer un código no se arregla nunca, porque publicar
+	// no crea; que no conteste se arregla solo en cuanto vuelva. Un solo campo
+	// obligaría a la pantalla a decir lo mismo en los dos casos, y solo uno de
+	// los dos pide hacer algo.
+	//
+	// # Por qué está en el estado y no es solo un error de la operación
+	//
+	// Porque desde que crear y entrar fallan rápido sin registro, no tenerlo
+	// impide usar Kanpachi entero. Enterarse al pulsar el botón es enterarse
+	// después de elegir un juego y escribir ocho caracteres, y esto se puede
+	// saber con la pantalla todavía vacía. Es la misma razón por la que el
+	// adaptador virtual se sondea al arrancar el daemon.
+	//
+	// Lo recalcula el barrido, así que se apaga solo. No es accionable por el
+	// usuario y no lleva botón: no hay nada que pulsar salvo esperar.
+	SeedDown bool
+
 	// Gen sube en CADA vaciado de la sala, e identifica a la sala viva.
 	//
 	// Existe por la ronda del canario, que suelta el candado hasta diez segundos

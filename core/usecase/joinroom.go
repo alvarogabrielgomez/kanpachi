@@ -246,19 +246,37 @@ func (s *Session) joinRealNetworkLocked(ctx context.Context, room domain.Room, n
 	return cred, nil
 }
 
-// checkRoomExists le pregunta al registro si ese código existe, y solo se cree
-// un "no".
+// checkRoomExists le pregunta al registro si ese código existe, y no sigue sin
+// una respuesta suya.
 //
-// # La asimetría es toda la función
+// # Las dos formas de parar, que dicen cosas distintas
 //
-// El registro es SOLO PRESENTACIÓN: que no conteste jamás puede impedir entrar
-// a una sala, porque la sala vive en las máquinas de sus miembros y no en él.
-// Así que de todo lo que puede pasar acá, una única respuesta detiene el
-// ingreso, y es el registro diciendo que ese invite ID no existe. Sin red, con
-// un 500, con un plazo vencido, se sigue adelante y se intenta como siempre.
+// El registro contestando que ese invite ID no existe es [ErrNoSuchRoom]: hay
+// respuesta, y la respuesta es que no. El registro no contestando es
+// [ErrNoRegistry]: no se sabe nada. Las dos paran el ingreso, y se distinguen
+// porque lo que hay que hacer es distinto, revisar el código contra volver a
+// intentarlo en un rato.
 //
-// Confundir las dos mitades rompería la promesa en la dirección cara: un seed
-// caído dejaría a la gente sin poder entrar a salas que están abiertas.
+// # Por qué también para cuando no contesta, que antes no lo hacía
+//
+// Esto seguía adelante ante cualquier fallo que no fuera un "no", con el
+// argumento de que el registro es solo presentación y que la sala vive en las
+// máquinas de sus miembros. La segunda mitad es cierta y la conclusión no: **el
+// seed es el punto de encuentro**. Su máquina es la que viaja como par en la
+// configuración del motor, así que sin ella el vestíbulo no se forma y el
+// invitado se queda un minuto mirando una ruedita para terminar en un fallo
+// genérico.
+//
+// La política del producto es decirlo en el primer segundo. Es la misma razón
+// por la que el adaptador virtual se sondea al arrancar el daemon en vez de
+// descubrirse al abrir la primera sala.
+//
+// # Lo que esto exige del registro, y por eso no se pudo hacer antes
+//
+// Que su "no" sea confiable. Con el almacén en RAM y `Restart=always`, un
+// reinicio le hacía contestar que no conoce salas abiertas y alcanzables, y
+// endurecer esto encima habría convertido una molestia en un muro. Por eso el
+// registro persiste primero. Ver la cabecera de `registry/persist.go`.
 //
 // # Por qué se comprueba el seed antes de creerle
 //
@@ -288,12 +306,16 @@ func (s *Session) checkRoomExists(ctx context.Context, room domain.Room) error {
 		return fmt.Errorf("%w: %s", ErrNoSuchRoom, room.InviteID)
 
 	default:
-		// Ausencia de información. Se anota y se sigue: el camino de siempre
-		// tiene sus propios plazos y sus propios errores.
-		s.deps.Log.Warn("no se pudo comprobar el código contra el registro, se intenta igual",
+		// Ausencia de información, y se para igual. Seguir a ciegas cuesta un
+		// minuto de ruedita contra un vestíbulo que no se va a formar, porque la
+		// máquina del registro es también la que hace de punto de encuentro.
+		s.deps.Log.Error("el registro no contestó, así que no se entra",
 			"código", room.InviteID.String(), "error", err)
-		s.deps.Progress.Step(domain.ScopeSeed, "el registro no contestó, se intenta igual")
-		return nil
+		s.deps.Progress.Step(domain.ScopeSeed, "el registro no contestó")
+		return fmt.Errorf("%w: %v.\n\n"+
+			"Es la máquina por la que las salas se encuentran, así que sin ella no hay "+
+			"a dónde llegar.\n\n"+
+			"Qué hacer: vuelve a intentarlo en un momento", ErrNoRegistry, err)
 	}
 }
 
