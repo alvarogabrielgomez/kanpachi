@@ -18,9 +18,9 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Changed
 
-- Check that this machine can build a virtual adapter when Kanpachi starts, rather than when the first room is opened, and say which of the two things is wrong when it cannot: the driver files being absent, or Windows refusing to install the driver. It used to be found out after choosing a game and typing an invite code, took thirty seconds, and came back as an address problem
-- Close Kanpachi, after saying why and waiting for the message to be read, when this machine cannot build a virtual adapter at all: it is not a room that failed and trying again cannot fix it
-- Answer `the virtual adapter` in `kanpachi doctor` on Windows, which had nothing equivalent to the `/dev/net/tun` check it does on Linux
+- Check that this machine can build a virtual adapter when Kanpachi starts, rather than when the first room is opened, and say which of the two things is wrong when it cannot: the driver files being absent, or Windows refusing to install the driver. It used to be found out after choosing a game and typing an invite code, took thirty seconds, and came back as an address problem ([d6d9e85](https://github.com/alvarogabrielgomez/kanpachi/commit/d6d9e85))
+- Close Kanpachi, after saying why and waiting for the message to be read, when this machine cannot build a virtual adapter at all: it is not a room that failed and trying again cannot fix it ([d6d9e85](https://github.com/alvarogabrielgomez/kanpachi/commit/d6d9e85))
+- Answer `the virtual adapter` in `kanpachi doctor` on Windows, which had nothing equivalent to the `/dev/net/tun` check it does on Linux ([d6d9e85](https://github.com/alvarogabrielgomez/kanpachi/commit/d6d9e85))
 - Say what each Kanpachi process is in Task Manager, which listed bare executable names with a blank icon ([d8e3902](https://github.com/alvarogabrielgomez/kanpachi/commit/d8e3902))
 - Describe what every Kanpachi executable does in its file properties, and say it in the service list too ([3f1c599](https://github.com/alvarogabrielgomez/kanpachi/commit/3f1c599))
 - Give the service and the tunnel engine an icon of their own, so the four Kanpachi processes are told apart at a glance instead of by reading ([550911d](https://github.com/alvarogabrielgomez/kanpachi/commit/550911d))
@@ -31,8 +31,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 - Let people whose internet provider uses the same address range as Kanpachi's lobby into a room: entering hung with no explanation, and each room now takes its lobby from its own invite code, so renewing the code moves it out of the way ([a885036](https://github.com/alvarogabrielgomez/kanpachi/commit/a885036))
 - Say when this machine's own network clashes with the lobby of the room being entered, which used to be a silent thirty-second wait ([a885036](https://github.com/alvarogabrielgomez/kanpachi/commit/a885036))
-- Say that the virtual adapter was never created when that is what happened, instead of reporting it as an address that could not be taken: the two are different problems and only one of them is about addresses
-- Wait for the message to be read before closing when the window cannot be kept open, which appeared at the very instant everything shut down and read as a crash, and say four attempts instead of three, which is the number Kanpachi actually allows
+- Say that the virtual adapter was never created when that is what happened, instead of reporting it as an address that could not be taken: the two are different problems and only one of them is about addresses ([037ba55](https://github.com/alvarogabrielgomez/kanpachi/commit/037ba55))
+- Wait for the message to be read before closing when the window cannot be kept open, which appeared at the very instant everything shut down and read as a crash, and say four attempts instead of three, which is the number Kanpachi actually allows ([d6d9e85](https://github.com/alvarogabrielgomez/kanpachi/commit/d6d9e85))
 - Finish shutting down before quitting: leaving Kanpachi could exit while the room was still being closed, so the firewall rules, the engine process and the API token were left behind until the next start cleaned them up
 - Stop Windows from asking for administrator on its own for the tunnel engine, which needed no privileges and was being elevated on a guess ([3f1c599](https://github.com/alvarogabrielgomez/kanpachi/commit/3f1c599))
 - Stop the window from crashing every twenty to sixty minutes: it corrupted its own memory reading the daemon's pipe, and the pipe now lives in native code that owns its buffers ([e8000ca](https://github.com/alvarogabrielgomez/kanpachi/commit/e8000ca))
