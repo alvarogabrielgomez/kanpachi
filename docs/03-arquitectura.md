@@ -1831,9 +1831,9 @@ Son permanentes: sobreviven al reinicio y a desinstalar Kanpachi.
 
 La primera fila deshace la promesa central en la misma capa que Kanpachi usa para conceder. La segunda es peor y es la que decide el enfoque: **la compuerta de WFP no puede taparla**, porque va acotada al adaptador virtual, y esa acotación es la invariante que impide que un bloqueo duro deje al usuario sin la entrada de su red de casa. Una capa que jamás debe salirse del adaptador no puede cubrir una regla que aplica en todos.
 
-No hay feature de cargo, campo de configuración ni variable de entorno que las apague, así que la salida es una sola: el motor enlaza `alvarogabrielgomez/EasyTier`, tag `v2.6.4-kanpachi.2`, que es `v2.6.4` de upstream con esas dos llamadas borradas, más `renew_credential`, que corre el vencimiento de una credencial sin reemitirla. Cada hunk está listado en el `FORK.md` del fork, que es donde envejece con él. Quitarlas es seguro porque upstream ya trataba su fallo como no fatal, con un aviso y seguir.
+No hay feature de cargo, campo de configuración ni variable de entorno que las apague, así que la salida es una sola: el motor enlaza un fork nuestro de EasyTier con esas dos llamadas borradas. Quitarlas es seguro porque upstream ya trataba su fallo como no fatal, con un aviso y seguir. **A qué referencia apunta y qué más lleva dentro se dice en la decisión 1 de `02-decisiones-de-diseno.md`, y en ningún otro sitio**, porque este valor ya se desincronizó una vez estando escrito en cinco.
 
-El diff se lee de un vistazo a propósito, y por eso el motor vive en su repo y no dentro del fork: la afirmación "es upstream y nada más" tiene que poder comprobarse en treinta segundos con `git diff v2.6.4 v2.6.4-kanpachi.2`, y un fork con dos mil líneas nuestras dentro la convierte en un acto de fe.
+El diff se lee de un vistazo a propósito, y por eso el motor vive en su repo y no dentro del fork: la afirmación "es upstream y esta lista corta" tiene que poder comprobarse en treinta segundos con un `git diff`, que está escrito en la decisión 1, y un fork con dos mil líneas nuestras dentro la convierte en un acto de fe.
 
 Lo que el fork NO reemplaza es la compuerta. Su enemigo nunca fue EasyTier: son las reglas permisivas **ajenas**, de escritorio remoto y de instaladores de juegos, que alcanzan al usuario por la red virtual. Eso no lo quita ningún fork.
 
@@ -2501,7 +2501,7 @@ Qué NO compra, dicho para no vender lo que no hay: autenticación DENTRO de la 
 
 **Kanpachi no monta TLS entre máquinas y no hay certificados en ningún sitio del producto.** El motor marca al seed con `tcp://IP:11010`, en claro, y toda la confidencialidad la pone una capa de cifrado DENTRO del protocolo de EasyTier. Quien busque acá una decisión sobre certificados no la va a encontrar porque nunca hubo una que tomar.
 
-Lo verificado leyendo el fuente fijado, `v2.6.4-kanpachi.2`:
+Lo verificado leyendo el fuente que fija el `Cargo.lock` del motor:
 
 | Hecho | Dónde se comprueba |
 |---|---|

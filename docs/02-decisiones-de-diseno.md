@@ -8,7 +8,7 @@ Cada decisión relevante, las alternativas consideradas y la razón de la elecci
 
 **Elección:** **`kanpachi-engine.exe`**, un binario propio en Rust que declara EasyTier como **librería**, ejecutado como **proceso hijo** del daemon y accedido siempre a través de `EnginePort`. Vive en un repositorio aparte bajo LGPL-3.0.
 
-Y la librería que declara es **un fork nuestro**, `alvarogabrielgomez/EasyTier`, tag `v2.6.4-kanpachi.2`. Esa segunda mitad se decidió después, al medir, y tiene su propia sección más abajo: el binario propio quita lo que el CLI hace ALREDEDOR de la librería, y no quita lo que la librería hace DENTRO de lo que se le pide.
+Y la librería que declara es **un fork nuestro**, `alvarogabrielgomez/EasyTier`. Esa segunda mitad se decidió después, al medir, y tiene su propia sección más abajo: el binario propio quita lo que el CLI hace ALREDEDOR de la librería, y no quita lo que la librería hace DENTRO de lo que se le pide.
 
 ### Por qué el binario oficial no sirve
 
@@ -93,11 +93,28 @@ No hay feature de cargo, campo de configuración ni variable de entorno que las 
 
 Así que el fork nació siendo `v2.6.4` con esas dos llamadas borradas y **nada más**: `1 fichero, 8 inserciones, 31 borrados`, y las ocho inserciones son comentarios.
 
-**Hoy lleva un cambio más, y el número de arriba ya no es el diff entero.** El tag fijado es `v2.6.4-kanpachi.2`, que agrega `renew_credential` al gestor de credenciales, con su RPC. Existe porque upstream no tiene forma de correr el vencimiento de una credencial sin reemitirla, y reemitir cambia el par de llaves: el secreto de la credencial **es** la llave estática x25519 del portador, así que uno nuevo lo convierte en otro peer, hay que volver a confiar en él y pierde su sesión. Sin eso, cada invitado se caía de la sala al cumplirse su TTL. Sigue sin haber nada de Kanpachi ahí dentro: lo agregado es genérico y no sabe qué es una sala, un código ni un juego.
+**Hoy lleva un cambio más, y el número de arriba ya no es el diff entero.** La rama que el motor sigue agrega `renew_credential` al gestor de credenciales, con su RPC. Existe porque upstream no tiene forma de correr el vencimiento de una credencial sin reemitirla, y reemitir cambia el par de llaves: el secreto de la credencial **es** la llave estática x25519 del portador, así que uno nuevo lo convierte en otro peer, hay que volver a confiar en él y pierde su sesión. Sin eso, cada invitado se caía de la sala al cumplirse su TTL. Sigue sin haber nada de Kanpachi ahí dentro: lo agregado es genérico y no sabe qué es una sala, un código ni un juego.
 
 **Qué cambia el fork está escrito EN el fork**, en su `FORK.md`, con la tabla de cada hunk y el comando que lo comprueba. Es el sitio correcto porque envejece con él, y por eso este documento no repite la lista.
 
-**Por eso el motor NO vive dentro del fork, y son tres repos.** La afirmación "esto es upstream y esta lista corta" tiene que poder comprobarse en treinta segundos con `git diff v2.6.4 v2.6.4-kanpachi.2 -- '*.rs' '*.proto'`, y un fork con dos mil líneas nuestras dentro la convierte en un acto de fe. Mantener la línea de cambios separada es además lo que deja actualizar algún día.
+### A qué referencia del fork apunta el motor, y por qué esto se dice UNA vez
+
+**Este párrafo es el único sitio de los docs que nombra la referencia.** Estuvo escrito en cinco, y el resultado fue el previsible: dos decían `v2.6.4-kanpachi.1` cuando el motor ya compilaba contra `.2`. Lo vigila `internal/arch/marca_test.go`, que falla si el nombre aparece en otro documento.
+
+| | |
+|---|---|
+| Lo que el motor sigue | La rama `kanpachi` del fork, que **MUEVE a propósito** |
+| Lo que dice qué commit se compiló | El `Cargo.lock` del motor, que es la única respuesta con autoridad |
+| Para fijar en vez de seguir | El tag `v2.6.4-kanpachi`, que es una foto de la rama y no se mueve nunca |
+| Para comprobar qué cambia | `git diff v2.6.4 kanpachi -- '*.rs' '*.proto'` |
+
+**Rama y no tag versionado, y el motivo es que hoy versionar no compra nada.** El fork no se versiona, Kanpachi está en v0, y un tag por cada tanda de parches da un número que nadie lee al precio de tener que forzarlo cada vez que el fork se mueve. El día que alguien necesite fijar en un punto nuevo, ese es el momento de cortarle un tag y de decidir cómo se llama la serie. Decidirlo ahora cuesta un esquema de nombres y no compra nada.
+
+**Que la rama mueva no afeita la reproducibilidad**, y conviene decirlo porque suena a que sí. Un `Cargo.lock` fija el commit exacto y una compilación no consulta la rama: lo que la consulta es `cargo update`, que es una acción deliberada de alguien. Lo que se pierde con la rama es el segundo pin redundante, no el primero.
+
+**Y apuntar al `main` de UPSTREAM seguiría estando prohibido**, que es la asimetría que hay que no confundir. Ahí los módulos `launcher` e `instance_manager` ya no existen, porque el árbol de RPC entero se borró y renació en otro sitio: seguir esa rama rompe la compilación en el commit de otro, en un momento que nadie eligió. La rama `kanpachi` es nuestra y no la mueve nadie más.
+
+**Por eso el motor NO vive dentro del fork, y son tres repos.** La afirmación "esto es upstream y esta lista corta" tiene que poder comprobarse en treinta segundos con el `git diff` de la tabla, y un fork con dos mil líneas nuestras dentro la convierte en un acto de fe. Mantener la línea de cambios separada es además lo que deja actualizar algún día.
 
 Lo que el fork NO reemplaza es la compuerta. Su enemigo nunca fue EasyTier: son las reglas permisivas **ajenas**, de escritorio remoto y de instaladores de juegos, que alcanzan al usuario por la red virtual. Eso no lo quita ningún fork. Y la red permanente contra que esto vuelva a pasar tampoco es el fork: es que `AuditForeign` clasifica como ajeno cualquier permiso entrante acotado a una interfaz `kanpachi*` que no sea nuestro, y esa clase BLOQUEA la sala.
 

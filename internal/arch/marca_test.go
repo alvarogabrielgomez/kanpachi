@@ -142,3 +142,66 @@ func TestLaMarcaDeDartCoincideConLaDeGo(t *testing.T) {
 			quiero, activo[1])
 	}
 }
+
+// forkRef casa con cualquier referencia al fork de EasyTier: el tag de hoy y las
+// formas versionadas que tuvo antes.
+//
+// Va por PATRÓN y no por la cadena de hoy a propósito. Un guardián que hubiera
+// que editar cada vez que la referencia cambia es un guardián que se queda viejo
+// junto con lo que vigila, que es exactamente el fallo que viene a impedir.
+var forkRef = regexp.MustCompile(`v\d+\.\d+\.\d+-kanpachi[\w.]*`)
+
+// canonicalDoc es el único documento que puede nombrarla.
+const canonicalDoc = "02-decisiones-de-diseno.md"
+
+// TestTheForkRefIsNamedInOneDocumentOnly.
+//
+// # Qué pasó, que es de dónde sale
+//
+// La referencia al fork estaba escrita en CINCO documentos, y dos de ellos
+// decían `v2.6.4-kanpachi.1` cuando el motor ya compilaba contra `.2`. Nadie lo
+// nota leyendo: las dos cadenas son plausibles, ninguna herramienta las resuelve
+// y no fallan en ningún sitio, porque son prosa.
+//
+// Los documentos no se generan, así que no hay constante que interpolar acá. El
+// equivalente documental de una constante es UN sitio canónico y el resto
+// apuntando a él, y esto es lo único que lo sostiene.
+func TestTheForkRefIsNamedInOneDocumentOnly(t *testing.T) {
+	const dir = "../../docs"
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("leyendo %s: %v", dir, err)
+	}
+
+	var seen int
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatalf("leyendo %s: %v", e.Name(), err)
+		}
+		found := forkRef.FindAllString(string(raw), -1)
+		if len(found) == 0 {
+			continue
+		}
+		if e.Name() == canonicalDoc {
+			seen += len(found)
+			continue
+		}
+		t.Errorf("docs/%s nombra la referencia del fork %q.\n"+
+			"  Va en docs/%s y en ningún otro documento. Escrita en cinco sitios se\n"+
+			"  desincronizó, y dos decían `.1` con el motor compilando contra `.2`.\n"+
+			"  Apunta a la decisión 1 en vez de repetir el valor",
+			e.Name(), found, canonicalDoc)
+	}
+
+	// El candado del candado. Sin esto, borrar el párrafo canónico deja el test
+	// en verde y a los docs sin ningún sitio que diga contra qué se compila.
+	if seen == 0 {
+		t.Errorf("docs/%s no nombra ninguna referencia del fork.\n"+
+			"  Es el sitio canónico: si dejó de decirlo, no queda ninguno que lo diga",
+			canonicalDoc)
+	}
+}

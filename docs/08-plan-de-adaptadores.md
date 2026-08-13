@@ -170,8 +170,9 @@ dentro de `NetworkInstance::start()`, sin bandera ni configuración que lo apagu
 Ver `03-arquitectura.md`, sección del motor, y la decisión 1 en `02`.
 
 **El motor no vive dentro del fork, y es deliberado.** El valor entero del fork
-es que su diff se lea de un vistazo: "es upstream y nada más" o se comprueba en
-treinta segundos con `git diff v2.6.4 v2.6.4-kanpachi.2`, o es un acto de fe. Con
+es que su diff se lea de un vistazo: "es upstream y esta lista corta" o se
+comprueba en treinta segundos con el `git diff` de la decisión 1, o es un acto
+de fe. Con
 el motor dentro, ese fichero quedaría mezclado con dos mil líneas nuestras, y
 cada subida de versión traería además conflictos en su workspace, su
 `rust-toolchain.toml` y su CI, que no tienen nada que ver con lo que se cambia.
