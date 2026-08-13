@@ -86,6 +86,22 @@ El v2 ya cubre capas, creador de perfiles, verificación por uso e intercambio p
 
 El puerto `EnginePort` deja tres salidas sin tocar el producto: actualizar EasyTier, migrar a un control plane Headscale envuelto, o motor propio sobre wireguard-go (solo con recursos de sobra, es el camino de meses). Peer relays propios e IPv6 entran en esta misma conversación.
 
+### La llave del túnel no sale de una función de derivación
+
+**Disparador:** que Kanpachi deje de ser privado y alguien tenga un motivo real para atacar el tráfico de una sala, o que upstream acepte cambiar la derivación.
+
+`GlobalCtx::get_128_key` pasa el secreto de red por `DefaultHasher` de la biblioteca estándar de Rust, con llave cero, en dos pases de 64 bits. La descripción entera, con lo que está verificado y lo que falta medir, vive en la sección de criptografía de `03-arquitectura.md`. Elegir `aes-256-gcm` no lo arregla, porque `get_256_key` usa el mismo hasher.
+
+Las tres salidas, de la barata a la cara:
+
+1. **Pedirlo upstream.** Es lo correcto de intentar primero. Hay precedente de que upstream rechace una petición de seguridad a propósito, que fue la autenticación del portal RPC, así que conviene no contar con esto como plan único.
+2. **Meterlo en el fork.** Cambiar la derivación **rompe la compatibilidad con cualquier peer que no la lleve**, o sea que es todo o nada entre versiones de Kanpachi, con el mismo síntoma mudo que tendría tocar los parámetros de Argon2id. El otro costo es que el fork deja de ser dos borrados y un método, que es justo lo que hoy hace que su diff se lea de un vistazo.
+3. **Cifrar por encima**, dentro de Kanpachi, en vez de apoyarse en la capa del motor. La más cara, y la única que no depende de nadie.
+
+**Por qué esto no es una emergencia, dicho para que nadie lo trate como tal ni lo archive.** Lo que viaja por el túnel es tráfico de juego de una sala privada, la contención del producto la pone el firewall y no el cifrado, y llegar a ser peer ya exige el secreto de la red. Lo que este defecto quita es el margen: el diseño dice "32 bytes aleatorios" y la llave del cable no hereda esa fuerza.
+
+**Antes de decidir, medir.** La captura entre dos máquinas que falta en `03` dice si el payload viaja reconocible y si la marca de cifrado llega encendida. Decidir sin ella es elegir entre tres costos sin saber cuál es el beneficio.
+
 ## 6. La sinergia con Statio
 
 La más valiosa de esta lista. Statio hoy depende de Tailscale como canal exclusivo entre GitHub Actions y el agente: un tercero controla el plano de control, los precios y las cuentas de los clientes. Las piezas de Kanpachi son exactamente las que quitan esa dependencia:

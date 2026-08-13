@@ -8,7 +8,7 @@ Cada decisión relevante, las alternativas consideradas y la razón de la elecci
 
 **Elección:** **`kanpachi-engine.exe`**, un binario propio en Rust que declara EasyTier como **librería**, ejecutado como **proceso hijo** del daemon y accedido siempre a través de `EnginePort`. Vive en un repositorio aparte bajo LGPL-3.0.
 
-Y la librería que declara es **un fork nuestro**, `alvarogabrielgomez/EasyTier`, tag `v2.6.4-kanpachi.1`. Esa segunda mitad se decidió después, al medir, y tiene su propia sección más abajo: el binario propio quita lo que el CLI hace ALREDEDOR de la librería, y no quita lo que la librería hace DENTRO de lo que se le pide.
+Y la librería que declara es **un fork nuestro**, `alvarogabrielgomez/EasyTier`, tag `v2.6.4-kanpachi.2`. Esa segunda mitad se decidió después, al medir, y tiene su propia sección más abajo: el binario propio quita lo que el CLI hace ALREDEDOR de la librería, y no quita lo que la librería hace DENTRO de lo que se le pide.
 
 ### Por qué el binario oficial no sirve
 
@@ -91,9 +91,13 @@ La primera deshace la promesa central en la misma capa que Kanpachi usa para con
 
 No hay feature de cargo, campo de configuración ni variable de entorno que las apague. Y no es un defecto de upstream: su propósito declarado es el proxy de subredes y el de KCP, que Kanpachi corre apagados. **Es una diferencia de producto.**
 
-Así que el fork es `v2.6.4` con esas dos llamadas borradas y **nada más**: `1 fichero, 8 inserciones, 31 borrados`, y las ocho inserciones son comentarios. El coste de mantenerlo es el que dice el párrafo de arriba, y por eso el diff se mantiene así de chico: subir de versión es rebasar dos borrados, no reescribir un parche.
+Así que el fork nació siendo `v2.6.4` con esas dos llamadas borradas y **nada más**: `1 fichero, 8 inserciones, 31 borrados`, y las ocho inserciones son comentarios.
 
-**Por eso el motor NO vive dentro del fork, y son tres repos.** La afirmación "esto es upstream y nada más" tiene que poder comprobarse en treinta segundos con `git diff v2.6.4 v2.6.4-kanpachi.1`, y un fork con dos mil líneas nuestras dentro la convierte en un acto de fe. Mantener la línea de cambios separada es además lo que deja actualizar algún día.
+**Hoy lleva un cambio más, y el número de arriba ya no es el diff entero.** El tag fijado es `v2.6.4-kanpachi.2`, que agrega `renew_credential` al gestor de credenciales, con su RPC. Existe porque upstream no tiene forma de correr el vencimiento de una credencial sin reemitirla, y reemitir cambia el par de llaves: el secreto de la credencial **es** la llave estática x25519 del portador, así que uno nuevo lo convierte en otro peer, hay que volver a confiar en él y pierde su sesión. Sin eso, cada invitado se caía de la sala al cumplirse su TTL. Sigue sin haber nada de Kanpachi ahí dentro: lo agregado es genérico y no sabe qué es una sala, un código ni un juego.
+
+**Qué cambia el fork está escrito EN el fork**, en su `FORK.md`, con la tabla de cada hunk y el comando que lo comprueba. Es el sitio correcto porque envejece con él, y por eso este documento no repite la lista.
+
+**Por eso el motor NO vive dentro del fork, y son tres repos.** La afirmación "esto es upstream y esta lista corta" tiene que poder comprobarse en treinta segundos con `git diff v2.6.4 v2.6.4-kanpachi.2 -- '*.rs' '*.proto'`, y un fork con dos mil líneas nuestras dentro la convierte en un acto de fe. Mantener la línea de cambios separada es además lo que deja actualizar algún día.
 
 Lo que el fork NO reemplaza es la compuerta. Su enemigo nunca fue EasyTier: son las reglas permisivas **ajenas**, de escritorio remoto y de instaladores de juegos, que alcanzan al usuario por la red virtual. Eso no lo quita ningún fork. Y la red permanente contra que esto vuelva a pasar tampoco es el fork: es que `AuditForeign` clasifica como ajeno cualquier permiso entrante acotado a una interfaz `kanpachi*` que no sea nuestro, y esa clase BLOQUEA la sala.
 

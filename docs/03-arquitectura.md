@@ -1831,9 +1831,9 @@ Son permanentes: sobreviven al reinicio y a desinstalar Kanpachi.
 
 La primera fila deshace la promesa central en la misma capa que Kanpachi usa para conceder. La segunda es peor y es la que decide el enfoque: **la compuerta de WFP no puede taparla**, porque va acotada al adaptador virtual, y esa acotación es la invariante que impide que un bloqueo duro deje al usuario sin la entrada de su red de casa. Una capa que jamás debe salirse del adaptador no puede cubrir una regla que aplica en todos.
 
-No hay feature de cargo, campo de configuración ni variable de entorno que las apague, así que la salida es una sola: el motor enlaza `alvarogabrielgomez/EasyTier`, tag `v2.6.4-kanpachi.1`, que es `v2.6.4` de upstream con esas dos llamadas borradas y nada más. Quitarlas es seguro porque upstream ya trataba su fallo como no fatal, con un aviso y seguir.
+No hay feature de cargo, campo de configuración ni variable de entorno que las apague, así que la salida es una sola: el motor enlaza `alvarogabrielgomez/EasyTier`, tag `v2.6.4-kanpachi.2`, que es `v2.6.4` de upstream con esas dos llamadas borradas, más `renew_credential`, que corre el vencimiento de una credencial sin reemitirla. Cada hunk está listado en el `FORK.md` del fork, que es donde envejece con él. Quitarlas es seguro porque upstream ya trataba su fallo como no fatal, con un aviso y seguir.
 
-El diff se lee de un vistazo a propósito, y por eso el motor vive en su repo y no dentro del fork: la afirmación "es upstream y nada más" tiene que poder comprobarse en treinta segundos con `git diff v2.6.4 v2.6.4-kanpachi.1`, y un fork con dos mil líneas nuestras dentro la convierte en un acto de fe.
+El diff se lee de un vistazo a propósito, y por eso el motor vive en su repo y no dentro del fork: la afirmación "es upstream y nada más" tiene que poder comprobarse en treinta segundos con `git diff v2.6.4 v2.6.4-kanpachi.2`, y un fork con dos mil líneas nuestras dentro la convierte en un acto de fe.
 
 Lo que el fork NO reemplaza es la compuerta. Su enemigo nunca fue EasyTier: son las reglas permisivas **ajenas**, de escritorio remoto y de instaladores de juegos, que alcanzan al usuario por la red virtual. Eso no lo quita ningún fork.
 
@@ -2456,6 +2456,84 @@ Las comprobaciones van en CADA uso, no solo la primera vez: `last-room.json` gua
 
 **Lo que no se hace, y por qué.** Nada de escanear las skills con un modelo, nada de política de aprobación, nada de firmar el manifiesto. Son archivos de prosa de un solo origen en un proyecto de una persona: el control que paga es el hash comprobado, y el resto es ceremonia.
 
+## Criptografía: qué se firma, qué se cifra y con qué llave
+
+Todo lo que sigue está leído del código que se compila. La única parte que hoy no está medida en el cable es el túnel, y eso va dicho en su sitio en vez de tapado.
+
+### Las llaves que existen
+
+| Llave | Qué es | Dónde vive | Cuánto dura |
+|---|---|---|---|
+| `identity.key` | Semilla Ed25519 de 32 bytes, cruda: sin contenedor, sin cabecera, sin codificación. No hay parser que equivocar | ACL propia en Windows, 0600 en Linux | Para siempre. Una llave presente e ilegible es un ERROR y jamás una llave nueva |
+| Llave del estado en reposo | AES-256 derivada por HKDF-SHA256 de la llave privada entera, con `info` igual a `kanpachi/state-at-rest/v1` | En ningún sitio. Se deriva en cada arranque | Estable mientras lo sea `identity.key` |
+| Clave de la tarjeta | AES-256 aleatoria, una por sala | En el fragmento del enlace, que el navegador no transmite al servidor | Vive con el código |
+| Secreto de encuentro | 32 bytes derivados por Argon2id del invite ID, salt `kanpachi/v1/secret` | En ningún sitio. Se deriva en las dos puntas | Mientras el código valga |
+| Secreto de la red REAL | 32 bytes aleatorios que genera el host, y que no derivan de ningún string que alguien pueda escribir | `hosted-room.json`, sellado | Mientras la sala viva |
+| Par del canal de control | X25519 efímero de `nacl/box` | Solo en memoria | La sesión |
+| `signing` del seed | 32 bytes que ACUÑAN tokens. Vale tanto como el password y no caduca | `auth.json` del seed, 0600 | Hasta que se cambie el password |
+| Verificador del password | Argon2id sobre la prueba que manda el cliente, con su sal | `auth.json` | Ídem |
+
+**Ninguna llave se comparte entre usos, y el mecanismo es el mismo en los tres sitios donde hace falta.** El `info` de HKDF para el estado en reposo, el salt versionado para la identidad de encuentro, y la etiqueta con el host del seed dentro para la prueba del password. Dos valores derivados del mismo secreto con etiquetas distintas no se relacionan, así que la llave que abre el fichero de la sala no abre nada más, hoy ni cuando aparezca el uso siguiente.
+
+### Lo único que se FIRMA
+
+Ed25519, sobre la tarjeta ya sellada, en un solo sitio del cliente. El seed verifica con `ed25519.Verify` antes de aceptar `POST /api/rooms` y `PUT /api/i/{id}`, y de esa verificación sale el **fijado**: ese invite ID queda atado a esa llave pública durante 21 días.
+
+Qué compra: que nadie que no sea este equipo publique en un invite ID que él reservó, o sea que un ex miembro que conserva el código no se adelante al host cuando reabre.
+
+Qué NO compra, dicho para no vender lo que no hay: autenticación DENTRO de la sala. Los sobres del canal de control son anónimos a propósito, y la llave larga que cerraría eso es la decisión 25, que sigue diferida. En el vestíbulo las direcciones son autoasignadas, así que quien tenga el código puede ocupar la dirección del host y contestar por él. La respuesta que existe hoy es renovar el código, que levanta un vestíbulo nuevo y deja al ocupante solo en el viejo.
+
+### Lo que se CIFRA, y con qué
+
+| Qué | Cómo | Quién no puede leerlo |
+|---|---|---|
+| La tarjeta de sala | AES-256-GCM, blob `nonce ‖ ciphertext` | El seed, que la guarda y nunca ve la clave |
+| El estado en disco | AES-256-GCM, con marca `KPSEAL1` delante del nonce | Otro usuario de la máquina, en Windows |
+| Los sobres del canal de control | Caja anónima de NaCl, o sea X25519 con XSalsa20-Poly1305 | Un peer que relaye los bytes |
+| El tráfico con el registro | TLS del cliente HTTP: sin proxy de entorno, sin seguir redirecciones, verificado, con tope de respuesta | Quien esté en el camino |
+| El túnel entre máquinas | Ver abajo. No es TLS y nunca lo fue |
+
+**Los tres primeros son AEAD y fallan igual: se descarta ENTERO.** No hay descifrado parcial ni campo que se aproveche. Ninguno de los tres dice cuál de las dos cosas falló, la llave equivocada o los bytes tocados, y eso es deliberado: contestar cuál fue es contestarle a quien estaba probando.
+
+**Ninguno de los dos sellos locales usa datos autenticados aparte, y el motivo está escrito donde se decide.** Lo que un AAD compra es que un blob no se pueda mover de un fichero a otro, y acá los dos ficheros que hay llevan cosas distintas: el decodificador estricto del dominio rechaza el que no le toca, ruidosamente. Sería una defensa contra algo que ya falla a la vista.
+
+### El túnel, que es la parte que hay que leer entera
+
+**Kanpachi no monta TLS entre máquinas y no hay certificados en ningún sitio del producto.** El motor marca al seed con `tcp://IP:11010`, en claro, y toda la confidencialidad la pone una capa de cifrado DENTRO del protocolo de EasyTier. Quien busque acá una decisión sobre certificados no la va a encontrar porque nunca hubo una que tomar.
+
+Lo verificado leyendo el fuente fijado, `v2.6.4-kanpachi.2`:
+
+| Hecho | Dónde se comprueba |
+|---|---|
+| El cifrado va encendido, escrito explícito en vez de heredado del default | `kanpachi-engine/src/config.rs`, `f.enable_encryption = true` |
+| El algoritmo es el POR DEFECTO, y ese default es **AES-128-GCM** | El motor no fija `encryption_algorithm`, y `EncryptionAlgorithm::default()` da `AesGcm` con la feature `aes-gcm`, que es la que el motor compila |
+| La llave NO sale de una función de derivación | `GlobalCtx::get_128_key` pasa el secreto de red por `DefaultHasher` de la biblioteca estándar de Rust, en dos pases de 64 bits |
+| Elegir `aes-256-gcm` no lo arreglaría | `get_256_key` usa el MISMO hasher, en cuatro pases |
+| Un paquete que llegue con la marca de cifrado APAGADA se acepta tal cual | Las cuatro implementaciones de `Encryptor` abren devolviendo Ok cuando la cabecera dice que no viene cifrado |
+
+**Qué significa cada cosa, porque las dos últimas se pueden leer peor de lo que son.**
+
+El secreto de la red real son 32 bytes aleatorios que no derivan de ningún string, y **ese argumento no se traslada a la llave del túnel**. `DefaultHasher` es el hasher de propósito general de la biblioteca estándar, construido con llave cero, y su documentación advierte de dos cosas: que no es un hash criptográfico, y que su algoritmo interno no está especificado entre versiones del compilador. Lo primero quita el respaldo que uno supondría al leer "32 bytes aleatorios". Lo segundo es además una trampa de compatibilidad, porque un rebuild con otro compilador podría derivar otra llave y dejar sin verse a dos versiones de Kanpachi, con el mismo síntoma mudo que tendrían los parámetros de Argon2id si alguien los tocara: pegar el mismo código y quedarse solo en la sala. Hoy lo sostiene el pin de `rust-toolchain.toml` al canal `1.95`, y ese pin pasa a ser parte de esta garantía y no solo una comodidad de compilación.
+
+La marca de cifrado apagada es una degradación **entre miembros**, y no una puerta abierta a un desconocido. Para llegar a ser peer hay que pasar el intercambio de `network_secret_digest` y la prueba MAC del secreto, así que quien puede mandar un paquete con esa marca ya está dentro de la sala. Eso la deja en la misma clase que "un miembro manda basura al canal de control", que es la superficie que este documento ya nombra como la más seria del producto.
+
+**Lo que falta, dicho como falta.** Todo esto está leído del fuente que se compila, no capturado del cable. Una captura entre dos máquinas agrega dos cosas que leer no da: que el payload de un paquete del juego no viaja reconocible, y que la marca de cifrado llega encendida en el tráfico real. Va con el resto de las mediciones que necesitan dos máquinas.
+
+### El reposo, Windows contra Linux
+
+Los dos sistemas protegen lo mismo por caminos distintos, y la diferencia importa porque el más permisivo es Windows, que es donde vive casi todo el uso.
+
+| | Windows | Linux |
+|---|---|---|
+| Directorio de datos | `ProgramData\Kanpachi`, con lectura para los usuarios de la máquina A PROPÓSITO, para que la ventana lea `api.token` sin elevar | `/var/lib/kanpachi`, 0700 de root |
+| `identity.key` | La ÚNICA excepción del directorio: ACL propia, SYSTEM y Administradores. Se escribe creando el temporal VACÍO, poniéndole la ACL con nada dentro, y solo entonces la semilla | 0600, dentro de un directorio al que nadie más entra |
+| Estado de la sala | Sellado con la llave derivada, MÁS su ACL | Sellado, MÁS 0600 |
+| Token de refresco del seed | Igual: sellado y con ACL. Las dos, porque el valor por omisión del directorio es el permisivo | Igual |
+| Canal local | Named pipe bajo `ProtectedPrefix\Administrators`, que el usuario interactivo puede ABRIR a propósito, con permiso de hablar y no de crear instancias | Socket 0600 de root en directorio 0700, jamás abstracto, más `SO_PEERCRED` en cada conexión |
+| Qué separa a otro usuario del secreto de la red real | El sellado, y nada más: la ACL del directorio lo deja leer el fichero | El directorio ya lo separa. El sellado es defensa en profundidad |
+
+**De esa última fila sale la asimetría que hay que decir en voz alta.** En Windows el canal local se le concede al usuario interactivo para que la ventana no tenga que elevar, así que otro usuario de esa PC puede pedirle al daemon que abra una sala usando el token que ya está guardado, sin conocer jamás el password del seed. El password cierra la puerta a desconocidos de internet y no a quien ya se sentó en esa máquina. En Linux no ocurre, porque ese usuario ni siquiera llega a conectarse al socket.
+
 ## Modelo de amenazas, resumen honesto
 
 | Amenaza | Resultado |
@@ -2476,3 +2554,5 @@ Las comprobaciones van en CADA uso, no solo la primera vez: `last-room.json` gua
 | Operador de un seed intenta cosechar passwords | Recibe un SHA-256 con el host de su propio seed dentro, así que lo que aprende no vale en ningún otro sitio, ni siquiera en otro seed suyo |
 | Disco robado de una máquina que hospeda en un seed cerrado | Entrega un token de refresco sellado, que caduca y que el operador revoca cambiando el password. **El password no está en el disco** |
 | **Otro usuario de la MISMA PC, en Windows** | **El password del seed NO lo cubre**, y hay que decirlo para que nadie lo suponga al revés. El canal local se le concede al usuario interactivo a propósito, para que la ventana hable sin elevar, así que ese usuario puede pedirle al daemon que abra una sala usando el token ya guardado. El password le cierra la puerta a desconocidos de internet, no a quien ya se sentó en esa máquina. En Linux no ocurre: el socket es 0600 de root |
+| Alguien captura el tráfico del túnel en el camino | Va cifrado con AES-128-GCM dentro del protocolo del motor, sin TLS por encima ni certificados en ninguna parte. La llave sale del secreto de red por un hash NO criptográfico, así que el respaldo de "32 bytes aleatorios" no llega hasta ella. Está leído del fuente que se compila, sin captura del cable todavía |
+| Un miembro manda paquetes con la marca de cifrado apagada | El receptor los acepta tal cual, en las cuatro implementaciones de cifrado. Llegar a ser peer exige el digest del secreto de red y su prueba MAC, así que quien puede hacerlo ya está dentro de la sala: misma clase que mandar basura al canal de control |
