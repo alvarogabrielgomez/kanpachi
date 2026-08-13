@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_field.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_icon_button.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/density_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
@@ -266,14 +269,35 @@ class _PanelState extends State<_Panel> {
 /// El cuerpo de una pantalla centrada, sin más contenido que un bloque: la
 /// bienvenida, el nombre, las esperas.
 class ScreenCentered extends StatelessWidget {
-  const ScreenCentered({required this.child, this.maxWidth = 430, super.key});
+  const ScreenCentered({
+    required this.child,
+    this.maxWidth = 430,
+    this.onBack,
+    super.key,
+  });
 
   final Widget child;
   final double maxWidth;
 
+  /// Volver, en la esquina de arriba a la izquierda.
+  ///
+  /// # Por qué la pone el MARCO y no cada pantalla
+  ///
+  /// Porque son cuatro pantallas centradas y ninguna la tenía: elegir servidor,
+  /// escribir su password y cambiarse el nombre se entraba y no se salía, salvo
+  /// completando lo que pedían. Puesta a mano en cada una serían cuatro flechas
+  /// en cuatro sitios ligeramente distintos, que es lo que ya pasó con otras
+  /// cosas de este archivo.
+  ///
+  /// **Nula donde no hay a dónde volver**, y ese caso existe de verdad: la
+  /// bienvenida y el nombre que se pide en el alta son el principio del camino.
+  /// Una flecha ahí llevaría a ningún sitio, o peor, a saltarse lo único que la
+  /// app necesita para poder hacer algo.
+  final VoidCallback? onBack;
+
   @override
   Widget build(BuildContext context) {
-    return Center(
+    final Widget centro = Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(AppSpacing.x10l),
         child: ScreenEnter(
@@ -283,6 +307,31 @@ class ScreenCentered extends StatelessWidget {
           ),
         ),
       ),
+    );
+    if (onBack == null) return centro;
+    return Stack(
+      children: <Widget>[
+        centro,
+        // Encima y no en la columna: el contenido está centrado en la ventana
+        // y la flecha va en la esquina, igual que en las pantallas con
+        // cabecera. Metida en la columna se movería con el contenido y quedaría
+        // a media altura.
+        //
+        // El margen es el mismo que el de [ScreenBody], para que la flecha caiga
+        // donde cae en las otras pantallas y no dos píxeles más allá.
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            AppSpacing.pageInline,
+            context.density.pagePad,
+            0,
+            0,
+          ),
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: AppBackButton(onPressed: onBack!),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -346,6 +395,151 @@ class ScreenHeader extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// La pantalla de "escribe una cosa y guarda", que en esta app hay tres.
+///
+/// # Por qué es UNA pantalla y no tres parecidas
+///
+/// Porque cambiarse el nombre, elegir el servidor y escribir su password son la
+/// misma pantalla con otras palabras: un título centrado, un campo grande, una
+/// línea que explica o corrige, un recuadro que dice para qué sirve, y un botón.
+/// Escritas por separado ya se habían separado: ninguna tenía flecha de volver,
+/// dos pintaban el `toString()` de una excepción donde va lo que el daemon dice
+/// del texto escrito, y ninguna encendía el estado de espera de su botón aunque
+/// el botón sepa hacerlo desde siempre.
+///
+/// Es la misma regla que [AppEditableName] y que los tamaños de [AppButton]: se
+/// reusa el componente y se le pasa el estilo, en vez de copiarlo con otras
+/// medidas. Lo único que justifica volver a escribir algo es que no pueda
+/// compartirse, como la página de invitación, que es HTML y no Dart.
+///
+/// # Lo que decide cada pantalla, y lo que decide esta
+///
+/// Esta decide la forma: dónde va cada cosa, cuánto aire lleva, dónde cae la
+/// flecha, y que el botón muestre su rueda mientras la acción corre. Cada
+/// pantalla decide QUÉ se escribe y qué hacer con ello, que es lo suyo.
+class ScreenPrompt extends StatelessWidget {
+  const ScreenPrompt({
+    required this.title,
+    required this.controller,
+    required this.actionLabel,
+    required this.onSubmit,
+    this.subtitle,
+    this.hint,
+    this.helper,
+    this.error,
+    this.explainer,
+    this.maxLength,
+    this.obscure = false,
+    this.enabled = true,
+    this.busy = false,
+    this.onBack,
+    super.key,
+  });
+
+  final String title;
+
+  /// Debajo del título, cuando hace falta decir SOBRE QUÉ se está escribiendo.
+  ///
+  /// Lo pide la pantalla del password, que enseña ahí el nombre del servidor:
+  /// una contraseña que se escribe sin ver a quién se la estás dando es
+  /// exactamente lo que este producto no puede pedirle a nadie.
+  ///
+  /// Widget y no texto porque el estilo es del dato: un nombre de servidor va
+  /// en monoespaciada, y esta pantalla no tiene por qué saberlo.
+  final Widget? subtitle;
+
+  final TextEditingController controller;
+
+  /// Lo que dice el botón. Cambia entre pantallas porque cambia lo que hace:
+  /// «Guardar» deja algo puesto, «Continuar» sigue con lo que se estaba
+  /// haciendo.
+  final String actionLabel;
+
+  /// Se llama al pulsar y también al pulsar Enter dentro del campo. Las dos
+  /// llevan al mismo sitio a propósito: quien acaba de escribir algo pulsa
+  /// Enter, y una pantalla que lo ignore obliga a ir a buscar el botón.
+  final VoidCallback onSubmit;
+
+  final String? hint;
+
+  /// La línea de debajo del campo cuando todo va bien.
+  final String? helper;
+
+  /// La misma línea cuando algo se rechazó. **Gana sobre [helper]**: lo que hay
+  /// que leer es lo que salió mal, no lo que se explicaba antes de intentarlo.
+  final String? error;
+
+  /// El recuadro que dice para qué sirve esto. Widget y no texto porque uno de
+  /// los tres lleva algo más que un párrafo.
+  final Widget? explainer;
+
+  final int? maxLength;
+  final bool obscure;
+
+  /// Si el botón se puede pulsar. Lo decide cada pantalla con su propia regla
+  /// sobre lo escrito, que es lo único que no se puede compartir.
+  final bool enabled;
+
+  /// Mientras la acción corre. Enciende la rueda DENTRO del botón, que es donde
+  /// [AppButton] ya la sabe pintar.
+  final bool busy;
+
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final String? linea = error ?? helper;
+    return ScreenCentered(
+      onBack: onBack,
+      child: Column(
+        children: <Widget>[
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: context.type.display.copyWith(color: colors.text),
+          ),
+          if (subtitle != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.lg),
+            subtitle!,
+          ],
+          const SizedBox(height: AppSpacing.x8l),
+          AppField(
+            controller: controller,
+            shape: AppFieldShape.hero,
+            autofocus: true,
+            hint: hint,
+            maxLength: maxLength,
+            obscure: obscure,
+            onSubmitted: (_) => onSubmit(),
+          ),
+          if (linea != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.lg),
+            Text(
+              linea,
+              textAlign: TextAlign.center,
+              style: context.type.bodySm.copyWith(
+                color: error != null ? colors.danger : colors.textMuted,
+              ),
+            ),
+          ],
+          if (explainer != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.x7l),
+            explainer!,
+          ],
+          const SizedBox(height: AppSpacing.x8l),
+          AppButton(
+            label: actionLabel,
+            width: 220,
+            busy: busy,
+            onPressed: enabled && !busy ? onSubmit : null,
+          ),
+        ],
+      ),
     );
   }
 }

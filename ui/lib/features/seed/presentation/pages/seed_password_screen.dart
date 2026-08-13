@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
-import 'package:kanpachi_ui/core/design_system/atoms/app_field.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
-import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/seed/domain/seed_password.dart';
+import 'package:kanpachi_ui/features/session/presentation/daemon_failure_text.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
@@ -75,7 +73,7 @@ class _SeedPasswordScreenState extends State<SeedPasswordScreen> {
       if (!mounted) return;
       setState(() {
         _enviando = false;
-        _error = e.toString();
+        _error = daemonFailureText(e);
       });
     }
   }
@@ -87,49 +85,29 @@ class _SeedPasswordScreenState extends State<SeedPasswordScreen> {
       (SessionCubit c) => c.state.ownSeed,
     );
 
-    return ScreenCentered(
-      child: Column(
-        children: <Widget>[
-          Text(
-            'Ese servidor pide contraseña',
-            textAlign: TextAlign.center,
-            style: context.type.display.copyWith(color: colors.text),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          if (seed.isNotEmpty)
-            Text(
+    return ScreenPrompt(
+      title: 'Ese servidor pide contraseña',
+      subtitle: seed.isEmpty
+          ? null
+          : Text(
               seed,
               textAlign: TextAlign.center,
               style: context.type.mono.copyWith(color: colors.textMuted),
             ),
-          const SizedBox(height: AppSpacing.x7l),
-          AppField(
-            controller: _controller,
-            shape: AppFieldShape.hero,
-            autofocus: true,
-            obscure: true,
-            maxLength: SeedPassword.maxLength,
-            hint: 'La contraseña de ese servidor',
-            onSubmitted: (_) => _enviar(),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          Text(
-            _error ?? 'Te la da quien administra el servidor',
-            textAlign: TextAlign.center,
-            style: context.type.bodySm.copyWith(
-              color: _error != null ? colors.danger : colors.textMuted,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.x7l),
-          const _WhatItGuards(),
-          const SizedBox(height: AppSpacing.x8l),
-          AppButton(
-            label: 'Continuar',
-            width: 220,
-            onPressed: _valido && !_enviando ? _enviar : null,
-          ),
-        ],
-      ),
+      controller: _controller,
+      hint: 'La contraseña de ese servidor',
+      maxLength: SeedPassword.maxLength,
+      obscure: true,
+      helper: 'Te la da quien administra el servidor',
+      error: _error,
+      explainer: const _WhatItGuards(),
+      actionLabel: 'Continuar',
+      enabled: _valido,
+      busy: _enviando,
+      onSubmit: _enviar,
+      // Volver deja el password sin escribir y devuelve a donde se estaba, que
+      // es abrir una sala. Sin flecha, la única salida era escribirlo.
+      onBack: context.read<ShellCubit>().back,
     );
   }
 }

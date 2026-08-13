@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_chip.dart';
-import 'package:kanpachi_ui/core/design_system/atoms/app_field.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/kanpachi_wordmark.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_ambient_background.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
@@ -128,60 +127,31 @@ class _NicknameScreenState extends State<NicknameScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return ScreenCentered(
-      child: Column(
-        children: <Widget>[
-          Text(
-            widget.fromOnboarding
-                ? '¿Cómo te ven tus panas?'
-                : 'Cambia tu nombre',
-            textAlign: TextAlign.center,
-            style: context.type.display.copyWith(color: colors.text),
-          ),
-          const SizedBox(height: AppSpacing.x8l),
-          AppField(
-            controller: _controller,
-            shape: AppFieldShape.hero,
-            maxLength: 12,
-            autofocus: true,
-            hint: 'Alvaro',
-            onSubmitted: (_) => _continue(),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          Text(
-            'Hasta 12 letras y números',
-            // El rol de nota, el mismo de «Paso 2 de 2»: es una pista, no una
-            // etiqueta, y en semi-negrita competía con el campo que explica.
-            style: context.type.bodySm.copyWith(
-              color: colors.textMuted,
-              height: 1,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.x7l),
-          const AppExplainer(
-            'Es solo para que se reconozcan en la lista. No es una cuenta, no '
-            'se verifica, no se manda a ningún servidor.',
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: AppSpacing.x8l),
-          AppButton(
-            label: widget.fromOnboarding ? 'Continuar' : 'Guardar',
-            width: 220,
-            // Disabled until the name is usable. The daemon would refuse it
-            // anyway; refusing here is what lets the refusal be about what
-            // they typed.
-            onPressed: _valid ? _continue : null,
-          ),
-          if (widget.fromOnboarding) ...<Widget>[
-            const SizedBox(height: AppSpacing.x4l),
-            Text(
-              'Paso 2 de 2 · solo la primera vez',
-              style: context.type.bodySm.copyWith(color: colors.textMuted),
-            ),
-          ],
-        ],
+    return ScreenPrompt(
+      title: widget.fromOnboarding
+          ? '¿Cómo te ven tus panas?'
+          : 'Cambia tu nombre',
+      controller: _controller,
+      hint: 'Alvaro',
+      maxLength: 12,
+      helper: 'Hasta 12 letras y números',
+      explainer: const AppExplainer(
+        'Es solo para que se reconozcan en la lista. No es una cuenta, no '
+        'se verifica, no se manda a ningún servidor.',
+        textAlign: TextAlign.center,
       ),
+      actionLabel: widget.fromOnboarding ? 'Continuar' : 'Guardar',
+      // Apagado hasta que el nombre sirva. El daemon lo rechazaría igual;
+      // rechazarlo acá es lo que permite que el rechazo hable de lo escrito.
+      enabled: _valid,
+      onSubmit: _continue,
+      // **Sin flecha en el alta, y con ella al cambiarlo.** En el alta esto es
+      // el principio del camino y no hay a dónde volver; peor, volver sería
+      // saltarse lo único que la app necesita para poder hacer algo. Cambiarlo
+      // después se entra desde el menú de cuenta, y de ahí sí se vuelve.
+      onBack: widget.fromOnboarding
+          ? null
+          : context.read<ShellCubit>().back,
     );
   }
 }

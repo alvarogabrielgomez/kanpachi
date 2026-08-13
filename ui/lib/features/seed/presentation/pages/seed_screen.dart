@@ -2,12 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
-import 'package:kanpachi_ui/core/design_system/atoms/app_field.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_chip.dart';
-import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
-import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/own_seed.dart';
+import 'package:kanpachi_ui/features/session/presentation/daemon_failure_text.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
@@ -80,7 +77,7 @@ class _SeedScreenState extends State<SeedScreen> {
       });
     } on Object catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      setState(() => _error = daemonFailureText(e));
     }
   }
 
@@ -103,73 +100,43 @@ class _SeedScreenState extends State<SeedScreen> {
       if (!mounted) return;
       setState(() {
         _guardando = false;
-        _error = e.toString();
+        _error = daemonFailureText(e);
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     final OwnSeed? actual = _actual;
     final bool sugerido =
         actual != null &&
         actual.configured.isEmpty &&
         actual.suggested.isNotEmpty;
 
-    return ScreenCentered(
-      child: Column(
-        children: <Widget>[
-          Text(
-            '¿En qué servidor abres tus salas?',
-            textAlign: TextAlign.center,
-            style: context.type.display.copyWith(color: colors.text),
-          ),
-          const SizedBox(height: AppSpacing.x8l),
-          AppField(
-            controller: _controller,
-            shape: AppFieldShape.hero,
-            autofocus: true,
-            hint: 'kanpachi.ejemplo.com',
-            onSubmitted: (_) => _guardar(),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          if (_error != null)
-            Text(
-              _error!,
-              textAlign: TextAlign.center,
-              style: context.type.bodySm.copyWith(color: colors.danger),
-            )
-          else if (sugerido)
-            Text(
-              'Este es el servidor de la última sala en la que estuviste. '
-              'Cámbialo si no es el tuyo.',
-              textAlign: TextAlign.center,
-              style: context.type.bodySm.copyWith(color: colors.textMuted),
-            )
-          else
-            Text(
-              'El nombre del servidor, sin https:// y sin barras',
-              style: context.type.bodySm.copyWith(
-                color: colors.textMuted,
-                height: 1,
-              ),
-            ),
-          const SizedBox(height: AppSpacing.x7l),
-          const AppExplainer(
-            'Es el punto de encuentro de tus salas: ve tu IP pública y por él '
-            'pasa todo el que entre con tu código. Ponlo solo si confías en '
-            'quien lo administra.',
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: AppSpacing.x8l),
-          AppButton(
-            label: 'Guardar',
-            width: 220,
-            onPressed: _valido ? _guardar : null,
-          ),
-        ],
+    return ScreenPrompt(
+      title: '¿En qué servidor abres tus salas?',
+      controller: _controller,
+      hint: 'kanpachi.ejemplo.com',
+      helper: sugerido
+          ? 'Este es el servidor de la última sala en la que estuviste. '
+                'Cámbialo si no es el tuyo.'
+          : 'El nombre del servidor, sin https:// y sin barras',
+      error: _error,
+      explainer: const AppExplainer(
+        'Es el punto de encuentro de tus salas: ve tu IP pública y por él '
+        'pasa todo el que entre con tu código. Ponlo solo si confías en '
+        'quien lo administra.',
+        textAlign: TextAlign.center,
       ),
+      actionLabel: 'Guardar',
+      enabled: _valido,
+      busy: _guardando,
+      onSubmit: _guardar,
+      // Volver siempre se puede, y hasta ahora no: se entraba acá y solo se
+      // salía guardando. A esta pantalla se llega desde Configuración, desde
+      // el diálogo de confianza y desde intentar abrir una sala sin servidor,
+      // y en los tres hay un sitio del que se vino.
+      onBack: context.read<ShellCubit>().back,
     );
   }
 }
