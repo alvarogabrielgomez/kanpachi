@@ -2232,6 +2232,47 @@ El párrafo de arriba era una predicción. Esto es lo que pasó al hacerla, con 
 
 **Cómo se midió, porque importa para leerlo.** Las 40 peticiones salieron del propio droplet contra `127.0.0.1:8010` con `X-Forwarded-For` inventado, que es la única forma de simular direcciones distintas. Desde internet no se puede: el registro **escucha solo en loopback**, así que la cabecera solo se cree viniendo de nginx, y por IP real el freno son 5 por minuto. Un atacante necesita tantas direcciones como derivaciones quiera encolar.
 
+### Qué de todo esto está medido, y dónde
+
+Se separa a propósito. Un mecanismo comprobado en local dice que el código hace lo que dice; el mismo comprobado en la instalación dice además que lo desplegado es ese código y que la máquina aguanta. Confundirlos es cómo se da por cubierto lo que no se corrió nunca donde importa.
+
+**La puerta, medida contra el seed desplegado y cerrado con password:**
+
+| Qué | Resultado |
+|---|---|
+| Password correcto | 200, un token de acceso y uno de refresco, opacos, 76 bytes cada uno |
+| Hospedar con el token | 201 |
+| El token de acceso presentado como refresco | 401. El tipo va DENTRO de la firma justo para esto |
+| Refrescar, y hospedar con el acceso nuevo | 200 y 201 |
+| Password equivocado | 401 `sub=password` |
+| **La prueba del MISMO password calculada para OTRO host** | **401.** El atado al host funciona fuera del banco de pruebas |
+| Hospedar sin token | 401 `sub=reauth` |
+| Resolver un código, con el seed cerrado | 404 en 140 ms, sin pedir nada |
+
+**La revocación, medida en la instalación, que es lo que sostiene la decisión entera:**
+
+El operador cambió el password teniendo esta sesión un acceso y un refresco vivos y comprobados vivos un minuto antes.
+
+| Qué | Antes del cambio | Después |
+|---|---|---|
+| El refresco, que vive 30 días | 200, daba un acceso nuevo | **401** `sub=password` |
+| El acceso, que vive 15 minutos | pasaba el guardián | **401** `sub=reauth` |
+| El password viejo | entraba | 401 `sub=password` |
+| Resolver un código | 404 | 404, igual, sin pedir nada |
+
+**El acceso murió con un minuto y cincuenta y un segundos de vida, contra un TTL de quince minutos.** Ese número es el que hace la medición concluyente: no venció, lo revocaron. Rotar la clave de firma invalida en el acto todo token emitido, sin recorrer ninguna tabla y sin almacén que barrer, que es exactamente lo que la decisión 34 promete.
+
+**Medido además en local, corriendo el registro de verdad sobre HTTP**, porque son casos que en la instalación costarían tocar producción:
+
+| Qué | Resultado |
+|---|---|
+| El refresco presentado como bearer | 401 `sub=reauth` |
+| El token de OTRO seed | 401 |
+| `X-Forwarded-For` con `RemoteAddr` público, 6 cabeceras distintas | la sexta cae, o sea que cuenta por la conexión y no por la cabecera |
+| Lo mismo con `RemoteAddr` de loopback | pasan las 6, que es el caso del nginx delante |
+| El password en claro dentro de `auth.json` | ausente |
+| Dos `Open()` seguidos | idempotente |
+
 ### Un seed cerrado: qué exige, qué guarda y qué se niega a decir
 
 Ver la decisión 34 para el porqué. Lo que sigue es dónde vive cada pieza.
