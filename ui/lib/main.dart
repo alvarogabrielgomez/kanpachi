@@ -318,13 +318,12 @@ class KanpachiApp extends StatelessWidget {
           create: (_) => Injector.instance.get<SessionCubit>()..watchSession(),
         ),
         BlocProvider<UpdateCubit>(
-          // La primera de las tres preguntas por si hay versión nueva; las
-          // otras dos las hace [ShellPage] al abrirse y al cerrarse una sala.
+          // **Sin `..check()`.** Arrancar ya no pregunta nada: la comprobación
+          // pasó a ser a pedido, desde los ajustes. Ver [UpdateCubit].
           //
-          // Acá y no en el latido a propósito: es una petición a internet, y
-          // el latido corre cada dos segundos en la PC de alguien que está
-          // jugando. Ver [UpdateCubit].
-          create: (_) => Injector.instance.get<UpdateCubit>()..check(),
+          // Lo que sí hace el cubit al nacer es leer lo que ya se sabía, que
+          // está en disco, así que el aviso reaparece sin salir a la red.
+          create: (_) => Injector.instance.get<UpdateCubit>(),
         ),
       ],
       // Por encima de la app y por debajo de los cubits: tiene que durar lo

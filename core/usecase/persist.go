@@ -20,7 +20,7 @@ func (s *Session) saveRoomLocked() {
 	if !s.state.IsHost() || !s.state.Conn.InRoom() {
 		return
 	}
-	raw, err := domain.PersistedRoom{
+	raw, err := domain.HostedRoom{
 		Room:          s.state.Room,
 		Name:          s.state.Name,
 		Host:          s.nick,

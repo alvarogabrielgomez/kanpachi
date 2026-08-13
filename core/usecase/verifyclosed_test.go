@@ -15,20 +15,20 @@ import (
 
 func TestLeavingVerifiesNothingSurvivedThePurge(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
 		t.Fatal(err)
 	}
 
 	// The firewall claims success and leaves a rule behind anyway. That is the
 	// exact failure this guards: a silent purge failure.
-	b.auditoría.overrideRules = true
-	b.auditoría.puestas = []domain.AppliedRule{{
+	b.audit.overrideRules = true
+	b.audit.puestas = []domain.AppliedRule{{
 		Name:    "kanpachi-udp-16261",
 		Layer:   domain.LayerFirewallRules,
 		Enabled: true,
 	}}
 
-	st := b.sesión.LeaveRoom(ctx())
+	st := b.session.LeaveRoom(ctx())
 
 	if !tieneAlerta(st, domain.AlertKickIncomplete) {
 		t.Fatalf("no avisó de que quedaron reglas puestas al salir: %+v", st.Alerts)
@@ -51,11 +51,11 @@ func TestLeavingVerifiesNothingSurvivedThePurge(t *testing.T) {
 
 func TestLeavingCleanlySaysNothing(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
 		t.Fatal(err)
 	}
 
-	st := b.sesión.LeaveRoom(ctx())
+	st := b.session.LeaveRoom(ctx())
 
 	if tieneAlerta(st, domain.AlertKickIncomplete) {
 		t.Errorf("avisó sin que quedara nada: %+v", st.Alerts)
@@ -67,15 +67,15 @@ func TestLeavingCleanlySaysNothing(t *testing.T) {
 
 func TestNotBeingAbleToVerifyIsReported(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
 		t.Fatal(err)
 	}
 
 	// Blindness right where it matters most. Assuming the purge worked is the
 	// one thing that must not happen here.
-	b.auditoría.errIntactas = errors.New("el firewall no contestó")
+	b.audit.errIntactas = errors.New("el firewall no contestó")
 
-	st := b.sesión.LeaveRoom(ctx())
+	st := b.session.LeaveRoom(ctx())
 
 	if !tieneAlerta(st, domain.AlertAuditFailed) {
 		t.Fatalf("no avisó de que no pudo comprobar: %+v", st.Alerts)

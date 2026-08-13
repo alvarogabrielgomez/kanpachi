@@ -68,11 +68,18 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 	// diría que la máquina quedó sin vigilar cuando lo que pasa es que no se
 	// pueden abrir salas nuevas. Va a su propio campo del estado, que es
 	// transitorio y se apaga solo. Ver [domain.RoomState.SeedDown].
+	// Se sondea el registro de ESTA máquina, que es el que decide si se puede
+	// abrir una sala. No tener ninguno configurado todavía **no es que esté
+	// caído**: son dos cosas distintas y solo una es un problema de red. Sin
+	// registro no se sondea nada y el aviso no se enciende; quien intente crear
+	// se topa con [port.ErrNoOwnSeed] y con la pantalla que lo configura.
 	caído := false
-	if err := s.deps.Directory.Reachable(ctx); err != nil {
-		s.deps.Log.Warn("el registro no contesta, así que no se pueden abrir ni entrar salas",
-			"seed", s.deps.Directory.Seed(), "error", err)
-		caído = true
+	if dir, err := s.deps.Directories.Own(); err == nil {
+		if err := dir.Reachable(ctx); err != nil {
+			s.deps.Log.Warn("el registro no contesta, así que no se pueden abrir ni entrar salas",
+				"seed", dir.Seed(), "error", err)
+			caído = true
+		}
 	}
 
 	// Las reglas propias se MIDEN acá, suelto, igual que las otras dos

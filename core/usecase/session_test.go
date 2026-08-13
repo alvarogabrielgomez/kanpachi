@@ -33,7 +33,7 @@ func TestArrancarPurgaLoQueDejóLaEjecuciónAnterior(t *testing.T) {
 func TestCrearSala(t *testing.T) {
 	b := nuevoBanco(t)
 
-	st, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas")
+	st, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestCrearSala(t *testing.T) {
 // defecto en el mismo test: red cifrada, cero puertos abiertos.
 func TestUnaSalaNaceSinJuegoYSinPuertos(t *testing.T) {
 	b := nuevoBanco(t)
-	st, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas")
+	st, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,12 +75,12 @@ func TestUnaSalaNaceSinJuegoYSinPuertos(t *testing.T) {
 // identidades de red distintas.
 func TestElSecretoDeLaRedRealNoDerivaDelCódigo(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
 		t.Fatal(err)
 	}
 	spec := b.motor.hostSpec
 
-	rdv := domain.DeriveRendezvous(b.sesión.Status().Room.InviteID)
+	rdv := domain.DeriveRendezvous(b.session.Status().Room.InviteID)
 	if spec.RealNetworkName() == rdv.NetworkName() {
 		t.Fatal("la red real y el vestíbulo son la misma: el código sería el secreto de la sala")
 	}
@@ -104,13 +104,13 @@ func TestElSecretoDeLaRedRealNoDerivaDelCódigo(t *testing.T) {
 // fallar tarde.
 func TestSinRegistroNoSeCreaLaSala(t *testing.T) {
 	b := nuevoBanco(t)
-	b.registro.err = errors.New("504")
+	b.registry.err = errors.New("504")
 
-	_, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas")
+	_, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas")
 	if !errors.Is(err, ErrNoRegistry) {
 		t.Fatalf("sin registro la sala se creó igual, o falló por otra cosa: %v", err)
 	}
-	if st := b.sesión.Status(); !st.Room.InviteID.IsZero() {
+	if st := b.session.Status(); !st.Room.InviteID.IsZero() {
 		t.Fatalf("quedó un código repartible de una sala que no existe: %s", st.Room.InviteID)
 	}
 	// Por el SECRETO y no por el struct entero, que lleva slices y no se puede
@@ -131,10 +131,10 @@ func TestSinRegistroNoSeCreaLaSala(t *testing.T) {
 // escribe en la 17, no un detalle de implementación.
 func TestElRegistroRecibeLaTarjetaCifradaYNoElNombre(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
 		t.Fatal(err)
 	}
-	depositado := string(b.registro.publicado)
+	depositado := string(b.registry.publicado)
 	if strings.Contains(depositado, "Los panas") || strings.Contains(depositado, "alvaro") {
 		t.Fatalf("el nombre de la sala o el nick viajaron en claro al registro: %q", depositado)
 	}
@@ -144,10 +144,10 @@ func TestElRegistroRecibeLaTarjetaCifradaYNoElNombre(t *testing.T) {
 // y lo único que el servidor no recibe.
 func TestElEnlaceLlevaLaClaveDeLaTarjeta(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
 		t.Fatal(err)
 	}
-	link := b.sesión.InviteLink()
+	link := b.session.InviteLink()
 	id, frag, ok := strings.Cut(link, "#")
 	if !ok {
 		t.Fatalf("el enlace no lleva fragmento: %q", link)
@@ -159,7 +159,7 @@ func TestElEnlaceLlevaLaClaveDeLaTarjeta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("el fragmento no es una clave: %v", err)
 	}
-	card, err := domain.OpenRoomCard(b.registro.publicado, key)
+	card, err := domain.OpenRoomCard(b.registry.publicado, key)
 	if err != nil {
 		t.Fatalf("la clave del enlace no abre la tarjeta que se depositó: %v", err)
 	}
@@ -170,13 +170,13 @@ func TestElEnlaceLlevaLaClaveDeLaTarjeta(t *testing.T) {
 
 func TestNoSePuedeEstarEnDosSalas(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Otra"); !errors.Is(err, ErrBusy) {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Otra"); !errors.Is(err, ErrBusy) {
 		t.Fatalf("se crearon dos salas: %v", err)
 	}
-	if _, err := b.sesión.JoinRoom(ctx(), "A7K2M9QX", nick(t, "alvaro")); !errors.Is(err, ErrBusy) {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "alvaro")); !errors.Is(err, ErrBusy) {
 		t.Fatalf("se entró a otra sala teniendo una: %v", err)
 	}
 }
@@ -188,10 +188,10 @@ func TestUnFalloAMitadDeCaminoVuelveAIdle(t *testing.T) {
 	b := nuevoBanco(t)
 	b.motor.errHost = errors.New("el motor no arrancó")
 
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err == nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err == nil {
 		t.Fatal("la creación no falló")
 	}
-	if st := b.sesión.Status(); st.Conn != domain.StateIdle {
+	if st := b.session.Status(); st.Conn != domain.StateIdle {
 		t.Fatalf("quedó en %s", st.Conn)
 	}
 }
@@ -201,14 +201,14 @@ func TestUnFalloAMitadDeCaminoVuelveAIdle(t *testing.T) {
 // Se deriva del código en vez de escribirse porque desde el 2026-08-11 no hay
 // una dirección fija: cada sala saca la suya de su invite ID. Ver
 // [domain.Rendezvous.LobbySubnet].
-func lobbyDe(b *banco) netip.Addr {
-	return domain.DeriveRendezvous(b.sesión.Status().Room.InviteID).LobbyHostAddress()
+func lobbyDe(b *bank) netip.Addr {
+	return domain.DeriveRendezvous(b.session.Status().Room.InviteID).LobbyHostAddress()
 }
 
-func salaCreada(t *testing.T) *banco {
+func salaCreada(t *testing.T) *bank {
 	t.Helper()
 	b := nuevoBanco(t)
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
 		t.Fatal(err)
 	}
 	return b
@@ -227,7 +227,7 @@ func salaCreada(t *testing.T) *banco {
 // Comprueba de paso que la dirección elegida sea `quiero`, que es la que el
 // test va a expulsar: sin eso, un reparto distinto fallaría más tarde y en otro
 // sitio.
-func emiteCredencial(t *testing.T, b *banco, nombre string, id domain.CredentialID, quiero netip.Addr) {
+func emiteCredencial(t *testing.T, b *bank, nombre string, id domain.CredentialID, quiero netip.Addr) {
 	t.Helper()
 	b.motor.mu.Lock()
 	b.motor.credenciales = func() domain.Credential {
@@ -235,7 +235,7 @@ func emiteCredencial(t *testing.T, b *banco, nombre string, id domain.Credential
 	}
 	b.motor.mu.Unlock()
 
-	cred, err := b.sesión.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, nombre)})
+	cred, err := b.session.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, nombre)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func emiteCredencial(t *testing.T, b *banco, nombre string, id domain.Credential
 func TestElJuegoNoAbreNadaHastaQueHayaAlguien(t *testing.T) {
 	b := salaCreada(t)
 
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
 	if reglas := b.firewall.estado().GameRules(); len(reglas) > 0 {
@@ -259,17 +259,17 @@ func TestElJuegoNoAbreNadaHastaQueHayaAlguien(t *testing.T) {
 
 func TestElJuegoAbreLosPuertosCuandoEntraAlguien(t *testing.T) {
 	b := salaCreada(t)
-	self := b.sesión.Status().LocalIP
+	self := b.session.Status().LocalIP
 	invitado := self.Next()
 
 	b.motor.peers = []domain.Peer{
 		{VirtualIP: self, Name: nick(t, "alvaro"), Host: true},
 		{VirtualIP: invitado, Name: nick(t, "humberto"), Path: domain.PathDirect},
 	}
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -299,7 +299,7 @@ func TestElJuegoAbreLosPuertosCuandoEntraAlguien(t *testing.T) {
 // todavía no es miembro, o sea el que menos puede quedarse sin compuerta.
 func TestLaCompuertaSeAcotaAntesDeAbrirNada(t *testing.T) {
 	b := salaCreada(t)
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -307,8 +307,8 @@ func TestLaCompuertaSeAcotaAntesDeAbrirNada(t *testing.T) {
 		t.Error("se abrieron puertos con la compuerta suelta, o sea sin nada que los acote")
 	}
 	red, vínculo := b.firewall.alcance()
-	if red != b.sesión.Status().Subnet {
-		t.Errorf("la compuerta quedó acotada a %v y la sala es %v", red, b.sesión.Status().Subnet)
+	if red != b.session.Status().Subnet {
+		t.Errorf("la compuerta quedó acotada a %v y la sala es %v", red, b.session.Status().Subnet)
 	}
 	if vínculo != domain.BindRoomAndLobby {
 		t.Errorf("el host se acotó a %v, y tiene sala y vestíbulo", vínculo)
@@ -329,7 +329,7 @@ func TestElInvitadoAcotaLaCompuertaALaSalaSola(t *testing.T) {
 		VirtualIP: netip.MustParseAddr("100.87.3.5"),
 		Subnet:    netip.MustParsePrefix("100.87.3.0/24"),
 	}
-	if _, err := b.sesión.JoinRoom(ctx(), "kanpachi://A7K2-M9QX", nick(t, "humberto")); err != nil {
+	if _, err := b.session.JoinRoom(ctx(), "kanpachi://A7K2-M9QX@seed.midominio.com", nick(t, "humberto")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -337,8 +337,8 @@ func TestElInvitadoAcotaLaCompuertaALaSalaSola(t *testing.T) {
 		t.Error("el invitado abrió puertos con la compuerta suelta")
 	}
 	red, vínculo := b.firewall.alcance()
-	if red != b.sesión.Status().Subnet {
-		t.Errorf("la compuerta quedó acotada a %v y la sala es %v", red, b.sesión.Status().Subnet)
+	if red != b.session.Status().Subnet {
+		t.Errorf("la compuerta quedó acotada a %v y la sala es %v", red, b.session.Status().Subnet)
 	}
 	if vínculo != domain.BindRoomOnly {
 		t.Errorf("el invitado se acotó a %v, y ya soltó el vestíbulo", vínculo)
@@ -351,7 +351,7 @@ func TestSalirSueltaLaCompuerta(t *testing.T) {
 	if red, _ := b.firewall.alcance(); !red.IsValid() {
 		t.Fatal("este test no prueba nada: la compuerta ya estaba suelta")
 	}
-	b.sesión.LeaveRoom(ctx())
+	b.session.LeaveRoom(ctx())
 	if red, _ := b.firewall.alcance(); red.IsValid() {
 		t.Errorf("la compuerta quedó acotada a %v con la sala cerrada", red)
 	}
@@ -366,10 +366,10 @@ func TestSinCompuertaNoHaySala(t *testing.T) {
 	b := nuevoBanco(t)
 	b.firewall.errBind = errors.New("no se encontró el adaptador")
 
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Prueba"); err == nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Prueba"); err == nil {
 		t.Fatal("la sala se abrió sin compuerta")
 	}
-	if st := b.sesión.Status(); st.Conn != domain.StateIdle {
+	if st := b.session.Status(); st.Conn != domain.StateIdle {
 		t.Errorf("el estado quedó en %s en vez de volver a idle", st.Conn)
 	}
 }
@@ -379,13 +379,13 @@ func TestSinCompuertaNoHaySala(t *testing.T) {
 func TestElPerfilLlevaSusAjustesAlAdaptador(t *testing.T) {
 	b := salaCreada(t)
 
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
 	if !b.netcfg.estado().MulticastRoute {
 		t.Fatal("el perfil pedía ruta de multicast y no llegó al adaptador")
 	}
-	if _, err := b.sesión.ActivateProfile(ctx(), ""); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), ""); err != nil {
 		t.Fatal(err)
 	}
 	if b.netcfg.estado().MulticastRoute {
@@ -397,7 +397,7 @@ func TestElPerfilLlevaSusAjustesAlAdaptador(t *testing.T) {
 // superficie del named pipe: no existe la operación "abrir puerto arbitrario".
 func TestLaAPISoloAceptaPerfilesDelCatálogo(t *testing.T) {
 	b := salaCreada(t)
-	_, err := b.sesión.ActivateProfile(ctx(), "un-juego-que-no-existe")
+	_, err := b.session.ActivateProfile(ctx(), "un-juego-que-no-existe")
 	if !errors.Is(err, ErrUnknownGame) {
 		t.Fatalf("se aceptó un juego fuera del catálogo: %v", err)
 	}
@@ -409,10 +409,10 @@ func TestSiElFirewallRechazaElConjuntoElJuegoNoSeDaPorActivo(t *testing.T) {
 	b := salaCreada(t)
 	b.firewall.errApply = errors.New("COM dijo que no")
 
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err == nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err == nil {
 		t.Fatal("se dio por activado")
 	}
-	if st := b.sesión.Status(); !st.Game.IsZero() {
+	if st := b.session.Status(); !st.Game.IsZero() {
 		t.Fatalf("el juego quedó marcado como activo: %s", st.Game.ID)
 	}
 }
@@ -424,17 +424,17 @@ func TestSoloElHostPuedeLasTresOperaciones(t *testing.T) {
 		VirtualIP: netip.MustParseAddr("100.87.3.5"),
 		Subnet:    netip.MustParsePrefix("100.87.3.0/24"),
 	}
-	if _, err := b.sesión.JoinRoom(ctx(), "A7K2M9QX", nick(t, "humberto")); err != nil {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto")); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); !errors.Is(err, ErrNotHost) {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); !errors.Is(err, ErrNotHost) {
 		t.Errorf("un invitado activó un juego: %v", err)
 	}
-	if _, err := b.sesión.KickMember(ctx(), netip.MustParseAddr("100.87.3.1")); !errors.Is(err, ErrNotHost) {
+	if _, err := b.session.KickMember(ctx(), netip.MustParseAddr("100.87.3.1")); !errors.Is(err, ErrNotHost) {
 		t.Errorf("un invitado expulsó a alguien: %v", err)
 	}
-	if _, err := b.sesión.RotateInviteCode(ctx()); !errors.Is(err, ErrNotHost) {
+	if _, err := b.session.RotateInviteCode(ctx()); !errors.Is(err, ErrNotHost) {
 		t.Errorf("un invitado renovó el código: %v", err)
 	}
 }
@@ -452,7 +452,7 @@ func TestEntrarPasaPorElVestíbuloYSaleDeÉl(t *testing.T) {
 		Subnet:    netip.MustParsePrefix("100.87.3.0/24"),
 	}
 
-	st, err := b.sesión.JoinRoom(ctx(), "kanpachi://A7K2-M9QX", nick(t, "humberto"))
+	st, err := b.session.JoinRoom(ctx(), "kanpachi://A7K2-M9QX@seed.midominio.com", nick(t, "humberto"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +481,7 @@ func TestElInvitadoNoAbreElCanalDeControl(t *testing.T) {
 		VirtualIP: netip.MustParseAddr("100.87.3.5"),
 		Subnet:    netip.MustParsePrefix("100.87.3.0/24"),
 	}
-	if _, err := b.sesión.JoinRoom(ctx(), "A7K2M9QX", nick(t, "humberto")); err != nil {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto")); err != nil {
 		t.Fatal(err)
 	}
 	b.control.mu.Lock()
@@ -521,10 +521,10 @@ func TestSiElCanalConElHostNoLevantaNoSeEntra(t *testing.T) {
 	// La primera llamada, al vestíbulo, funciona. La segunda, a la sala, no.
 	b.control.fallarDesde = 2
 
-	if _, err := b.sesión.JoinRoom(ctx(), "A7K2M9QX", nick(t, "humberto")); err == nil {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto")); err == nil {
 		t.Fatal("se entró sin canal con el host")
 	}
-	if st := b.sesión.Status(); st.Conn != domain.StateIdle {
+	if st := b.session.Status(); st.Conn != domain.StateIdle {
 		t.Fatalf("quedó en %s", st.Conn)
 	}
 }
@@ -542,7 +542,7 @@ func TestElHostAbreLaPuertaYLaSalaPorSeparado(t *testing.T) {
 	if scope.Lobby != lobbyDe(b) {
 		t.Errorf("la puerta no está en la dirección conocida del vestíbulo: %s", scope.Lobby)
 	}
-	if scope.Room != b.sesión.Status().LocalIP {
+	if scope.Room != b.session.Status().LocalIP {
 		t.Errorf("la sala no escucha en la IP del adaptador: %s", scope.Room)
 	}
 	// El host entró al vestíbulo además de levantar la red real: sin eso nadie
@@ -560,7 +560,7 @@ func TestElHostAbreLaPuertaYLaSalaPorSeparado(t *testing.T) {
 // cortaría la conexión que se está usando para pedir la credencial.
 func TestElVestíbuloNoSeLeEntregaAUnaSala(t *testing.T) {
 	b := salaCreada(t)
-	if domain.LobbySpace.Overlaps(b.sesión.Status().Subnet) {
+	if domain.LobbySpace.Overlaps(b.session.Status().Subnet) {
 		t.Fatal("la sala cayó en el espacio de los vestíbulos")
 	}
 }
@@ -570,10 +570,10 @@ func TestUnaCredencialAMediasSeRechaza(t *testing.T) {
 	b := nuevoBanco(t)
 	b.control.credencial = domain.Credential{ID: "c1"} // sin token, sin IP, sin subred
 
-	if _, err := b.sesión.JoinRoom(ctx(), "A7K2M9QX", nick(t, "humberto")); err == nil {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto")); err == nil {
 		t.Fatal("se entró con una credencial incompleta")
 	}
-	if st := b.sesión.Status(); st.Conn != domain.StateIdle {
+	if st := b.session.Status(); st.Conn != domain.StateIdle {
 		t.Fatalf("quedó en %s", st.Conn)
 	}
 }
@@ -582,7 +582,7 @@ func TestSiElHostNoRespondeElIngresoFalla(t *testing.T) {
 	b := nuevoBanco(t)
 	b.control.errDial = errors.New("conexión rechazada")
 
-	_, err := b.sesión.JoinRoom(ctx(), "A7K2M9QX", nick(t, "humberto"))
+	_, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"))
 	if err == nil {
 		t.Fatal("se entró sin host")
 	}
@@ -593,10 +593,10 @@ func TestSiElHostNoRespondeElIngresoFalla(t *testing.T) {
 
 func TestUnCódigoConFormaRaraNiSiquieraMueveElEstado(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.sesión.JoinRoom(ctx(), "no-es-un-código", nick(t, "humberto")); err == nil {
+	if _, err := b.session.JoinRoom(ctx(), "no-es-un-código", nick(t, "humberto")); err == nil {
 		t.Fatal("se aceptó")
 	}
-	if st := b.sesión.Status(); st.Conn != domain.StateIdle {
+	if st := b.session.Status(); st.Conn != domain.StateIdle {
 		t.Fatalf("un código inválido movió el estado a %s", st.Conn)
 	}
 	if len(b.motor.pasos()) != 0 {
@@ -608,7 +608,7 @@ func TestUnCódigoConFormaRaraNiSiquieraMueveElEstado(t *testing.T) {
 // acto.
 func TestExpulsarRevocaYRecalcula(t *testing.T) {
 	b := salaCreada(t)
-	self := b.sesión.Status().LocalIP
+	self := b.session.Status().LocalIP
 	invitado := self.Next()
 
 	b.motor.peers = []domain.Peer{
@@ -617,17 +617,17 @@ func TestExpulsarRevocaYRecalcula(t *testing.T) {
 	}
 	emiteCredencial(t, b, "humberto", "cred-humberto", invitado)
 
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
 	if len(b.firewall.estado().GameRules()) != 1 {
 		t.Fatal("no se llegó a abrir el puerto, el test no probaría nada")
 	}
 
-	if _, err := b.sesión.KickMember(ctx(), invitado); err != nil {
+	if _, err := b.session.KickMember(ctx(), invitado); err != nil {
 		t.Fatal(err)
 	}
 	if len(b.motor.revocadas) != 1 || b.motor.revocadas[0] != "cred-humberto" {
@@ -656,7 +656,7 @@ func TestExpulsarRevocaYRecalcula(t *testing.T) {
 // regla seguiría autorizando a alguien a quien el host acaba de echar.
 func TestElRecorteDeMiembrosNoEsperaAlSiguienteSondeo(t *testing.T) {
 	b := salaCreada(t)
-	self := b.sesión.Status().LocalIP
+	self := b.session.Status().LocalIP
 	invitado := self.Next()
 
 	b.motor.peers = []domain.Peer{
@@ -664,12 +664,12 @@ func TestElRecorteDeMiembrosNoEsperaAlSiguienteSondeo(t *testing.T) {
 		{VirtualIP: invitado},
 	}
 	emiteCredencial(t, b, "humberto", "c", invitado)
-	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
 
 	// El motor sigue reportando a los dos: todavía no se enteró.
-	st, err := b.sesión.KickMember(ctx(), invitado)
+	st, err := b.session.KickMember(ctx(), invitado)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -682,11 +682,11 @@ func TestElRecorteDeMiembrosNoEsperaAlSiguienteSondeo(t *testing.T) {
 
 func TestNoTeExpulsasATiMismo(t *testing.T) {
 	b := salaCreada(t)
-	self := b.sesión.Status().LocalIP
-	if _, err := b.sesión.KickMember(ctx(), self); !errors.Is(err, ErrSelfKick) {
+	self := b.session.Status().LocalIP
+	if _, err := b.session.KickMember(ctx(), self); !errors.Is(err, ErrSelfKick) {
 		t.Fatalf("se aceptó autoexpulsión: %v", err)
 	}
-	if _, err := b.sesión.KickMember(ctx(), netip.MustParseAddr("10.0.0.9")); !errors.Is(err, ErrNotAMember) {
+	if _, err := b.session.KickMember(ctx(), netip.MustParseAddr("10.0.0.9")); !errors.Is(err, ErrNotAMember) {
 		t.Fatalf("se aceptó expulsar a un desconocido: %v", err)
 	}
 }
@@ -695,21 +695,21 @@ func TestNoTeExpulsasATiMismo(t *testing.T) {
 // derivación local pura no podía dar.
 func TestRenovarElCódigoNoTocaALosPresentes(t *testing.T) {
 	b := salaCreada(t)
-	self := b.sesión.Status().LocalIP
+	self := b.session.Status().LocalIP
 	invitado := self.Next()
 
 	b.motor.peers = []domain.Peer{{VirtualIP: self, Host: true}, {VirtualIP: invitado}}
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
-	antes := b.sesión.Status()
+	antes := b.session.Status()
 	reglasAntes := b.firewall.estado()
 
-	b.registro.siguiente = "B4N9PQRS"
-	st, err := b.sesión.RotateInviteCode(ctx())
+	b.registry.siguiente = "B4N9PQRS"
+	st, err := b.session.RotateInviteCode(ctx())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -745,11 +745,11 @@ func TestRenovarElCódigoNoTocaALosPresentes(t *testing.T) {
 
 func TestSalirCierraTodo(t *testing.T) {
 	b := salaCreada(t)
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
 
-	st := b.sesión.LeaveRoom(ctx())
+	st := b.session.LeaveRoom(ctx())
 	if st.Conn != domain.StateIdle {
 		t.Fatalf("estado = %s", st.Conn)
 	}
@@ -772,7 +772,7 @@ func TestSalirCierraTodo(t *testing.T) {
 
 func TestSalirEsIdempotente(t *testing.T) {
 	b := nuevoBanco(t)
-	if st := b.sesión.LeaveRoom(ctx()); st.Conn != domain.StateIdle {
+	if st := b.session.LeaveRoom(ctx()); st.Conn != domain.StateIdle {
 		t.Fatalf("salir sin sala rompió el estado: %s", st.Conn)
 	}
 }
@@ -785,20 +785,20 @@ func TestLaSalidaAutomáticaALosVeinteMinutos(t *testing.T) {
 		VirtualIP: netip.MustParseAddr("100.87.3.5"),
 		Subnet:    netip.MustParsePrefix("100.87.3.0/24"),
 	}
-	if _, err := b.sesión.JoinRoom(ctx(), "A7K2M9QX", nick(t, "humberto")); err != nil {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto")); err != nil {
 		t.Fatal(err)
 	}
 
-	b.sesión.SetHostPresent(false)
-	b.reloj.avanza(19 * time.Minute)
-	if b.sesión.TickHostAbsence(ctx()) {
+	b.session.SetHostPresent(false)
+	b.clock.avanza(19 * time.Minute)
+	if b.session.TickHostAbsence(ctx()) {
 		t.Fatal("salió a los diecinueve minutos")
 	}
-	b.reloj.avanza(2 * time.Minute)
-	if !b.sesión.TickHostAbsence(ctx()) {
+	b.clock.avanza(2 * time.Minute)
+	if !b.session.TickHostAbsence(ctx()) {
 		t.Fatal("no salió pasados los veinte minutos")
 	}
-	if st := b.sesión.Status(); st.Conn != domain.StateIdle {
+	if st := b.session.Status(); st.Conn != domain.StateIdle {
 		t.Fatalf("estado = %s", st.Conn)
 	}
 }
@@ -807,17 +807,17 @@ func TestLaSalidaAutomáticaALosVeinteMinutos(t *testing.T) {
 // ausencia por error.
 func TestElHostNoSeEchaDeSuPropiaSalaPorElContador(t *testing.T) {
 	b := salaCreada(t)
-	b.sesión.SetHostPresent(false)
-	b.reloj.avanza(2 * time.Hour)
+	b.session.SetHostPresent(false)
+	b.clock.avanza(2 * time.Hour)
 
-	if b.sesión.TickHostAbsence(ctx()) {
+	if b.session.TickHostAbsence(ctx()) {
 		t.Fatal("el host salió de la sala que hospeda")
 	}
 }
 
 func TestElCatálogoSeCargaConPrecedencia(t *testing.T) {
 	b := nuevoBanco(t)
-	juegos := b.sesión.ListGames()
+	juegos := b.session.ListGames()
 	if len(juegos) != 2 {
 		t.Fatalf("juegos = %d", len(juegos))
 	}
@@ -832,10 +832,10 @@ func TestElCatálogoSeCargaConPrecedencia(t *testing.T) {
 // funcionando con los builtin.
 func TestUnLocalCorruptoNoDejaSinCatálogo(t *testing.T) {
 	b := nuevoBanco(t)
-	b.almacén.local = []byte(`{"kanpachi_catalog": esto no es json`)
-	b.sesión.reloadCatalog(ctx())
+	b.catalog.local = []byte(`{"kanpachi_catalog": esto no es json`)
+	b.session.reloadCatalog(ctx())
 
-	if len(b.sesión.ListGames()) != 2 {
+	if len(b.session.ListGames()) != 2 {
 		t.Fatalf("un local.json corrupto se llevó el catálogo por delante")
 	}
 }
@@ -851,7 +851,7 @@ func TestGuardarUnPerfilNoLoDaPorVerificado(t *testing.T) {
 		Connect:   domain.ConnectHint{Kind: domain.ConnectDirectIP},
 		Verified:  &domain.Verified{By: "yo mismo", Method: "porque sí"},
 	}
-	guardado, err := b.sesión.SaveProfile(ctx(), nuevo, false)
+	guardado, err := b.session.SaveProfile(ctx(), nuevo, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -864,7 +864,7 @@ func TestGuardarUnPerfilNoLoDaPorVerificado(t *testing.T) {
 	// Y quedó en la lista, que es lo que hace que aparezca de inmediato sin
 	// reiniciar nada.
 	var vio bool
-	for _, p := range b.sesión.ListGames() {
+	for _, p := range b.session.ListGames() {
 		if p.ID == "valheim" {
 			vio = true
 		}
@@ -877,7 +877,7 @@ func TestGuardarUnPerfilNoLoDaPorVerificado(t *testing.T) {
 // TestUnPerfilQuePidePuertoProhibidoNoSeGuarda.
 func TestUnPerfilQuePidePuertoProhibidoNoSeGuarda(t *testing.T) {
 	b := nuevoBanco(t)
-	_, err := b.sesión.SaveProfile(ctx(), domain.GameProfile{
+	_, err := b.session.SaveProfile(ctx(), domain.GameProfile{
 		ID:        "malo",
 		Name:      "Malo",
 		HostPorts: []domain.PortRange{{Proto: domain.ProtoTCP, From: 440, To: 450}},
@@ -886,7 +886,7 @@ func TestUnPerfilQuePidePuertoProhibidoNoSeGuarda(t *testing.T) {
 	if !errors.Is(err, domain.ErrPortForbidden) {
 		t.Fatalf("se guardó un perfil que abre el 445: %v", err)
 	}
-	if b.almacén.escrituras != 0 {
+	if b.catalog.escrituras != 0 {
 		t.Fatal("se escribió el archivo igual")
 	}
 }
@@ -905,7 +905,7 @@ func TestImportarSoloLoMarcadoYNuncaUnRechazado(t *testing.T) {
 
 	// Se marcan los tres, incluido el rechazado, que es lo que pasaría si la
 	// UI se desincronizara del daemon. En esa duda gana el daemon.
-	cands, err := b.sesión.ImportCatalog(ctx(), archivo, []string{"valheim", "terraria", "rust"})
+	cands, err := b.session.ImportCatalog(ctx(), archivo, []string{"valheim", "terraria", "rust"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -914,7 +914,7 @@ func TestImportarSoloLoMarcadoYNuncaUnRechazado(t *testing.T) {
 	}
 
 	ids := map[string]domain.Origin{}
-	for _, p := range b.sesión.ListGames() {
+	for _, p := range b.session.ListGames() {
 		ids[p.ID] = p.Origin
 	}
 	if ids["valheim"] != domain.OriginImported || ids["terraria"] != domain.OriginImported {
@@ -931,10 +931,10 @@ func TestImportarNadaNoEscribeNada(t *testing.T) {
 	  {"id":"valheim","schema":2,"name":"Valheim","host_ports":[{"proto":"udp","range":"2456"}],
 	   "client_ports":[],"connect_hint":{"kind":"direct_ip","text_es":"x"}}]}`)
 
-	if _, err := b.sesión.ImportCatalog(ctx(), archivo, nil); err != nil {
+	if _, err := b.session.ImportCatalog(ctx(), archivo, nil); err != nil {
 		t.Fatal(err)
 	}
-	if b.almacén.escrituras != 0 {
+	if b.catalog.escrituras != 0 {
 		t.Fatal("se reescribió local.json sin importar nada")
 	}
 }
@@ -944,21 +944,21 @@ func TestImportarNadaNoEscribeNada(t *testing.T) {
 // actualizaciones de la app dejarían de llegarle a ese juego.
 func TestUnBuiltinNoSePuedeVerificarPorLaPuertaDeAtrás(t *testing.T) {
 	b := salaCreada(t)
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
-	self := b.sesión.Status().LocalIP
+	self := b.session.Status().LocalIP
 	b.motor.peers = []domain.Peer{{VirtualIP: self}, {VirtualIP: self.Next()}}
-	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
-	b.sesión.LeaveRoom(ctx())
+	b.session.LeaveRoom(ctx())
 
-	if err := b.sesión.MarkVerified(ctx(), "project-zomboid",
+	if err := b.session.MarkVerified(ctx(), "project-zomboid",
 		domain.Verified{By: "alvaro", Method: "partida real"}); err != nil {
 		t.Fatal(err)
 	}
-	if b.almacén.escrituras != 0 {
+	if b.catalog.escrituras != 0 {
 		t.Fatal("se escribió una copia local de un builtin")
 	}
 }
@@ -971,10 +971,10 @@ func TestUnFalloAlAbrirElCanalDeshaceLoQueYaSeHizo(t *testing.T) {
 	b := nuevoBanco(t)
 	b.control.errServe = errors.New("no se pudo escuchar")
 
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err == nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err == nil {
 		t.Fatal("la creación no falló")
 	}
-	if st := b.sesión.Status(); st.Conn != domain.StateIdle {
+	if st := b.session.Status(); st.Conn != domain.StateIdle {
 		t.Fatalf("quedó en %s", st.Conn)
 	}
 	var salió bool
@@ -998,7 +998,7 @@ func TestUnFalloAlAbrirElCanalDeshaceLoQueYaSeHizo(t *testing.T) {
 // lista de los demás.
 func TestElHostSeMarcaPorElRolYNoPorLoQueDigaElMotor(t *testing.T) {
 	b := salaCreada(t)
-	self := b.sesión.Status().LocalIP
+	self := b.session.Status().LocalIP
 	intruso := self.Next()
 
 	// El motor reporta al invitado diciendo que él es el host, y a mí sin
@@ -1007,7 +1007,7 @@ func TestElHostSeMarcaPorElRolYNoPorLoQueDigaElMotor(t *testing.T) {
 		{VirtualIP: self, Name: nick(t, "alvaro"), Host: false},
 		{VirtualIP: intruso, Name: nick(t, "mallory"), Host: true},
 	}
-	st, err := b.sesión.OnPeersChanged(ctx())
+	st, err := b.session.OnPeersChanged(ctx())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1036,7 +1036,7 @@ func TestElInvitadoVeAlHostEnLaDirecciónConocida(t *testing.T) {
 		{VirtualIP: netip.MustParseAddr("100.87.3.9"), Name: nick(t, "mallory"), Host: true},
 	}
 
-	st, err := b.sesión.JoinRoom(ctx(), "A7K2M9QX", nick(t, "humberto"))
+	st, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1068,23 +1068,23 @@ func TestElCableadoIncompletoFallaAlArrancar(t *testing.T) {
 // hace que no lo necesite.
 func TestStatusLeeLaCopiaPublicada(t *testing.T) {
 	b := nuevoBanco(t)
-	if st := b.sesión.Status(); st.Conn != domain.StateIdle {
+	if st := b.session.Status(); st.Conn != domain.StateIdle {
 		t.Fatalf("antes de la primera publicación: %s", st.Conn)
 	}
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
 		t.Fatal(err)
 	}
-	if st := b.sesión.Status(); st.Conn != domain.StateConnected {
+	if st := b.session.Status(); st.Conn != domain.StateConnected {
 		t.Fatalf("tras crear: %s", st.Conn)
 	}
 
 	// Y la copia es una copia: tocar los peers de un Status no puede alcanzar
 	// al siguiente.
-	primero := b.sesión.Status()
+	primero := b.session.Status()
 	if len(primero.Peers) > 0 {
 		primero.Peers[0].Name = domain.Nickname{}
 	}
-	if segundo := b.sesión.Status(); len(segundo.Peers) > 0 && segundo.Peers[0].Name.IsZero() {
+	if segundo := b.session.Status(); len(segundo.Peers) > 0 && segundo.Peers[0].Name.IsZero() {
 		t.Fatal("quien recibe un Status puede mutar el estado del daemon")
 	}
 }
@@ -1093,17 +1093,17 @@ func TestStatusLeeLaCopiaPublicada(t *testing.T) {
 // algo en el registro que lo emitió.
 func TestElCódigoLlevaElSeedDelRegistroQueLoEmitió(t *testing.T) {
 	b := nuevoBanco(t)
-	b.registro.seed = "seed.humberto.dev"
+	b.registry.seed = "seed.humberto.dev"
 
-	st, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas")
+	st, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if st.Room.Seed != "seed.humberto.dev" {
 		t.Fatalf("el código apunta a %q y lo emitió otro registro", st.Room.Seed)
 	}
-	if !strings.Contains(b.sesión.InviteLink(), "seed.humberto.dev") {
-		t.Fatalf("el enlace manda al servidor equivocado: %q", b.sesión.InviteLink())
+	if !strings.Contains(b.session.InviteLink(), "seed.humberto.dev") {
+		t.Fatalf("el enlace manda al servidor equivocado: %q", b.session.InviteLink())
 	}
 }
 
@@ -1141,10 +1141,10 @@ func TestUnHostModificadoNoPuedeMandarCualquierCredencial(t *testing.T) {
 			caso.muta(&cred)
 			b.control.credencial = cred
 
-			if _, err := b.sesión.JoinRoom(ctx(), "A7K2M9QX", nick(t, "humberto")); err == nil {
+			if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto")); err == nil {
 				t.Fatal("se aceptó")
 			}
-			if st := b.sesión.Status(); st.Conn != domain.StateIdle {
+			if st := b.session.Status(); st.Conn != domain.StateIdle {
 				t.Fatalf("quedó en %s", st.Conn)
 			}
 		})
@@ -1164,7 +1164,7 @@ func TestEmitirCredencialNoRepiteDirecciones(t *testing.T) {
 
 	var vistas []netip.Addr
 	for i := 0; i < 3; i++ {
-		cred, err := b.sesión.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")})
+		cred, err := b.session.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1179,7 +1179,7 @@ func TestEmitirCredencialNoRepiteDirecciones(t *testing.T) {
 		// que la segunda vuelta reparta otra vez la misma dirección es el
 		// registro que la sesión escribió al emitir la primera.
 	}
-	if vistas[0] != netip.MustParseAddr(b.sesión.Status().Subnet.Addr().Next().Next().String()) {
+	if vistas[0] != netip.MustParseAddr(b.session.Status().Subnet.Addr().Next().Next().String()) {
 		t.Fatalf("la primera credencial no fue la .2: %s", vistas[0])
 	}
 }
@@ -1191,7 +1191,7 @@ func TestLaCredencialEmitidaNoLlevaElSecretoDeLaRed(t *testing.T) {
 	b.motor.credenciales = func() domain.Credential {
 		return domain.Credential{ID: "c", Token: "token-del-motor"}
 	}
-	cred, err := b.sesión.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")})
+	cred, err := b.session.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1213,11 +1213,11 @@ func TestElHostNoRepartesuPropiaDirección(t *testing.T) {
 	b.motor.credenciales = func() domain.Credential {
 		return domain.Credential{ID: "c", Token: "t"}
 	}
-	cred, err := b.sesión.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")})
+	cred, err := b.session.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	st := b.sesión.Status()
+	st := b.session.Status()
 	if cred.VirtualIP == st.LocalIP || cred.VirtualIP == st.Subnet.Addr() {
 		t.Fatalf("se repartió una dirección reservada: %s", cred.VirtualIP)
 	}
@@ -1232,10 +1232,10 @@ func TestUnInvitadoNoEmiteCredenciales(t *testing.T) {
 		VirtualIP: netip.MustParseAddr("100.87.3.5"),
 		Subnet:    netip.MustParsePrefix("100.87.3.0/24"),
 	}
-	if _, err := b.sesión.JoinRoom(ctx(), "A7K2M9QX", nick(t, "humberto")); err != nil {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.sesión.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, "otro")}); !errors.Is(err, ErrNotHost) {
+	if _, err := b.session.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, "otro")}); !errors.Is(err, ErrNotHost) {
 		t.Fatalf("un invitado emitió una credencial: %v", err)
 	}
 }
@@ -1244,7 +1244,7 @@ func TestUnInvitadoNoEmiteCredenciales(t *testing.T) {
 // acá: sin nombres, expulsar a alguien es adivinar.
 func TestNoSeEmiteCredencialSinNombre(t *testing.T) {
 	b := salaCreada(t)
-	if _, err := b.sesión.IssueCredentialFor(ctx(), domain.CredentialRequest{}); !errors.Is(err, domain.ErrNicknameEmpty) {
+	if _, err := b.session.IssueCredentialFor(ctx(), domain.CredentialRequest{}); !errors.Is(err, domain.ErrNicknameEmpty) {
 		t.Fatalf("se emitió una credencial sin nombre: %v", err)
 	}
 }
@@ -1257,26 +1257,26 @@ func TestNoSeEmiteCredencialSinNombre(t *testing.T) {
 // deshaciendo justo la mitad de la expulsión que era inmediata.
 func TestElSondeoNoDevuelveAlExpulsado(t *testing.T) {
 	b := salaCreada(t)
-	self := b.sesión.Status().LocalIP
+	self := b.session.Status().LocalIP
 	invitado := self.Next()
 
 	b.motor.peers = []domain.Peer{{VirtualIP: self}, {VirtualIP: invitado}}
 	emiteCredencial(t, b, "humberto", "c", invitado)
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
 	if len(b.firewall.estado().GameRules()) != 1 {
 		t.Fatal("no se abrió el puerto, el test no probaría nada")
 	}
 
-	if _, err := b.sesión.KickMember(ctx(), invitado); err != nil {
+	if _, err := b.session.KickMember(ctx(), invitado); err != nil {
 		t.Fatal(err)
 	}
 	// El motor todavía lo reporta: no se enteró.
-	st, err := b.sesión.OnPeersChanged(ctx())
+	st, err := b.session.OnPeersChanged(ctx())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1295,8 +1295,8 @@ func TestElSondeoNoDevuelveAlExpulsado(t *testing.T) {
 
 	// Pasada la ventana, si está, está: volver con un código que el host no
 	// renovó es legítimo y tiene que funcionar.
-	b.reloj.avanza(KickGrace + time.Second)
-	st, err = b.sesión.OnPeersChanged(ctx())
+	b.clock.avanza(KickGrace + time.Second)
+	st, err = b.session.OnPeersChanged(ctx())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1318,17 +1318,17 @@ func TestElSondeoNoDevuelveAlExpulsado(t *testing.T) {
 // que más revisión merece del proyecto.
 func TestSiElFirewallFallaAlExpulsarElCanalYaSeRecortó(t *testing.T) {
 	b := salaCreada(t)
-	self := b.sesión.Status().LocalIP
+	self := b.session.Status().LocalIP
 	invitado := self.Next()
 
 	b.motor.peers = []domain.Peer{{VirtualIP: self}, {VirtualIP: invitado}}
 	emiteCredencial(t, b, "humberto", "c", invitado)
-	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
 	b.firewall.errApply = errors.New("COM dijo que no")
 
-	if _, err := b.sesión.KickMember(ctx(), invitado); err == nil {
+	if _, err := b.session.KickMember(ctx(), invitado); err == nil {
 		t.Fatal("no falló")
 	}
 	for _, ip := range b.control.alcanceActual() {
@@ -1341,7 +1341,7 @@ func TestSiElFirewallFallaAlExpulsarElCanalYaSeRecortó(t *testing.T) {
 	}
 }
 
-func salaConInvitado(t *testing.T) *banco {
+func salaConInvitado(t *testing.T) *bank {
 	t.Helper()
 	b := nuevoBanco(t)
 	b.control.credencial = domain.Credential{
@@ -1353,7 +1353,7 @@ func salaConInvitado(t *testing.T) *banco {
 		{VirtualIP: netip.MustParseAddr("100.87.3.1"), Name: nick(t, "alvaro")},
 		{VirtualIP: netip.MustParseAddr("100.87.3.5"), Name: nick(t, "humberto")},
 	}
-	if _, err := b.sesión.JoinRoom(ctx(), "A7K2M9QX", nick(t, "humberto")); err != nil {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto")); err != nil {
 		t.Fatal(err)
 	}
 	return b
@@ -1365,7 +1365,7 @@ func salaConInvitado(t *testing.T) *banco {
 // tiene guía de conexión, y `client_ports` es código que nunca corre.
 func TestElHostAnunciaElJuegoYElInvitadoLoAplica(t *testing.T) {
 	host := salaCreada(t)
-	if _, err := host.sesión.ActivateProfile(ctx(), "juego-de-malla"); err != nil {
+	if _, err := host.session.ActivateProfile(ctx(), "juego-de-malla"); err != nil {
 		t.Fatal(err)
 	}
 	ann, ok := host.control.últimoAnuncio()
@@ -1377,7 +1377,7 @@ func TestElHostAnunciaElJuegoYElInvitadoLoAplica(t *testing.T) {
 	}
 
 	invitado := salaConInvitado(t)
-	st, err := invitado.sesión.OnRoomAnnounce(ctx(), ann)
+	st, err := invitado.session.OnRoomAnnounce(ctx(), ann)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1398,7 +1398,7 @@ func TestElHostAnunciaElJuegoYElInvitadoLoAplica(t *testing.T) {
 // "estamos jugando Zomboid" y que le dicte reglas de firewall a otra máquina.
 func TestElInvitadoResuelveElJuegoContraSuPropioCatálogo(t *testing.T) {
 	b := salaConInvitado(t)
-	st, err := b.sesión.OnRoomAnnounce(ctx(), domain.RoomAnnounce{
+	st, err := b.session.OnRoomAnnounce(ctx(), domain.RoomAnnounce{
 		RoomName: "Los panas", GameID: "un-juego-que-no-tengo",
 	})
 	if err != nil {
@@ -1410,8 +1410,8 @@ func TestElInvitadoResuelveElJuegoContraSuPropioCatálogo(t *testing.T) {
 	if !b.firewall.estado().IsEmpty() {
 		t.Fatalf("se abrieron puertos por un id que no existe acá: %+v", b.firewall.estado().Rules)
 	}
-	if b.sesión.MissingGame() != "un-juego-que-no-tengo" {
-		t.Errorf("no se puede decir qué perfil falta: %q", b.sesión.MissingGame())
+	if b.session.MissingGame() != "un-juego-que-no-tengo" {
+		t.Errorf("no se puede decir qué perfil falta: %q", b.session.MissingGame())
 	}
 }
 
@@ -1419,7 +1419,7 @@ func TestElInvitadoResuelveElJuegoContraSuPropioCatálogo(t *testing.T) {
 // cambiarle el juego activo justo a la máquina donde se abren los puertos.
 func TestElHostNoAceptaAnuncios(t *testing.T) {
 	b := salaCreada(t)
-	st, err := b.sesión.OnRoomAnnounce(ctx(), domain.RoomAnnounce{
+	st, err := b.session.OnRoomAnnounce(ctx(), domain.RoomAnnounce{
 		RoomName: "Sala de Mallory", GameID: "juego-de-malla",
 	})
 	if err != nil {
@@ -1433,7 +1433,7 @@ func TestElHostNoAceptaAnuncios(t *testing.T) {
 // TestUnAnuncioConBasuraSeAcota. Llega de otra máquina.
 func TestUnAnuncioConBasuraSeAcota(t *testing.T) {
 	b := salaConInvitado(t)
-	st, err := b.sesión.OnRoomAnnounce(ctx(), domain.RoomAnnounce{
+	st, err := b.session.OnRoomAnnounce(ctx(), domain.RoomAnnounce{
 		RoomName: strings.Repeat("ñ", 300),
 		GameID:   "../../etc/passwd",
 	})
@@ -1452,7 +1452,7 @@ func TestUnAnuncioConBasuraSeAcota(t *testing.T) {
 // que ven los demás.
 func TestElNombreSeAcotaAlEscribirYNoSoloAlLeer(t *testing.T) {
 	b := salaCreada(t)
-	st, err := b.sesión.RenameRoom(ctx(), strings.Repeat("é", 100))
+	st, err := b.session.RenameRoom(ctx(), strings.Repeat("é", 100))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1469,16 +1469,16 @@ func TestElNombreSeAcotaAlEscribirYNoSoloAlLeer(t *testing.T) {
 // anterior, así que su pantalla arrancaría vacía.
 func TestQuienEntraDespuésTambiénSeEntera(t *testing.T) {
 	b := salaCreada(t)
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
 	antes := len(b.control.anuncios)
 
 	b.motor.peers = []domain.Peer{
-		{VirtualIP: b.sesión.Status().LocalIP},
-		{VirtualIP: b.sesión.Status().LocalIP.Next()},
+		{VirtualIP: b.session.Status().LocalIP},
+		{VirtualIP: b.session.Status().LocalIP.Next()},
 	}
-	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
 	if len(b.control.anuncios) <= antes {
@@ -1492,16 +1492,16 @@ func TestQuienEntraDespuésTambiénSeEntera(t *testing.T) {
 // arrastra, así que una alerta nunca puede bloquear ni retrasar una respuesta.
 func TestLasAlertasDeExposiciónLleganPorStatus(t *testing.T) {
 	b := nuevoBanco(t)
-	b.auditoría.perfiles = []domain.FirewallProfileState{
+	b.audit.perfiles = []domain.FirewallProfileState{
 		{Profile: domain.ProfileDomain, Enabled: true},
 		{Profile: domain.ProfilePublic, Enabled: false},
 	}
-	b.auditoría.tamper()
-	b.auditoría.mapeos = []domain.PortMapping{
+	b.audit.tamper()
+	b.audit.mapeos = []domain.PortMapping{
 		{ExternalPort: 25565, InternalIP: netip.MustParseAddr("192.168.1.7")},
 	}
 
-	st := b.sesión.RefreshAlerts(ctx())
+	st := b.session.RefreshAlerts(ctx())
 	tipos := map[domain.AlertKind]bool{}
 	for _, a := range st.Alerts {
 		tipos[a.Kind] = true
@@ -1513,7 +1513,7 @@ func TestLasAlertasDeExposiciónLleganPorStatus(t *testing.T) {
 			t.Errorf("falta la alerta %d: %+v", k, st.Alerts)
 		}
 	}
-	if st2 := b.sesión.Status(); len(st2.Alerts) != len(st.Alerts) {
+	if st2 := b.session.Status(); len(st2.Alerts) != len(st.Alerts) {
 		t.Error("las alertas no viajan dentro de Status")
 	}
 }
@@ -1522,15 +1522,15 @@ func TestLasAlertasDeExposiciónLleganPorStatus(t *testing.T) {
 // Kanpachi no controla, y que la consulta falle no puede impedir jugar.
 func TestUnaAuditoríaQueFallaNoRompeNada(t *testing.T) {
 	b := nuevoBanco(t)
-	b.auditoría.err = errors.New("COM no responde")
+	b.audit.err = errors.New("COM no responde")
 
-	st := b.sesión.RefreshAlerts(ctx())
+	st := b.session.RefreshAlerts(ctx())
 	for _, a := range st.Alerts {
 		if a.Kind != domain.AlertAuditFailed {
 			t.Errorf("una auditoría rota inventó un hallazgo que nadie midió: %+v", a)
 		}
 	}
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
 		t.Fatalf("una auditoría rota impidió crear la sala: %v", err)
 	}
 }
@@ -1541,9 +1541,9 @@ func TestUnaAuditoríaQueFallaNoRompeNada(t *testing.T) {
 // avisar que él mismo había dejado de mirar.
 func TestUnaAuditoríaQueFallaLoDice(t *testing.T) {
 	b := nuevoBanco(t)
-	b.auditoría.err = errors.New("COM no responde")
+	b.audit.err = errors.New("COM no responde")
 
-	st := b.sesión.RefreshAlerts(ctx())
+	st := b.session.RefreshAlerts(ctx())
 	if !tieneAlerta(st, domain.AlertAuditFailed) {
 		t.Fatalf("la auditoría entera falló y nadie se enteró: %+v", st.Alerts)
 	}
@@ -1556,14 +1556,14 @@ func TestUnaAuditoríaQueFallaLoDice(t *testing.T) {
 // eterna deja de ser información.
 func TestLaAuditoríaCaídaSeVaSolaCuandoVuelve(t *testing.T) {
 	b := nuevoBanco(t)
-	b.auditoría.err = errors.New("COM no responde")
-	if st := b.sesión.RefreshAlerts(ctx()); !tieneAlerta(st, domain.AlertAuditFailed) {
+	b.audit.err = errors.New("COM no responde")
+	if st := b.session.RefreshAlerts(ctx()); !tieneAlerta(st, domain.AlertAuditFailed) {
 		t.Fatalf("no avisó del fallo: %+v", st.Alerts)
 	}
 
-	b.auditoría.err = nil
-	b.auditoría.intactas = true
-	if st := b.sesión.RefreshAlerts(ctx()); tieneAlerta(st, domain.AlertAuditFailed) {
+	b.audit.err = nil
+	b.audit.intactas = true
+	if st := b.session.RefreshAlerts(ctx()); tieneAlerta(st, domain.AlertAuditFailed) {
 		t.Errorf("la auditoría volvió a contestar y el aviso se quedó puesto: %+v", st.Alerts)
 	}
 }
@@ -1575,10 +1575,10 @@ func TestLaAuditoríaCaídaSeVaSolaCuandoVuelve(t *testing.T) {
 // máquinas, y una alerta que está siempre no significa nada.
 func TestElRouterQueNoContestaNoEsUnaAuditoríaCaída(t *testing.T) {
 	b := nuevoBanco(t)
-	b.auditoría.intactas = true
-	b.auditoría.errMapeos = errors.New("el router no contesta al IGD")
+	b.audit.intactas = true
+	b.audit.errMapeos = errors.New("el router no contesta al IGD")
 
-	st := b.sesión.RefreshAlerts(ctx())
+	st := b.session.RefreshAlerts(ctx())
 	if tieneAlerta(st, domain.AlertAuditFailed) {
 		t.Errorf("un router mudo levantó el aviso de auditoría caída: %+v", st.Alerts)
 	}
@@ -1589,22 +1589,22 @@ func TestElRouterQueNoContestaNoEsUnaAuditoríaCaída(t *testing.T) {
 func TestCadaComprobaciónLocalQueFallaLevantaElAviso(t *testing.T) {
 	casos := []struct {
 		qué   string
-		rompe func(*auditoríaFalsa)
+		rompe func(*mockAudit)
 	}{
-		{"el estado del firewall", func(a *auditoríaFalsa) {
+		{"el estado del firewall", func(a *mockAudit) {
 			a.errPerfiles = errors.New("INetFwPolicy2 no responde")
 		}},
-		{"las reglas propias", func(a *auditoríaFalsa) {
+		{"las reglas propias", func(a *mockAudit) {
 			a.errIntactas = errors.New("no se pudo enumerar el grupo")
 		}},
 	}
 	for _, c := range casos {
 		t.Run(c.qué, func(t *testing.T) {
 			b := nuevoBanco(t)
-			b.auditoría.intactas = true
-			c.rompe(b.auditoría)
+			b.audit.intactas = true
+			c.rompe(b.audit)
 
-			st := b.sesión.RefreshAlerts(ctx())
+			st := b.session.RefreshAlerts(ctx())
 			if !tieneAlerta(st, domain.AlertAuditFailed) {
 				t.Fatalf("no se pudo comprobar %s y nadie lo dijo: %+v", c.qué, st.Alerts)
 			}
@@ -1617,9 +1617,9 @@ func TestCadaComprobaciónLocalQueFallaLevantaElAviso(t *testing.T) {
 // que antes de pedirlo.
 func TestDiagnoseNoPisaLoQueElMotorNoSabe(t *testing.T) {
 	b := salaCreada(t)
-	antes := b.sesión.Status().Net
+	antes := b.session.Status().Net
 
-	check, err := b.sesión.Diagnose(ctx())
+	check, err := b.session.Diagnose(ctx())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1689,7 +1689,7 @@ func TestSinÁrbolLaFotoSoloMiraLaRaíz(t *testing.T) {
 // "verificado en partida real" en un perfil que nadie probó.
 func TestNoSePuedeMarcarVerificadoAMano(t *testing.T) {
 	b := nuevoBanco(t)
-	_, err := b.sesión.SaveProfile(ctx(), domain.GameProfile{
+	_, err := b.session.SaveProfile(ctx(), domain.GameProfile{
 		ID:        "valheim",
 		Name:      "Valheim",
 		HostPorts: []domain.PortRange{{Proto: domain.ProtoUDP, From: 2456, To: 2458}},
@@ -1698,7 +1698,7 @@ func TestNoSePuedeMarcarVerificadoAMano(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = b.sesión.MarkVerified(ctx(), "valheim", domain.Verified{By: "yo", Method: "porque sí"})
+	err = b.session.MarkVerified(ctx(), "valheim", domain.Verified{By: "yo", Method: "porque sí"})
 	if !errors.Is(err, ErrNotPlayed) {
 		t.Fatalf("se marcó verificado sin partida: %v", err)
 	}
@@ -1708,7 +1708,7 @@ func TestNoSePuedeMarcarVerificadoAMano(t *testing.T) {
 // admite el documento.
 func TestSoloSeVerificaTrasUnaSalaConMásGente(t *testing.T) {
 	b := salaCreada(t)
-	if _, err := b.sesión.SaveProfile(ctx(), domain.GameProfile{
+	if _, err := b.session.SaveProfile(ctx(), domain.GameProfile{
 		ID:        "valheim",
 		Name:      "Valheim",
 		HostPorts: []domain.PortRange{{Proto: domain.ProtoUDP, From: 2456, To: 2458}},
@@ -1716,19 +1716,19 @@ func TestSoloSeVerificaTrasUnaSalaConMásGente(t *testing.T) {
 	}, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.sesión.ActivateProfile(ctx(), "valheim"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "valheim"); err != nil {
 		t.Fatal(err)
 	}
 
 	// Solo yo en la sala: no habilita nada.
-	b.sesión.LeaveRoom(ctx())
-	if err := b.sesión.MarkVerified(ctx(), "valheim", domain.Verified{By: "alvaro"}); !errors.Is(err, ErrNotPlayed) {
+	b.session.LeaveRoom(ctx())
+	if err := b.session.MarkVerified(ctx(), "valheim", domain.Verified{By: "alvaro"}); !errors.Is(err, ErrNotPlayed) {
 		t.Fatalf("una sala de una persona habilitó la marca: %v", err)
 	}
 
 	// Ahora con alguien más.
 	b2 := salaCreada(t)
-	if _, err := b2.sesión.SaveProfile(ctx(), domain.GameProfile{
+	if _, err := b2.session.SaveProfile(ctx(), domain.GameProfile{
 		ID:        "valheim",
 		Name:      "Valheim",
 		HostPorts: []domain.PortRange{{Proto: domain.ProtoUDP, From: 2456, To: 2458}},
@@ -1736,21 +1736,21 @@ func TestSoloSeVerificaTrasUnaSalaConMásGente(t *testing.T) {
 	}, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b2.sesión.ActivateProfile(ctx(), "valheim"); err != nil {
+	if _, err := b2.session.ActivateProfile(ctx(), "valheim"); err != nil {
 		t.Fatal(err)
 	}
-	self := b2.sesión.Status().LocalIP
+	self := b2.session.Status().LocalIP
 	b2.motor.peers = []domain.Peer{{VirtualIP: self}, {VirtualIP: self.Next()}}
-	if _, err := b2.sesión.OnPeersChanged(ctx()); err != nil {
+	if _, err := b2.session.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
-	b2.sesión.LeaveRoom(ctx())
+	b2.session.LeaveRoom(ctx())
 
-	if err := b2.sesión.MarkVerified(ctx(), "valheim", domain.Verified{By: "alvaro", Method: "partida real"}); err != nil {
+	if err := b2.session.MarkVerified(ctx(), "valheim", domain.Verified{By: "alvaro", Method: "partida real"}); err != nil {
 		t.Fatalf("no se pudo verificar tras una partida real: %v", err)
 	}
 	// Y una sola vez: el testigo se consume.
-	if err := b2.sesión.MarkVerified(ctx(), "valheim", domain.Verified{By: "alvaro"}); !errors.Is(err, ErrNotPlayed) {
+	if err := b2.session.MarkVerified(ctx(), "valheim", domain.Verified{By: "alvaro"}); !errors.Is(err, ErrNotPlayed) {
 		t.Error("el permiso para verificar se pudo usar dos veces")
 	}
 }
@@ -1765,14 +1765,14 @@ func TestGuardarNoTapaUnBuiltinEnSilencio(t *testing.T) {
 		HostPorts: []domain.PortRange{{Proto: domain.ProtoUDP, From: 16261, To: 16262}},
 		Connect:   domain.ConnectHint{Kind: domain.ConnectDirectIP},
 	}
-	if _, err := b.sesión.SaveProfile(ctx(), choca, false); !errors.Is(err, ErrShadowsBuiltin) {
+	if _, err := b.session.SaveProfile(ctx(), choca, false); !errors.Is(err, ErrShadowsBuiltin) {
 		t.Fatalf("se tapó un builtin sin preguntar: %v", err)
 	}
-	if b.almacén.escrituras != 0 {
+	if b.catalog.escrituras != 0 {
 		t.Fatal("se escribió igual")
 	}
 	// Con el sí explícito del usuario, entra.
-	if _, err := b.sesión.SaveProfile(ctx(), choca, true); err != nil {
+	if _, err := b.session.SaveProfile(ctx(), choca, true); err != nil {
 		t.Fatalf("con el permiso del usuario no entró: %v", err)
 	}
 }
@@ -1794,7 +1794,7 @@ func TestNoSeEntraAUnaSalaQuePisaLaLANDeCasa(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.JoinRoom(ctx(), "A7K2M9QX", nick(t, "humberto")); err == nil {
+	if _, err := s.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto")); err == nil {
 		t.Fatal("se entró a una sala que pisa la LAN de casa")
 	} else if !strings.Contains(err.Error(), "192.168.1.0/24") {
 		t.Errorf("el error no dice qué red se pisaba: %v", err)
@@ -1807,7 +1807,7 @@ func TestNoSeEntraAUnaSalaQuePisaLaLANDeCasa(t *testing.T) {
 // TestDirectPlaySeEnciendeConElPerfilYSeApagaAlQuitarlo.
 func TestDirectPlaySigueAlPerfil(t *testing.T) {
 	b := nuevoBanco(t)
-	b.almacén.builtin = []byte(`{"kanpachi_catalog":1,"profiles":[
+	b.catalog.builtin = []byte(`{"kanpachi_catalog":1,"profiles":[
 	  {"id":"viejo","schema":2,"name":"Juego viejo",
 	   "host_ports":[{"proto":"udp","range":"6073"}],"client_ports":[],
 	   "system_tweaks":{"broadcast_route":true,"multicast_route":false,"prefer_ipv4":false,"directplay":true},
@@ -1844,17 +1844,17 @@ func TestDirectPlaySigueAlPerfil(t *testing.T) {
 // sola sin explicación.
 func TestElAvisoDeExpulsiónSaleANTESDeCortarle(t *testing.T) {
 	b := salaCreada(t)
-	self := b.sesión.Status().LocalIP
+	self := b.session.Status().LocalIP
 	invitado := self.Next()
 
 	b.motor.peers = []domain.Peer{{VirtualIP: self}, {VirtualIP: invitado}}
 	emiteCredencial(t, b, "humberto", "c", invitado)
-	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
 	pasosAntes := len(b.motor.pasos())
 
-	if _, err := b.sesión.KickMember(ctx(), invitado); err != nil {
+	if _, err := b.session.KickMember(ctx(), invitado); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1885,17 +1885,17 @@ func TestElAvisoDeExpulsiónSaleANTESDeCortarle(t *testing.T) {
 // TestSiElAvisoFallaLaExpulsiónSigue: el aviso es cortesía, no el mecanismo.
 func TestSiElAvisoFallaLaExpulsiónSigue(t *testing.T) {
 	b := salaCreada(t)
-	self := b.sesión.Status().LocalIP
+	self := b.session.Status().LocalIP
 	invitado := self.Next()
 
 	b.motor.peers = []domain.Peer{{VirtualIP: self}, {VirtualIP: invitado}}
 	emiteCredencial(t, b, "humberto", "c", invitado)
-	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
 	b.control.errNotify = errors.New("el socket ya estaba muerto")
 
-	if _, err := b.sesión.KickMember(ctx(), invitado); err != nil {
+	if _, err := b.session.KickMember(ctx(), invitado); err != nil {
 		t.Fatalf("un aviso que no salió detuvo la expulsión: %v", err)
 	}
 	if len(b.motor.revocadas) != 1 {
@@ -1907,7 +1907,7 @@ func TestSiElAvisoFallaLaExpulsiónSigue(t *testing.T) {
 func TestElExpulsadoSaleLimpioYSabePorQué(t *testing.T) {
 	b := salaConInvitado(t)
 
-	st := b.sesión.OnRoomNotice(ctx(), domain.RoomNotice{
+	st := b.session.OnRoomNotice(ctx(), domain.RoomNotice{
 		Kind: domain.NoticeKicked, Reason: "el host te sacó de la sala",
 	})
 	if st.Conn != domain.StateIdle {
@@ -1930,7 +1930,7 @@ func TestElExpulsadoSaleLimpioYSabePorQué(t *testing.T) {
 // minutos del contador mirando una sala que ya no existe.
 func TestElHostAvisaQueCierraLaSala(t *testing.T) {
 	b := salaCreada(t)
-	b.sesión.LeaveRoom(ctx())
+	b.session.LeaveRoom(ctx())
 
 	aviso, ok := b.control.últimoAviso()
 	if !ok {
@@ -1947,7 +1947,7 @@ func TestElHostAvisaQueCierraLaSala(t *testing.T) {
 // TestUnInvitadoQueSaleNoAvisaDeNada: cerrarle la sala a los demás no es suyo.
 func TestUnInvitadoQueSaleNoAvisaDeNada(t *testing.T) {
 	b := salaConInvitado(t)
-	b.sesión.LeaveRoom(ctx())
+	b.session.LeaveRoom(ctx())
 
 	if _, ok := b.control.últimoAviso(); ok {
 		t.Fatal("un invitado anunció el cierre de la sala")
@@ -1958,7 +1958,7 @@ func TestUnInvitadoQueSaleNoAvisaDeNada(t *testing.T) {
 func TestAlHostNadieLoEchaDeSuPropiaSala(t *testing.T) {
 	b := salaCreada(t)
 	for _, k := range []domain.NoticeKind{domain.NoticeKicked, domain.NoticeRoomClosed} {
-		st := b.sesión.OnRoomNotice(ctx(), domain.RoomNotice{Kind: k})
+		st := b.session.OnRoomNotice(ctx(), domain.RoomNotice{Kind: k})
 		if st.Conn != domain.StateConnected {
 			t.Fatalf("un aviso %v echó al host de su sala", k)
 		}
@@ -1970,24 +1970,24 @@ func TestAlHostNadieLoEchaDeSuPropiaSala(t *testing.T) {
 func TestElMotivoDeSalidaDistingueLosCuatroCaminos(t *testing.T) {
 	t.Run("salir por tu cuenta", func(t *testing.T) {
 		b := salaCreada(t)
-		if st := b.sesión.LeaveRoom(ctx()); st.LastExit != domain.ExitUser {
+		if st := b.session.LeaveRoom(ctx()); st.LastExit != domain.ExitUser {
 			t.Fatalf("%v", st.LastExit)
 		}
 	})
 	t.Run("el host desaparece veinte minutos", func(t *testing.T) {
 		b := salaConInvitado(t)
-		b.sesión.SetHostPresent(false)
-		b.reloj.avanza(domain.HostAbsenceLimit + time.Minute)
-		if !b.sesión.TickHostAbsence(ctx()) {
+		b.session.SetHostPresent(false)
+		b.clock.avanza(domain.HostAbsenceLimit + time.Minute)
+		if !b.session.TickHostAbsence(ctx()) {
 			t.Fatal("no salió")
 		}
-		if st := b.sesión.Status(); st.LastExit != domain.ExitHostGone {
+		if st := b.session.Status(); st.LastExit != domain.ExitHostGone {
 			t.Fatalf("%v", st.LastExit)
 		}
 	})
 	t.Run("el host cierra la sala", func(t *testing.T) {
 		b := salaConInvitado(t)
-		st := b.sesión.OnRoomNotice(ctx(), domain.RoomNotice{Kind: domain.NoticeRoomClosed})
+		st := b.session.OnRoomNotice(ctx(), domain.RoomNotice{Kind: domain.NoticeRoomClosed})
 		if st.LastExit != domain.ExitRoomClosed {
 			t.Fatalf("%v", st.LastExit)
 		}
@@ -1995,10 +1995,10 @@ func TestElMotivoDeSalidaDistingueLosCuatroCaminos(t *testing.T) {
 	t.Run("no se llegó a entrar", func(t *testing.T) {
 		b := nuevoBanco(t)
 		b.control.errDial = errors.New("nadie contesta")
-		if _, err := b.sesión.JoinRoom(ctx(), "A7K2M9QX", nick(t, "humberto")); err == nil {
+		if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto")); err == nil {
 			t.Fatal("entró")
 		}
-		if st := b.sesión.Status(); st.LastExit != domain.ExitFailed {
+		if st := b.session.Status(); st.LastExit != domain.ExitFailed {
 			t.Fatalf("%v", st.LastExit)
 		}
 	})
@@ -2008,16 +2008,16 @@ func TestElMotivoDeSalidaDistingueLosCuatroCaminos(t *testing.T) {
 // host no lo renueve, y renovar no migra a nadie de sala.
 func TestExpulsarNoEsBloquear(t *testing.T) {
 	b := salaCreada(t)
-	self := b.sesión.Status().LocalIP
+	self := b.session.Status().LocalIP
 	invitado := self.Next()
 
 	b.motor.peers = []domain.Peer{{VirtualIP: self}, {VirtualIP: invitado}}
 	emiteCredencial(t, b, "humberto", "c", invitado)
-	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
-	códigoAntes := b.sesión.Status().Room.InviteID
-	if _, err := b.sesión.KickMember(ctx(), invitado); err != nil {
+	códigoAntes := b.session.Status().Room.InviteID
+	if _, err := b.session.KickMember(ctx(), invitado); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2029,14 +2029,14 @@ func TestExpulsarNoEsBloquear(t *testing.T) {
 	if puerta != lobbyDe(b) {
 		t.Fatal("expulsar cerró la puerta de la sala")
 	}
-	if b.sesión.Status().Room.InviteID != códigoAntes {
+	if b.session.Status().Room.InviteID != códigoAntes {
 		t.Fatal("expulsar cambió el código")
 	}
 
 	// Y renovar es la otra operación, que no toca la red real ni migra a nadie.
-	b.registro.siguiente = "B4N9PQRS"
+	b.registry.siguiente = "B4N9PQRS"
 	antesDeRenovar := b.motor.hostSpec
-	if _, err := b.sesión.RotateInviteCode(ctx()); err != nil {
+	if _, err := b.session.RotateInviteCode(ctx()); err != nil {
 		t.Fatal(err)
 	}
 	después := b.motor.hostSpec
@@ -2074,7 +2074,7 @@ func TestElHostAbreElCanalDeControlDesdeQueTieneSala(t *testing.T) {
 // TestSalirDeLaSalaNoDejaElCanalAbierto: el hueco vive lo que vive la sala.
 func TestSalirDeLaSalaNoDejaElCanalAbierto(t *testing.T) {
 	b := salaCreada(t)
-	b.sesión.LeaveRoom(ctx())
+	b.session.LeaveRoom(ctx())
 
 	for _, r := range b.firewall.estado().Rules {
 		if r.IsControl() {
@@ -2095,7 +2095,7 @@ func TestSalirDeLaSalaNoDejaElCanalAbierto(t *testing.T) {
 // deja un instante con permisos y sin compuerta, con gente ya dentro.
 func TestVolverElTúnelVuelveAAcotarLaCompuerta(t *testing.T) {
 	b := salaCreada(t)
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2104,7 +2104,7 @@ func TestVolverElTúnelVuelveAAcotarLaCompuerta(t *testing.T) {
 	b.firewall.UnbindRoom()
 	b.firewall.abrióSinCompuerta = false
 
-	if _, err := b.sesión.OnEngineEvent(ctx(), domain.EngineEvent{Kind: domain.EngineConnected}); err != nil {
+	if _, err := b.session.OnEngineEvent(ctx(), domain.EngineEvent{Kind: domain.EngineConnected}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2112,8 +2112,8 @@ func TestVolverElTúnelVuelveAAcotarLaCompuerta(t *testing.T) {
 		t.Error("al volver el túnel se aplicaron reglas con la compuerta suelta")
 	}
 	red, vínculo := b.firewall.alcance()
-	if red != b.sesión.Status().Subnet {
-		t.Errorf("la compuerta quedó acotada a %v y la sala es %v", red, b.sesión.Status().Subnet)
+	if red != b.session.Status().Subnet {
+		t.Errorf("la compuerta quedó acotada a %v y la sala es %v", red, b.session.Status().Subnet)
 	}
 	if vínculo != domain.BindRoomAndLobby {
 		t.Errorf("el host se reacotó a %v, y sigue teniendo sala y vestíbulo", vínculo)
@@ -2136,10 +2136,10 @@ func TestElReacotadoEsOportunistaAlConectarYExigenteAlTerminarElReinicio(t *test
 	b := salaCreada(t)
 	b.firewall.errBind = errors.New("no se encontró el adaptador")
 
-	if _, err := b.sesión.OnEngineEvent(ctx(), domain.EngineEvent{Kind: domain.EngineConnected}); err != nil {
+	if _, err := b.session.OnEngineEvent(ctx(), domain.EngineEvent{Kind: domain.EngineConnected}); err != nil {
 		t.Fatalf("una carrera de un segundo tumbó la vuelta del túnel: %v", err)
 	}
-	if err := b.sesión.OnEngineRestarted(ctx()); err == nil {
+	if err := b.session.OnEngineRestarted(ctx()); err == nil {
 		t.Fatal("el motor volvió entero, no se pudo acotar, y se dio por bueno")
 	}
 }

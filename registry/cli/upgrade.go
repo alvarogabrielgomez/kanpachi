@@ -26,10 +26,10 @@ import (
 // Es re-ejecutable: si ya está al día, no toca nada y lo dice.
 func cmdUpgrade(args []string) error {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
-	check := fs.Bool("check", false, "solo mira si hay versión nueva, sin instalar nada")
-	target := fs.String("version", "", "versión concreta a instalar, por ejemplo v0.1.0")
+	check := fs.Bool("check", false, "only reports whether there is a new version, installs nothing")
+	target := fs.String("version", "", "a specific version to install, for example v0.1.0")
 	assumeYes := fs.Bool("yes", false, "no preguntar antes de actualizar")
-	noRestart := fs.Bool("no-restart", false, "no reiniciar los servicios al terminar")
+	noRestart := fs.Bool("no-restart", false, "do not restart the services when done")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -41,7 +41,7 @@ func cmdUpgrade(args []string) error {
 	if tag == "" {
 		ultima, err := selfupdate.Latest(ctx)
 		if err != nil {
-			return fmt.Errorf("no se pudo consultar la última versión: %w", err)
+			return fmt.Errorf("could not ask for the latest version: %w", err)
 		}
 		tag = ultima
 	}
@@ -50,23 +50,23 @@ func cmdUpgrade(args []string) error {
 	// se instala lo que se pidió aunque sea la misma o anterior, que es lo que
 	// hace de este comando una forma de volver atrás.
 	if *target == "" && selfupdate.IsVersion(Version) && !selfupdate.Outdated(Version, tag) {
-		ok("el seed ya está al día (%s)", Version)
+		ok("the seed is already up to date (%s)", Version)
 		return nil
 	}
 
-	banner("Kanpachi seed · upgrade", "instalada "+Version+"  →  disponible "+tag)
+	banner("Kanpachi seed · upgrade", "installed "+Version+"  →  available "+tag)
 
 	if *check {
 		if selfupdate.Outdated(Version, tag) {
-			aviso("hay una versión nueva: %s → %s", Version, tag)
+			aviso("there is a new version: %s → %s", Version, tag)
 			codigo("sudo kanpseed upgrade")
 		} else if !selfupdate.IsVersion(Version) {
 			// Un binario compilado a mano. Decir "actualizado" sería mentira y
 			// decir "desactualizado" también, así que se dice lo que se sabe.
-			aviso("este binario es %s, así que no hay con qué compararlo", Version)
-			tenue("  la última publicada es %s", tag)
+			aviso("this binary is %s, so there is nothing to compare against", Version)
+			tenue("  the latest published one is %s", tag)
 		} else {
-			ok("estás al día")
+			ok("you are up to date")
 		}
 		return nil
 	}
@@ -87,7 +87,7 @@ func cmdUpgrade(args []string) error {
 	// vez de descubrirlo con el binario ya reemplazado.
 	if _, err := setup.Cargar(); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("no hay ningún seed instalado en esta máquina (falta %s).\n"+
+			return fmt.Errorf("there is no seed installed on this machine (%s is missing).\n"+
 				"  Para instalarlo por primera vez:\n"+
 				"  curl -fsSL https://raw.githubusercontent.com/%s/main/seed/install.sh | sudo sh",
 				setup.RutaConfig(), selfupdate.Repo)
@@ -95,18 +95,18 @@ func cmdUpgrade(args []string) error {
 		return err
 	}
 
-	if !*assumeYes && interactivo() && !confirmar(fmt.Sprintf("¿Actualizar el seed a %s?", tag), true) {
-		tenue("  cancelado")
+	if !*assumeYes && interactivo() && !confirmar(fmt.Sprintf("Update the seed to %s?", tag), true) {
+		tenue("  cancelled")
 		return nil
 	}
 
-	seccion("Bajando")
+	seccion("Downloading")
 	carga, err := selfupdate.Download(ctx, tag, func(f string, a ...any) { tenue("  "+f, a...) })
 	if err != nil {
 		return err
 	}
 
-	seccion("Instalando")
+	seccion("Installing")
 
 	// El binario que se reemplaza es el que ejecuta systemd, no el que está
 	// corriendo este comando. Suelen ser el mismo; cuando no lo son, actualizar
@@ -114,16 +114,16 @@ func cmdUpgrade(args []string) error {
 	// versión vieja, que es exactamente lo contrario de lo que se pidió.
 	destino := filepath.Join(setup.DirBin, setup.Binario)
 	if err := escribirAtomico(destino, carga.Binary, 0o755); err != nil {
-		return fmt.Errorf("no se pudo reemplazar %s: %w", destino, err)
+		return fmt.Errorf("could not replace %s: %w", destino, err)
 	}
-	ok("binario %s en %s", tag, destino)
+	ok("binary %s in %s", tag, destino)
 	if propio, err := os.Executable(); err == nil {
 		if resuelto, err := filepath.EvalSymlinks(propio); err == nil {
 			propio = resuelto
 		}
 		if propio != destino {
-			aviso("esta copia (%s) sigue en %s", propio, Version)
-			tenue("  la que corre el servicio es %s, y esa ya está actualizada", destino)
+			aviso("this copy (%s) is still at %s", propio, Version)
+			tenue("  the one the service runs is %s, and that one is already updated", destino)
 		}
 	}
 
@@ -131,7 +131,7 @@ func cmdUpgrade(args []string) error {
 	if err := escribirAtomico(pagina, carga.Page, 0o644); err != nil {
 		return err
 	}
-	ok("página de invitación en %s", pagina)
+	ok("invitation page in %s", pagina)
 
 	// **A partir de acá manda el binario NUEVO, y eso es la mitad del comando.**
 	//
@@ -154,8 +154,8 @@ func cmdUpgrade(args []string) error {
 		return err
 	}
 
-	seccion("Listo")
-	tenue("  el seed corre %s", tag)
+	seccion("Done")
+	tenue("  the seed is running %s", tag)
 	codigo("kanpseed doctor")
 	fmt.Println()
 	return nil
@@ -174,7 +174,7 @@ func cederA(binario string, noRestart bool) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("la configuración con el binario nuevo falló: %w", err)
+		return fmt.Errorf("configuring with the new binary failed: %w", err)
 	}
 	return nil
 }
@@ -193,7 +193,7 @@ func cederA(binario string, noRestart bool) error {
 // alguien edite una unit y quiera devolverla a lo que el binario dice.
 func cmdReconfigure(args []string) error {
 	fs := flag.NewFlagSet("reconfigure", flag.ContinueOnError)
-	noRestart := fs.Bool("no-restart", false, "no reiniciar los servicios al terminar")
+	noRestart := fs.Bool("no-restart", false, "do not restart the services when done")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -207,7 +207,7 @@ func cmdReconfigure(args []string) error {
 
 	cfg, err := setup.Cargar()
 	if errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("no hay ningún seed instalado en esta máquina (falta %s).\n"+
+		return fmt.Errorf("there is no seed installed on this machine (%s is missing).\n"+
 			"  Para instalarlo por primera vez:\n"+
 			"  curl -fsSL https://raw.githubusercontent.com/%s/main/seed/install.sh | sudo sh",
 			setup.RutaConfig(), selfupdate.Repo)
@@ -216,7 +216,7 @@ func cmdReconfigure(args []string) error {
 		return err
 	}
 
-	seccion("Configurando")
+	seccion("Configuring")
 
 	// El pin de EasyTier es una constante de ESTE binario, así que acá sí
 	// descubre que la versión fijada cambió y se trae el motor nuevo.
@@ -225,7 +225,7 @@ func cmdReconfigure(args []string) error {
 		return err
 	}
 	if descargado {
-		ok("EasyTier %s instalado", setup.VersionEasyTier)
+		ok("EasyTier %s installed", setup.VersionEasyTier)
 	} else {
 		ok("EasyTier %s ya estaba", setup.VersionEasyTier)
 	}
@@ -240,30 +240,30 @@ func cmdReconfigure(args []string) error {
 		return err
 	}
 	if cambiadas {
-		ok("servicios reescritos en %s", setup.DirUnits)
+		ok("services rewritten in %s", setup.DirUnits)
 	} else {
-		ok("los servicios ya estaban al día")
+		ok("the services were already up to date")
 	}
 
 	if *noRestart {
-		seccion("Falta reiniciar")
-		aviso("los procesos siguen con la versión anterior hasta que se reinicien")
+		seccion("Still needs a restart")
+		aviso("the processes stay on the previous version until they are restarted")
 		codigo("sudo systemctl restart " + setup.UnitMotor + " " + setup.UnitReg)
 		fmt.Println()
 		return nil
 	}
 
-	seccion("Reiniciando")
+	seccion("Restarting")
 	for _, u := range []string{setup.UnitMotor, setup.UnitReg} {
 		if err := setup.Systemctl("restart", u); err != nil {
-			return fmt.Errorf("%w\n\nÚltimas líneas del diario:\n%s", err, setup.LogsDeUnit(u, 15))
+			return fmt.Errorf("%w\n\nLast lines of the journal:\n%s", err, setup.LogsDeUnit(u, 15))
 		}
 	}
 	if err := esperarSalud(cfg, 20*time.Second); err != nil {
-		return fmt.Errorf("%w\n\nÚltimas líneas del diario:\n%s", err, setup.LogsDeUnit(setup.UnitReg, 15))
+		return fmt.Errorf("%w\n\nLast lines of the journal:\n%s", err, setup.LogsDeUnit(setup.UnitReg, 15))
 	}
-	ok("el registro responde en 127.0.0.1:%d", cfg.PuertoRegistro)
-	ok("el motor escucha en el %d, TCP y UDP", cfg.PuertoMotor)
+	ok("the registry answers on 127.0.0.1:%d", cfg.PuertoRegistro)
+	ok("the engine listens on %d, TCP and UDP", cfg.PuertoMotor)
 	return nil
 }
 

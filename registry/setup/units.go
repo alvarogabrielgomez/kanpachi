@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/internal/brand"
 )
 
 // Las dos units. Se generan desde la configuración en vez de vivir como
@@ -66,8 +67,8 @@ func UnitDelMotor(c Config) string {
 	return fmt.Sprintf(`# Generado por kanpseed init. Los cambios a mano se pierden:
 # usa `+"`kanpseed config`"+`, que reescribe esto y recarga systemd.
 [Unit]
-Description=Kanpachi seed: motor de red (EasyTier)
-Documentation=https://github.com/alvarogabrielgomez/kanpachi
+Description=Kanpachi seed: network engine (EasyTier)
+Documentation=`+brand.Docs+`
 After=network-online.target
 Wants=network-online.target
 
@@ -133,8 +134,8 @@ func UnitDelRegistro(c Config) string {
 	return fmt.Sprintf(`# Generado por kanpseed init. Los cambios a mano se pierden:
 # usa `+"`kanpseed config`"+`, que reescribe esto y recarga systemd.
 [Unit]
-Description=Kanpachi seed: registro de salas
-Documentation=https://github.com/alvarogabrielgomez/kanpachi
+Description=Kanpachi seed: room registry
+Documentation=`+brand.Docs+`
 After=network-online.target %s
 Wants=network-online.target
 # BindsTo y no Requires: si el motor se detiene, el registro se detiene con él
@@ -169,7 +170,7 @@ ExecReload=/bin/kill -HUP $MAINPID
 # sala no existe" sobre salas abiertas y alcanzables, porque la comprobacion del
 # invitado se cree el no. El host tampoco lo podia reponer: publicar exige que
 # la entrada exista y no debe crearla.
-StateDirectory=kanpseed
+StateDirectory=`+StateDirName+`
 
 # Un proceso vivo pero colgado no lo detecta Restart=always. El registro manda
 # WATCHDOG=1 mientras responda, y si deja de hacerlo systemd lo reinicia.
@@ -217,17 +218,21 @@ func BloqueDeProxy(c Config) string {
 	fmt.Fprintf(&b, "  Domain Names     %s\n", dominio)
 	fmt.Fprintf(&b, "  Scheme           http\n")
 	fmt.Fprintf(&b, "  Forward Host     127.0.0.1\n")
-	fmt.Fprintf(&b, "  Forward Port     %d        <-- ESTE\n", c.PuertoRegistro)
+	fmt.Fprintf(&b, "  Forward Port     %d        <-- THIS ONE\n", c.PuertoRegistro)
 	fmt.Fprintf(&b, "  SSL              Let's Encrypt, con Force SSL\n\n")
-	fmt.Fprintf(&b, "Force SSL no es cosmético: la página usa navigator.clipboard\n")
-	fmt.Fprintf(&b, "para el botón de copiar, y esa API solo existe en contexto seguro.\n\n")
-	fmt.Fprintf(&b, "En nginx a mano sería:\n\n")
+	fmt.Fprintf(&b, "Force SSL is not cosmetic: the page uses navigator.clipboard\n")
+	fmt.Fprintf(&b, "for the copy button, and that API only exists in a secure context.\n\n")
+	fmt.Fprintf(&b, "By hand in nginx it would be:\n\n")
 	fmt.Fprintf(&b, "  location / {\n")
 	fmt.Fprintf(&b, "      proxy_pass http://127.0.0.1:%d;\n", c.PuertoRegistro)
 	fmt.Fprintf(&b, "      proxy_set_header Host $host;\n")
 	fmt.Fprintf(&b, "      proxy_set_header X-Forwarded-For $remote_addr;\n")
 	fmt.Fprintf(&b, "  }\n\n")
-	fmt.Fprintf(&b, "X-Forwarded-For no es opcional: el límite de tasa del registro\n")
-	fmt.Fprintf(&b, "cuenta por IP, y sin esa cabecera todas las visitas parecen una sola.\n")
+	// Y desde que el registro pide password, esta línea dejó de ser solo sobre
+	// contar visitas: `ipDe` únicamente se cree la cabecera cuando la conexión
+	// viene de loopback, así que un proxy que no la ponga hace que TODOS los
+	// intentos de login compartan el mismo cubo.
+	fmt.Fprintf(&b, "X-Forwarded-For is not optional: the registry rate limit counts\n")
+	fmt.Fprintf(&b, "per IP, and without that header every visitor looks like a single one.\n")
 	return b.String()
 }

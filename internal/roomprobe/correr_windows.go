@@ -148,35 +148,34 @@ func correr(op opciones) error {
 	}
 
 	canal := control.New(control.Deps{Clock: relojReal{}, Log: log})
-	registro, err := directory.New(directory.Deps{
-		DataDir: op.datos, Seed: op.seed, Log: log, Protect: sinACL,
-	})
-	if err != nil {
-		return fmt.Errorf("preparando el registro de salas: %w", err)
-	}
+	// La fábrica, igual que el producto: al entrar manda el registro del código
+	// pegado, y `--seed` solo dice dónde ABRE salas esta sonda.
+	registros := directory.NewFactory(directory.Deps{
+		DataDir: op.datos, Log: log, Protect: sinACL,
+	}, op.seed)
 
 	sesion, err := usecase.NewSession(ctxRaiz, usecase.Deps{
 		// Esta sonda es de Windows, así que la cuarentena es la de Windows. El
 		// fichero lleva etiqueta `_windows`, o sea que la constante no puede
 		// desalinearse con el sistema en el que corre.
-		Quarantine: domain.QuarantineWindows,
-		Engine:     motor,
-		Firewall:   fw,
-		NetCfg:     netcfg.New(op.datos, log),
-		Routes:     routes.New(),
-		Store:      catalogstore.New(op.dirExe, op.datos, log),
-		State:      statestore.New(op.datos),
-		Library:    steam.New(log),
-		Directory:  registro,
-		Control:    canal,
-		Audit:      auditoria{fw: fw, router: igd.New(log)},
-		Inspector:  inspector.New(),
-		Prober:     probe.New(),
-		Canary:     opener.New(log),
-		Clock:      relojReal{},
-		Rand:       rand.Reader,
-		Log:        log,
-		Progress:   diario,
+		Quarantine:  domain.QuarantineWindows,
+		Engine:      motor,
+		Firewall:    fw,
+		NetCfg:      netcfg.New(op.datos, log),
+		Routes:      routes.New(),
+		Store:       catalogstore.New(op.dirExe, op.datos, log),
+		State:       statestore.New(op.datos),
+		Library:     steam.New(log),
+		Directories: registros,
+		Control:     canal,
+		Audit:       auditoria{fw: fw, router: igd.New(log)},
+		Inspector:   inspector.New(),
+		Prober:      probe.New(),
+		Canary:      opener.New(log),
+		Clock:       relojReal{},
+		Rand:        rand.Reader,
+		Log:         log,
+		Progress:    diario,
 	})
 	if err != nil {
 		return fmt.Errorf("construyendo la sesión: %w", err)

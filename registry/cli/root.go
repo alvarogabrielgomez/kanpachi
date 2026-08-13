@@ -28,6 +28,8 @@ func Ejecutar(args []string) int {
 		err = cmdDoctor(args[1:])
 	case "config":
 		err = cmdConfig(args[1:])
+	case "password":
+		err = cmdPassword(args[1:])
 	case "nginx", "proxy":
 		err = cmdNginx(args[1:])
 	case "upgrade":
@@ -43,7 +45,7 @@ func Ejecutar(args []string) int {
 		ayuda()
 		return 0
 	default:
-		fmt.Fprintf(os.Stderr, "no conozco el comando %q\n\n", args[0])
+		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", args[0])
 		ayuda()
 		return 2
 	}
@@ -59,25 +61,28 @@ func Ejecutar(args []string) int {
 func ayuda() {
 	fmt.Printf(`kanpseed %s
 
-  El nodo de encuentro de Kanpachi. Presenta a los peers entre sí, resuelve
-  invite IDs y sirve la página de invitación.
+  The meeting point of Kanpachi. It introduces peers to each other, resolves
+  invite IDs and serves the invitation page.
 
-Comandos que ejecuta una persona:
+Commands a person runs:
 
-  init        instala y configura todo. Una sola ejecución
-  upgrade     se actualiza a la última versión publicada
-              --check muestra si hay una nueva sin instalar nada
-  doctor      revisa que todo esté como debe, y dice qué falta
-  config      muestra o cambia los puertos, y reescribe los servicios
-  reconfigure reescribe los servicios como los quiere esta versión, y
-              reinicia. Lo hace 'upgrade' por dentro; a mano sirve para
-              deshacer una unit editada
-  nginx       repite el bloque que hay que pegar en el proxy inverso
-  uninstall   quita los servicios y los binarios
+  init        installs and configures everything. One single run
+  upgrade     updates to the latest published version
+              --check reports whether there is a new one, installs nothing
+  doctor      checks that everything is as it should be, and says what is missing
+  config      shows or changes the ports, and rewrites the services
+  password    asks for a password to HOST on this seed. Entering a room
+              never asks for one. Changing it throws every host out
+              --open removes it and leaves the seed open to anyone
+  reconfigure rewrites the services the way this version wants them, and
+              restarts. 'upgrade' does it on its own; by hand it undoes a
+              unit that was edited
+  nginx       reprints the block to paste into the reverse proxy
+  uninstall   removes the services and the binaries
 
-Comando que ejecuta systemd:
+Command systemd runs:
 
-  serve       arranca el registro. No hace falta invocarlo a mano
+  serve       starts the registry. No need to invoke it by hand
 
   version, help
 
@@ -91,16 +96,16 @@ func requiereRoot(que string) error {
 	if os.Geteuid() == 0 {
 		return nil
 	}
-	return fmt.Errorf("%s necesita root: vuelve a ejecutarlo con sudo", que)
+	return fmt.Errorf("%s needs root: run it again with sudo", que)
 }
 
 // requiereLinux evita un mensaje confuso al probar en la máquina equivocada.
 func requiereLinux() error {
 	if runtime.GOOS != "linux" {
-		return fmt.Errorf("el seed es Linux: esto no se puede instalar en %s", runtime.GOOS)
+		return fmt.Errorf("the seed is Linux: this cannot be installed on %s", runtime.GOOS)
 	}
 	if !setup.HaySystemd() {
-		return fmt.Errorf("esta máquina no usa systemd, y el seed se instala como servicio de systemd")
+		return fmt.Errorf("this machine does not use systemd, and the seed installs as a systemd service")
 	}
 	return nil
 }

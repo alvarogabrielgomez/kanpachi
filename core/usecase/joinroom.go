@@ -278,22 +278,30 @@ func (s *Session) joinRealNetworkLocked(ctx context.Context, room domain.Room, n
 // endurecer esto encima habría convertido una molestia en un muro. Por eso el
 // registro persiste primero. Ver la cabecera de `registry/persist.go`.
 //
-// # Por qué se comprueba el seed antes de creerle
+// # Se le pregunta AL REGISTRO DEL CÓDIGO, y antes se le preguntaba al nuestro
 //
-// Porque **un invite ID solo significa algo en el registro que lo emitió.** El
-// cliente del registro habla con uno fijo, y el código pegado trae el suyo
-// dentro. Si no son el mismo, este registro contestaría "no existe" sobre una
-// sala que existe perfectamente en otro, y el fallo temprano se convertiría en
-// un muro. Ahí se salta la comprobación y se entra como siempre.
+// Porque **un invite ID solo significa algo en el registro que lo emitió.**
+// Mientras el cliente hablaba con un registro fijo, un código de otro solo se
+// podía comprobar preguntándole al equivocado, así que había una rama que se
+// saltaba la comprobación entera y entraba a ciegas: sin fallo temprano y sin
+// tarjeta, o sea el minuto de ruedita de vuelta para justo esos códigos.
+//
+// Con un cliente por seed esa rama desapareció. La contrapartida es explícita y
+// está aceptada en la decisión 16: **pegar un código puede hacer que esta
+// máquina le hable al servidor de un desconocido**, que ve su IP pública y el
+// invite ID consultado. Jamás ve el secreto de la sala real, así que no puede
+// unirse a ninguna, y el diálogo de confianza enseña a dónde se va antes de
+// llegar acá.
 func (s *Session) checkRoomExists(ctx context.Context, room domain.Room) error {
-	if room.Seed != s.deps.Directory.Seed() {
-		s.deps.Progress.Stepf(domain.ScopeSeed,
-			"el código lo sirve %s y no el registro de esta app, así que no se comprueba antes", room.Seed)
-		return nil
+	dir, err := s.deps.Directories.For(room.Seed)
+	if err != nil {
+		s.deps.Log.Error("no se pudo abrir el registro del código", "seed", room.Seed, "error", err)
+		s.deps.Progress.Stepf(domain.ScopeSeed, "el registro %s no se pudo usar", room.Seed)
+		return fmt.Errorf("%w: %v", ErrNoRegistry, err)
 	}
 
 	s.deps.Progress.Stepf(domain.ScopeSeed, "preguntándole a %s si ese código existe", room.Seed)
-	_, _, err := s.deps.Directory.Lookup(ctx, room.InviteID)
+	_, _, err = dir.Lookup(ctx, room.InviteID)
 	switch {
 	case err == nil:
 		s.deps.Progress.Step(domain.ScopeSeed, "el código existe, se sigue")

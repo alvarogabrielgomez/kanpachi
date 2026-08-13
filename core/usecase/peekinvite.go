@@ -69,18 +69,25 @@ func (s *Session) PeekInvite(ctx context.Context, link string) (InvitePreview, e
 	}
 	out := InvitePreview{Room: room}
 
-	// El registro de esta app sirve UN seed. Un enlace de otro se acepta igual y
-	// lo único que se pierde es la tarjeta: un invite ID solo significa algo en
-	// el registro que lo emitió, así que preguntarle a este por un código de
-	// otro daría "no existe" sobre una sala que existe. Es la misma excepción
-	// que conserva `checkRoomExists`.
-	if room.Seed != s.deps.Directory.Seed() {
-		s.deps.Log.Info("el enlace apunta a otro registro, se enseña sin tarjeta",
-			"seed", room.Seed, "nuestro", s.deps.Directory.Seed())
+	// Se le pregunta AL REGISTRO DEL ENLACE, sea cual sea. Antes había una rama
+	// que enseñaba sin tarjeta cuando el seed no era el nuestro, porque el
+	// cliente hablaba con uno fijo y preguntarle por un ID que emitió otro habría
+	// dado "no existe" sobre una sala que existe.
+	//
+	// Que este paso ocurra ANTES de la pantalla de confirmación es deliberado: es
+	// lo que la llena. La contrapartida está aceptada en la decisión 16, y es que
+	// ese servidor ve la IP pública de esta máquina y el invite ID consultado.
+	dir, err := s.deps.Directories.For(room.Seed)
+	if err != nil {
+		// No se pudo ni abrir el cliente, o sea que el nombre no sirve. Se enseña
+		// la sala sin tarjeta: quien decide si se entra es `JoinRoom`, y va a
+		// tropezar con lo mismo y con su propio mensaje.
+		s.deps.Log.Warn("el enlace trae un registro que no se pudo usar",
+			"seed", room.Seed, "error", err)
 		return out, nil
 	}
 
-	sealed, _, err := s.deps.Directory.Lookup(ctx, room.InviteID)
+	sealed, _, err := dir.Lookup(ctx, room.InviteID)
 	switch {
 	case err == nil:
 		// sigue

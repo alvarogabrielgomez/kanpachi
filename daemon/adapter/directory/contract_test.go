@@ -3,6 +3,7 @@ package directory
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,8 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/port"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/state/jsonfile"
 	"github.com/accentiostudios/kanpachi/registry"
 )
 
@@ -42,6 +45,28 @@ func servidorReal(t *testing.T) *httptest.Server {
 // servidorRealEspiado es lo mismo, con un gancho para mirar QUÉ ruta llegó. El
 // espía envuelve al handler de verdad: lo que contesta sigue siendo el registro.
 func servidorRealEspiado(t *testing.T, ver func(ruta string)) *httptest.Server {
+	return servidorConCredencial(t, ver, nil)
+}
+
+// servidorConCredencial levanta el registro CERRADO con password.
+//
+// Es el mismo servidor de verdad, con la credencial de verdad: el hash Argon2id,
+// la clave de firma y los tokens son los que corren en el droplet, no un doble.
+// Lo que se congela acá es el contrato entero de autenticar, que es donde las dos
+// puntas se pueden separar sin que nada más lo note.
+func servidorCerrado(t *testing.T, password string) (*httptest.Server, *registry.Auth) {
+	t.Helper()
+	auth, err := registry.OpenAuth(t.TempDir())
+	if err != nil {
+		t.Fatalf("abriendo la credencial: %v", err)
+	}
+	if err := auth.SetPassword("seed.ejemplo", password); err != nil {
+		t.Fatalf("poniendo el password: %v", err)
+	}
+	return servidorConCredencial(t, nil, auth), auth
+}
+
+func servidorConCredencial(t *testing.T, ver func(ruta string), auth *registry.Auth) *httptest.Server {
 	t.Helper()
 	store := registry.NewStore(time.Now, func() (domain.InviteID, error) {
 		return domain.NewInviteID(rand.Reader)
@@ -54,7 +79,7 @@ func servidorRealEspiado(t *testing.T, ver func(ruta string)) *httptest.Server {
 		t.Fatalf("cargando la página real: %v", err)
 	}
 
-	real := registry.NewServer(store, contador, pagina).Handler()
+	real := registry.NewServer(store, contador, pagina, auth).Handler()
 	h := real
 	if ver != nil {
 		h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -309,5 +334,146 @@ func TestContratoElIDViajaCrudoYVuelveCanónico(t *testing.T) {
 	}
 	if !strings.HasSuffix(consulta, room.InviteID.Raw()) {
 		t.Errorf("la ruta fue %q y el ID crudo es %q", consulta, room.InviteID.Raw())
+	}
+}
+
+// ---- El seed cerrado con password -----------------------------------------
+
+// clienteConTokens es [clienteReal] con el almacén de estado de verdad detrás,
+// que es lo que hace que el refresh token sobreviva a un `New` nuevo.
+func clienteConTokens(t *testing.T, srv *httptest.Server, datos string) *Directory {
+	t.Helper()
+	d := clienteReal(t, srv, datos)
+	d.deps.Tokens = jsonfile.New(datos)
+	return d
+}
+
+func proofDePrueba(t *testing.T, password string) string {
+	t.Helper()
+	p, err := domain.SeedAuthProof("seed.ejemplo", password)
+	if err != nil {
+		t.Fatalf("calculando el proof: %v", err)
+	}
+	return p
+}
+
+// C7. Hospedar en un seed cerrado: el recorrido entero de la credencial.
+//
+// Congela las cuatro afirmaciones del diseño a la vez, y ninguna se sostiene
+// sola: hospedar sin credencial se niega con un centinela propio, ENTRAR no
+// pide nada ni con el seed cerrado, autenticar deja el refresh en disco, y
+// cambiar el password bota al que ya estaba dentro.
+func TestContratoHospedarEnSeedCerrado(t *testing.T) {
+	srv, auth := servidorCerrado(t, "hola1234")
+	datos := t.TempDir()
+	d := clienteConTokens(t, srv, datos)
+	ctx := context.Background()
+	sellada, _ := tarjetaDePrueba(t, "Los panas")
+
+	// Sin credencial no se hospeda, y se dice con el centinela que la interfaz
+	// lleva a la pantalla del password.
+	if _, err := d.Open(ctx, sellada); !errors.Is(err, port.ErrSeedPassword) {
+		t.Fatalf("Open sin credencial dio %v, se esperaba port.ErrSeedPassword", err)
+	}
+
+	if err := d.Authenticate(ctx, proofDePrueba(t, "hola1234")); err != nil {
+		t.Fatalf("autenticando con el password correcto: %v", err)
+	}
+	// El refresh queda en disco. El access NO, que es la mitad del diseño: vive
+	// quince minutos, así que guardarlo pondría una credencial viva donde se
+	// puede robar a cambio de ahorrar un viaje.
+	guardado, err := jsonfile.New(datos).LoadSeedToken()
+	if err != nil {
+		t.Fatalf("el refresh no quedó guardado: %v", err)
+	}
+	tok, err := domain.DecodeSeedToken(guardado)
+	if err != nil {
+		t.Fatalf("lo guardado no decodifica: %v", err)
+	}
+	if tok.Seed != "seed.ejemplo" {
+		t.Errorf("el token guardado dice seed %q: sin eso se le mandaría a otro registro", tok.Seed)
+	}
+	if strings.Contains(string(guardado), d.accessToken()) {
+		t.Error("el access token quedó en disco")
+	}
+	if strings.Contains(string(guardado), "hola1234") {
+		t.Fatal("el password quedó en disco")
+	}
+
+	room, err := d.Open(ctx, sellada)
+	if err != nil {
+		t.Fatalf("Open con credencial: %v", err)
+	}
+
+	// Y entrar sigue sin pedir nada. Un cliente recién nacido, sin token de
+	// ninguna clase, resuelve el código igual.
+	invitado := clienteReal(t, srv, t.TempDir())
+	if _, _, err := invitado.Lookup(ctx, room.InviteID); err != nil {
+		t.Fatalf("un invitado sin credencial no pudo resolver el código: %v", err)
+	}
+
+	// El operador cambia el password. Todo lo emitido muere en el acto, y el
+	// fichero caducado se limpia solo en vez de quedarse costando un viaje.
+	if err := auth.SetPassword("seed.ejemplo", "otra1234"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Publish(ctx, room.InviteID, sellada); !errors.Is(err, port.ErrSeedPassword) {
+		t.Fatalf("tras cambiar el password, Publish dio %v, se esperaba port.ErrSeedPassword", err)
+	}
+	if _, err := jsonfile.New(datos).LoadSeedToken(); err == nil {
+		t.Error("el refresh caducado sigue en disco")
+	}
+}
+
+// C8. El access token que se venció se renueva solo, y una sola vez.
+//
+// Es el caso que separa "la credencial se acabó" de "hay que escribir el
+// password otra vez". Sin esto, renovar el código de una sala abierta hace
+// quince minutos le pediría a la persona algo que ya escribió.
+func TestContratoRefrescaSinPreguntarNada(t *testing.T) {
+	srv, _ := servidorCerrado(t, "hola1234")
+	datos := t.TempDir()
+	d := clienteConTokens(t, srv, datos)
+	ctx := context.Background()
+	sellada, _ := tarjetaDePrueba(t, "Los panas")
+
+	if err := d.Authenticate(ctx, proofDePrueba(t, "hola1234")); err != nil {
+		t.Fatal(err)
+	}
+	// Se tira el access y se deja el refresh, que es exactamente el estado de un
+	// daemon quince minutos después. Un access vacío no manda bearer, y el
+	// registro contesta lo mismo que a uno vencido.
+	d.authMu.Lock()
+	d.access = ""
+	d.authMu.Unlock()
+
+	if _, err := d.Open(ctx, sellada); err != nil {
+		t.Fatalf("con el access vencido y el refresh vivo, Open falló: %v", err)
+	}
+	if d.accessToken() == "" {
+		t.Error("Open funcionó sin dejar un access nuevo, así que la próxima vuelve a pagar el refresco")
+	}
+
+	// Y con el refresh también muerto, el centinela sube. Es lo único que manda
+	// a la persona a escribir el password.
+	d.forget()
+	if _, err := d.Open(ctx, sellada); !errors.Is(err, port.ErrSeedPassword) {
+		t.Fatalf("sin refresh, Open dio %v, se esperaba port.ErrSeedPassword", err)
+	}
+}
+
+// C9. Un seed ABIERTO no cambia en nada. Es la mitad que se olvida: casi todos
+// los seeds no van a tener password, y para ellos esto no puede existir.
+func TestContratoSeedAbiertoSigueIgual(t *testing.T) {
+	srv := servidorReal(t)
+	d := clienteConTokens(t, srv, t.TempDir())
+	ctx := context.Background()
+	sellada, _ := tarjetaDePrueba(t, "Los panas")
+
+	if _, err := d.Open(ctx, sellada); err != nil {
+		t.Fatalf("hospedar en un seed abierto pidió algo: %v", err)
+	}
+	if d.accessToken() != "" {
+		t.Error("se guardó un token contra un seed que no pide ninguno")
 	}
 }

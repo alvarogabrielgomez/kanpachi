@@ -9,6 +9,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/own_seed.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
@@ -296,6 +297,11 @@ class SessionCubit extends Cubit<SessionState> {
     _pulso?.cancel();
     _pulso = Timer.periodic(_latido, (_) => unawaited(_beat()));
     unawaited(_beat());
+    // Una vez, fuera del latido. Es una llamada al daemon por el pipe local, no
+    // a la red, y lo que trae no se mueve salvo que alguien lo escriba. Un
+    // fallo acá no rompe nada: la barra dice lo que sabe y el diálogo de
+    // confianza vuelve a preguntar antes de abrir cualquier sala.
+    unawaited(ownSeed().catchError((Object _) => const OwnSeed()));
   }
 
   /// Una ronda: la sala y la salud, tal como las ve el daemon AHORA.
@@ -680,6 +686,40 @@ class SessionCubit extends Cubit<SessionState> {
   /// Lee, y opcionalmente cambia, si Kanpachi arranca con Windows.
   Future<bool> autostart({bool? enabled}) =>
       _repository.autostart(enabled: enabled);
+
+  /// Cambia el nombre con el que se va a abrir la próxima sala.
+  ///
+  /// Lo llaman los DOS sitios que lo editan, y por eso está acá: el campo de la
+  /// portada y el diálogo de confianza. Ver [SessionState.roomNameDraft].
+  void setRoomNameDraft(String name) =>
+      emit(state.copyWith(roomNameDraft: name));
+
+  /// Lee, y opcionalmente cambia, el registro en el que esta máquina abre salas.
+  ///
+  /// Pasa en crudo, sin `_try`, y eso es deliberado: `_try` deja el fallo en el
+  /// estado de la sesión para que lo pinte el aviso de la portada, y este error
+  /// pertenece al campo donde alguien acaba de escribir. La pantalla lo atrapa y
+  /// lo enseña ahí, al lado de lo que hay que corregir.
+  Future<OwnSeed> ownSeed({String? seed}) async {
+    final OwnSeed v = await _repository.ownSeed(seed: seed);
+    // Se guarda lo LEÍDO y no lo pedido: lo que se persiste es el nombre ya
+    // normalizado, así que quedarse con lo escrito enseñaría la intención en
+    // vez de lo que quedó puesto.
+    if (!isClosed) emit(state.copyWith(ownSeed: v.configured));
+    return v;
+  }
+
+  /// Entrega el password del registro propio, para poder HOSPEDAR en él.
+  ///
+  /// En crudo y sin `_try`, por lo mismo que [ownSeed]: el fallo pertenece al
+  /// campo donde alguien acaba de escribir, y dejarlo en el estado de la sesión
+  /// lo pintaría en la portada, lejos de lo que hay que corregir.
+  ///
+  /// **No emite nada.** El password no toca el estado del cubit: lo único que
+  /// existe de él es el texto del campo, que muere con la pantalla. Lo que
+  /// sobrevive lo guarda el daemon, sellado, y no vuelve por acá.
+  Future<void> seedPassword(String password) =>
+      _repository.seedPassword(password);
 
   /// Lo que la máquina tiene abierto AHORA, medido.
   ///

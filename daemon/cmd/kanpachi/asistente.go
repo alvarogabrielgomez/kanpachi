@@ -129,7 +129,7 @@ func menuSinSala(ctx context.Context, op opciones) error {
 		if err != nil {
 			return err
 		}
-		return conAviso(cmdHost(ctx, op, strings.Fields(nombreSala)))
+		return conAviso(ctx, op, cmdHost(ctx, op, strings.Fields(nombreSala)))
 	case entrar:
 		pegado, err := texto("Paste the link or the code exactly as it reached you:",
 			"All six forms work: VA3BSF5L, va3b-sf5l, kanpachi://VA3BSF5L,\n"+
@@ -137,24 +137,24 @@ func menuSinSala(ctx context.Context, op opciones) error {
 		if err != nil {
 			return err
 		}
-		return conAviso(cmdJoin(ctx, op, []string{pegado}))
+		return conAviso(ctx, op, cmdJoin(ctx, op, []string{pegado}))
 	case volver:
-		return conAviso(volverALaÚltima(ctx, op))
+		return conAviso(ctx, op, volverALaÚltima(ctx, op))
 	case reanudar:
-		return conAviso(cmdResume(ctx, op, nil))
+		return conAviso(ctx, op, cmdResume(ctx, op, nil))
 	case descartar:
-		return conAviso(cmdDiscard(ctx, op, nil))
+		return conAviso(ctx, op, cmdDiscard(ctx, op, nil))
 	case juegos:
-		return conAviso(cmdGames(ctx, op, nil))
+		return conAviso(ctx, op, cmdGames(ctx, op, nil))
 	case comprobar:
 		return menuDeComprobaciones(ctx, op)
 	case actualiza:
 		// `--check` y no la actualización entera, a propósito: desde el menú se
 		// MIRA, y actualizar reinicia el servicio. El comando que lo hace se
 		// escribe a mano, que es un paso que ahí sí vale la pena.
-		return conAviso(cmdUpgrade(ctx, op, []string{"--check"}))
+		return conAviso(ctx, op, cmdUpgrade(ctx, op, []string{"--check"}))
 	case nombre:
-		return cambiarNombre(op)
+		return cambiarNombre(ctx, op)
 	case salir:
 		return errSalir
 	}
@@ -261,7 +261,7 @@ func menuConSala(ctx context.Context, op opciones, st protocol.RoomView) error {
 		return err
 	}
 	if ip, esExpulsión := expulsar[sel]; esExpulsión {
-		return conAviso(cmdKick(ctx, op, []string{ip}))
+		return conAviso(ctx, op, cmdKick(ctx, op, []string{ip}))
 	}
 	switch sel {
 	case vigilar:
@@ -271,23 +271,23 @@ func menuConSala(ctx context.Context, op opciones, st protocol.RoomView) error {
 		if errors.Is(err, errInterrumpido) {
 			return nil
 		}
-		return conAviso(err)
+		return conAviso(ctx, op, err)
 	case copiar:
-		return conAviso(cmdLink(ctx, op, nil))
+		return conAviso(ctx, op, cmdLink(ctx, op, nil))
 	case rotar:
 		ok, err := confirmar("The links you already handed out will stop working. Go on?")
 		if err != nil || !ok {
 			return err
 		}
-		return conAviso(cmdRotate(ctx, op, nil))
+		return conAviso(ctx, op, cmdRotate(ctx, op, nil))
 	case juego:
-		return conAviso(elegirJuego(ctx, op))
+		return conAviso(ctx, op, elegirJuego(ctx, op))
 	case cerrarJue:
-		return conAviso(cmdGame(ctx, op, nil))
+		return conAviso(ctx, op, cmdGame(ctx, op, nil))
 	case comprobar:
 		return menuDeComprobaciones(ctx, op)
 	case cerrar, salirSala:
-		return conAviso(cmdLeave(ctx, op, nil))
+		return conAviso(ctx, op, cmdLeave(ctx, op, nil))
 	case salir:
 		return errSalir
 	}
@@ -342,18 +342,18 @@ func menuDeComprobaciones(ctx context.Context, op opciones) error {
 	}
 	switch sel {
 	case exposicion:
-		return conAviso(cmdExposure(ctx, op, nil))
+		return conAviso(ctx, op, cmdExposure(ctx, op, nil))
 	case red:
-		return conAviso(cmdDiag(ctx, op, nil))
+		return conAviso(ctx, op, cmdDiag(ctx, op, nil))
 	case sondeo:
-		return conAviso(cmdProbe(ctx, op, nil))
+		return conAviso(ctx, op, cmdProbe(ctx, op, nil))
 	case reponer:
-		return conAviso(cmdProtect(ctx, op, nil))
+		return conAviso(ctx, op, cmdProtect(ctx, op, nil))
 	}
 	return nil
 }
 
-func cambiarNombre(op opciones) error {
+func cambiarNombre(ctx context.Context, op opciones) error {
 	actual := leerApodo(op.datos)
 	nuevo, err := texto("Your name:", "The other members of the room see it. "+
 		"Letters and digits only, up to 12.", actual)
@@ -363,7 +363,7 @@ func cambiarNombre(op opciones) error {
 	// Se valida por el mismo camino que usan los subcomandos, y ahí es donde se
 	// guarda: así no hay dos sitios que decidan qué nombre vale.
 	if _, err := apodo(opciones{datos: op.datos, nick: nuevo}); err != nil {
-		return conAviso(err)
+		return conAviso(ctx, op, err)
 	}
 	return nil
 }
@@ -408,7 +408,7 @@ func confirmar(mensaje string) (bool, error) {
 // Los errores de estos caminos son respuestas del producto —"ese código no
 // existe", "el host no contestó"— y lo que hay que hacer con ellos es leerlos.
 // La interrupción sí sube, porque es lo único que tiene que llegar al final.
-func conAviso(err error) error {
+func conAviso(ctx context.Context, op opciones, err error) error {
 	if err == nil {
 		esperarEnter()
 		return nil
@@ -417,8 +417,43 @@ func conAviso(err error) error {
 		return err
 	}
 	fmt.Println("\n  BAD:", err)
+	if seArreglaAquíMismo(ctx, op, err) {
+		return nil
+	}
 	esperarEnter()
 	return nil
+}
+
+// seArreglaAquíMismo ofrece resolver en el acto lo que tiene arreglo, y dice si
+// llegó a hacerlo.
+//
+// # Por qué acá y no dejándolo en un consejo
+//
+// Porque el asistente existe para quien no leyó nada, y mandarlo a escribir
+// `kanpachi seed <host>` es mandarlo a salir del asistente para volver a entrar.
+// El subcomando sí se queda con el consejo, que es lo correcto ahí: quien
+// escribió un comando está en una terminal y puede escribir otro.
+//
+// **No reintenta la operación sola.** Configurar el registro y abrir una sala
+// son dos decisiones, y encadenarlas haría que quien solo quería arreglar la
+// configuración se encontrara con una sala abierta.
+func seArreglaAquíMismo(ctx context.Context, op opciones, err error) bool {
+	switch client.Code(err) {
+	case protocol.CodeNoOwnSeed:
+		fmt.Println("\n  This machine has no registry to open rooms on yet.")
+		host, e := texto("Registry host:",
+			"The name of the server, with no https:// and no slashes. It travels\n"+
+				"inside every code you hand out.", "")
+		if e != nil || strings.TrimSpace(host) == "" {
+			return false
+		}
+		return conAviso(ctx, op, cmdSeed(ctx, op, []string{strings.TrimSpace(host)})) == nil
+	case protocol.CodeSeedPassword:
+		fmt.Println("\n  That registry asks for a password to host on it.")
+		fmt.Println("  Entering a room never asks for one.")
+		return conAviso(ctx, op, cmdPassword(ctx, op, nil)) == nil
+	}
+	return false
 }
 
 func esperarEnter() {

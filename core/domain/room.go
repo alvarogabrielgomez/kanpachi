@@ -7,12 +7,22 @@ import (
 	"strings"
 )
 
-// DefaultSeedHost es la semilla que usa un invite ID pelado.
+// NO HAY seed por defecto, y la ausencia es la decisión.
 //
-// Un ID sin host SIEMPRE usa esta, jamás la última que se usó. Recordar la
-// última tiene una trampa real: tras entrar una vez a un seed ajeno, un ID
-// pelado de otro amigo fallaría sin explicación posible.
-const DefaultSeedHost = "kanpachi.accentio.dev"
+// Hubo uno, `DefaultSeedHost = "kanpachi.accentio.dev"`, y un invite ID pelado
+// significaba esa máquina. Dejó de existir cuando el producto se abrió: **cada
+// quien levanta el seed que quiera**, así que un código sin seed no identifica
+// ninguna sala, identifica ocho caracteres. Ver [ErrSeedMissing].
+//
+// Lo que esa constante compraba, y por qué se pudo pagar de otra forma: era la
+// comodidad de dictar ocho caracteres por teléfono. Ahora hay que dictar también
+// el dominio, y a cambio desaparece el fallo que no se podía explicar, que era
+// pegar el código de otro seed y aterrizar en una sala distinta con el mismo ID.
+//
+// **Ojo con la confusión que esto deja atrás:** el canal por el que este build
+// pregunta por actualizaciones NO era esto, aunque compartía la cadena. Ese vive
+// en `internal/selfupdate`, es una propiedad del build y no de una sala, y se
+// nombra aparte a propósito.
 
 // MaxInputLen es el tope de longitud que se aplica ANTES de parsear.
 //
@@ -29,6 +39,19 @@ var (
 	ErrInputTooLong = fmt.Errorf("la entrada pasa de %d caracteres", MaxInputLen)
 	ErrInputShape   = errors.New("eso no tiene forma de código de Kanpachi")
 	ErrSeedHost     = errors.New("el servidor del código no es un nombre válido")
+
+	// ErrSeedMissing es un código con forma impecable al que le falta el
+	// servidor.
+	//
+	// # Por qué es un centinela y no [ErrInputShape]
+	//
+	// Porque son dos cosas distintas para quien las lee. `HTTP-SKAN` no tiene
+	// forma de código y no hay nada que enseñar; `A7K2-M9QX` la tiene entera, y
+	// lo único que le falta es a QUÉ servidor pertenece. Un solo error para los
+	// dos daría "eso no tiene forma de código" sobre ocho caracteres que se ven
+	// perfectos, y quien lo lea va a mirar el código en vez de mirar lo que
+	// falta. Separarlo es lo que permite contestar con la forma completa.
+	ErrSeedMissing = errors.New("al código le falta el servidor")
 )
 
 // Room es un invite ID con el seed por el que se lo alcanza.
@@ -41,21 +64,33 @@ type Room struct {
 	Seed     string // host del seed, ya normalizado. Nunca vacío tras ParseRoom
 }
 
-// ParseRoom acepta las seis formas documentadas y devuelve siempre lo mismo.
+// ParseRoom acepta las formas que LLEVAN SEED y devuelve siempre lo mismo.
 //
-//	A7K2M9QX                                  → seed por defecto
-//	a7k2-m9qx                                 → seed por defecto
-//	kanpachi://A7K2M9QX                       → seed por defecto
 //	A7K2M9QX@seed.midominio.com               → ese seed
-//	kanpachi.accentio.dev/A7K2M9QX            → ese seed
-//	https://kanpachi.accentio.dev/A7K2M9QX    → ese seed
+//	a7k2-m9qx@seed.midominio.com              → ese seed
+//	kanpachi://A7K2M9QX@seed.midominio.com    → ese seed
+//	seed.midominio.com/A7K2M9QX               → ese seed
+//	https://seed.midominio.com/A7K2M9QX       → ese seed
+//	https://seed.midominio.com/A7K2M9QX#clave → ese seed, clave descartada acá
 //
 // El usuario pega lo que le llegó por Telegram y funciona, sin tener que saber
-// cuál de las seis es la correcta.
+// cuál es la correcta.
+//
+// # Un código sin seed se RECHAZA, y antes valía
+//
+// `A7K2M9QX` a secas devuelve [ErrSeedMissing]. Un invite ID solo significa algo
+// en el registro que lo emitió, así que sin seed no identifica una sala:
+// identifica ocho caracteres que existen en tantas salas como registros haya.
+//
+// Antes caía al seed compilado, y eso convertía el caso peor en el silencioso:
+// pegar el código de un amigo que hospeda en su propio servidor **entraba a otra
+// sala** con el mismo ID, sin un solo error. Fallar acá es lo que lo hace
+// visible, y el mensaje puede enseñar la forma completa porque el centinela es
+// propio.
 //
 // Es la frontera de entrada hostil del producto. No interpreta rutas, no
 // acepta argumentos, no sigue redirecciones y no adivina: cualquier cosa que
-// no calce con una de las seis formas —incluida la barra vacía con que Windows
+// no calce con una de las formas —incluida la barra vacía con que Windows
 // canonicaliza el esquema propio— se rechaza entera.
 func ParseRoom(input string) (Room, error) {
 	// El tope va primero, antes de tocar el contenido.
@@ -117,9 +152,10 @@ func ParseRoom(input string) (Room, error) {
 			return Room{}, ErrInputShape
 		}
 		idPart, hostPart = parts[0], parts[1]
-		// Un @ escrito a propósito con nada detrás es una entrada rota, no una
-		// petición del seed por defecto. Caer al default acá haría que un ID
-		// truncado a mitad de copiar conecte en silencio a otra sala.
+		// Un @ escrito con nada detrás es una entrada rota, y es [ErrSeedHost] y
+		// no [ErrSeedMissing]: el seed se intentó escribir y salió mal, que es
+		// otra cosa que no haberlo puesto. Un ID truncado a mitad de copiar cae
+		// acá.
 		if hostPart == "" {
 			return Room{}, ErrSeedHost
 		}
@@ -143,12 +179,15 @@ func ParseRoom(input string) (Room, error) {
 		return Room{}, err
 	}
 
-	seed := DefaultSeedHost
-	if hostPart != "" {
-		seed, err = parseSeedHost(hostPart)
-		if err != nil {
-			return Room{}, err
-		}
+	// El ID se valida ANTES que la falta de seed, y ese orden es el que hace útil
+	// al centinela. Al revés, `HOLA@` y `A7K2M9QX` contestarían los dos que falta
+	// el servidor, y al primero lo que le falta es ser un código.
+	if hostPart == "" {
+		return Room{}, ErrSeedMissing
+	}
+	seed, err := parseSeedHost(hostPart)
+	if err != nil {
+		return Room{}, err
 	}
 	return Room{InviteID: id, Seed: seed}, nil
 }
@@ -168,16 +207,48 @@ func (r Room) InviteURL() string {
 	return r.Seed + "/" + r.InviteID.String()
 }
 
-// UsesDefaultSeed dice si la sala va por la semilla de Accentio. La UI resalta
-// el caso contrario, porque conectarse al servidor de un desconocido merece
-// verse.
-func (r Room) UsesDefaultSeed() bool { return r.Seed == DefaultSeedHost }
+// NO HAY `UsesDefaultSeed`, y la borró este cambio.
+//
+// Contestaba si la sala iba por la semilla de Accentio, para que la interfaz
+// resaltara el caso contrario. Sin seed por defecto la pregunta no significa
+// nada: **todo seed es el de alguien**, y no hay uno que sea el normal.
+//
+// Se borró en vez de reescribirse contra el seed propio porque **no la llamaba
+// nadie**: estaba escrita, probada y muerta, que es el fallo que
+// `internal/arch/cableado_test.go` vigila en los adaptadores. Lo que reemplaza a
+// resaltar el seed ajeno es el diálogo de confianza, que aparece SIEMPRE y no
+// solo cuando el destino es raro.
+
+// ParseOwnSeed lee el registro propio guardado en disco, o lo que alguien
+// escriba en la configuración.
+//
+// # Por qué pasa por la MISMA comprobación que el seed de un código
+//
+// Porque termina en los mismos dos sitios: el cliente HTTP que pide el código y
+// los `--peers` del motor. Que el valor venga de un fichero nuestro en vez de un
+// enlace de Telegram no lo hace menos peligroso, y en Windows ese fichero vive
+// en un directorio que todos los usuarios de la máquina pueden leer. Un fichero
+// de disco merece la misma desconfianza que una entrada hostil, que es lo mismo
+// que ya hace `roomFrom` con la sala guardada.
+//
+// Devuelve cadena vacía sin error cuando no hay nada escrito: no haber
+// configurado registro todavía es el estado normal de quien nunca hospedó.
+func ParseOwnSeed(raw []byte) (string, error) {
+	s := strings.TrimSpace(string(raw))
+	if s == "" {
+		return "", nil
+	}
+	if len(s) > maxHostLen {
+		return "", ErrSeedHost
+	}
+	return parseSeedHost(s)
+}
 
 // parseSeedHost valida un nombre de host de forma conservadora.
 //
-// Sin puerto a propósito: ninguna de las seis formas documentadas lo lleva, el
-// seed siempre escucha en 11010, y aceptarlo sería superficie de parseo a
-// cambio de nada.
+// Sin puerto a propósito: ninguna de las formas documentadas lo lleva, el seed
+// siempre escucha en 11010, y aceptarlo sería superficie de parseo a cambio de
+// nada.
 //
 // # Es un NOMBRE, jamás una dirección
 //

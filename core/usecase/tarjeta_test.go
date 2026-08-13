@@ -23,22 +23,22 @@ import (
 // cargar del disco, y volver a sellar produciría otra.
 func TestReabrirRepublicaLaTarjeta(t *testing.T) {
 	b := salaCreada(t)
-	publicadaAlCrear := append([]byte(nil), b.registro.publicado...)
+	publicadaAlCrear := append([]byte(nil), b.registry.publicado...)
 	if len(publicadaAlCrear) == 0 {
 		t.Fatal("crear no publicó ninguna tarjeta, así que este test no mide nada")
 	}
 
 	b = reinicia(t, b)
-	b.registro.publicado = nil
-	antes := b.registro.publicaciones
+	b.registry.publicado = nil
+	antes := b.registry.publicaciones
 
-	if _, err := b.sesión.ResumeRoom(ctx()); err != nil {
+	if _, err := b.session.ResumeRoom(ctx()); err != nil {
 		t.Fatal(err)
 	}
-	if b.registro.publicaciones != antes+1 {
-		t.Fatalf("reabrir publicó %d veces, se esperaba una", b.registro.publicaciones-antes)
+	if b.registry.publicaciones != antes+1 {
+		t.Fatalf("reabrir publicó %d veces, se esperaba una", b.registry.publicaciones-antes)
 	}
-	if string(b.registro.publicado) != string(publicadaAlCrear) {
+	if string(b.registry.publicado) != string(publicadaAlCrear) {
 		t.Error("se republicó una tarjeta DISTINTA de la que se había subido.\n" +
 			"  Los enlaces ya repartidos llevan la clave de la vieja, así que\n" +
 			"  dejarían de descifrarla.")
@@ -50,23 +50,23 @@ func TestReabrirRepublicaLaTarjeta(t *testing.T) {
 // instantánea y determinista.
 func TestUnaSalaAbiertaRepublicaLaTarjetaCadaHora(t *testing.T) {
 	b := salaCreada(t)
-	antes := b.registro.publicaciones
+	antes := b.registry.publicaciones
 
-	b.reloj.avanza(RepublishInterval - time.Second)
-	b.sesión.Tick(ctx())
-	if b.registro.publicaciones != antes {
+	b.clock.avanza(RepublishInterval - time.Second)
+	b.session.Tick(ctx())
+	if b.registry.publicaciones != antes {
 		t.Fatal("la tarjeta se republicó antes de cumplir el intervalo")
 	}
 
-	b.reloj.avanza(2 * time.Second)
-	b.sesión.Tick(ctx())
-	if b.registro.publicaciones != antes+1 {
+	b.clock.avanza(2 * time.Second)
+	b.session.Tick(ctx())
+	if b.registry.publicaciones != antes+1 {
 		t.Fatalf("publicaciones tras una hora = %d, se esperaba 1",
-			b.registro.publicaciones-antes)
+			b.registry.publicaciones-antes)
 	}
 
-	b.sesión.Tick(ctx())
-	if b.registro.publicaciones != antes+1 {
+	b.session.Tick(ctx())
+	if b.registry.publicaciones != antes+1 {
 		t.Fatal("la tarjeta se volvió a publicar en el latido siguiente")
 	}
 }
@@ -76,21 +76,21 @@ func TestUnaSalaAbiertaRepublicaLaTarjetaCadaHora(t *testing.T) {
 // una publicación aceptada puede apagar el aviso.
 func TestUnFalloTransitorioNoReviveUnCódigoPerdido(t *testing.T) {
 	b := salaCreada(t)
-	b.registro.err = port.ErrUnknownRoom
-	b.reloj.avanza(RepublishInterval)
-	if st := b.sesión.Tick(ctx()); !st.CodeLost {
+	b.registry.err = port.ErrUnknownRoom
+	b.clock.avanza(RepublishInterval)
+	if st := b.session.Tick(ctx()); !st.CodeLost {
 		t.Fatal("el registro rechazó el código y el estado no lo marcó perdido")
 	}
 
-	b.registro.err = errors.New("el registro no contesta")
-	b.reloj.avanza(RepublishInterval)
-	if st := b.sesión.Tick(ctx()); !st.CodeLost {
+	b.registry.err = errors.New("el registro no contesta")
+	b.clock.avanza(RepublishInterval)
+	if st := b.session.Tick(ctx()); !st.CodeLost {
 		t.Fatal("un fallo transitorio revivió un código que el registro había perdido")
 	}
 
-	b.registro.err = nil
-	b.reloj.avanza(RepublishInterval)
-	if st := b.sesión.Tick(ctx()); st.CodeLost {
+	b.registry.err = nil
+	b.clock.avanza(RepublishInterval)
+	if st := b.session.Tick(ctx()); st.CodeLost {
 		t.Fatal("una publicación aceptada no apagó el aviso de código perdido")
 	}
 }
@@ -103,16 +103,16 @@ func TestUnFalloTransitorioNoReviveUnCódigoPerdido(t *testing.T) {
 func TestSiLaRepublicaciónFallaLaSalaSeReabreIgual(t *testing.T) {
 	b := salaCreada(t)
 	b = reinicia(t, b)
-	b.registro.err = errors.New("el registro no está")
+	b.registry.err = errors.New("el registro no está")
 
-	st, err := b.sesión.ResumeRoom(ctx())
+	st, err := b.session.ResumeRoom(ctx())
 	if err != nil {
 		t.Fatalf("la sala no se reabrió por culpa de la tarjeta: %v", err)
 	}
 	if st.Conn != domain.StateConnected {
 		t.Fatalf("la sala quedó en %s", st.Conn)
 	}
-	if b.registro.publicaciones == 0 {
+	if b.registry.publicaciones == 0 {
 		t.Error("ni siquiera se intentó republicar")
 	}
 }
@@ -130,17 +130,17 @@ func TestUnaSalaGuardadaSinTarjetaNoLlamaAlRegistro(t *testing.T) {
 
 	// Se le quita la tarjeta a lo guardado, que es exactamente la forma de un
 	// archivo de una versión anterior.
-	sinTarjeta := b.sesión.pending
+	sinTarjeta := b.session.pending
 	sinTarjeta.Card = nil
-	b.sesión.pending = sinTarjeta
+	b.session.pending = sinTarjeta
 
-	antes := b.registro.publicaciones
-	if _, err := b.sesión.ResumeRoom(ctx()); err != nil {
+	antes := b.registry.publicaciones
+	if _, err := b.session.ResumeRoom(ctx()); err != nil {
 		t.Fatal(err)
 	}
-	if b.registro.publicaciones != antes {
+	if b.registry.publicaciones != antes {
 		t.Errorf("se llamó al registro %d vez/veces sin tener tarjeta que subir",
-			b.registro.publicaciones-antes)
+			b.registry.publicaciones-antes)
 	}
 }
 
@@ -158,12 +158,12 @@ func TestUnaSalaGuardadaSinTarjetaNoLlamaAlRegistro(t *testing.T) {
 // lado no existe.
 func TestCrearSinRegistroNoGuardaNada(t *testing.T) {
 	b := nuevoBanco(t)
-	b.registro.err = errors.New("el registro no está")
+	b.registry.err = errors.New("el registro no está")
 
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); !errors.Is(err, ErrNoRegistry) {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); !errors.Is(err, ErrNoRegistry) {
 		t.Fatalf("sin registro se creó la sala, o falló por otra cosa: %v", err)
 	}
-	if raw, err := b.estado.LoadRoom(); err == nil && len(raw) > 0 {
+	if raw, err := b.state.LoadRoom(); err == nil && len(raw) > 0 {
 		t.Errorf("quedó una sala guardada de %d bytes que el registro nunca conoció", len(raw))
 	}
 }
@@ -176,7 +176,7 @@ func TestCrearGuardaLaTarjetaQueSePublicó(t *testing.T) {
 	if len(guardada.Card) == 0 {
 		t.Fatal("no se guardó la tarjeta que se publicó")
 	}
-	if string(guardada.Card) != string(b.registro.publicado) {
+	if string(guardada.Card) != string(b.registry.publicado) {
 		t.Error("lo guardado no es lo que se publicó")
 	}
 	if _, err := domain.OpenRoomCard(guardada.Card, guardada.CardKey); err != nil {
@@ -199,7 +199,7 @@ func TestCrearGuardaLaTarjetaQueSePublicó(t *testing.T) {
 func TestRenombrarDejaLaClaveYLaTarjetaConsistentesEnDisco(t *testing.T) {
 	b := salaCreada(t)
 
-	if _, err := b.sesión.RenameRoom(ctx(), "Los panas 2"); err != nil {
+	if _, err := b.session.RenameRoom(ctx(), "Los panas 2"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -212,7 +212,7 @@ func TestRenombrarDejaLaClaveYLaTarjetaConsistentesEnDisco(t *testing.T) {
 		t.Errorf("en disco quedó la tarjeta de %q y la sala se llama %q",
 			tarjeta.Room, guardada.Name)
 	}
-	if string(guardada.Card) != string(b.registro.publicado) {
+	if string(guardada.Card) != string(b.registry.publicado) {
 		t.Error("lo guardado no es lo que se publicó al renombrar")
 	}
 }
@@ -226,8 +226,8 @@ func TestSiRenombrarNoSePublicaLoDeDiscoNoCambia(t *testing.T) {
 	b := salaCreada(t)
 	antes := loGuardado(t, b)
 
-	b.registro.err = errors.New("el registro no está")
-	if _, err := b.sesión.RenameRoom(ctx(), "Los panas 2"); err != nil {
+	b.registry.err = errors.New("el registro no está")
+	if _, err := b.session.RenameRoom(ctx(), "Los panas 2"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -245,9 +245,9 @@ func TestSiRenombrarNoSePublicaLoDeDiscoNoCambia(t *testing.T) {
 // una hora después.
 func TestRenombrarDetectaQueElCódigoSePerdió(t *testing.T) {
 	b := salaCreada(t)
-	b.registro.err = port.ErrUnknownRoom
+	b.registry.err = port.ErrUnknownRoom
 
-	st, err := b.sesión.RenameRoom(ctx(), "Los panas 2")
+	st, err := b.session.RenameRoom(ctx(), "Los panas 2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,8 +255,8 @@ func TestRenombrarDetectaQueElCódigoSePerdió(t *testing.T) {
 		t.Fatal("el registro rechazó el código al renombrar y no se marcó perdido")
 	}
 
-	b.registro.err = nil
-	st, err = b.sesión.RenameRoom(ctx(), "Los panas 3")
+	b.registry.err = nil
+	st, err = b.session.RenameRoom(ctx(), "Los panas 3")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,13 +266,13 @@ func TestRenombrarDetectaQueElCódigoSePerdió(t *testing.T) {
 }
 
 // loGuardado lee lo ÚLTIMO que se escribió en disco, decodificado.
-func loGuardado(t *testing.T, b *banco) domain.PersistedRoom {
+func loGuardado(t *testing.T, b *bank) domain.HostedRoom {
 	t.Helper()
-	raw, err := b.estado.LoadRoom()
+	raw, err := b.state.LoadRoom()
 	if err != nil {
 		t.Fatalf("no hay sala guardada: %v", err)
 	}
-	p, err := domain.DecodePersistedRoom(raw)
+	p, err := domain.DecodeHostedRoom(raw)
 	if err != nil {
 		t.Fatalf("lo guardado no se puede releer: %v", err)
 	}

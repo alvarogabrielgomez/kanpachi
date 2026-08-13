@@ -88,6 +88,8 @@ class SessionState {
     this.installed = const <Game>[],
     this.pendingGame,
     this.nickname = '',
+    this.ownSeed = '',
+    this.roomNameDraft = '',
     this.health = const HealthReport.unknown(),
     this.protection = ProtectionWork.none,
     this.code = CodeWork.none,
@@ -113,6 +115,35 @@ class SessionState {
   final Game? pendingGame;
 
   final String nickname;
+
+  /// El registro en el que esta máquina abre salas, o vacío si no hay ninguno.
+  ///
+  /// # Por qué vive acá y no se pide en cada pantalla
+  ///
+  /// Porque lo miran tres sitios —la barra de estado, el diálogo de confianza y
+  /// la pantalla de configuración— y tres lecturas por su cuenta son tres
+  /// respuestas que pueden no coincidir mientras alguien lo está cambiando.
+  ///
+  /// **No lo trae el latido.** Cambia cuando una persona lo escribe, o sea casi
+  /// nunca, y colgarlo del latido sería una llamada más cada dos segundos para
+  /// enterarse de algo que no se mueve. Lo refresca [SessionCubit.ownSeed], que
+  /// es por donde pasa tanto leerlo como cambiarlo.
+  final String ownSeed;
+
+  /// Cómo se va a llamar la sala que todavía no existe.
+  ///
+  /// # Por qué el borrador vive acá y no en el campo que lo escribe
+  ///
+  /// Porque se escribe en DOS sitios: el campo de la portada y el diálogo que
+  /// confirma el registro antes de abrir. Con un `TextEditingController` en cada
+  /// pantalla serían dos borradores, y quien escribiera un nombre en la portada
+  /// y lo cambiara en el diálogo dejaría el primero puesto detrás, sin saber
+  /// cuál de los dos se usó. Compartiendo el estado, editar uno mueve el otro
+  /// mientras se mira.
+  ///
+  /// Vacío significa «todavía nada», y lo que se abre entonces es la sugerencia
+  /// que la portada enseña como marca de agua.
+  final String roomNameDraft;
 
   /// Lo que el daemon vigila solo: los avisos y la Protección Kanpachi.
   ///
@@ -226,6 +257,8 @@ class SessionState {
     Game? pendingGame,
     bool clearPending = false,
     String? nickname,
+    String? ownSeed,
+    String? roomNameDraft,
     HealthReport? health,
     ProtectionWork? protection,
     CodeWork? code,
@@ -248,6 +281,8 @@ class SessionState {
     installed: installed ?? this.installed,
     pendingGame: clearPending ? null : (pendingGame ?? this.pendingGame),
     nickname: nickname ?? this.nickname,
+    ownSeed: ownSeed ?? this.ownSeed,
+    roomNameDraft: roomNameDraft ?? this.roomNameDraft,
     health: health ?? this.health,
     protection: protection ?? this.protection,
     code: code ?? this.code,

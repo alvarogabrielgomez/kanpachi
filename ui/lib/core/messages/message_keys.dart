@@ -258,6 +258,24 @@ enum FailureCode {
   /// estar perfecto. Lo que hay que hacer es lo contrario en cada caso.
   noRegistry('no_registry'),
 
+  /// Esta máquina todavía no tiene registro donde abrir salas.
+  ///
+  /// Es el hermano de [seedPassword] y son dos a propósito: acá falta elegir el
+  /// servidor, allá falta la contraseña de uno ya elegido. Llevan a dos
+  /// pantallas distintas.
+  noOwnSeed('no_own_seed'),
+
+  /// Ese registro pide password para HOSPEDAR y esta máquina no tiene con qué.
+  ///
+  /// Cubre los tres casos a la vez: nunca se escribió ninguno, el guardado
+  /// caducó, y el operador cambió el password y botó a todos. Son uno solo
+  /// porque lo que hay que hacer es idéntico, y porque el registro se niega a
+  /// decir cuál fue: distinguirlos solo le regalaría información a quien esté
+  /// probando contraseñas.
+  ///
+  /// **Entrar a una sala nunca lo produce.**
+  seedPassword('seed_password'),
+
   /// El usuario canceló la operación mientras corría.
   canceled('canceled'),
 

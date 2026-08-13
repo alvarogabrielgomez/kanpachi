@@ -302,17 +302,25 @@ type CatalogStore interface {
 // invariantes. Un adaptador que decidiera qué es una sala válida movería la
 // política fuera de core.
 //
-// Son dos archivos y dos motivos distintos:
+// Son tres archivos y tres motivos distintos:
 //
-//	room.json       SOLO EN EL HOST. La sala que estaba abierta. Salir limpio
-//	                lo borra y morir sucio lo deja, así que su sola presencia
-//	                al arrancar es la señal de que hubo un mal cierre.
-//	last-room.json  SOLO EN INVITADOS. La última sala, para poder volver. Lleva
-//	                el código y nada que sirva para entrar sin pasar por el
-//	                host.
+//	hosted-room.json  SOLO EN EL HOST. La sala que estaba abierta. Salir limpio
+//	                  lo borra y morir sucio lo deja, así que su sola presencia
+//	                  al arrancar es la señal de que hubo un mal cierre.
+//	last-room.json    SOLO EN INVITADOS. La última sala, para poder volver.
+//	                  Lleva el código y nada que sirva para entrar sin pasar
+//	                  por el host.
+//	seed.txt          En los dos. El registro en el que ESTA máquina abre
+//	                  salas, ELEGIDO por la persona. Ver [StateStore.LoadSeed].
 //
-// Que cualquiera de los dos falte NO es un error: es lo normal en una
-// instalación nueva y en toda salida limpia.
+// Los dos primeros nombres son un PAR, y eso es lo que dicen: el eje no es
+// "actual contra anterior", es host contra invitado. `hosted-room.json` lo
+// escribe solo quien hospeda y lleva la identidad de la red real; el otro lo
+// escribe solo quien entró y no lleva nada que sirva para entrar sin el host.
+//
+// Que cualquiera de los tres falte NO es un error: los dos primeros porque es
+// lo normal en una instalación nueva y en toda salida limpia, y el tercero
+// porque nadie ha hospedado todavía.
 type StateStore interface {
 	LoadRoom() ([]byte, error)
 	SaveRoom([]byte) error
@@ -321,6 +329,64 @@ type StateStore interface {
 	LoadLast() ([]byte, error)
 	SaveLast([]byte) error
 	ClearLast() error
+
+	// LoadSeed y SaveSeed son el registro en el que esta máquina abre salas.
+	//
+	// # Por qué hace falta guardarlo, desde que no hay seed por defecto
+	//
+	// Porque al ENTRAR el registro sale del código pegado, y al CREAR no hay
+	// código todavía: el código es justamente lo que el registro emite. Así que
+	// crear necesita saber a quién preguntarle, y antes lo contestaba una
+	// constante compilada que ya no existe.
+	//
+	// # Se llena de UNA sola forma, y eso es una decisión
+	//
+	// La persona lo escribe, una vez. Hubo una versión de este diseño donde
+	// además se adoptaba solo el registro de la primera sala a la que se
+	// entrara, para no preguntar nunca. Resuelve un roce real y trae algo peor:
+	// **la siguiente sala que abras se hospeda en el servidor de un desconocido
+	// por omisión**, y lo que el diálogo de confianza te enseña para confirmar
+	// ya viene inclinado hacia ese servidor.
+	//
+	// La regla que queda: lo que se aprende de una sala no manda en ninguna
+	// decisión que no sea de esa sala. Quien nunca hospedó pasa por la misma
+	// pantalla que pasa un host, que es coherente con que hospedar suponga un
+	// papel algo más técnico.
+	//
+	// # De dónde sale entonces el valor con el que la pantalla se prellena
+	//
+	// De `last-room.json`, que **ya guarda el seed de la última sala a la que se
+	// entró** y no lo borra nunca. Prellenar no necesita estado nuevo, y que
+	// venga de ahí es lo que mantiene los dos significados separados sin tener
+	// que explicarlos: uno es "el registro de esta máquina" y el otro es
+	// literalmente "la última sala a la que entraste". Ver [Session.LastRoom].
+	//
+	// Que falte es lo normal hasta que alguien lo escriba, y no es un error.
+	LoadSeed() ([]byte, error)
+	SaveSeed([]byte) error
+
+	// LoadSeedToken, SaveSeedToken y ClearSeedToken guardan el refresh token de
+	// un seed que pide password para hospedar.
+	//
+	// # Qué queda en disco, y qué jamás
+	//
+	// Queda el REFRESH, sellado y con ACL propia. **El password no**, ni acá ni
+	// en ningún sitio: un disco robado entrega un token que caduca y que el
+	// operador revoca cambiando el password, jamás un password que la persona
+	// reusa en otros sitios.
+	//
+	// El access token tampoco. Vive quince minutos, así que guardarlo pondría una
+	// credencial viva donde se puede robar a cambio de ahorrar un viaje después
+	// de reiniciar.
+	//
+	// # Por qué se BORRA, a diferencia del seed
+	//
+	// Porque un token deja de valer solo, y el fichero no. El operador cambia el
+	// password y todo lo emitido muere en el acto; lo que queda en disco es un
+	// secreto caducado que nadie va a usar. Ver [domain.SeedToken].
+	LoadSeedToken() ([]byte, error)
+	SaveSeedToken([]byte) error
+	ClearSeedToken() error
 }
 
 // SystemEvents son las cosas que le pasan a la MÁQUINA y que invalidan lo que
@@ -520,6 +586,67 @@ type RendezvousProvider interface {
 // en disco antes que esto endureciera. Ver la cabecera de `registry/persist.go`.
 var ErrUnknownRoom = errors.New("el registro no conoce esa sala")
 
+// ErrNoOwnSeed es que esta máquina todavía no tiene registro donde abrir salas.
+//
+// No es un fallo de red ni una configuración rota: es el estado normal de quien
+// nunca hospedó ni entró a ninguna sala, porque el registro se aprende de una de
+// las dos cosas. Ver [StateStore.LoadSeed].
+//
+// Se separa de [ErrUnknownRoom] y de un fallo de transporte porque lo que hay
+// que hacer es distinto: acá no se reintenta ni se revisa un código, se
+// configura un registro una vez.
+var ErrNoOwnSeed = errors.New("esta máquina no tiene registro configurado")
+
+// ErrSeedPassword es que ese registro pide password para HOSPEDAR y esta
+// máquina no tiene con qué contestarle.
+//
+// Cubre los tres momentos en que pasa lo mismo: nunca se escribió ninguno, el
+// refresh caducó, y el operador cambió el password y botó a todos. Son uno solo
+// a propósito, porque **lo que hay que hacer es idéntico** y el registro además
+// se niega a decir cuál de los tres fue: distinguirlos solo le regalaría
+// información a quien esté probando contraseñas.
+//
+// Entrar a una sala nunca lo produce. Este centinela solo aparece abriendo,
+// reabriendo o renovando el código.
+var ErrSeedPassword = errors.New("ese registro pide password para hospedar")
+
+// RoomDirectories entrega el registro con el que hay que hablar en cada caso, y
+// existe porque **ya no hay uno solo**.
+//
+// # Los dos casos, que no son el mismo
+//
+// Al ENTRAR, el registro sale del código que pegaron: un invite ID solo
+// significa algo en el registro que lo emitió, así que preguntarle a otro
+// devolvería "no existe" sobre una sala que existe perfectamente. Al CREAR no
+// hay código todavía, porque el código es justo lo que el registro emite, y ahí
+// manda el registro de esta máquina.
+//
+// Antes esto era un solo adaptador construido con una constante compilada, y por
+// eso entrar con un código ajeno se saltaba la comprobación entera y perdía la
+// tarjeta. Ver la decisión 16.
+type RoomDirectories interface {
+	// Own es el registro en el que ESTA máquina abre salas. Devuelve
+	// [ErrNoOwnSeed] cuando todavía no hay ninguno.
+	Own() (RoomDirectory, error)
+	// For es el registro que emitió un código, tomado del código.
+	//
+	// El nombre llega desde `domain.ParseRoom`, o sea ya validado como nombre y
+	// nunca como dirección. El adaptador vuelve a comprobar lo que resuelva, en
+	// cada uso, porque un nombre impecable puede apuntar a la red de casa.
+	For(seed string) (RoomDirectory, error)
+	// SetOwn cambia a qué registro apunta [RoomDirectories.Own].
+	//
+	// **Solo la memoria**: persistir es del caso de uso, que es quien sabe si el
+	// valor llegó a disco. Escribir primero y cambiar después es lo que impide
+	// que un fallo del disco deje esta sesión apuntando a un sitio que el próximo
+	// arranque no va a recordar.
+	//
+	// Cambiarlo con una sala abierta es seguro y no la toca: publicar, renovar y
+	// reabrir van al registro de ESA sala, no a este. Lo que cambia es dónde se
+	// abre la siguiente.
+	SetOwn(seed string)
+}
+
 // RoomDirectory es el registro del seed, y es EL PUNTO DE ENCUENTRO. Sin él no
 // se abre una sala ni se entra a ninguna.
 //
@@ -581,6 +708,20 @@ type RoomDirectory interface {
 	// de la tarjeta se deriva del enlace, así que cualquiera que lo recibió
 	// puede fabricar una tarjeta que la página descifra.
 	Publish(ctx context.Context, id domain.InviteID, sealed []byte) error
+	// Authenticate cambia una prueba de password por la credencial con la que
+	// este registro deja HOSPEDAR.
+	//
+	// Recibe [domain.SeedAuthProof] y jamás el password: el hash se calcula
+	// antes de llegar acá, con el host del registro dentro, para que el operador
+	// de un seed no aprenda un password que la persona reusa en otros sitios.
+	//
+	// Se llama una sola vez, cuando alguien lo escribe. El resto del tiempo el
+	// adaptador renueva su credencial solo, y lo que le dice a esta capa que hay
+	// que volver a preguntar es [ErrSeedPassword] saliendo de otra operación.
+	//
+	// En un registro abierto contesta que no pide password, y eso NO es un fallo
+	// que haya que reintentar: es que no había puerta.
+	Authenticate(ctx context.Context, proof string) error
 	// Reachable dice si el registro CONTESTA, sin preguntarle por ninguna sala.
 	//
 	// # Por qué hace falta preguntarlo aparte

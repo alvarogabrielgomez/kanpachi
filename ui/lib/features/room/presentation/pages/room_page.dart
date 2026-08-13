@@ -229,9 +229,13 @@ class _RoomHeaderState extends State<_RoomHeader> {
                   // icono apagado dice que se puede pulsar sin robarle la
                   // primera lectura al código.
                   CopyButton(
-                    label: room.code,
+                    // Con su registro pegado, y lo copiado es lo mismo que se
+                    // lee. Ver [Room.displayCode]: pelado no identifica una
+                    // sala, identifica ocho caracteres que existen en tantas
+                    // salas como registros haya.
+                    label: room.displayCode,
                     copiedLabel: 'Código copiado',
-                    value: room.code,
+                    value: room.displayCode,
                     variant: AppButtonVariant.data,
                     height: _chipHeight,
                     horizontalPadding: AppSpacing.xxl,

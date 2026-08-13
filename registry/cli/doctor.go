@@ -25,14 +25,14 @@ func cmdDoctor(args []string) error {
 		return err
 	}
 
-	banner("Kanpachi seed · doctor", "revisando la instalación")
+	banner("Kanpachi seed · doctor", "checking the installation")
 
 	problemas := 0
 	malo := func(formato string, a ...any) { fallo(formato, a...); problemas++ }
 
 	cfg, err := setup.Cargar()
 	if errors.Is(err, os.ErrNotExist) {
-		malo("no hay ninguna instalación: falta %s", setup.RutaConfig())
+		malo("nothing is installed: %s is missing", setup.RutaConfig())
 		codigo("sudo kanpseed init")
 		return resumenDoctor(problemas)
 	}
@@ -40,11 +40,11 @@ func cmdDoctor(args []string) error {
 		malo("%v", err)
 		return resumenDoctor(problemas)
 	}
-	ok("configuración leída de %s", setup.RutaConfig())
-	tenue("  registro %d · motor %d · rpc %d · dominio %s",
+	ok("configuration read from %s", setup.RutaConfig())
+	tenue("  registry %d · engine %d · rpc %d · domain %s",
 		cfg.PuertoRegistro, cfg.PuertoMotor, cfg.PuertoRPC, sinVacio(cfg.Dominio, "sin definir"))
 
-	seccion("Archivos")
+	seccion("Files")
 	for _, ruta := range []string{
 		filepath.Join(setup.DirBin, setup.Binario),
 		filepath.Join(setup.DirLib, "easytier-core"),
@@ -60,29 +60,29 @@ func cmdDoctor(args []string) error {
 	}
 	if v := versionEasyTier(); v != "" {
 		if strings.Contains(v, strings.TrimPrefix(setup.VersionEasyTier, "v")) {
-			ok("EasyTier %s, la versión fijada", v)
+			ok("EasyTier %s, the pinned version", v)
 		} else {
-			aviso("EasyTier instalado: %s, y la fijada es %s", v, setup.VersionEasyTier)
-			tenue("  una versión distinta a la fijada cambia el comportamiento de la red sin avisar")
+			aviso("EasyTier installed: %s, and the pinned one is %s", v, setup.VersionEasyTier)
+			tenue("  a version other than the pinned one changes how the network behaves without saying so")
 		}
 	}
 
-	seccion("Servicios")
+	seccion("Services")
 	for _, u := range []string{setup.UnitMotor, setup.UnitReg} {
 		estado := setup.EstadoUnit(u)
 		habilitada := setup.UnitHabilitada(u)
 		switch {
 		case estado == "active" && habilitada:
-			ok("%s activo y habilitado", u)
+			ok("%s active and enabled", u)
 		case estado == "active":
-			aviso("%s activo, NO habilitado: no volverá solo tras reiniciar el servidor", u)
+			aviso("%s active, NOT enabled: it will not come back on its own after a reboot", u)
 			codigo("sudo systemctl enable " + u)
 			problemas++
 		default:
-			malo("%s está %s", u, estado)
+			malo("%s is %s", u, estado)
 			codigo("sudo systemctl status "+u, "journalctl -u "+u+" -n 30 --no-pager")
 			if logs := setup.LogsDeUnit(u, 5); logs != "" {
-				tenue("  últimas líneas:")
+				tenue("  last lines:")
 				for _, l := range strings.Split(logs, "\n") {
 					tenue("    %s", l)
 				}
@@ -90,14 +90,14 @@ func cmdDoctor(args []string) error {
 		}
 	}
 
-	seccion("Red")
+	seccion("Network")
 	if escuchando("127.0.0.1", cfg.PuertoRegistro) {
-		ok("el registro escucha en 127.0.0.1:%d", cfg.PuertoRegistro)
+		ok("the registry listens on 127.0.0.1:%d", cfg.PuertoRegistro)
 	} else {
 		malo("nada escucha en 127.0.0.1:%d, que es a donde apunta tu proxy", cfg.PuertoRegistro)
 	}
 	if escuchando("0.0.0.0", cfg.PuertoMotor) || escuchando("127.0.0.1", cfg.PuertoMotor) {
-		ok("el motor escucha en el %d", cfg.PuertoMotor)
+		ok("the engine listens on %d", cfg.PuertoMotor)
 	} else {
 		malo("nada escucha en el %d, que es por donde entran los clientes", cfg.PuertoMotor)
 	}
@@ -105,36 +105,36 @@ func cmdDoctor(args []string) error {
 	// una preferencia: es el panel de control del motor.
 	if alcanzable(ipNoLoopback(), cfg.PuertoRPC) {
 		malo("el portal RPC del motor responde fuera del loopback, y no debe")
-		codigo("sudo kanpseed init   # reescribe los servicios con la configuración correcta")
+		codigo("sudo kanpseed init   # rewrites the services with the right configuration")
 	} else {
-		ok("el portal RPC solo responde en loopback")
+		ok("the RPC portal only answers on loopback")
 	}
 
-	seccion("Servicio")
+	seccion("Service")
 	salud, err := consultarSalud(cfg)
 	if err != nil {
 		malo("/healthz no responde: %v", err)
 	} else {
-		ok("/healthz responde: %d salas vivas", entero(salud["rooms"]))
+		ok("/healthz answers: %d live rooms", entero(salud["rooms"]))
 		if motivo, hay := salud["counter"]; hay {
-			aviso("el contador de miembros no funciona: %v", motivo)
-			tenue("  la página sigue sirviéndose y las salas siguen resolviendo, sin el contador")
+			aviso("the member counter is not working: %v", motivo)
+			tenue("  the page is still served and rooms still resolve, just without the counter")
 			problemas++
 		} else {
-			ok("el contador lee el motor correctamente")
+			ok("the counter reads the engine correctly")
 		}
 	}
 
-	seccion("Cortafuegos")
+	seccion("Firewall")
 	revisarCortafuegos(cfg, malo)
 
-	seccion("Proxy inverso")
+	seccion("Reverse proxy")
 	if cfg.Dominio == "" {
-		aviso("no hay dominio configurado, así que no puedo comprobar el proxy")
+		aviso("no domain configured, so the proxy cannot be checked")
 		codigo("sudo kanpseed config --domain kanpachi.tudominio.com")
 	} else {
-		tenue("  el proxy tiene que apuntar a 127.0.0.1:%d", cfg.PuertoRegistro)
-		tenue("  ejecuta `kanpseed nginx` para ver el bloque completo")
+		tenue("  the proxy has to point at 127.0.0.1:%d", cfg.PuertoRegistro)
+		tenue("  run `kanpseed nginx` for the whole block")
 	}
 
 	return resumenDoctor(problemas)
@@ -143,13 +143,13 @@ func cmdDoctor(args []string) error {
 func resumenDoctor(problemas int) error {
 	fmt.Println()
 	if problemas == 0 {
-		fmt.Println(cCaja.Render(cOK.Render("Todo en orden")))
+		fmt.Println(cCaja.Render(cOK.Render("All good")))
 		fmt.Println()
 		return nil
 	}
-	fmt.Println(cCaja.Render(cAviso.Render(fmt.Sprintf("%d cosas que revisar", problemas))))
+	fmt.Println(cCaja.Render(cAviso.Render(fmt.Sprintf("%d things to look at", problemas))))
 	fmt.Println()
-	return fmt.Errorf("el diagnóstico encontró %d problemas", problemas)
+	return fmt.Errorf("the check found %d problems", problemas)
 }
 
 func escuchando(host string, puerto int) bool {

@@ -2,6 +2,7 @@ import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/own_seed.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
@@ -134,6 +135,28 @@ class PipeSessionRepository implements SessionRepository {
       <String, Object?>{'enabled': ?enabled},
     );
     return r['enabled'] as bool? ?? false;
+  }
+
+  @override
+  Future<OwnSeed> ownSeed({String? seed}) async {
+    final Map<String, Object?> r = await _mapa(
+      DaemonMethods.ownSeed,
+      <String, Object?>{'seed': ?seed},
+    );
+    return OwnSeed(
+      configured: r['seed'] as String? ?? '',
+      suggested: r['suggested'] as String? ?? '',
+    );
+  }
+
+  @override
+  Future<void> seedPassword(String password) async {
+    // `_mapa` and not a typed reader: the answer is an empty acknowledgement on
+    // purpose, so there is nothing to read out of it. See
+    // `protocol.MethodSeedPassword`.
+    await _mapa(DaemonMethods.seedPassword, <String, Object?>{
+      'password': password,
+    });
   }
 
   @override

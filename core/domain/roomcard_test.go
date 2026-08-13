@@ -168,11 +168,11 @@ func TestElEnlaceLlevaLaClaveYLaURLDictadaNo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	room := Room{InviteID: id, Seed: DefaultSeedHost}
+	room := Room{InviteID: id, Seed: "seed.midominio.com"}
 
 	var key [CardKeyLen]byte
 	link := room.InviteLink(key)
-	if !strings.HasPrefix(link, "https://kanpachi.accentio.dev/A7K2-M9QX#") {
+	if !strings.HasPrefix(link, "https://seed.midominio.com/A7K2-M9QX#") {
 		t.Fatalf("el enlace no tiene la forma esperada: %q", link)
 	}
 	if strings.Contains(room.InviteURL(), "#") {

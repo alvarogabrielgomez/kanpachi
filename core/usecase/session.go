@@ -104,21 +104,24 @@ var (
 // Struct y no once parámetros posicionales: con once, agregar uno rompe todas
 // las llamadas y equivocarse de orden entre dos interfaces compila igual.
 type Deps struct {
-	Engine    port.EnginePort
-	Firewall  port.FirewallPort
-	NetCfg    port.NetConfigPort
-	Routes    port.RoutingTable
-	Store     port.CatalogStore
-	State     port.StateStore
-	Library   port.GameLibrary
-	Directory port.RoomDirectory
-	Control   port.ControlChannel
-	Audit     port.ExposureAudit
-	Inspector port.SocketInspector
-	Prober    port.Prober
-	Canary    port.CanaryPort
-	Clock     port.Clock
-	Log       port.Logger
+	Engine   port.EnginePort
+	Firewall port.FirewallPort
+	NetCfg   port.NetConfigPort
+	Routes   port.RoutingTable
+	Store    port.CatalogStore
+	State    port.StateStore
+	Library  port.GameLibrary
+	// Directories entrega el registro con el que hablar en cada caso, y no es un
+	// registro suelto porque ya no hay uno solo: al entrar manda el del código y
+	// al crear el de esta máquina. Ver [port.RoomDirectories].
+	Directories port.RoomDirectories
+	Control     port.ControlChannel
+	Audit       port.ExposureAudit
+	Inspector   port.SocketInspector
+	Prober      port.Prober
+	Canary      port.CanaryPort
+	Clock       port.Clock
+	Log         port.Logger
 
 	// Rand es de dónde salen el invite ID de respaldo, la identidad de la red
 	// real, la subred y la clave de la tarjeta. Entra por parámetro y no se
@@ -176,7 +179,7 @@ func (d Deps) validate() error {
 	nombrar("Store", d.Store != nil)
 	nombrar("State", d.State != nil)
 	nombrar("Library", d.Library != nil)
-	nombrar("Directory", d.Directory != nil)
+	nombrar("Directories", d.Directories != nil)
 	nombrar("Control", d.Control != nil)
 	nombrar("Audit", d.Audit != nil)
 	nombrar("Inspector", d.Inspector != nil)
@@ -386,7 +389,7 @@ type Session struct {
 	// Se lee al construir la sesión y NO se actúa sobre ella. Reanudar es una
 	// decisión del usuario dentro de la app, nunca un efecto de arrancar el
 	// servicio.
-	pending    domain.PersistedRoom
+	pending    domain.HostedRoom
 	hasPending bool
 
 	// nick es el nombre propio de esta instalación en la sala actual.
@@ -506,7 +509,7 @@ func (s *Session) loadPending() {
 		s.deps.Log.Info("no hay sala pendiente del arranque anterior", "detalle", err)
 		return
 	}
-	room, err := domain.DecodePersistedRoom(raw)
+	room, err := domain.DecodeHostedRoom(raw)
 	if err != nil {
 		s.deps.Log.Warn("la sala guardada no se pudo interpretar y se ignora", "error", err)
 		return

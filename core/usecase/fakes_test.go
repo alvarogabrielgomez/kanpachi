@@ -18,7 +18,7 @@ import (
 // la métrica que dice si la arquitectura sigue sana. Si algún día un test de
 // acá necesitara un adaptador de verdad, el problema no sería el test.
 
-type motorFalso struct {
+type mockMotor struct {
 	mu sync.Mutex
 
 	hostSpec  domain.HostSpec
@@ -54,23 +54,23 @@ type motorFalso struct {
 	errRenovar error
 }
 
-func nuevoMotor() *motorFalso {
-	return &motorFalso{eventos: make(chan domain.EngineEvent, 8)}
+func nuevoMotor() *mockMotor {
+	return &mockMotor{eventos: make(chan domain.EngineEvent, 8)}
 }
 
-func (m *motorFalso) anota(s string) {
+func (m *mockMotor) anota(s string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.visitó = append(m.visitó, s)
 }
 
-func (m *motorFalso) pasos() []string {
+func (m *mockMotor) pasos() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]string(nil), m.visitó...)
 }
 
-func (m *motorFalso) HostNetwork(_ context.Context, s domain.HostSpec) error {
+func (m *mockMotor) HostNetwork(_ context.Context, s domain.HostSpec) error {
 	m.anota("host")
 	m.mu.Lock()
 	m.hostSpec = s
@@ -78,7 +78,7 @@ func (m *motorFalso) HostNetwork(_ context.Context, s domain.HostSpec) error {
 	return m.errHost
 }
 
-func (m *motorFalso) JoinRendezvous(_ context.Context, s domain.RendezvousSpec) error {
+func (m *mockMotor) JoinRendezvous(_ context.Context, s domain.RendezvousSpec) error {
 	m.anota("vestíbulo")
 	m.mu.Lock()
 	m.rdvSpec = s
@@ -86,7 +86,7 @@ func (m *motorFalso) JoinRendezvous(_ context.Context, s domain.RendezvousSpec) 
 	return m.errRdv
 }
 
-func (m *motorFalso) JoinWithCredential(_ context.Context, s domain.GuestSpec) error {
+func (m *mockMotor) JoinWithCredential(_ context.Context, s domain.GuestSpec) error {
 	m.anota("red-real")
 	m.mu.Lock()
 	m.guestSpec = s
@@ -94,21 +94,21 @@ func (m *motorFalso) JoinWithCredential(_ context.Context, s domain.GuestSpec) e
 	return m.errJoin
 }
 
-func (m *motorFalso) LeaveRendezvous(context.Context) error {
+func (m *mockMotor) LeaveRendezvous(context.Context) error {
 	m.anota("salir-vestíbulo")
 	return nil
 }
 
-func (m *motorFalso) Leave(context.Context) error { m.anota("salir"); return nil }
+func (m *mockMotor) Leave(context.Context) error { m.anota("salir"); return nil }
 
-func (m *motorFalso) IssueCredential(context.Context, domain.CredentialRequest) (domain.Credential, error) {
+func (m *mockMotor) IssueCredential(context.Context, domain.CredentialRequest) (domain.Credential, error) {
 	if m.credenciales != nil {
 		return m.credenciales(), nil
 	}
 	return domain.Credential{}, nil
 }
 
-func (m *motorFalso) RenewCredential(_ context.Context, id domain.CredentialID, ttl time.Duration) (time.Time, error) {
+func (m *mockMotor) RenewCredential(_ context.Context, id domain.CredentialID, ttl time.Duration) (time.Time, error) {
 	m.anota("renovar")
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -125,7 +125,7 @@ func (m *motorFalso) RenewCredential(_ context.Context, id domain.CredentialID, 
 	return ahora().Add(ttl), nil
 }
 
-func (m *motorFalso) RevokeCredential(_ context.Context, id domain.CredentialID) error {
+func (m *mockMotor) RevokeCredential(_ context.Context, id domain.CredentialID) error {
 	m.anota("revocar")
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -136,7 +136,7 @@ func (m *motorFalso) RevokeCredential(_ context.Context, id domain.CredentialID)
 	return nil
 }
 
-func (m *motorFalso) Restart(context.Context) error {
+func (m *mockMotor) Restart(context.Context) error {
 	m.anota("reiniciar")
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -152,7 +152,7 @@ func (m *motorFalso) Restart(context.Context) error {
 // tests de expulsión daban verde sobre un producto donde expulsar no encontraba
 // a nadie y ningún invitado podía entrar. Un falso que puede más que el real no
 // prueba el producto, prueba el falso.
-func (m *motorFalso) ListCredentials(context.Context) ([]domain.Credential, error) {
+func (m *mockMotor) ListCredentials(context.Context) ([]domain.Credential, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := append([]domain.Credential(nil), m.credentials...)
@@ -162,19 +162,19 @@ func (m *motorFalso) ListCredentials(context.Context) ([]domain.Credential, erro
 	return out, nil
 }
 
-func (m *motorFalso) Peers(context.Context) ([]domain.Peer, error) {
+func (m *mockMotor) Peers(context.Context) ([]domain.Peer, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]domain.Peer(nil), m.peers...), nil
 }
 
-func (m *motorFalso) Events() <-chan domain.EngineEvent { return m.eventos }
+func (m *mockMotor) Events() <-chan domain.EngineEvent { return m.eventos }
 
-func (m *motorFalso) Diagnostics(context.Context) (domain.NetCheck, error) {
+func (m *mockMotor) Diagnostics(context.Context) (domain.NetCheck, error) {
 	return domain.NetCheck{NATKind: "cone"}, nil
 }
 
-type firewallFalso struct {
+type mockFirewall struct {
 	mu sync.Mutex
 
 	aplicado     domain.RuleSet
@@ -206,7 +206,7 @@ type firewallFalso struct {
 	errBind       error
 }
 
-func (f *firewallFalso) Apply(_ context.Context, rs domain.RuleSet) error {
+func (f *mockFirewall) Apply(_ context.Context, rs domain.RuleSet) error {
 	if f.errApply != nil {
 		return f.errApply
 	}
@@ -220,7 +220,7 @@ func (f *firewallFalso) Apply(_ context.Context, rs domain.RuleSet) error {
 	return nil
 }
 
-func (f *firewallFalso) BindRoom(
+func (f *mockFirewall) BindRoom(
 	_ context.Context, room, lobby netip.Prefix, with domain.RoomBinding,
 ) error {
 	if f.errBind != nil {
@@ -234,31 +234,31 @@ func (f *firewallFalso) BindRoom(
 	return nil
 }
 
-func (f *firewallFalso) UnbindRoom() {
+func (f *mockFirewall) UnbindRoom() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.acotado, f.vínculo = netip.Prefix{}, 0
 }
 
-func (f *firewallFalso) alcance() (netip.Prefix, domain.RoomBinding) {
+func (f *mockFirewall) alcance() (netip.Prefix, domain.RoomBinding) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.acotado, f.vínculo
 }
 
-func (f *firewallFalso) veces() int {
+func (f *mockFirewall) veces() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.aplicaciones
 }
 
-func (f *firewallFalso) estado() domain.RuleSet {
+func (f *mockFirewall) estado() domain.RuleSet {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.aplicado
 }
 
-func (f *firewallFalso) ApplyBaseQuarantine(_ context.Context, rules []domain.QuarantineRule) error {
+func (f *mockFirewall) ApplyBaseQuarantine(_ context.Context, rules []domain.QuarantineRule) error {
 	if f.errCuarentena != nil {
 		return f.errCuarentena
 	}
@@ -272,68 +272,68 @@ func (f *firewallFalso) ApplyBaseQuarantine(_ context.Context, rules []domain.Qu
 	return nil
 }
 
-func (f *firewallFalso) cuarentenaPuesta() []domain.QuarantineRule {
+func (f *mockFirewall) cuarentenaPuesta() []domain.QuarantineRule {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.cuarentena
 }
 
-func (f *firewallFalso) PurgeOwned(context.Context) error {
+func (f *mockFirewall) PurgeOwned(context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.purgas++
 	return nil
 }
 
-func (f *firewallFalso) AuditForeign(context.Context, domain.GameProfile) ([]domain.ForeignRule, error) {
+func (f *mockFirewall) AuditForeign(context.Context, domain.GameProfile) ([]domain.ForeignRule, error) {
 	return f.ajenas, nil
 }
 
-func (f *firewallFalso) SuspendForeign(_ context.Context, r []domain.ForeignRule) error {
+func (f *mockFirewall) SuspendForeign(_ context.Context, r []domain.ForeignRule) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.suspendió = append(f.suspendió, r...)
 	return nil
 }
 
-func (f *firewallFalso) RestoreForeign(context.Context) error {
+func (f *mockFirewall) RestoreForeign(context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.restauras++
 	return nil
 }
 
-type netcfgFalso struct {
+type mockNetcfg struct {
 	mu         sync.Mutex
 	aplicado   domain.AdapterState
 	directPlay bool
 	revertió   int
 }
 
-func (n *netcfgFalso) ApplyAdapter(_ context.Context, s domain.AdapterState) error {
+func (n *mockNetcfg) ApplyAdapter(_ context.Context, s domain.AdapterState) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.aplicado = s
 	return nil
 }
 
-func (n *netcfgFalso) RevertTweaks(context.Context) error {
+func (n *mockNetcfg) RevertTweaks(context.Context) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.revertió++
 	return nil
 }
 
-func (n *netcfgFalso) ProbeMTU(context.Context) (int, error) { return 1380, nil }
+func (n *mockNetcfg) ProbeMTU(context.Context) (int, error) { return 1380, nil }
 
-func (n *netcfgFalso) SetDirectPlay(_ context.Context, want bool) error {
+func (n *mockNetcfg) SetDirectPlay(_ context.Context, want bool) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.directPlay = want
 	return nil
 }
 
-func (n *netcfgFalso) estado() domain.AdapterState {
+func (n *mockNetcfg) estado() domain.AdapterState {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.aplicado
@@ -348,7 +348,7 @@ func (r rutasFalsas) LocalPrefixes(context.Context) ([]netip.Prefix, error) {
 	return r.prefijos, r.err
 }
 
-type almacénFalso struct {
+type mockCatalog struct {
 	mu         sync.Mutex
 	builtin    []byte
 	local      []byte
@@ -356,14 +356,14 @@ type almacénFalso struct {
 	errLocal   error
 }
 
-func (a *almacénFalso) LoadBuiltin() ([]byte, error) {
+func (a *mockCatalog) LoadBuiltin() ([]byte, error) {
 	if len(a.builtin) == 0 {
 		return nil, errors.New("no hay builtin")
 	}
 	return a.builtin, nil
 }
 
-func (a *almacénFalso) LoadLocal() ([]byte, error) {
+func (a *mockCatalog) LoadLocal() ([]byte, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.errLocal != nil {
@@ -375,7 +375,7 @@ func (a *almacénFalso) LoadLocal() ([]byte, error) {
 	return a.local, nil
 }
 
-func (a *almacénFalso) SaveLocal(raw []byte) error {
+func (a *mockCatalog) SaveLocal(raw []byte) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.local = append([]byte(nil), raw...)
@@ -392,7 +392,7 @@ func (b bibliotecaFalsa) Installed(context.Context) ([]domain.GameRef, error) {
 	return b.refs, b.err
 }
 
-type registroFalso struct {
+type mockRegistry struct {
 	mu sync.Mutex
 
 	emitidos  []domain.InviteID
@@ -402,15 +402,60 @@ type registroFalso struct {
 	publicaciones int
 	siguiente     string
 	seed          string
-	err           error
+	// pruebas son los proofs que llegaron a Authenticate, en orden.
+	pruebas []string
+	err     error
 }
 
-// Seed es con qué registro habla este falso. Vacío por defecto, que es lo que
-// hace que el fallo temprano de JoinRoom se salte a sí mismo en los tests que
-// no lo estén ejercitando: un código trae seed y este no es el mismo.
-func (r *registroFalso) Seed() string {
+// registrosFalsos es la fábrica, y devuelve SIEMPRE el mismo registro.
+//
+// Es deliberado y es lo que hace que estos tests sigan hablando de "el
+// registro" en singular: lo que se ejercita acá es la política de los casos de
+// uso, no el reparto por host, que es del adaptador y se prueba en su paquete.
+// Un falso que devolviera uno distinto por seed obligaría a cada test a declarar
+// hosts que no le importan.
+type registrosFalsos struct {
+	reg *mockRegistry
+	// sinPropio simula una máquina que todavía no configuró registro, que es lo
+	// que devuelve [port.ErrNoOwnSeed] al crear.
+	//
+	// Es un puntero para que [registrosFalsos.SetOwn] pueda apagarlo de verdad.
+	// Un falso con receptor por valor que aceptara el cambio y no lo aplicara
+	// haría pasar un test de "configurar y crear" sin que configurar sirviera de
+	// nada, que es la peor clase de falso.
+	sinPropio *bool
+}
+
+func (f registrosFalsos) Own() (port.RoomDirectory, error) {
+	if f.sinPropio != nil && *f.sinPropio {
+		return nil, port.ErrNoOwnSeed
+	}
+	return f.reg, nil
+}
+
+func (f registrosFalsos) For(string) (port.RoomDirectory, error) { return f.reg, nil }
+
+// SetOwn apaga la simulación de "sin registro": después de configurar uno, esta
+// máquina puede abrir salas.
+func (f registrosFalsos) SetOwn(string) {
+	if f.sinPropio != nil {
+		*f.sinPropio = false
+	}
+}
+
+// Seed es con qué registro habla este falso.
+//
+// Antes su valor por defecto era la cadena vacía a propósito, para que el fallo
+// temprano de `JoinRoom` **se saltara a sí mismo** en los tests que no lo
+// ejercitaban: el código traía un seed y este no era el mismo. Esa rama
+// desapareció con la fábrica, así que ahora este valor es solo lo que se
+// imprime.
+func (r *mockRegistry) Seed() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.seed == "" {
+		return "seed.midominio.com"
+	}
 	return r.seed
 }
 
@@ -419,13 +464,13 @@ func (r *registroFalso) Seed() string {
 //
 // Un campo aparte sería otra palanca que recordar: con `err` puesto, este falso
 // representa un registro que no contesta A NADA, que es el caso que importa.
-func (r *registroFalso) Reachable(context.Context) error {
+func (r *mockRegistry) Reachable(context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.err
 }
 
-func (r *registroFalso) Open(_ context.Context, sealed []byte) (domain.Room, error) {
+func (r *mockRegistry) Open(_ context.Context, sealed []byte) (domain.Room, error) {
 	if r.err != nil {
 		return domain.Room{}, r.err
 	}
@@ -444,18 +489,18 @@ func (r *registroFalso) Open(_ context.Context, sealed []byte) (domain.Room, err
 	r.emitidos = append(r.emitidos, id)
 	seed := r.seed
 	if seed == "" {
-		seed = domain.DefaultSeedHost
+		seed = "seed.midominio.com"
 	}
 	return domain.Room{InviteID: id, Seed: seed}, nil
 }
 
-func (r *registroFalso) Lookup(context.Context, domain.InviteID) ([]byte, int, error) {
+func (r *mockRegistry) Lookup(context.Context, domain.InviteID) ([]byte, int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.publicado, 0, nil
 }
 
-func (r *registroFalso) Publish(_ context.Context, _ domain.InviteID, sealed []byte) error {
+func (r *mockRegistry) Publish(_ context.Context, _ domain.InviteID, sealed []byte) error {
 	r.mu.Lock()
 	r.publicaciones++
 	r.mu.Unlock()
@@ -468,7 +513,7 @@ func (r *registroFalso) Publish(_ context.Context, _ domain.InviteID, sealed []b
 	return nil
 }
 
-type controlFalso struct {
+type mockControl struct {
 	mu sync.Mutex
 
 	sirviendo bool
@@ -502,8 +547,8 @@ type controlFalso struct {
 	errReq   error
 }
 
-func nuevoControl() *controlFalso {
-	return &controlFalso{
+func nuevoControl() *mockControl {
+	return &mockControl{
 		presencia:        make(chan bool, 4),
 		entrantes:        make(chan domain.RoomAnnounce, 4),
 		avisosEntrantes:  make(chan domain.RoomNotice, 4),
@@ -522,7 +567,7 @@ type avisoFalso struct {
 	tras int
 }
 
-func (c *controlFalso) Serve(_ context.Context, scope domain.ControlScope) error {
+func (c *mockControl) Serve(_ context.Context, scope domain.ControlScope) error {
 	if c.errServe != nil {
 		return c.errServe
 	}
@@ -534,7 +579,7 @@ func (c *controlFalso) Serve(_ context.Context, scope domain.ControlScope) error
 	return nil
 }
 
-func (c *controlFalso) Dial(_ context.Context, host netip.Addr) error {
+func (c *mockControl) Dial(_ context.Context, host netip.Addr) error {
 	if c.errDial != nil {
 		return c.errDial
 	}
@@ -547,18 +592,18 @@ func (c *controlFalso) Dial(_ context.Context, host netip.Addr) error {
 	return nil
 }
 
-func (c *controlFalso) HostPresence() <-chan bool { return c.presencia }
+func (c *mockControl) HostPresence() <-chan bool { return c.presencia }
 
-func (c *controlFalso) Announce(_ context.Context, a domain.RoomAnnounce) error {
+func (c *mockControl) Announce(_ context.Context, a domain.RoomAnnounce) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.anuncios = append(c.anuncios, a)
 	return nil
 }
 
-func (c *controlFalso) Announcements() <-chan domain.RoomAnnounce { return c.entrantes }
+func (c *mockControl) Announcements() <-chan domain.RoomAnnounce { return c.entrantes }
 
-func (c *controlFalso) AnnounceCode(_ context.Context, r domain.Room) error {
+func (c *mockControl) AnnounceCode(_ context.Context, r domain.Room) error {
 	if c.errCódigo != nil {
 		return c.errCódigo
 	}
@@ -568,21 +613,21 @@ func (c *controlFalso) AnnounceCode(_ context.Context, r domain.Room) error {
 	return nil
 }
 
-func (c *controlFalso) Codes() <-chan domain.Room { return c.códigosEntantes }
+func (c *mockControl) Codes() <-chan domain.Room { return c.códigosEntantes }
 
 // El canario. `pedidos` guarda a quién se le pidió y qué, que es lo que un test
 // necesita para afirmar que el destino salió de la conexión y no de un campo.
-func (c *controlFalso) RequestCanary(_ context.Context, to netip.Addr, req domain.CanaryRequest) error {
+func (c *mockControl) RequestCanary(_ context.Context, to netip.Addr, req domain.CanaryRequest) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.pedidosCanario = append(c.pedidosCanario, canarioPedido{A: to, Req: req})
 	return c.errCanario
 }
 
-func (c *controlFalso) CanaryReports() <-chan domain.CanaryReport   { return c.informesCanario }
-func (c *controlFalso) CanaryRequests() <-chan domain.CanaryRequest { return c.pedidosEntrantes }
+func (c *mockControl) CanaryReports() <-chan domain.CanaryReport   { return c.informesCanario }
+func (c *mockControl) CanaryRequests() <-chan domain.CanaryRequest { return c.pedidosEntrantes }
 
-func (c *controlFalso) SendCanaryReport(_ context.Context, r domain.CanaryReport) error {
+func (c *mockControl) SendCanaryReport(_ context.Context, r domain.CanaryReport) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.informesMandados = append(c.informesMandados, r)
@@ -594,25 +639,25 @@ type canarioPedido struct {
 	Req domain.CanaryRequest
 }
 
-func (c *controlFalso) pedidosDeCanario() []canarioPedido {
+func (c *mockControl) pedidosDeCanario() []canarioPedido {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]canarioPedido(nil), c.pedidosCanario...)
 }
 
-func (c *controlFalso) informesEnviados() []domain.CanaryReport {
+func (c *mockControl) informesEnviados() []domain.CanaryReport {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]domain.CanaryReport(nil), c.informesMandados...)
 }
 
-func (c *controlFalso) códigosRepartidos() []domain.Room {
+func (c *mockControl) códigosRepartidos() []domain.Room {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]domain.Room(nil), c.códigos...)
 }
 
-func (c *controlFalso) Notify(_ context.Context, to netip.Addr, n domain.RoomNotice) error {
+func (c *mockControl) Notify(_ context.Context, to netip.Addr, n domain.RoomNotice) error {
 	if c.errNotify != nil {
 		return c.errNotify
 	}
@@ -623,9 +668,9 @@ func (c *controlFalso) Notify(_ context.Context, to netip.Addr, n domain.RoomNot
 	return nil
 }
 
-func (c *controlFalso) Notices() <-chan domain.RoomNotice { return c.avisosEntrantes }
+func (c *mockControl) Notices() <-chan domain.RoomNotice { return c.avisosEntrantes }
 
-func (c *controlFalso) últimoAviso() (avisoFalso, bool) {
+func (c *mockControl) últimoAviso() (avisoFalso, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.avisos) == 0 {
@@ -634,7 +679,7 @@ func (c *controlFalso) últimoAviso() (avisoFalso, bool) {
 	return c.avisos[len(c.avisos)-1], true
 }
 
-func (c *controlFalso) últimoAnuncio() (domain.RoomAnnounce, bool) {
+func (c *mockControl) últimoAnuncio() (domain.RoomAnnounce, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.anuncios) == 0 {
@@ -643,14 +688,14 @@ func (c *controlFalso) últimoAnuncio() (domain.RoomAnnounce, bool) {
 	return c.anuncios[len(c.anuncios)-1], true
 }
 
-func (c *controlFalso) RequestCredential(context.Context, domain.CredentialRequest) (domain.Credential, error) {
+func (c *mockControl) RequestCredential(context.Context, domain.CredentialRequest) (domain.Credential, error) {
 	if c.errReq != nil {
 		return domain.Credential{}, c.errReq
 	}
 	return c.credencial, nil
 }
 
-func (c *controlFalso) Close() error {
+func (c *mockControl) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.cierres++
@@ -658,20 +703,20 @@ func (c *controlFalso) Close() error {
 	return nil
 }
 
-func (c *controlFalso) alcanceActual() []netip.Addr {
+func (c *mockControl) alcanceActual() []netip.Addr {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]netip.Addr(nil), c.alcance...)
 }
 
-type auditoríaFalsa struct {
+type mockAudit struct {
 	perfiles []domain.FirewallProfileState
 	// intactas true means "the system holds whatever was applied", which is
 	// the normal case for tests that are not exercising this layer. It is
 	// resolved by reading the fake firewall, so the domain diff actually runs
 	// instead of being short-circuited by a boolean.
 	intactas bool
-	fw       *firewallFalso
+	fw       *mockFirewall
 	// overrideRules replaces the above when a test IS exercising this layer.
 	overrideRules bool
 	puestas       []domain.AppliedRule
@@ -690,11 +735,11 @@ type auditoríaFalsa struct {
 	errMapeos   error
 }
 
-func (a *auditoríaFalsa) FirewallEnabled(context.Context) ([]domain.FirewallProfileState, error) {
+func (a *mockAudit) FirewallEnabled(context.Context) ([]domain.FirewallProfileState, error) {
 	return a.perfiles, primerError(a.errPerfiles, a.err)
 }
 
-func (a *auditoríaFalsa) Enforcement(context.Context) (domain.Enforcement, error) {
+func (a *mockAudit) Enforcement(context.Context) (domain.Enforcement, error) {
 	if err := primerError(a.errIntactas, a.err); err != nil {
 		return domain.Enforcement{}, err
 	}
@@ -723,7 +768,7 @@ func (a *auditoríaFalsa) Enforcement(context.Context) (domain.Enforcement, erro
 // It exists because "tampered" is no longer a boolean the adapter hands over:
 // the verdict now comes from a real diff in the domain, so a test that wants a
 // tampered firewall has to produce an actual discrepancy.
-func (a *auditoríaFalsa) tamper() {
+func (a *mockAudit) tamper() {
 	a.intactas = false
 	a.overrideRules = true
 	a.puestas = []domain.AppliedRule{{
@@ -733,7 +778,7 @@ func (a *auditoríaFalsa) tamper() {
 	}}
 }
 
-func (a *auditoríaFalsa) RouterMappings(context.Context) ([]domain.PortMapping, error) {
+func (a *mockAudit) RouterMappings(context.Context) ([]domain.PortMapping, error) {
 	return a.mapeos, primerError(a.errMapeos, a.err)
 }
 
@@ -755,11 +800,11 @@ func (i inspectorFalso) Snapshot(context.Context, domain.ProcessRef) ([]domain.L
 	return i.sockets, i.err
 }
 
-// sondaFalsa contesta lo que le digan por puerto, y silencio a lo que no esté.
+// mockSonda contesta lo que le digan por puerto, y silencio a lo que no esté.
 //
 // El silencio por defecto es deliberado: es lo que contesta una máquina
 // blindada, así que un test que quiera una fuga tiene que pedirla explícito.
-type sondaFalsa struct {
+type mockSonda struct {
 	mu        sync.Mutex
 	respuesta map[uint16]domain.ProbeOutcome
 	marcados  []netip.AddrPort
@@ -782,7 +827,7 @@ type canarioMarcado struct {
 	nonce domain.CanaryNonce
 }
 
-func (p *sondaFalsa) Probe(ctx context.Context, at netip.AddrPort) (domain.ProbeOutcome, time.Duration) {
+func (p *mockSonda) Probe(ctx context.Context, at netip.AddrPort) (domain.ProbeOutcome, time.Duration) {
 	p.mu.Lock()
 	p.marcados = append(p.marcados, at)
 	out, ok := p.respuesta[at.Port()]
@@ -802,7 +847,7 @@ func (p *sondaFalsa) Probe(ctx context.Context, at netip.AddrPort) (domain.Probe
 	return out, 12 * time.Millisecond
 }
 
-func (p *sondaFalsa) ProbeCanary(ctx context.Context, at netip.AddrPort, nonce domain.CanaryNonce) (domain.ProbeOutcome, domain.ProbeOutcome) {
+func (p *mockSonda) ProbeCanary(ctx context.Context, at netip.AddrPort, nonce domain.CanaryNonce) (domain.ProbeOutcome, domain.ProbeOutcome) {
 	p.mu.Lock()
 	p.canarios = append(p.canarios, canarioMarcado{at: at, nonce: nonce})
 	tcp, udp, espera := p.canarioTCP, p.canarioUDP, p.espera
@@ -826,13 +871,13 @@ func (p *sondaFalsa) ProbeCanary(ctx context.Context, at netip.AddrPort, nonce d
 	return tcp, udp
 }
 
-func (p *sondaFalsa) canariosMarcados() []canarioMarcado {
+func (p *mockSonda) canariosMarcados() []canarioMarcado {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return append([]canarioMarcado(nil), p.canarios...)
 }
 
-func (p *sondaFalsa) contesta(port uint16, out domain.ProbeOutcome) {
+func (p *mockSonda) contesta(port uint16, out domain.ProbeOutcome) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.respuesta == nil {
@@ -841,26 +886,26 @@ func (p *sondaFalsa) contesta(port uint16, out domain.ProbeOutcome) {
 	p.respuesta[port] = out
 }
 
-func (p *sondaFalsa) cuántos() int {
+func (p *mockSonda) cuántos() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return len(p.marcados)
 }
 
-// relojFijo no avanza salvo que un test lo mueva. Sin esto, probar los veinte
+// fixedClock no avanza salvo que un test lo mueva. Sin esto, probar los veinte
 // minutos de la decisión 20 costaría veinte minutos.
-type relojFijo struct {
+type fixedClock struct {
 	mu    sync.Mutex
 	ahora time.Time
 }
 
-func (c *relojFijo) Now() time.Time {
+func (c *fixedClock) Now() time.Time {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.ahora
 }
 
-func (c *relojFijo) avanza(d time.Duration) {
+func (c *fixedClock) avanza(d time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.ahora = c.ahora.Add(d)
@@ -872,49 +917,49 @@ func (logMudo) Info(string, ...any)  {}
 func (logMudo) Warn(string, ...any)  {}
 func (logMudo) Error(string, ...any) {}
 
-// banco es todo el escenario armado, para que cada test toque solo lo suyo.
-type banco struct {
-	deps      Deps
-	motor     *motorFalso
-	firewall  *firewallFalso
-	netcfg    *netcfgFalso
-	almacén   *almacénFalso
-	estado    *estadoFalso
-	registro  *registroFalso
-	control   *controlFalso
-	auditoría *auditoríaFalsa
-	sonda     *sondaFalsa
-	canario   *aperturaFalsa
-	reloj     *relojFijo
-	sesión    *Session
+// bank es todo el escenario armado, para que cada test toque solo lo suyo.
+type bank struct {
+	deps     Deps
+	motor    *mockMotor
+	firewall *mockFirewall
+	netcfg   *mockNetcfg
+	catalog  *mockCatalog
+	state    *mockState
+	registry *mockRegistry
+	control  *mockControl
+	audit    *mockAudit
+	sonda    *mockSonda
+	canary   *fakeOpening
+	clock    *fixedClock
+	session  *Session
 }
 
-// aperturaFalsa es el port.CanaryPort de los tests.
+// fakeOpening es el port.CanaryPort de los tests.
 //
 // Guarda cada apertura, incluido el predicado de exclusión, porque comprobar
 // QUÉ puertos se le prohibieron al canario es lo que impide la alarma que grita
 // con todo bien.
-type aperturaFalsa struct {
-	mu        sync.Mutex
-	aberturas []aperturaCanario
-	err       error
+type fakeOpening struct {
+	mu       sync.Mutex
+	openings []canaryOpening
+	err      error
 
-	// puerto es el que devuelve el canario falso. Fijo para que los informes de
+	// port es el que devuelve el canario falso. Fijo para que los informes de
 	// los tests puedan nombrarlo.
-	puerto uint16
+	port uint16
 }
 
-type aperturaCanario struct {
+type canaryOpening struct {
 	at    netip.Addr
 	nonce domain.CanaryNonce
 	ttl   time.Duration
 	avoid func(uint16) bool
-	c     *canarioFalso
+	c     *mockCanary
 }
 
-func nuevaApertura() *aperturaFalsa { return &aperturaFalsa{puerto: 51234} }
+func newOpening() *fakeOpening { return &fakeOpening{port: 51234} }
 
-func (a *aperturaFalsa) Listen(at netip.Addr, nonce domain.CanaryNonce, ttl time.Duration,
+func (a *fakeOpening) Listen(at netip.Addr, nonce domain.CanaryNonce, ttl time.Duration,
 	avoid func(uint16) bool) (port.Canary, error) {
 
 	a.mu.Lock()
@@ -922,31 +967,31 @@ func (a *aperturaFalsa) Listen(at netip.Addr, nonce domain.CanaryNonce, ttl time
 	if a.err != nil {
 		return nil, a.err
 	}
-	c := &canarioFalso{puerto: a.puerto, toque: make(chan struct{})}
-	a.aberturas = append(a.aberturas, aperturaCanario{at: at, nonce: nonce, ttl: ttl, avoid: avoid, c: c})
+	c := &mockCanary{port: a.port, touch: make(chan struct{})}
+	a.openings = append(a.openings, canaryOpening{at: at, nonce: nonce, ttl: ttl, avoid: avoid, c: c})
 	return c, nil
 }
 
-func (a *aperturaFalsa) veces() int {
+func (a *fakeOpening) veces() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return len(a.aberturas)
+	return len(a.openings)
 }
 
-// esperarApertura bloquea hasta que se abra un canario DESPUÉS de `desde`, y
+// awaitOpening bloquea hasta que se abra un canario DESPUÉS de `desde`, y
 // devuelve el nuevo.
 //
 // Existe porque tocar el canario es lo que hace un paquete cruzando la
 // compuerta, y eso pasa mientras la ronda ya está esperando. Se llama desde una
 // goroutine, así que no puede usar t.Fatalf.
-func (a *aperturaFalsa) esperarApertura(desde int) (*canarioFalso, bool) {
+func (a *fakeOpening) awaitOpening(desde int) (*mockCanary, bool) {
 	plazo := time.Now().Add(5 * time.Second)
 	for time.Now().Before(plazo) {
 		a.mu.Lock()
-		n := len(a.aberturas)
-		var c *canarioFalso
+		n := len(a.openings)
+		var c *mockCanary
 		if n > desde {
-			c = a.aberturas[n-1].c
+			c = a.openings[n-1].c
 		}
 		a.mu.Unlock()
 		if c != nil {
@@ -959,130 +1004,180 @@ func (a *aperturaFalsa) esperarApertura(desde int) (*canarioFalso, bool) {
 
 // última es la apertura más reciente. Los tests la usan para tocar el canario o
 // para preguntarle al predicado qué habría rechazado.
-func (a *aperturaFalsa) última(t interface{ Fatalf(string, ...any) }) aperturaCanario {
+func (a *fakeOpening) last(t interface{ Fatalf(string, ...any) }) canaryOpening {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if len(a.aberturas) == 0 {
+	if len(a.openings) == 0 {
 		t.Fatalf("no se abrió ningún canario")
 	}
-	return a.aberturas[len(a.aberturas)-1]
+	return a.openings[len(a.openings)-1]
 }
 
-// canarioFalso imita al de verdad, incluida la parte que más importa: cerrar NO
+// mockCanary imita al de verdad, incluida la parte que más importa: cerrar NO
 // cierra el canal de toque.
-type canarioFalso struct {
-	puerto uint16
+type mockCanary struct {
+	port uint16
 
 	mu      sync.Mutex
-	tocado  bool
-	cerrado int
+	touched bool
+	closed  int
 
-	toque     chan struct{}
-	toqueOnce sync.Once
+	touch     chan struct{}
+	touchOnce sync.Once
 }
 
-func (c *canarioFalso) Port() uint16             { return c.puerto }
-func (c *canarioFalso) Touched() <-chan struct{} { return c.toque }
+func (c *mockCanary) Port() uint16             { return c.port }
+func (c *mockCanary) Touched() <-chan struct{} { return c.touch }
 
-func (c *canarioFalso) WasTouched() bool {
+func (c *mockCanary) WasTouched() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.tocado
+	return c.touched
 }
 
-func (c *canarioFalso) Close() error {
+func (c *mockCanary) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.cerrado++
+	c.closed++
 	return nil
 }
 
-func (c *canarioFalso) cierres() int {
+func (c *mockCanary) cierres() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.cerrado
+	return c.closed
 }
 
 // tocar es alguien llegando hasta el socket, o sea el paquete cruzando la
 // compuerta.
-func (c *canarioFalso) tocar() {
+func (c *mockCanary) tocar() {
 	c.mu.Lock()
-	c.tocado = true
+	c.touched = true
 	c.mu.Unlock()
-	c.toqueOnce.Do(func() { close(c.toque) })
+	c.touchOnce.Do(func() { close(c.touch) })
 }
 
-// estadoFalso es el disco de room.json y last-room.json.
+// mockState es el disco de hosted-room.json y last-room.json.
 //
 // Guarda bytes y no structs, igual que el puerto de verdad: el decodificador
 // estricto vive en el dominio y estos tests lo ejercitan de punta a punta.
-type estadoFalso struct {
+type mockState struct {
 	mu sync.Mutex
 
-	sala     []byte
-	última   []byte
-	borrados int
+	room      []byte
+	last      []byte
+	seed      []byte
+	seedToken []byte
+	deleted   int
 
-	errGuardar error
+	errSave error
 }
 
-func (e *estadoFalso) LoadRoom() ([]byte, error) {
+func (e *mockState) LoadRoom() ([]byte, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.sala == nil {
+	if e.room == nil {
 		return nil, errors.New("no hay sala guardada")
 	}
-	return append([]byte(nil), e.sala...), nil
+	return append([]byte(nil), e.room...), nil
 }
 
-func (e *estadoFalso) SaveRoom(raw []byte) error {
+func (e *mockState) SaveRoom(raw []byte) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.errGuardar != nil {
-		return e.errGuardar
+	if e.errSave != nil {
+		return e.errSave
 	}
-	e.sala = append([]byte(nil), raw...)
+	e.room = append([]byte(nil), raw...)
 	return nil
 }
 
-func (e *estadoFalso) ClearRoom() error {
+func (e *mockState) ClearRoom() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.sala = nil
-	e.borrados++
+	e.room = nil
+	e.deleted++
 	return nil
 }
 
-func (e *estadoFalso) LoadLast() ([]byte, error) {
+func (e *mockState) LoadLast() ([]byte, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.última == nil {
+	if e.last == nil {
 		return nil, errors.New("no hay última sala")
 	}
-	return append([]byte(nil), e.última...), nil
+	return append([]byte(nil), e.last...), nil
 }
 
-func (e *estadoFalso) SaveLast(raw []byte) error {
+func (e *mockState) SaveLast(raw []byte) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.errGuardar != nil {
-		return e.errGuardar
+	if e.errSave != nil {
+		return e.errSave
 	}
-	e.última = append([]byte(nil), raw...)
+	e.last = append([]byte(nil), raw...)
 	return nil
 }
 
-func (e *estadoFalso) ClearLast() error {
+func (e *mockState) ClearLast() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.última = nil
+	e.last = nil
 	return nil
 }
 
-func (e *estadoFalso) salaGuardada() []byte {
+func (e *mockState) LoadSeed() ([]byte, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return append([]byte(nil), e.sala...)
+	if e.seed == nil {
+		return nil, errors.New("no hay registro configurado")
+	}
+	return append([]byte(nil), e.seed...), nil
+}
+
+func (e *mockState) SaveSeed(raw []byte) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.errSave != nil {
+		return e.errSave
+	}
+	e.seed = append([]byte(nil), raw...)
+	return nil
+}
+
+// The refresh token of a closed seed. Kept in memory like everything else here,
+// and with its own field: a test that checks it was cleared has to be able to
+// see that the seed itself did not go with it.
+func (e *mockState) LoadSeedToken() ([]byte, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.seedToken == nil {
+		return nil, errors.New("no hay token guardado")
+	}
+	return append([]byte(nil), e.seedToken...), nil
+}
+
+func (e *mockState) SaveSeedToken(raw []byte) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.errSave != nil {
+		return e.errSave
+	}
+	e.seedToken = append([]byte(nil), raw...)
+	return nil
+}
+
+func (e *mockState) ClearSeedToken() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.seedToken = nil
+	return nil
+}
+
+func (e *mockState) salaGuardada() []byte {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]byte(nil), e.room...)
 }
 
 const catálogoDePrueba = `{"kanpachi_catalog":1,"profiles":[
@@ -1096,13 +1191,13 @@ const catálogoDePrueba = `{"kanpachi_catalog":1,"profiles":[
    "connect_hint":{"kind":"lan_browser","text_es":"aparece solo"}}
 ]}`
 
-func nuevoBanco(t interface{ Fatalf(string, ...any) }) *banco {
+func nuevoBanco(t interface{ Fatalf(string, ...any) }) *bank {
 	b := bancoSinSesión()
 	s, err := NewSession(context.Background(), b.deps)
 	if err != nil {
 		t.Fatalf("no se pudo montar la sesión: %v", err)
 	}
-	b.sesión = s
+	b.session = s
 	return b
 }
 
@@ -1111,40 +1206,40 @@ func nuevoBanco(t interface{ Fatalf(string, ...any) }) *banco {
 // Existe aparte porque hay cosas que solo se pueden afirmar sobre el arranque
 // mismo, y para eso hace falta poder cambiar un doble antes de que corra y poder
 // ver fallar la construcción sin que el banco aborte el test.
-func bancoSinSesión() *banco {
-	b := &banco{
-		motor:     nuevoMotor(),
-		firewall:  &firewallFalso{},
-		netcfg:    &netcfgFalso{},
-		almacén:   &almacénFalso{builtin: []byte(catálogoDePrueba)},
-		estado:    &estadoFalso{},
-		registro:  &registroFalso{},
-		control:   nuevoControl(),
-		auditoría: &auditoríaFalsa{intactas: true},
-		sonda:     &sondaFalsa{},
-		canario:   nuevaApertura(),
-		reloj:     &relojFijo{ahora: time.Date(2026, 8, 2, 20, 0, 0, 0, time.UTC)},
+func bancoSinSesión() *bank {
+	b := &bank{
+		motor:    nuevoMotor(),
+		firewall: &mockFirewall{},
+		netcfg:   &mockNetcfg{},
+		catalog:  &mockCatalog{builtin: []byte(catálogoDePrueba)},
+		state:    &mockState{},
+		registry: &mockRegistry{},
+		control:  nuevoControl(),
+		audit:    &mockAudit{intactas: true},
+		sonda:    &mockSonda{},
+		canary:   newOpening(),
+		clock:    &fixedClock{ahora: time.Date(2026, 8, 2, 20, 0, 0, 0, time.UTC)},
 	}
 	// La auditoría refleja lo que el firewall tiene aplicado, que es lo que
 	// significa "intacto". Así el diff del dominio corre de verdad en los
 	// tests en vez de esquivarse con un booleano.
-	b.auditoría.fw = b.firewall
+	b.audit.fw = b.firewall
 	b.deps = Deps{
-		Engine:    b.motor,
-		Firewall:  b.firewall,
-		NetCfg:    b.netcfg,
-		Routes:    rutasFalsas{prefijos: []netip.Prefix{netip.MustParsePrefix("192.168.1.0/24")}},
-		Store:     b.almacén,
-		State:     b.estado,
-		Library:   bibliotecaFalsa{},
-		Directory: b.registro,
-		Control:   b.control,
-		Audit:     b.auditoría,
-		Inspector: inspectorFalso{},
-		Prober:    b.sonda,
-		Canary:    b.canario,
-		Clock:     b.reloj,
-		Log:       logMudo{},
+		Engine:      b.motor,
+		Firewall:    b.firewall,
+		NetCfg:      b.netcfg,
+		Routes:      rutasFalsas{prefijos: []netip.Prefix{netip.MustParsePrefix("192.168.1.0/24")}},
+		Store:       b.catalog,
+		State:       b.state,
+		Library:     bibliotecaFalsa{},
+		Directories: registrosFalsos{reg: b.registry},
+		Control:     b.control,
+		Audit:       b.audit,
+		Inspector:   inspectorFalso{},
+		Prober:      b.sonda,
+		Canary:      b.canary,
+		Clock:       b.clock,
+		Log:         logMudo{},
 		// Un lector constante hace que la subred y las claves salgan siempre
 		// iguales, y que el test sea el mismo en cada ejecución.
 		Rand: bytes.NewReader(bytes.Repeat([]byte{0x11}, 1<<16)),
@@ -1162,4 +1257,20 @@ func nick(t interface{ Fatalf(string, ...any) }, s string) domain.Nickname {
 		t.Fatalf("nick %q: %v", s, err)
 	}
 	return n
+}
+
+// Authenticate acepta cualquier prueba salvo que el registro esté declarado
+// caído, como los demás métodos.
+//
+// Guarda LA PRUEBA y jamás un password, que es lo único que puede llegar acá:
+// el hash lo calcula el caso de uso. Un falso que aceptara un password sería un
+// falso que puede más que el real.
+func (r *mockRegistry) Authenticate(_ context.Context, proof string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.err != nil {
+		return r.err
+	}
+	r.pruebas = append(r.pruebas, proof)
+	return nil
 }

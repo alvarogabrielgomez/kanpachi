@@ -215,7 +215,25 @@ class Room {
   final String name;
 
   /// El invite ID en su forma legible, con guiones.
+  ///
+  /// **Crudo, y no es lo que se enseña.** Lo que se enseña y se copia es
+  /// [displayCode], que le pega el registro. Este campo queda para lo que
+  /// necesita el identificador solo.
   final String code;
+
+  /// El código como se enseña, se dicta y se copia: `A7K2-M9QX@seed.ejemplo.com`.
+  ///
+  /// # Por qué no se enseña nunca pelado
+  ///
+  /// Porque **un invite ID solo significa algo en el registro que lo emitió**.
+  /// Desde que no hay registro de fábrica, ocho caracteres sueltos no
+  /// identifican una sala: identifican tantas salas como registros haya. Quien
+  /// copiara eso y lo pegara en otro sitio entraría a una sala distinta con el
+  /// mismo identificador, sin un solo error de por medio.
+  ///
+  /// Sin seed cae al código pelado. No debería pasar en una sala viva, y si
+  /// pasa, enseñar lo que hay es mejor que enseñar una arroba huérfana.
+  String get displayCode => (seed ?? '').isEmpty ? code : '$code@$seed';
 
   /// El enlace completo que se copia y se pega en Telegram.
   ///
@@ -310,7 +328,6 @@ class Room {
   /// ve su sala perfecta y todo el que intente entrar recibe «ese código no
   /// existe». Lo cierra renovar el código.
   final bool codeLost;
-
 
   /// Si la regla ajena impide abrir la sala.
   ///

@@ -2,6 +2,7 @@ package registry
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/internal/selfupdate"
 )
 
 // ---- utilidades -----------------------------------------------------------
@@ -62,7 +64,7 @@ func TestEmitirYResolver(t *testing.T) {
 	h := nuevoHost(t, 1)
 	card := []byte("tarjeta cifrada")
 
-	id, err := s.Issue(h.pub, card, h.firma(card))
+	id, err := s.Issue(context.Background(), h.pub, card, h.firma(card))
 	if err != nil {
 		t.Fatalf("Issue falló: %v", err)
 	}
@@ -70,7 +72,7 @@ func TestEmitirYResolver(t *testing.T) {
 		t.Errorf("el invite ID emitido mide %d, se esperaban %d", len(id.Raw()), domain.InviteIDLen)
 	}
 
-	sala, err := s.Lookup(id)
+	sala, err := s.lookup(id)
 	if err != nil {
 		t.Fatalf("Lookup falló: %v", err)
 	}
@@ -93,8 +95,8 @@ func TestElRegistroNoPuedeLeerLaTarjeta(t *testing.T) {
 	// ningún camino en el que el nombre de la sala aparezca en claro.
 	card := []byte{0x9f, 0x00, 0x1b, 0xff, 0x42}
 
-	id, _ := s.Issue(h.pub, card, h.firma(card))
-	sala, _ := s.Lookup(id)
+	id, _ := s.Issue(context.Background(), h.pub, card, h.firma(card))
+	sala, _ := s.lookup(id)
 
 	if !bytes.Equal(sala.Card, card) {
 		t.Fatal("la tarjeta se transformó: el registro debe tratarla como bytes opacos")
@@ -110,14 +112,14 @@ func TestFirmaInvalidaSeRechaza(t *testing.T) {
 	otro := nuevoHost(t, 2)
 	card := []byte("tarjeta")
 
-	if _, err := s.Issue(h.pub, card, otro.firma(card)); err != ErrBadSig {
+	if _, err := s.Issue(context.Background(), h.pub, card, otro.firma(card)); err != ErrBadSig {
 		t.Errorf("Issue con firma ajena dio %v, se esperaba ErrBadSig", err)
 	}
-	if _, err := s.Issue(h.pub, card, []byte("no es una firma")); err != ErrBadSig {
+	if _, err := s.Issue(context.Background(), h.pub, card, []byte("no es una firma")); err != ErrBadSig {
 		t.Errorf("Issue con firma basura dio %v, se esperaba ErrBadSig", err)
 	}
 	// Firma válida sobre OTRA tarjeta: es el caso de reusar una firma vista.
-	if _, err := s.Issue(h.pub, []byte("otra cosa"), h.firma(card)); err != ErrBadSig {
+	if _, err := s.Issue(context.Background(), h.pub, []byte("otra cosa"), h.firma(card)); err != ErrBadSig {
 		t.Errorf("Issue con firma de otra tarjeta dio %v, se esperaba ErrBadSig", err)
 	}
 }
@@ -136,24 +138,24 @@ func TestUnMiembroNoPuedeSobrescribirLaTarjeta(t *testing.T) {
 	santiago := nuevoHost(t, 2)
 
 	card := []byte("la de Humberto")
-	id, err := s.Issue(humberto.pub, card, humberto.firma(card))
+	id, err := s.Issue(context.Background(), humberto.pub, card, humberto.firma(card))
 	if err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 
 	suya := []byte("la de Santiago")
-	if err := s.Publish(id, santiago.pub, suya, santiago.firma(suya)); err != ErrPinned {
+	if err := s.publish(id, santiago.pub, suya, santiago.firma(suya)); err != ErrPinned {
 		t.Fatalf("Santiago pudo publicar con su propia llave: %v", err)
 	}
 
-	sala, _ := s.Lookup(id)
+	sala, _ := s.lookup(id)
 	if !bytes.Equal(sala.Card, card) {
 		t.Errorf("la tarjeta cambió a %q: el fijado no está protegiendo nada", sala.Card)
 	}
 
 	// Y el host sí puede, que es la otra mitad de la propiedad.
 	nueva := []byte("Humberto renombró la sala")
-	if err := s.Publish(id, humberto.pub, nueva, humberto.firma(nueva)); err != nil {
+	if err := s.publish(id, humberto.pub, nueva, humberto.firma(nueva)); err != nil {
 		t.Fatalf("el host no pudo actualizar su propia tarjeta: %v", err)
 	}
 }
@@ -166,25 +168,25 @@ func TestReabrirConElMismoIDSigueSiendoDelHost(t *testing.T) {
 	exMiembro := nuevoHost(t, 2)
 
 	card := []byte("La Guarida")
-	id, _ := s.Issue(humberto.pub, card, humberto.firma(card))
+	id, _ := s.Issue(context.Background(), humberto.pub, card, humberto.firma(card))
 
 	// La sala muere: la tarjeta caduca y deja de resolverse.
 	reloj.avanza(CardTTL + time.Minute)
-	if _, err := s.Lookup(id); err != ErrNotFound {
+	if _, err := s.lookup(id); err != ErrNotFound {
 		t.Fatalf("la tarjeta caducada sigue resolviéndose: %v", err)
 	}
 
 	// Un ex miembro conserva el invite ID y se adelanta al host. No puede.
 	suya := []byte("mía ahora")
-	if err := s.Publish(id, exMiembro.pub, suya, exMiembro.firma(suya)); err != ErrPinned {
+	if err := s.publish(id, exMiembro.pub, suya, exMiembro.firma(suya)); err != ErrPinned {
 		t.Fatalf("un ex miembro se apropió del invite ID: %v", err)
 	}
 
 	// El host reabre con el mismo ID, que es lo prometido.
-	if err := s.Publish(id, humberto.pub, card, humberto.firma(card)); err != nil {
+	if err := s.publish(id, humberto.pub, card, humberto.firma(card)); err != nil {
 		t.Fatalf("el host no pudo reabrir su sala: %v", err)
 	}
-	if _, err := s.Lookup(id); err != nil {
+	if _, err := s.lookup(id); err != nil {
 		t.Fatalf("tras reabrir, la sala no resuelve: %v", err)
 	}
 }
@@ -193,7 +195,7 @@ func TestElFijadoTambienCaduca(t *testing.T) {
 	s, reloj := storeDePrueba(t)
 	h := nuevoHost(t, 1)
 	card := []byte("x")
-	id, _ := s.Issue(h.pub, card, h.firma(card))
+	id, _ := s.Issue(context.Background(), h.pub, card, h.firma(card))
 
 	reloj.avanza(PinTTL + time.Hour)
 	if n := s.Sweep(); n != 1 {
@@ -203,7 +205,7 @@ func TestElFijadoTambienCaduca(t *testing.T) {
 		t.Errorf("quedan %d entradas tras el barrido", s.Len())
 	}
 	// Y el invite ID vuelve a estar libre para cualquiera.
-	if err := s.Publish(id, h.pub, card, h.firma(card)); err != ErrNotFound {
+	if err := s.publish(id, h.pub, card, h.firma(card)); err != ErrNotFound {
 		t.Errorf("tras caducar el fijado, Publish dio %v, se esperaba ErrNotFound", err)
 	}
 }
@@ -212,7 +214,7 @@ func TestTarjetaDemasiadoGrande(t *testing.T) {
 	s, _ := storeDePrueba(t)
 	h := nuevoHost(t, 1)
 	card := bytes.Repeat([]byte("A"), MaxCardBytes+1)
-	if _, err := s.Issue(h.pub, card, h.firma(card)); err != ErrCardTooBig {
+	if _, err := s.Issue(context.Background(), h.pub, card, h.firma(card)); err != ErrCardTooBig {
 		t.Errorf("Issue con tarjeta enorme dio %v, se esperaba ErrCardTooBig", err)
 	}
 }
@@ -221,13 +223,13 @@ func TestNetworksSoloListaSalasVivas(t *testing.T) {
 	s, reloj := storeDePrueba(t)
 	h := nuevoHost(t, 1)
 	card := []byte("x")
-	s.Issue(h.pub, card, h.firma(card))
+	s.Issue(context.Background(), h.pub, card, h.firma(card))
 
-	if got := len(s.Networks()); got != 1 {
+	if got := len(s.networks()); got != 1 {
 		t.Fatalf("Networks devolvió %d, se esperaba 1", got)
 	}
 	reloj.avanza(CardTTL + time.Minute)
-	if got := len(s.Networks()); got != 0 {
+	if got := len(s.networks()); got != 0 {
 		t.Errorf("Networks devolvió %d tras caducar la tarjeta, se esperaba 0", got)
 	}
 }
@@ -251,14 +253,14 @@ func TestIssueSobrevivePerderLaCarreraPorUnID(t *testing.T) {
 		id, err := domain.ParseInviteID(ids[turno])
 		turno++
 		if turno == 1 {
-			s.insertar(id, intruso.pub, suyo, "red-del-intruso")
+			s.insert(id, intruso.pub, suyo, "red-del-intruso")
 		}
 		return id, err
 	})
 
 	h := nuevoHost(t, 1)
 	card := []byte("la tarjeta del host")
-	id, err := s.Issue(h.pub, card, h.firma(card))
+	id, err := s.Issue(context.Background(), h.pub, card, h.firma(card))
 	if err != nil {
 		t.Fatalf("Issue falló al perder la carrera en vez de reintentar: %v", err)
 	}
@@ -270,7 +272,7 @@ func TestIssueSobrevivePerderLaCarreraPorUnID(t *testing.T) {
 	// sobrescribiera, cualquiera podría robarle la sala a otro con solo llegar
 	// tarde al mismo invite ID.
 	robado, _ := domain.ParseInviteID("AAAAAAAA")
-	sala, err := s.Lookup(robado)
+	sala, err := s.lookup(robado)
 	if err != nil {
 		t.Fatalf("la sala del intruso desapareció: %v", err)
 	}
@@ -295,7 +297,7 @@ func TestIssueEnParaleloDaIDsDistintos(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			id, err := s.Issue(h.pub, card, firma)
+			id, err := s.Issue(context.Background(), h.pub, card, firma)
 			if err != nil {
 				errores <- err
 				return
@@ -394,14 +396,14 @@ func servidorDePrueba(t *testing.T) (*Server, *Store) {
 	s, _ := storeDePrueba(t)
 	// Un contador que jamás habló con EasyTier: es el estado real al arrancar,
 	// y el que revela si la API publica un cero falso.
-	return NewServer(s, NewCounter("no-existe", "127.0.0.1:1"), paginaDePrueba(t)), s
+	return NewServer(s, NewCounter("no-existe", "127.0.0.1:1"), paginaDePrueba(t), nil), s
 }
 
 func TestAPIResuelveYOmiteElContadorSiNoLoSabe(t *testing.T) {
 	srv, store := servidorDePrueba(t)
 	h := nuevoHost(t, 1)
 	card := []byte("tarjeta")
-	id, _ := store.Issue(h.pub, card, h.firma(card))
+	id, _ := store.Issue(context.Background(), h.pub, card, h.firma(card))
 
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/i/"+id.String(), nil))
@@ -478,7 +480,7 @@ func TestLaRutaDeUnaSalaVivaLlegaResuelta(t *testing.T) {
 	srv, store := servidorDePrueba(t)
 	h := nuevoHost(t, 1)
 	card := []byte("tarjeta")
-	id, _ := store.Issue(h.pub, card, h.firma(card))
+	id, _ := store.Issue(context.Background(), h.pub, card, h.firma(card))
 
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/"+id.String(), nil))
@@ -490,16 +492,26 @@ func TestLaRutaDeUnaSalaVivaLlegaResuelta(t *testing.T) {
 		t.Error("la ruta de una sala viva debería traer su tarjeta ya incrustada")
 	}
 
-	// Una ruta que no es una sala viva sirve la misma página con el hueco en
-	// null, para que el JavaScript decida. Nunca un 404 de servidor: la página
+	// Una ruta que no es una sala viva sirve la misma página, con la tarjeta en
+	// null y el resto del estado puesto. Nunca un 404 de servidor: la página
 	// explica mejor qué pasó de lo que puede hacerlo un código de estado.
+	//
+	// **Lo que va a null es `room`, y no el hueco entero**, que es lo que
+	// cambió al meter ahí la versión y el repositorio: el hueco viaja siempre,
+	// así que su presencia dejó de significar "hay sala".
 	rec = httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/A7K2M9QZ", nil))
 	if rec.Code != http.StatusOK {
 		t.Errorf("una sala inexistente devolvió %d, la página debe servirse igual", rec.Code)
 	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte(MarcaAbre+"null")) {
-		t.Error("sin sala viva, el hueco debe quedar en null")
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"room":null`)) {
+		t.Error("sin sala viva, la tarjeta del hueco debe quedar en null")
+	}
+
+	// Y el repositorio se sirve CON la página, en vez de estar escrito dentro
+	// del HTML. Es lo que hace que un fork cambie una sola constante.
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"repo":"`+selfupdate.Repo+`"`)) {
+		t.Error("el hueco debe llevar el repositorio del canal de actualización")
 	}
 }
 

@@ -10,6 +10,11 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Added
 
+- Choose which server your rooms are opened on, in a screen of its own. Entering somebody else's room never chooses it for you: it offers that server as a suggestion, marked as one, so nobody has to go dig the name out of a chat
+- Confirm the server before opening or entering a room, with what a bad one can do spelled out on the same screen: it can log the public IP of everyone who introduces themselves to it, and it can try to capture what passes between them
+- Ask for a password when a server requires one to host on it. **Entering a room never asks for anything, on any server**
+- Close your own seed with `kanpseed password`, so only people with the password can host on it. Changing the password throws every host out at once, and they get back in by typing the new one
+- Set the password of a server from the terminal client with `kanpachi password`, and the server itself with `kanpachi seed <host>`. The wizard asks for both in place when opening a room needs them
 - Keep a guest in the room past the first day: the host now renews the credentials of everyone present, which used to expire twenty-four hours after each person joined and drop them one by one ([a885036](https://github.com/alvarogabrielgomez/kanpachi/commit/a885036), with [f1eeca3](https://github.com/alvarogabrielgomez/kanpachi-engine/commit/f1eeca3) in `kanpachi-engine`)
 - Bring guests back by themselves when the host restarts: it no longer recognises anyone, so it says so and each guest asks for a new credential, which took three minutes of waiting before and now takes about twenty seconds ([a885036](https://github.com/alvarogabrielgomez/kanpachi/commit/a885036))
 - Say on screen that the room is being re-entered, instead of showing a room that looks frozen ([f31c0a0](https://github.com/alvarogabrielgomez/kanpachi/commit/f31c0a0))
@@ -19,6 +24,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Changed
 
+- Never show an invite code bare. Copying gives `A7K2-M9QX@server` and sharing gives the whole link, because the same eight characters on two servers are two different rooms that know nothing about each other
+- Look for a new version only when asked, from Settings, instead of on every start and on every room that opens or closes
+- Print the whole `kanpseed` command line in English, which was the only part of the seed still speaking Spanish to people who read the README over `ssh`
+- Answer a failure under `--json` with a code and nothing else, on standard output, so a script parses one JSON document whether the command worked or not
 - Check that this machine can build a virtual adapter when Kanpachi starts, rather than when the first room is opened, and say which of the two things is wrong when it cannot: the driver files being absent, or Windows refusing to install the driver. It used to be found out after choosing a game and typing an invite code, took thirty seconds, and came back as an address problem ([d6d9e85](https://github.com/alvarogabrielgomez/kanpachi/commit/d6d9e85))
 - Close Kanpachi, after saying why and waiting for the message to be read, when this machine cannot build a virtual adapter at all: it is not a room that failed and trying again cannot fix it ([d6d9e85](https://github.com/alvarogabrielgomez/kanpachi/commit/d6d9e85))
 - Answer `the virtual adapter` in `kanpachi doctor` on Windows, which had nothing equivalent to the `/dev/net/tun` check it does on Linux ([d6d9e85](https://github.com/alvarogabrielgomez/kanpachi/commit/d6d9e85))
@@ -32,6 +41,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Fixed
 
+- Paste a link, or a code with a server in it, and have it reach the right room. The home field used to throw away everything after the code, so `A7K2-M9QX@a-friends-server.com` quietly became a code on the default server, which is a different room with the same eight characters. Four of the six documented forms turned into gibberish that still looked like a valid code
+- Say "you have not chosen a server yet" when that is what happened, instead of "something failed inside Kanpachi, restart the app and report it". Nothing had failed, and restarting fixed nothing
 - Let people whose internet provider uses the same address range as Kanpachi's lobby into a room: entering hung with no explanation, and each room now takes its lobby from its own invite code, so renewing the code moves it out of the way ([a885036](https://github.com/alvarogabrielgomez/kanpachi/commit/a885036))
 - Say when this machine's own network clashes with the lobby of the room being entered, which used to be a silent thirty-second wait ([a885036](https://github.com/alvarogabrielgomez/kanpachi/commit/a885036))
 - Say that the virtual adapter was never created when that is what happened, instead of reporting it as an address that could not be taken: the two are different problems and only one of them is about addresses ([037ba55](https://github.com/alvarogabrielgomez/kanpachi/commit/037ba55))

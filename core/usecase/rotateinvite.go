@@ -41,22 +41,37 @@ func (s *Session) RotateInviteCode(ctx context.Context) (domain.RoomState, error
 		return domain.RoomState{}, err
 	}
 
-	// Lo publicado, o nada. El respaldo genera el ID acá, así que el registro no
-	// lo emitió nunca y no tiene ninguna tarjeta de esa sala que restaurar.
-	publicada := sealed
-
-	room, err := s.deps.Directory.Open(ctx, sealed)
+	// El registro que ya sirve esta sala, y no el propio: renovar cambia la llave
+	// de búsqueda, jamás el registro donde la sala vive.
+	dir, err := s.deps.Directories.For(old.Seed)
 	if err != nil {
-		s.deps.Log.Warn("el registro del seed no respondió al renovar, el código nuevo va sin tarjeta", "error", err)
-		id, err := domain.NewInviteID(s.deps.Rand)
-		if err != nil {
-			return domain.RoomState{}, fmt.Errorf("generando un código nuevo sin registro: %w", err)
-		}
-		// El seed se conserva: renovar cambia la llave de búsqueda, no el
-		// registro donde vive la sala.
-		room = domain.Room{InviteID: id, Seed: old.Seed}
-		publicada = nil
+		return domain.RoomState{}, fmt.Errorf("%w: el registro %s de esta sala no se pudo usar: %v",
+			ErrNoRegistry, old.Seed, err)
 	}
+
+	// # Acá había un respaldo, y era el mismo defecto que se quitó de crear
+	//
+	// Sin respuesta del registro se generaba el ID **en esta máquina** y se
+	// seguía. Ese código no le sirve a nadie: el invitado le pregunta al mismo
+	// registro, le contestan que no existe, y rechaza el ingreso antes de
+	// arrancar el motor.
+	//
+	// Y acá era peor que en crear, porque renovar **mata el código anterior**: el
+	// vestíbulo se rehospeda unas líneas más abajo con el nombre nuevo. O sea que
+	// el host terminaba sin el código nuevo, que no sirve, y sin el viejo, que ya
+	// no tiene puerta. Se cambiaba un código bueno por ninguno.
+	//
+	// Así que falla, y falla ANTES de tocar el vestíbulo. El código de antes
+	// sigue siendo el bueno y la sala no se entera.
+	room, err := dir.Open(ctx, sealed)
+	if err != nil {
+		s.deps.Log.Error("el registro no contestó al renovar, así que el código no cambia",
+			"seed", old.Seed, "error", err)
+		return domain.RoomState{}, fmt.Errorf("%w: %s no contestó (%v).\n\n"+
+			"El código de siempre sigue funcionando: renovar no llegó a cambiar nada.\n\n"+
+			"Qué hacer: vuelve a intentarlo en un momento", ErrNoRegistry, old.Seed, err)
+	}
+	publicada := sealed
 
 	// El vestíbulo se rehospeda con el nombre nuevo, y esto NO es opcional: el
 	// nombre del vestíbulo deriva del invite ID, así que un código nuevo es un
@@ -214,7 +229,20 @@ func (s *Session) RenameRoom(ctx context.Context, name string) (domain.RoomState
 	if err != nil {
 		return domain.RoomState{}, err
 	}
-	if err := s.deps.Directory.Publish(ctx, s.state.Room.InviteID, sealed); err != nil {
+	// El registro de la sala, igual que al renovar: la entrada existe solo ahí.
+	//
+	// Que esto falle NO deshace el renombrado, y por eso el fallo se traga: la
+	// sala ya se llama así para los que están dentro, que se enteraron por el
+	// canal de control unas líneas más arriba. Lo único que se pierde es que la
+	// página de invitación enseñe el nombre nuevo, y el siguiente latido lo
+	// reintenta.
+	dir, err := s.deps.Directories.For(s.state.Room.Seed)
+	if err != nil {
+		s.deps.Log.Warn("no se pudo abrir el registro de la sala para publicar el nombre",
+			"seed", s.state.Room.Seed, "error", err)
+		return s.snapshot(), nil
+	}
+	if err := dir.Publish(ctx, s.state.Room.InviteID, sealed); err != nil {
 		if errors.Is(err, port.ErrUnknownRoom) {
 			s.state.CodeLost = true
 		}

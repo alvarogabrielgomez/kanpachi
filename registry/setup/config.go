@@ -29,6 +29,18 @@ const (
 	UnitMotor  = "kanpseed-engine.service"
 	UnitReg    = "kanpseed-registry.service"
 	ArchivoCfg = "seed.json"
+
+	// StateDirName is what goes in `StateDirectory=`, and DirState is where
+	// systemd puts it. The service reads the path out of STATE_DIRECTORY and
+	// never needs this constant; `kanpseed password` does, because it is a
+	// different process and gets no such variable.
+	StateDirName = "kanpseed"
+	DirState     = "/var/lib/" + StateDirName
+
+	// DirStatePrivado is where DynamicUser=yes actually puts it. DirState is a
+	// symlink to this, and removing a symlink removes the symlink, so uninstall
+	// has to name both or it leaves the operator's credential behind.
+	DirStatePrivado = "/var/lib/private/" + StateDirName
 )
 
 // Puertos por defecto, y el rango donde buscar si alguno está tomado.
@@ -73,7 +85,7 @@ func Cargar() (Config, error) {
 	}
 	var c Config
 	if err := json.Unmarshal(crudo, &c); err != nil {
-		return Config{}, fmt.Errorf("%s está corrupto: %w", RutaConfig(), err)
+		return Config{}, fmt.Errorf("%s is corrupt: %w", RutaConfig(), err)
 	}
 	return c, nil
 }
@@ -115,7 +127,7 @@ func PuertoLibre(desde, hasta int, preferido int) (int, error) {
 			return p, nil
 		}
 	}
-	return 0, fmt.Errorf("no hay ningún puerto libre entre %d y %d", desde, hasta)
+	return 0, fmt.Errorf("there is no free port between %d and %d", desde, hasta)
 }
 
 func libre(puerto int) bool {

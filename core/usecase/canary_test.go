@@ -14,10 +14,10 @@ import (
 // Tres y no uno porque casi todo lo que este archivo prueba solo existe con la
 // ronda plural: que se le pregunte a todos, que uno mintiendo no decida, y que
 // uno hablando de más no cierre la ronda por los otros.
-func salaConTres(t *testing.T) (*banco, []netip.Addr) {
+func salaConTres(t *testing.T) (*bank, []netip.Addr) {
 	t.Helper()
 	b := salaCreada(t)
-	self := b.sesión.Status().LocalIP
+	self := b.session.Status().LocalIP
 
 	invitados := []netip.Addr{self.Next(), self.Next().Next(), self.Next().Next().Next()}
 	nombres := []string{"humberto", "marisol", "ignacio"}
@@ -27,7 +27,7 @@ func salaConTres(t *testing.T) (*banco, []netip.Addr) {
 		peers = append(peers, domain.Peer{VirtualIP: ip, Name: nick(t, nombres[i]), Path: domain.PathDirect})
 	}
 	b.motor.peers = peers
-	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
 	return b, invitados
@@ -38,17 +38,17 @@ func salaConTres(t *testing.T) (*banco, []netip.Addr) {
 // El contador se lee AQUÍ y no dentro de la goroutine, y no es un detalle: si se
 // leyera adentro, la goroutine podría arrancar con la ronda ya abierta, contar
 // esa apertura como "la de antes", y quedarse esperando una segunda que no llega.
-func tocarAlAbrir(b *banco) {
-	desde := b.canario.veces()
+func tocarAlAbrir(b *bank) {
+	desde := b.canary.veces()
 	go func() {
-		if c, ok := b.canario.esperarApertura(desde); ok {
+		if c, ok := b.canary.awaitOpening(desde); ok {
 			c.tocar()
 		}
 	}()
 }
 
 // informar mete un informe en el canal que la ronda lee.
-func informar(b *banco, de netip.Addr, puerto uint16, tcp, udp domain.ProbeOutcome) {
+func informar(b *bank, de netip.Addr, puerto uint16, tcp, udp domain.ProbeOutcome) {
 	b.control.informesCanario <- domain.CanaryReport{From: de, Port: puerto, TCP: tcp, UDP: udp}
 }
 
@@ -68,7 +68,7 @@ func TestLaPrimeraFugaSeReparaSolaYNoAvisa(t *testing.T) {
 	// Se toca en cuanto se abre, que es lo que hace un paquete cruzando.
 	tocarAlAbrir(b)
 
-	check := b.sesión.RunCanaryRound(ctx(), true)
+	check := b.session.RunCanaryRound(ctx(), true)
 
 	if check.Verdict() != domain.CanaryLeaking {
 		t.Fatalf("veredicto = %v, se esperaba CanaryLeaking", check.Verdict())
@@ -77,12 +77,12 @@ func TestLaPrimeraFugaSeReparaSolaYNoAvisa(t *testing.T) {
 		t.Error("no se repuso la protección: la reparación automática es lo que hace que " +
 			"ignorar el aviso no cueste protección")
 	}
-	if tieneAlerta(b.sesión.Status(), domain.AlertCanaryLeaking) {
+	if tieneAlerta(b.session.Status(), domain.AlertCanaryLeaking) {
 		t.Error("avisó a la primera. La primera vez se repara callado y se deja que la " +
 			"ronda siguiente juzgue")
 	}
-	if b.canario.última(t).c.cierres() != 1 {
-		t.Errorf("el canario se cerró %d veces, se esperaba 1", b.canario.última(t).c.cierres())
+	if b.canary.last(t).c.cierres() != 1 {
+		t.Errorf("el canario se cerró %d veces, se esperaba 1", b.canary.last(t).c.cierres())
 	}
 }
 
@@ -91,20 +91,20 @@ func TestLaSegundaFugaSeguidaLevantaLaAlarmaYDetieneLasRondas(t *testing.T) {
 	b, _ := salaConTres(t)
 
 	tocarAlAbrir(b)
-	b.sesión.RunCanaryRound(ctx(), true)
+	b.session.RunCanaryRound(ctx(), true)
 	tocarAlAbrir(b)
-	b.sesión.RunCanaryRound(ctx(), true)
+	b.session.RunCanaryRound(ctx(), true)
 
-	if !tieneAlerta(b.sesión.Status(), domain.AlertCanaryLeaking) {
+	if !tieneAlerta(b.session.Status(), domain.AlertCanaryLeaking) {
 		t.Fatal("dos fugas seguidas y ninguna alarma")
 	}
 
 	// Y con la alarma puesta el barrido ya no abre nada: mientras la protección
 	// está caída el canario SÍ es alcanzable de verdad, así que seguir abriendo
 	// sockets alcanzables sería trabajar en contra.
-	aberturas := b.canario.veces()
-	b.sesión.RunCanaryRound(ctx(), false)
-	if b.canario.veces() != aberturas {
+	aberturas := b.canary.veces()
+	b.session.RunCanaryRound(ctx(), false)
+	if b.canary.veces() != aberturas {
 		t.Error("con la alarma puesta el barrido volvió a abrir un canario")
 	}
 }
@@ -115,9 +115,9 @@ func TestLaAlarmaDelCanarioSobreviveAlBarridoDeAlertas(t *testing.T) {
 	b, _ := salaConTres(t)
 	alarmar(t, b)
 
-	b.sesión.RefreshAlerts(ctx())
+	b.session.RefreshAlerts(ctx())
 
-	if !tieneAlerta(b.sesión.Status(), domain.AlertCanaryLeaking) {
+	if !tieneAlerta(b.session.Status(), domain.AlertCanaryLeaking) {
 		t.Fatal("el barrido se llevó la alarma. Es pegajosa porque describe algo que se " +
 			"MIDIÓ por la red y que nada del barrido vuelve a medir")
 	}
@@ -133,18 +133,18 @@ func TestUnInformeQueDiceQueLlegoNoLevantaLaAlarma(t *testing.T) {
 	b, invitados := salaConTres(t)
 
 	go func() {
-		if _, ok := b.canario.esperarApertura(0); !ok {
+		if _, ok := b.canary.awaitOpening(0); !ok {
 			return
 		}
-		informar(b, invitados[0], b.canario.puerto, domain.ProbeAnswered, domain.ProbeSilent)
+		informar(b, invitados[0], b.canary.port, domain.ProbeAnswered, domain.ProbeSilent)
 	}()
 
-	check := b.sesión.RunCanaryRound(ctx(), true)
+	check := b.session.RunCanaryRound(ctx(), true)
 
 	if check.Verdict() != domain.CanaryMismatch {
 		t.Fatalf("veredicto = %v, se esperaba CanaryMismatch", check.Verdict())
 	}
-	if tieneAlerta(b.sesión.Status(), domain.AlertCanaryLeaking) {
+	if tieneAlerta(b.session.Status(), domain.AlertCanaryLeaking) {
 		t.Fatal("un miembro consiguió alarmar al host mandando un mensaje. La alarma " +
 			"sale del socket propio y de nada más")
 	}
@@ -161,18 +161,18 @@ func TestVariosInformesDelMismoMiembroNoCierranLaRonda(t *testing.T) {
 	// El hostil contesta tres veces al instante. Los honestos tardan, como en la
 	// vida real, y después uno de ellos toca.
 	go func() {
-		c, ok := b.canario.esperarApertura(0)
+		c, ok := b.canary.awaitOpening(0)
 		if !ok {
 			return
 		}
 		for i := 0; i < 3; i++ {
-			informar(b, invitados[2], b.canario.puerto, domain.ProbeSilent, domain.ProbeSilent)
+			informar(b, invitados[2], b.canary.port, domain.ProbeSilent, domain.ProbeSilent)
 		}
 		time.Sleep(30 * time.Millisecond)
 		c.tocar()
 	}()
 
-	check := b.sesión.RunCanaryRound(ctx(), true)
+	check := b.session.RunCanaryRound(ctx(), true)
 
 	if len(check.Answers) != 1 {
 		t.Errorf("se contaron %d informes de un solo miembro, se esperaba 1", len(check.Answers))
@@ -190,13 +190,13 @@ func TestUnInformeDeQuienNoEstaEnLaSalaNoCuenta(t *testing.T) {
 	intruso := netip.MustParseAddr("10.99.99.99")
 
 	go func() {
-		if _, ok := b.canario.esperarApertura(0); !ok {
+		if _, ok := b.canary.awaitOpening(0); !ok {
 			return
 		}
-		informar(b, intruso, b.canario.puerto, domain.ProbeAnswered, domain.ProbeAnswered)
+		informar(b, intruso, b.canary.port, domain.ProbeAnswered, domain.ProbeAnswered)
 	}()
 
-	check := b.sesión.RunCanaryRound(ctx(), true)
+	check := b.session.RunCanaryRound(ctx(), true)
 
 	if len(check.Answers) != 0 {
 		t.Fatalf("se admitió el informe de alguien de fuera: %+v", check.Answers)
@@ -215,12 +215,12 @@ func TestUnaRondaQueNadieContestaNoApagaLaAlarma(t *testing.T) {
 	alarmar(t, b)
 
 	// Nadie contesta y nadie toca: la ronda vence por plazo.
-	check := b.sesión.RunCanaryRound(ctx(), true)
+	check := b.session.RunCanaryRound(ctx(), true)
 
 	if check.Verdict() != domain.CanaryUnconfirmed {
 		t.Fatalf("veredicto = %v, se esperaba CanaryUnconfirmed", check.Verdict())
 	}
-	if !tieneAlerta(b.sesión.Status(), domain.AlertCanaryLeaking) {
+	if !tieneAlerta(b.session.Status(), domain.AlertCanaryLeaking) {
 		t.Fatal("quedándose callados le apagaron la alarma al host, y esa alarma se " +
 			"había establecido con certeza")
 	}
@@ -231,30 +231,30 @@ func TestTrasReponerLaProteccionUnaRondaLimpiaBorraLaAlarma(t *testing.T) {
 	b, invitados := salaConTres(t)
 	alarmar(t, b)
 
-	if _, err := b.sesión.ReapplyProtection(ctx()); err != nil {
+	if _, err := b.session.ReapplyProtection(ctx()); err != nil {
 		t.Fatalf("ReapplyProtection: %v", err)
 	}
 	// Reponer no apaga nada por sí solo: apagar sin comprobar sería esconder.
-	if !tieneAlerta(b.sesión.Status(), domain.AlertCanaryLeaking) {
+	if !tieneAlerta(b.session.Status(), domain.AlertCanaryLeaking) {
 		t.Fatal("reponer apagó la alarma sin haber comprobado nada")
 	}
 
-	desde := b.canario.veces()
+	desde := b.canary.veces()
 	go func() {
-		if _, ok := b.canario.esperarApertura(desde); !ok {
+		if _, ok := b.canary.awaitOpening(desde); !ok {
 			return
 		}
 		for _, ip := range invitados {
-			informar(b, ip, b.canario.puerto, domain.ProbeSilent, domain.ProbeSilent)
+			informar(b, ip, b.canary.port, domain.ProbeSilent, domain.ProbeSilent)
 		}
 	}()
 
-	check := b.sesión.RunCanaryRound(ctx(), true)
+	check := b.session.RunCanaryRound(ctx(), true)
 
 	if check.Verdict() != domain.CanaryClean {
 		t.Fatalf("veredicto = %v, se esperaba CanaryClean", check.Verdict())
 	}
-	if tieneAlerta(b.sesión.Status(), domain.AlertCanaryLeaking) {
+	if tieneAlerta(b.session.Status(), domain.AlertCanaryLeaking) {
 		t.Fatal("una ronda limpia no apagó la alarma")
 	}
 }
@@ -266,7 +266,7 @@ func TestTrasReponerLaProteccionUnaRondaLimpiaBorraLaAlarma(t *testing.T) {
 func TestSeLePreguntaATodosYNoAUnoSorteado(t *testing.T) {
 	b, invitados := salaConTres(t)
 
-	b.sesión.RunCanaryRound(ctx(), true)
+	b.session.RunCanaryRound(ctx(), true)
 
 	pedidos := b.control.pedidosDeCanario()
 	if len(pedidos) != len(invitados) {
@@ -299,13 +299,13 @@ func TestSeLePreguntaATodosYNoAUnoSorteado(t *testing.T) {
 // oyente ahí contesta con toda razón, y esa respuesta se leería como una fuga.
 func TestElCanarioEsquivaLosPuertosDelJuegoActivo(t *testing.T) {
 	b, _ := salaConTres(t)
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
 
-	b.sesión.RunCanaryRound(ctx(), true)
+	b.session.RunCanaryRound(ctx(), true)
 
-	avoid := b.canario.última(t).avoid
+	avoid := b.canary.last(t).avoid
 	if avoid == nil {
 		t.Fatal("se abrió el canario sin decirle qué puertos esquivar")
 	}
@@ -328,9 +328,9 @@ func TestElCanarioEsquivaLosPuertosDelJuegoActivo(t *testing.T) {
 func TestSinMasMiembrosNoSeAbreNingunCanario(t *testing.T) {
 	b := salaCreada(t)
 
-	check := b.sesión.RunCanaryRound(ctx(), true)
+	check := b.session.RunCanaryRound(ctx(), true)
 
-	if b.canario.veces() != 0 {
+	if b.canary.veces() != 0 {
 		t.Error("se abrió un socket para preguntarle a nadie")
 	}
 	if check.Verdict() != domain.CanaryBlind {
@@ -341,8 +341,8 @@ func TestSinMasMiembrosNoSeAbreNingunCanario(t *testing.T) {
 // La ronda de un invitado no existe: el oyente solo vive en el host.
 func TestUnInvitadoNoAbreCanario(t *testing.T) {
 	b := salaCreada(t)
-	b.sesión.RunCanaryRound(ctx(), true)
-	if b.canario.veces() == 0 {
+	b.session.RunCanaryRound(ctx(), true)
+	if b.canary.veces() == 0 {
 		return // sin más miembros ya se negó, que también vale
 	}
 	t.Skip("este banco solo monta host; el caso de invitado lo cubre OnCanaryRequest")
@@ -360,14 +360,14 @@ func TestUnaRondaDeUnaSalaViejaNoEscribeEnLaNueva(t *testing.T) {
 
 	// Se arranca la ronda y se la deja esperando su plazo.
 	hecho := make(chan domain.CanaryCheck, 1)
-	go func() { hecho <- b.sesión.RunCanaryRound(ctx(), true) }()
-	for b.canario.veces() == 0 {
+	go func() { hecho <- b.session.RunCanaryRound(ctx(), true) }()
+	for b.canary.veces() == 0 {
 		time.Sleep(time.Millisecond)
 	}
 
 	// Y mientras tanto se sale de la sala, que es lo que sube la generación.
-	b.sesión.LeaveRoom(ctx())
-	b.canario.última(t).c.tocar() // la ronda vieja concluye que hubo fuga
+	b.session.LeaveRoom(ctx())
+	b.canary.last(t).c.tocar() // la ronda vieja concluye que hubo fuga
 
 	select {
 	case <-hecho:
@@ -375,7 +375,7 @@ func TestUnaRondaDeUnaSalaViejaNoEscribeEnLaNueva(t *testing.T) {
 		t.Fatal("la ronda no terminó")
 	}
 
-	st := b.sesión.Status()
+	st := b.session.Status()
 	if tieneAlerta(st, domain.AlertCanaryLeaking) {
 		t.Fatal("una ronda de una sala que ya se cerró dejó una alarma colgada en el " +
 			"estado nuevo")
@@ -394,13 +394,13 @@ func TestUnaRondaDeUnaSalaViejaNoEscribeEnLaNueva(t *testing.T) {
 func TestUnaRondaLentaNoBloqueaStatus(t *testing.T) {
 	b, _ := salaConTres(t)
 
-	go func() { b.sesión.RunCanaryRound(ctx(), true) }()
-	for b.canario.veces() == 0 {
+	go func() { b.session.RunCanaryRound(ctx(), true) }()
+	for b.canary.veces() == 0 {
 		time.Sleep(time.Millisecond)
 	}
 
 	listo := make(chan struct{})
-	go func() { b.sesión.Status(); close(listo) }()
+	go func() { b.session.Status(); close(listo) }()
 
 	select {
 	case <-listo:
@@ -417,11 +417,11 @@ func TestUnaRondaLentaNoBloqueaStatus(t *testing.T) {
 func TestReponerLaProteccionEsIdempotente(t *testing.T) {
 	b, _ := salaConTres(t)
 
-	if _, err := b.sesión.ReapplyProtection(ctx()); err != nil {
+	if _, err := b.session.ReapplyProtection(ctx()); err != nil {
 		t.Fatal(err)
 	}
 	primero := b.firewall.estado()
-	if _, err := b.sesión.ReapplyProtection(ctx()); err != nil {
+	if _, err := b.session.ReapplyProtection(ctx()); err != nil {
 		t.Fatal(err)
 	}
 	segundo := b.firewall.estado()
@@ -440,7 +440,7 @@ func TestReponerLaProteccionEsIdempotente(t *testing.T) {
 
 func TestReponerSinSalaFalla(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.sesión.ReapplyProtection(ctx()); err == nil {
+	if _, err := b.session.ReapplyProtection(ctx()); err == nil {
 		t.Fatal("repuso una protección sin sala")
 	}
 }
@@ -452,7 +452,7 @@ func TestReponerSinSalaFalla(t *testing.T) {
 // La sala como escáner de puertos por encargo, que es lo que esto impide.
 func TestElInvitadoNoMarcaAUnaMaquinaQueNoEsElHost(t *testing.T) {
 	b := salaCreada(t) // host, y por eso ni siquiera atiende pedidos
-	err := b.sesión.OnCanaryRequest(ctx(), domain.CanaryRequest{
+	err := b.session.OnCanaryRequest(ctx(), domain.CanaryRequest{
 		Host:  netip.MustParseAddr("8.8.8.8"),
 		Port:  53,
 		Nonce: nonceDePruebaUsecase(),
@@ -474,7 +474,7 @@ func TestUnPedidoInvalidoNoMarcaNada(t *testing.T) {
 		"número en cero": {Host: netip.MustParseAddr("10.0.0.1"), Port: 5},
 	}
 	for nombre, req := range casos {
-		if err := b.sesión.OnCanaryRequest(ctx(), req); err != nil {
+		if err := b.session.OnCanaryRequest(ctx(), req); err != nil {
 			t.Errorf("%s: devolvió error en vez de callarse: %v", nombre, err)
 		}
 	}
@@ -492,13 +492,13 @@ func nonceDePruebaUsecase() domain.CanaryNonce {
 }
 
 // alarmar deja la alarma encendida, que es dos rondas con fuga seguidas.
-func alarmar(t *testing.T, b *banco) {
+func alarmar(t *testing.T, b *bank) {
 	t.Helper()
 	for i := 0; i < CanaryRepairLimit+1; i++ {
 		tocarAlAbrir(b)
-		b.sesión.RunCanaryRound(context.Background(), true)
+		b.session.RunCanaryRound(context.Background(), true)
 	}
-	if !tieneAlerta(b.sesión.Status(), domain.AlertCanaryLeaking) {
+	if !tieneAlerta(b.session.Status(), domain.AlertCanaryLeaking) {
 		t.Fatalf("no se pudo dejar la alarma encendida")
 	}
 }

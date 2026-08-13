@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
@@ -8,11 +9,13 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/internal/selfupdate"
 )
 
 // maxBody acota el cuerpo de cualquier petición antes de leerlo. El endpoint
@@ -32,24 +35,53 @@ type Server struct {
 	page    *Page
 	release *Release
 	limiter *limiter
+	auth    *Auth
+	// authLimiter is far narrower than the general one, and it has to be. The
+	// general limit exists to make enumerating 40-bit invite IDs pointless;
+	// this one guards a password that is allowed to be four characters long.
+	authLimiter *limiter
+	slow        *throttle
 }
 
-func NewServer(s *Store, c *Counter, p *Page) *Server {
+// NewServer ties everything to one port. auth may be nil, and that means a
+// permanently open seed, which is what a registry without a state directory is.
+func NewServer(s *Store, c *Counter, p *Page, auth *Auth) *Server {
+	if auth == nil {
+		auth = &Auth{now: time.Now}
+	}
 	return &Server{
-		store:   s,
-		counter: c,
-		page:    p,
-		release: NewRelease(),
-		limiter: newLimiter(30, time.Minute),
+		store:       s,
+		counter:     c,
+		page:        p,
+		release:     NewRelease(),
+		limiter:     newLimiter(30, time.Minute),
+		auth:        auth,
+		authLimiter: newLimiter(5, time.Minute),
+		slow:        &throttle{},
 	}
 }
 
+// Handler wires the routes, and the wiring IS the policy of what a closed seed
+// closes.
+//
+// # What needs a token, and what never does
+//
+// Opening a room, publishing to one and renewing its code go through
+// [Server.guarded]. Looking a room up, /healthz and the page do not, ever.
+// Entering a room asks for nothing on any seed, open or closed: the friction of
+// the guest is what this product exists to remove.
+//
+// /healthz being outside is not a leftover. The unit beats by asking for it
+// with WatchdogSec=30s, so covering it with auth would restart the seed every
+// thirty seconds and the BindsTo would take the engine down with it. An
+// availability failure wearing someone else's clothes, like the OOM was.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/rooms", s.limitado(s.emitir))
+	mux.HandleFunc("POST /api/rooms", s.limitado(s.guarded(s.emitir)))
 	mux.HandleFunc("GET /api/i/{id}", s.limitado(s.resolver))
-	mux.HandleFunc("PUT /api/i/{id}", s.limitado(s.publicar))
-	mux.HandleFunc("GET /api/version", s.limitado(s.version))
+	mux.HandleFunc("PUT /api/i/{id}", s.limitado(s.guarded(s.publicar)))
+	mux.HandleFunc("POST /api/auth/token", s.authLimited(s.login))
+	mux.HandleFunc("POST /api/auth/refresh", s.authLimited(s.refresh))
 	mux.HandleFunc("GET /healthz", s.salud)
 	mux.HandleFunc("/", s.servirPagina)
 	return cabecerasSeguras(mux)
@@ -86,10 +118,12 @@ func (s *Server) emitir(w http.ResponseWriter, r *http.Request) {
 	}
 	llave, tarjeta, firma, err := c.decodificar()
 	if err != nil {
-		fallo(w, http.StatusBadRequest, err.Error())
+		respondError(w, http.StatusBadRequest, CodeBadRequest, "")
 		return
 	}
-	id, err := s.store.Issue(llave, tarjeta, firma)
+	// The request's context reaches the derivation brake. Someone who hung up
+	// while queued behind another room does not get 64 MiB spent on them.
+	id, err := s.store.Issue(r.Context(), llave, tarjeta, firma)
 	if err != nil {
 		traducir(w, err)
 		return
@@ -108,10 +142,10 @@ func (s *Server) publicar(w http.ResponseWriter, r *http.Request) {
 	}
 	llave, tarjeta, firma, err := c.decodificar()
 	if err != nil {
-		fallo(w, http.StatusBadRequest, err.Error())
+		respondError(w, http.StatusBadRequest, CodeBadRequest, "")
 		return
 	}
-	if err := s.store.Publish(id, llave, tarjeta, firma); err != nil {
+	if err := s.store.publish(id, llave, tarjeta, firma); err != nil {
 		traducir(w, err)
 		return
 	}
@@ -123,12 +157,28 @@ func (s *Server) resolver(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	sala, err := s.store.Lookup(id)
+	sala, err := s.store.lookup(id)
 	if err != nil {
 		traducir(w, err)
 		return
 	}
 	responder(w, http.StatusOK, s.vista(sala))
+}
+
+// OlvidarVersión hace que la próxima visita vuelva a preguntar qué versión hay,
+// y recarga la credencial del operador.
+//
+// Existe para que el SIGHUP que relee la página pueda hacer las tres cosas: son
+// el mismo hecho, alguien tocó lo que este proceso sirve sin reiniciarlo. La
+// credencial la escribe `kanpseed password`, que es OTRO proceso y no puede
+// escribir en la memoria de este. Ver [Release.Olvidar] y [Auth.Reload].
+//
+// Devuelve el fallo de recargar la credencial y no el de la versión, porque
+// solo uno de los dos deja al seed comportándose distinto de lo que el operador
+// acaba de pedir.
+func (s *Server) OlvidarVersión() error {
+	s.release.Olvidar()
+	return s.auth.Reload()
 }
 
 // vista arma lo que se publica de una sala. Es todo lo que el registro sabe, y
@@ -148,23 +198,121 @@ func (s *Server) vista(sala Room) map[string]any {
 	return v
 }
 
-// version dice cuál es la última versión publicada, para la página de descarga.
+// ---- La puerta ------------------------------------------------------------
+
+// guarded refuses a mutation when the seed is closed and the bearer does not
+// hold a live access token.
 //
-// **Omite el campo cuando no lo sabe, en vez de mandar una cadena vacía.** Son
-// dos cosas distintas y la página las trata distinto: sin campo se queda como
-// estaba, que es como está hoy y funciona; con un campo vacío tendría que
-// acordarse de comprobarlo, y ese olvido pinta "Última versión:" seguido de
-// nada. Mismo criterio que el contador de miembros en [Server.vista].
-//
-// Sin caché HTTP a propósito. Lo que evita el trabajo es la caché de una hora
-// que hay detrás; cachear también en el navegador solo añade una segunda
-// caducidad que contar, y la respuesta son treinta bytes.
-func (s *Server) version(w http.ResponseWriter, r *http.Request) {
-	out := map[string]any{}
-	if tag := s.release.Latest(); tag != "" {
-		out["client"] = tag
+// An open seed lets everything through, so a seed with no password behaves
+// exactly as it did before any of this existed.
+func (s *Server) guarded(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.auth.Allows(bearer(r)) {
+			// The header is what tells a client the door exists at all. Without
+			// it, a first-time host against a closed seed gets a 401 with
+			// nothing to distinguish it from being throttled.
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			respondError(w, http.StatusUnauthorized, CodeUnauthorized, SubReauth)
+			return
+		}
+		h(w, r)
 	}
-	responder(w, http.StatusOK, out)
+}
+
+// bearer pulls the token out of the header, and accepts nothing else. Not a
+// query parameter and not a cookie: a token in a URL ends up in an access log
+// on a machine somebody else runs.
+func bearer(r *http.Request) string {
+	h := r.Header.Get("Authorization")
+	const prefix = "Bearer "
+	if len(h) <= len(prefix) || !strings.EqualFold(h[:len(prefix)], prefix) {
+		return ""
+	}
+	return h[len(prefix):]
+}
+
+type loginBody struct {
+	Proof string `json:"proof"`
+}
+
+type refreshBody struct {
+	Refresh string `json:"refresh_token"`
+}
+
+// tokenResponse omits the refresh token when there is not a new one, which is
+// every call to /api/auth/refresh. The refresh does not slide; see [Auth.Refresh].
+type tokenResponse struct {
+	Access    string `json:"access_token"`
+	Refresh   string `json:"refresh_token,omitempty"`
+	ExpiresIn int    `json:"expires_in"`
+}
+
+// login trades a proof for a pair of tokens.
+//
+// The order of the three brakes is the whole point, and it is the order the
+// plan asked for after measuring: rate limit, growing delay, derivation slot.
+// A throttled attempt never reaches Argon2id, and a queued one gives up with
+// its request instead of holding a socket for work nobody is waiting on.
+func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Closed() {
+		respondError(w, http.StatusConflict, CodeSeedOpen, "")
+		return
+	}
+	var c loginBody
+	if !leerJSON(w, r, &c) {
+		return
+	}
+
+	if err := s.slow.wait(r.Context()); err != nil {
+		return
+	}
+	if err := acquireDerivation(r.Context()); err != nil {
+		return
+	}
+	tokens, err := s.auth.Login(c.Proof)
+	releaseDerivation()
+
+	if err != nil {
+		if errors.Is(err, ErrOpenSeed) {
+			respondError(w, http.StatusConflict, CodeSeedOpen, "")
+			return
+		}
+		s.slow.failed()
+		// `sub` says what to DO and never what went wrong. The password is what
+		// has to be typed again, and whether it was wrong or malformed is not
+		// something to hand back to whoever is guessing.
+		respondError(w, http.StatusUnauthorized, CodeUnauthorized, SubPassword)
+		return
+	}
+	s.slow.succeeded()
+	responder(w, http.StatusOK, tokenResponse{
+		Access: tokens.Access, Refresh: tokens.Refresh, ExpiresIn: tokens.ExpiresIn,
+	})
+}
+
+// refresh mints a new access token, and does NOT go through the derivation
+// brake: verifying a refresh token is one HMAC, and there is nothing to guess
+// at 128 bits of unforgeable MAC. The rate limit still applies, because an
+// endpoint anybody can reach is an endpoint anybody can flood.
+func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Closed() {
+		respondError(w, http.StatusConflict, CodeSeedOpen, "")
+		return
+	}
+	var c refreshBody
+	if !leerJSON(w, r, &c) {
+		return
+	}
+	access, ttl, err := s.auth.Refresh(c.Refresh)
+	if err != nil {
+		// SubPassword and not SubReauth: refreshing is what just failed, so the
+		// only move left is typing the password. Whether the token expired or
+		// was never valid leads to the same place, which is why nothing here
+		// tells them apart.
+		respondError(w, http.StatusUnauthorized, CodeUnauthorized, SubPassword)
+		return
+	}
+	responder(w, http.StatusOK, tokenResponse{Access: access, ExpiresIn: ttl})
 }
 
 func (s *Server) salud(w http.ResponseWriter, r *http.Request) {
@@ -181,17 +329,46 @@ func (s *Server) salud(w http.ResponseWriter, r *http.Request) {
 
 // ---- La página ------------------------------------------------------------
 
+// estadoDeLaPagina es lo que se incrusta en el hueco de la página.
+//
+// # Por qué la versión y el repositorio viajan acá y no en una API
+//
+// Porque así la página **no consulta ninguna URL**. La versión costaba un
+// `fetch("/api/version")`, y el repositorio estaba escrito dentro del HTML como
+// una segunda copia de una constante de Go. Sirviéndolos con la página, no hay
+// dominio que configurar para que sepa dónde mirar, y un fork cambia la
+// constante en un solo sitio. A `connect-src` le queda un solo uso, resolver un
+// invite ID, que es exactamente lo que la decisión 24 autoriza.
+//
+// `Room` es puntero para que su ausencia se distinga de una sala vacía: en las
+// rutas que no son un invite ID vivo llega `null`, que es lo que la página lee
+// como "no hay tarjeta que enseñar".
+type estadoDeLaPagina struct {
+	Room    *map[string]any `json:"room"`
+	Version string          `json:"version,omitempty"`
+	Repo    string          `json:"repo,omitempty"`
+}
+
 func (s *Server) servirPagina(w http.ResponseWriter, r *http.Request) {
 	ruta := strings.Trim(r.URL.Path, "/")
 
-	// Cualquier ruta sirve la misma página, que lee el invite ID de la URL y
-	// decide qué mostrar. Con una excepción: si la ruta ES un invite ID vivo,
-	// se le inyecta el estado ya resuelto, así la tarjeta llega armada y sin
-	// una petición de ida y vuelta.
-	var estado any
+	// El estado va SIEMPRE, y no solo en las rutas de invitación.
+	//
+	// Antes se inyectaba nada más cuando la ruta era un invite ID vivo, y la
+	// versión y el repositorio los resolvía la propia página: la primera con un
+	// `fetch("/api/version")`, el segundo con la cadena escrita dentro del
+	// HTML. Las dos cosas se arreglan con el mismo hueco. La versión deja de
+	// costar una petición, y el repositorio deja de estar copiado, así que un
+	// fork que cambie la constante de Go ya no reparte una página que apunta al
+	// original.
+	estado := estadoDeLaPagina{
+		Version: s.release.Latest(),
+		Repo:    selfupdate.Repo,
+	}
 	if id, err := domain.ParseInviteID(ruta); err == nil {
-		if sala, err := s.store.Lookup(id); err == nil {
-			estado = s.vista(sala)
+		if sala, err := s.store.lookup(id); err == nil {
+			v := s.vista(sala)
+			estado.Room = &v
 		}
 	}
 
@@ -214,8 +391,8 @@ func cabecerasSeguras(siguiente http.Handler) http.Handler {
 		// La misma CSP del nginx.conf, servida por quien tiene la última
 		// palabra. connect-src 'self' y no 'none' porque la decisión 24
 		// autoriza las peticiones a ESTE registro, y a ningún otro origen.
-		// Son dos: resolver un invite ID, y preguntar la última versión para
-		// la página de descarga. La segunda existe precisamente para no abrir
+		// Es UNA: resolver un invite ID. La otra, preguntar la versión, se
+		// fue al hueco de estado y ya no cuesta ninguna petición. Sigue en
 		// esto a `api.github.com`; ver [Release].
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "+
@@ -229,7 +406,7 @@ func cabecerasSeguras(siguiente http.Handler) http.Handler {
 func idDeRuta(w http.ResponseWriter, r *http.Request) (domain.InviteID, bool) {
 	id, err := domain.ParseInviteID(r.PathValue("id"))
 	if err != nil {
-		fallo(w, http.StatusBadRequest, "eso no tiene forma de invite ID")
+		respondError(w, http.StatusBadRequest, CodeBadRequest, "")
 		return domain.InviteID{}, false
 	}
 	return id, true
@@ -239,31 +416,87 @@ func leerJSON(w http.ResponseWriter, r *http.Request, destino any) bool {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(destino); err != nil {
-		fallo(w, http.StatusBadRequest, "cuerpo inválido")
+		respondError(w, http.StatusBadRequest, CodeBadRequest, "")
 		return false
 	}
 	return true
 }
 
+// ---- El sobre de error ----------------------------------------------------
+
+// The wire codes. Every failure of this API is one of these, and NOTHING else
+// travels with it.
+//
+// # Why the prose left
+//
+// The body used to be `{"error": "<texto en claro>"}`, which is the shape that
+// cannot survive a password. A message that explains is a message that
+// distinguishes, and on the auth path the distinction between "that token
+// expired" and "that token was never valid" is free information for whoever is
+// guessing. Rather than remembering to be careful on two routes out of six,
+// there is nowhere left to put the sentence.
+//
+// The prose did not disappear from the product: it moved to the two human faces
+// of the client, which know the language of the person reading and can say what
+// to do about it. `--json` prints the code and nothing else, on purpose.
+const (
+	CodeBadRequest   = "bad_request"
+	CodeNotFound     = "not_found"
+	CodePinned       = "pinned"
+	CodeBadSig       = "bad_sig"
+	CodeCardTooBig   = "card_too_big"
+	CodeExhausted    = "exhausted"
+	CodeRateLimited  = "rate_limited"
+	CodeUnauthorized = "unauthorized"
+	CodeUnavailable  = "unavailable"
+	CodeSeedOpen     = "seed_open"
+)
+
+// The sub-codes. `sub` says what the client should DO, never what went wrong.
+//
+// Two of them and not three, and the missing one is the point: there is no
+// sub-code for "expired". A token that ran out and a token that was forged
+// both lead to the same next move.
+const (
+	// SubReauth: refresh, and if that fails ask for the password.
+	SubReauth = "reauth"
+	// SubPassword: go straight to asking for the password. Refreshing is what
+	// just failed, or was never possible.
+	SubPassword = "password"
+)
+
+// wireError is the whole body of a failure.
+type wireError struct {
+	Code string `json:"code"`
+	Sub  string `json:"sub,omitempty"`
+}
+
 func traducir(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
-		fallo(w, http.StatusNotFound, err.Error())
+		respondError(w, http.StatusNotFound, CodeNotFound, "")
 	case errors.Is(err, ErrPinned):
 		// 403 y no 409: el invite ID existe y no es tuyo. Es la respuesta a un
 		// miembro que intenta sobrescribir la tarjeta del host.
-		fallo(w, http.StatusForbidden, err.Error())
+		respondError(w, http.StatusForbidden, CodePinned, "")
 	case errors.Is(err, ErrBadSig):
-		fallo(w, http.StatusForbidden, err.Error())
+		respondError(w, http.StatusForbidden, CodeBadSig, "")
 	case errors.Is(err, ErrCardTooBig):
-		fallo(w, http.StatusRequestEntityTooLarge, err.Error())
+		respondError(w, http.StatusRequestEntityTooLarge, CodeCardTooBig, "")
+	case errors.Is(err, ErrExhausted):
+		respondError(w, http.StatusServiceUnavailable, CodeExhausted, "")
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		// Nobody is listening. Writing a body here is work for a socket that is
+		// already gone, and the status is only for the log of whatever proxy
+		// happens to still be in the middle.
+		w.WriteHeader(499)
 	default:
-		fallo(w, http.StatusServiceUnavailable, "el registro no pudo atender eso")
+		respondError(w, http.StatusServiceUnavailable, CodeUnavailable, "")
 	}
 }
 
-func fallo(w http.ResponseWriter, codigo int, mensaje string) {
-	responder(w, codigo, map[string]string{"error": mensaje})
+func respondError(w http.ResponseWriter, codigo int, code, sub string) {
+	responder(w, codigo, wireError{Code: code, Sub: sub})
 }
 
 func responder(w http.ResponseWriter, codigo int, cuerpo any) {
@@ -327,30 +560,144 @@ func (l *limiter) permite(ip string, ahora time.Time) bool {
 }
 
 func (s *Server) limitado(h http.HandlerFunc) http.HandlerFunc {
+	return withLimit(s.limiter, h)
+}
+
+// authLimited is the same machinery with a much smaller number.
+//
+// Five a minute, against thirty for everything else. The general limit exists
+// so that enumerating a 40-bit space is pointless; this one guards a password
+// that the rule allows to be four characters long, and no honest operator types
+// it five times in a minute.
+func (s *Server) authLimited(h http.HandlerFunc) http.HandlerFunc {
+	return withLimit(s.authLimiter, h)
+}
+
+func withLimit(l *limiter, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.limiter.permite(ipDe(r), time.Now()) {
+		if !l.permite(ipDe(r), time.Now()) {
 			w.Header().Set("Retry-After", "60")
-			fallo(w, http.StatusTooManyRequests, "demasiadas consultas")
+			respondError(w, http.StatusTooManyRequests, CodeRateLimited, "")
 			return
 		}
 		h(w, r)
 	}
 }
 
-// ipDe saca la IP del cliente. Confía en X-Forwarded-For porque este proceso
-// SOLO escucha en loopback, detrás del nginx del droplet, que es quien la
-// pone. Publicarlo directo a internet invalidaría esta suposición y el límite
-// de tasa entero, así que el bind por defecto es 127.0.0.1 a propósito.
+// throttle is the global growing delay, and it is the half of the brute-force
+// defence that a per-IP limit cannot cover.
+//
+// # Why global, when everything else counts per IP
+//
+// Because there are no accounts. With one shared password there is nobody to
+// lock out, so a per-account block would be a denial of service against every
+// host of the seed at once. What is left is per-IP counting, which a botnet
+// walks straight around, plus a cost that grows with how wrong the guessing has
+// been going overall.
+//
+// # Why it never closes all the way
+//
+// The cap is what keeps this from becoming the outage it is meant to prevent.
+// An operator whose seed is under a guessing run still gets in, just slowly, and
+// a run that has to wait [maxThrottle] between attempts is a run that will not
+// finish. A success resets it, so a single fat-fingered password costs the next
+// attempt a tenth of a second and nothing more.
+type throttle struct {
+	mu       sync.Mutex
+	failures int
+}
+
+const (
+	throttleStep = 100 * time.Millisecond
+	maxThrottle  = 2 * time.Second
+)
+
+// wait sleeps for what the recent failures have earned. It returns the context
+// error when the caller hangs up mid-wait, and the handler answers nothing:
+// there is nobody left to answer.
+func (t *throttle) wait(ctx context.Context) error {
+	t.mu.Lock()
+	n := t.failures
+	t.mu.Unlock()
+
+	wait := time.Duration(n) * throttleStep
+	if wait > maxThrottle {
+		wait = maxThrottle
+	}
+	if wait == 0 {
+		return nil
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (t *throttle) failed() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	// Capped where the delay caps, so a long run cannot bank a counter that
+	// takes hours to drain once it stops.
+	if t.failures < int(maxThrottle/throttleStep) {
+		t.failures++
+	}
+}
+
+func (t *throttle) succeeded() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.failures = 0
+}
+
+// ipDe saca la IP del cliente.
+//
+// # X-Forwarded-For solo se cree desde loopback, y antes se creía siempre
+//
+// La suposición era que este proceso escucha únicamente en loopback detrás del
+// nginx del droplet, que es quien pone la cabecera. **`--addr` es una bandera**,
+// y con seeds que levanta cualquiera alguien lo va a publicar directo a
+// internet. Con la cabecera creída sin condición, el freno de tasa se salta
+// escribiéndola, y desde que hay password eso deja de ser diluir un límite de
+// enumeración para ser saltarse el de fuerza bruta.
+//
+// La regla que queda: la cabecera vale cuando la conexión viene de loopback, o
+// sea de un proxy que corre en esta misma máquina. Desde cualquier otro sitio se
+// usa `RemoteAddr`, que es lo único que el otro extremo no puede escribir.
+//
+// Un proxy en OTRA máquina de la red interna deja de contar por IP real. Es la
+// forma correcta de equivocarse: se agrupan visitantes que deberían separarse,
+// que frena de más, en vez de separar a quien debería agruparse, que no frena
+// nada.
 func ipDe(r *http.Request) string {
+	direct := peerIP(r.RemoteAddr)
+	if !isLoopback(direct) {
+		return direct
+	}
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		if i := strings.IndexByte(xff, ','); i >= 0 {
 			return strings.TrimSpace(xff[:i])
 		}
 		return strings.TrimSpace(xff)
 	}
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	return direct
+}
+
+func peerIP(remoto string) string {
+	ip, _, err := net.SplitHostPort(remoto)
 	if err != nil {
-		return r.RemoteAddr
+		return remoto
 	}
 	return ip
+}
+
+func isLoopback(ip string) bool {
+	a, err := netip.ParseAddr(ip)
+	if err != nil {
+		return false
+	}
+	return a.Unmap().IsLoopback()
 }

@@ -249,15 +249,29 @@ func (s *Session) publishCard(ctx context.Context, nick domain.Nickname, roomNam
 	}
 	s.deps.Progress.Step(domain.ScopeDaemon, "tarjeta de la sala sellada, con una clave que solo viaja en el enlace")
 
-	s.deps.Progress.Stepf(domain.ScopeSeed, "pidiéndole un código al registro (%s)", domain.DefaultSeedHost)
-	room, err := s.deps.Directory.Open(ctx, sealed)
+	// El registro de ESTA máquina, que es el único que puede emitir un código
+	// para una sala que todavía no existe. Sin ninguno configurado no hay a quién
+	// pedírselo, y eso es [port.ErrNoOwnSeed], que no se arregla reintentando.
+	dir, err := s.deps.Directories.Own()
 	if err != nil {
-		s.deps.Log.Error("el registro no contestó, así que no se abre la sala", "error", err)
+		s.deps.Log.Error("no hay registro donde abrir la sala", "error", err)
+		s.deps.Progress.Step(domain.ScopeSeed, "esta máquina no tiene registro configurado")
+		return domain.Room{}, key, nil, err
+	}
+	// El seed sale del adaptador y no de una constante, que es lo que decía acá
+	// antes: nombraba el compilado aunque el registro apuntara a otro sitio, así
+	// que el paso podía mentir sobre a quién se le estaba pidiendo el código.
+	seed := dir.Seed()
+	s.deps.Progress.Stepf(domain.ScopeSeed, "pidiéndole un código al registro (%s)", seed)
+	room, err := dir.Open(ctx, sealed)
+	if err != nil {
+		s.deps.Log.Error("el registro no contestó, así que no se abre la sala",
+			"seed", seed, "error", err)
 		s.deps.Progress.Stepf(domain.ScopeSeed, "el registro no contestó (%v)", err)
-		return domain.Room{}, key, nil, fmt.Errorf("%w: %v.\n\n"+
+		return domain.Room{}, key, nil, fmt.Errorf("%w: %s no contestó (%v).\n\n"+
 			"Sin él no hay código que repartir: los códigos los emite el registro, y uno "+
 			"generado acá no le serviría a nadie para entrar.\n\n"+
-			"Qué hacer: vuelve a intentarlo en un momento", ErrNoRegistry, err)
+			"Qué hacer: vuelve a intentarlo en un momento", ErrNoRegistry, seed, err)
 	}
 	s.deps.Progress.Stepf(domain.ScopeSeed, "código reservado: %s", room.InviteID)
 	return room, key, sealed, nil

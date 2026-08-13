@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-func salaGuardadaDePrueba(t *testing.T) PersistedRoom {
+func salaGuardadaDePrueba(t *testing.T) HostedRoom {
 	t.Helper()
-	room, err := ParseRoom("A7K2M9QX")
+	room, err := ParseRoom("A7K2M9QX@seed.midominio.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,7 +20,7 @@ func salaGuardadaDePrueba(t *testing.T) PersistedRoom {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := PersistedRoom{
+	p := HostedRoom{
 		Room:    room,
 		Name:    "Los panas",
 		Host:    host,
@@ -48,7 +48,7 @@ func TestLaSalaGuardadaVaYVuelveIgual(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tengo, err := DecodePersistedRoom(raw)
+	tengo, err := DecodeHostedRoom(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestUnaSalaGuardadaSinTarjetaCargaIgual(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tengo, err := DecodePersistedRoom(raw)
+	tengo, err := DecodeHostedRoom(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestUnaTarjetaGuardadaPasadaDelTopeSeRechaza(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := DecodePersistedRoom(raw); !errors.Is(err, ErrPersistedShape) {
+	if _, err := DecodeHostedRoom(raw); !errors.Is(err, ErrPersistedShape) {
 		t.Fatalf("una tarjeta de %d bytes se aceptó: %v", MaxCardBytes+1, err)
 	}
 }
@@ -124,7 +124,7 @@ func TestElEsquemaGuardadoNoAdmiteNadaQueNoSeaIdentidad(t *testing.T) {
 	for _, extra := range colados {
 		t.Run(extra, func(t *testing.T) {
 			roto := strings.Replace(string(base), "{\n", "{\n  "+extra+",\n", 1)
-			if _, err := DecodePersistedRoom([]byte(roto)); !errors.Is(err, ErrPersistedShape) {
+			if _, err := DecodeHostedRoom([]byte(roto)); !errors.Is(err, ErrPersistedShape) {
 				t.Fatalf("se aceptó un campo que el esquema no tiene: %v", err)
 			}
 		})
@@ -140,7 +140,7 @@ func TestUnaSalaGuardadaRotaSeRechazaEntera(t *testing.T) {
 	}
 	for nombre, texto := range casos {
 		t.Run(nombre, func(t *testing.T) {
-			if _, err := DecodePersistedRoom([]byte(texto)); !errors.Is(err, ErrPersistedShape) {
+			if _, err := DecodeHostedRoom([]byte(texto)); !errors.Is(err, ErrPersistedShape) {
 				t.Fatalf("se aceptó %s: %v", nombre, err)
 			}
 		})
@@ -158,7 +158,7 @@ func TestLaSubredGuardadaSeComprueba(t *testing.T) {
 	for nombre, subred := range casos {
 		t.Run(nombre, func(t *testing.T) {
 			roto := strings.Replace(mustEncode(t), `"100.87.3.0/24"`, `"`+subred+`"`, 1)
-			if _, err := DecodePersistedRoom([]byte(roto)); !errors.Is(err, ErrPersistedShape) {
+			if _, err := DecodeHostedRoom([]byte(roto)); !errors.Is(err, ErrPersistedShape) {
 				t.Fatalf("se aceptó la subred %q: %v", subred, err)
 			}
 		})
@@ -170,7 +170,7 @@ func TestLaSubredGuardadaSeComprueba(t *testing.T) {
 // dejar que la sala reabra sin juego sin decir por qué.
 func TestUnJuegoGuardadoConIdInválidoSeRechaza(t *testing.T) {
 	roto := strings.Replace(mustEncode(t), `"project-zomboid"`, `"Project Zomboid"`, 1)
-	if _, err := DecodePersistedRoom([]byte(roto)); !errors.Is(err, ErrPersistedShape) {
+	if _, err := DecodeHostedRoom([]byte(roto)); !errors.Is(err, ErrPersistedShape) {
 		t.Fatalf("se aceptó un id de juego inválido: %v", err)
 	}
 }
@@ -182,7 +182,7 @@ func TestLaSalaGuardadaAdmiteNoTenerJuego(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tengo, err := DecodePersistedRoom(raw)
+	tengo, err := DecodeHostedRoom(raw)
 	if err != nil {
 		t.Fatalf("una sala sin juego no se pudo releer: %v", err)
 	}
@@ -255,8 +255,8 @@ func TestNadaQueLleveSecretosSeImprimeEntero(t *testing.T) {
 	secreto := "5eba57ianoesunsecretodeverdad"
 	rdv := DeriveRendezvous(InviteID{})
 
-	sala := PersistedRoom{
-		Room:    Room{Seed: DefaultSeedHost},
+	sala := HostedRoom{
+		Room:    Room{Seed: "seed.midominio.com"},
 		Name:    "Los panas",
 		Subnet:  netip.MustParsePrefix("100.87.3.0/24"),
 		GameID:  "project-zomboid",
@@ -272,11 +272,11 @@ func TestNadaQueLleveSecretosSeImprimeEntero(t *testing.T) {
 	invitado := GuestSpec{Credential: Credential{ID: "cred-1", Token: secreto}}
 
 	casos := map[string]any{
-		"PersistedRoom":  sala,
-		"HostSpec":       host,
-		"GuestSpec":      invitado,
-		"RendezvousSpec": RendezvousSpec{Rendezvous: rdv},
-		"Credential":     invitado.Credential,
+		"HostedRoom": sala,
+		"HostSpec":            host,
+		"GuestSpec":           invitado,
+		"RendezvousSpec":      RendezvousSpec{Rendezvous: rdv},
+		"Credential":          invitado.Credential,
 	}
 	for nombre, v := range casos {
 		for _, verbo := range []string{"%v", "%+v"} {

@@ -9,6 +9,7 @@ import 'package:kanpachi_ui/core/design_system/atoms/app_card.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
+import 'package:kanpachi_ui/features/update/presentation/widgets/update_check_card.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
@@ -175,6 +176,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: AppSpacing.x4l),
           ],
+          const UpdateCheckCard(),
+          const SizedBox(height: AppSpacing.x4l),
           AppCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,

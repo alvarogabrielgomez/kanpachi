@@ -38,14 +38,18 @@ class UpdateState {
 /// update, and that button would be a service running as SYSTEM replacing its
 /// own binary with an unsigned download.
 ///
-/// # Why it asks so rarely
+/// # Why nothing here asks on its own
 ///
-/// Three moments: the window starting, a room opening, and a room closing. Not
-/// a timer, and never while a room is up. What is on the other side is a
-/// network request, and the machine it runs on is somebody's PC in the middle
-/// of a game — the same reason the firewall sweep stopped running every two
-/// seconds. Opening and closing a room are the two moments where the user is
-/// already waiting for something, so one more question costs nothing that shows.
+/// It used to ask at three moments — the window starting, a room opening, a
+/// room closing — and that was fine while the question went to the seed: one
+/// compiled host, with the answer already cached for everyone.
+///
+/// The question now goes to the publishing channel, and there the arithmetic
+/// flips: GitHub's unauthenticated quota is sixty per hour PER IP, shared by
+/// everyone behind the same router, and it learns the IP of every machine that
+/// starts Kanpachi. Several questions per session per machine does not fit in
+/// that; one press of a button does. So the trigger is a button in settings,
+/// and there is no timer anywhere.
 ///
 /// # Why it stops asking for good
 ///
@@ -92,14 +96,20 @@ class UpdateCubit extends Cubit<UpdateState> {
 
   /// Asks, unless there is nothing to gain by asking.
   ///
-  /// Silent about everything: a failure leaves the state alone. There is no
-  /// error to show because the user did not ask a question.
-  Future<void> check() async {
+  /// Silent about everything: a failure leaves the state alone. Somebody asked,
+  /// so a spinner that stops is the answer they get; inventing an error screen
+  /// for "GitHub did not reply" would be a screen about somebody else's server.
+  ///
+  /// `force` skips the shortcut that stops once a newer version is known. It is
+  /// what a human pressing the button means: the stored answer is exactly what
+  /// they are asking to refresh, so honouring the shortcut would make the button
+  /// do nothing at the only moment it is pressed twice.
+  Future<void> check({bool force = false}) async {
     // A build with no version of its own has nothing to compare against, and
     // whoever compiled it does not need to be sent to a download page. Checked
     // BEFORE the request and not after: the point is not to make it.
     if (!isComparableVersion(_running)) return;
-    if (state.available != null) return;
+    if (state.available != null && !force) return;
     if (_asking) return;
 
     _asking = true;

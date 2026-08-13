@@ -1,6 +1,7 @@
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/own_seed.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
@@ -180,6 +181,39 @@ abstract interface class SessionRepository {
   /// devolver lo que se pidió enseñaría como aceptado un cambio que Windows
   /// pudo rechazar.
   Future<bool> autostart({bool? enabled});
+
+  /// Lee, y opcionalmente cambia, el registro en el que esta máquina abre salas.
+  ///
+  /// Una sola operación por lo mismo que [autostart], con un motivo extra: lo
+  /// que se guarda es el nombre ya normalizado, así que devolver lo que se pidió
+  /// enseñaría la intención en vez de lo que quedó puesto.
+  ///
+  /// Un nombre que no sirve sube como fallo. Es lo contrario del apodo, que se
+  /// recorta en silencio: acá lo que se escribe es a qué máquina va a hablar
+  /// este proceso, y recortarlo sería marcar a otra.
+  Future<OwnSeed> ownSeed({String? seed});
+
+  /// Entrega el password del registro propio, para poder HOSPEDAR en él.
+  ///
+  /// # Lo que no vuelve
+  ///
+  /// Nada. No hay tokens que la interfaz tenga que guardar, no hay estado de la
+  /// puerta que enseñar, y no vuelve lo que se mandó. Que no lance ES la
+  /// respuesta, y lo que sobrevive es un token sellado que el daemon guarda por
+  /// su cuenta.
+  ///
+  /// # Lo que la interfaz no hace con el password
+  ///
+  /// No lo guarda, no lo pone en el estado del cubit más allá del campo que lo
+  /// está tecleando, y no lo mete en ningún log. El hash con el host dentro lo
+  /// calcula el daemon: ver `SeedPassword` para por qué la regla sí está
+  /// duplicada y el hash no.
+  ///
+  /// Un password que el registro no acepta llega como
+  /// [FailureCode.seedPassword], que es el MISMO código que llega cuando nunca
+  /// se puso ninguno o cuando el operador lo cambió. Son uno solo porque lo que
+  /// hay que hacer es idéntico.
+  Future<void> seedPassword(String password);
 
   /// Cuts short the long operation the daemon has in flight.
   ///

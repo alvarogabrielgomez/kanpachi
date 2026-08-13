@@ -37,6 +37,23 @@ class LinkGlyph extends StatelessWidget {
   }
 }
 
+/// El triángulo con la admiración del aviso de confianza.
+///
+/// A mano por lo mismo que los otros dos: `Icons.warning_amber` viene RELLENO y
+/// con la punta redondeada, y a 16 px al lado de un párrafo gris se lee como una
+/// alarma. El del diseño es de trazo, del mismo grosor que el texto que
+/// acompaña, y dice «mira esto» sin gritar.
+class WarnGlyph extends StatelessWidget {
+  const WarnGlyph({this.size = 16, super.key});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Glyph(size: size, painter: _WarnPainter.new);
+  }
+}
+
 /// La caja común: toma el color del [IconTheme] y pinta.
 class _Glyph extends StatelessWidget {
   const _Glyph({required this.size, required this.painter});
@@ -142,4 +159,48 @@ class _LinkPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_LinkPainter old) => old.color != color;
+}
+
+/// El triángulo de [WarnGlyph], sobre el mismo lienzo de 16 del diseño.
+class _WarnPainter extends CustomPainter {
+  _WarnPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double k = size.width / 16;
+    final Paint trazo = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeJoin = StrokeJoin.round
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 1.3 * k;
+
+    // M8 2.6 14 13H2Z
+    final Path triangulo = Path()
+      ..moveTo(8 * k, 2.6 * k)
+      ..lineTo(14 * k, 13 * k)
+      ..lineTo(2 * k, 13 * k)
+      ..close();
+    canvas.drawPath(triangulo, trazo);
+
+    // El palo, un pelo más grueso que el triángulo, como en el SVG.
+    canvas.drawLine(
+      Offset(8 * k, 6.6 * k),
+      Offset(8 * k, 9.6 * k),
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = 1.4 * k,
+    );
+
+    // El punto va RELLENO. De trazo, a este tamaño, sale un anillo hueco que
+    // se lee como otro símbolo.
+    canvas.drawCircle(Offset(8 * k, 11.2 * k), 0.7 * k, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_WarnPainter old) => old.color != color;
 }

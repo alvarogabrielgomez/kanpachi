@@ -7,7 +7,7 @@ import 'package:kanpachi_ui/features/shell/domain/tray_presence.dart';
 import 'package:kanpachi_ui/features/shell/infra/windows_tray.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/update/domain/repositories/update_repository.dart';
-import 'package:kanpachi_ui/features/update/infra/seed_update_repository.dart';
+import 'package:kanpachi_ui/features/update/infra/github_update_repository.dart';
 import 'package:kanpachi_ui/features/update/presentation/cubit/update_cubit.dart';
 import 'package:kanpachi_ui/ioc/injector.dart';
 
@@ -66,7 +66,7 @@ abstract final class IocManager {
 
   static void _registerUpdate(AppPreferences? preferences) {
     final Injector i = Injector.instance;
-    i.registerLazySingleton<UpdateRepository>(SeedUpdateRepository.new);
+    i.registerLazySingleton<UpdateRepository>(GithubUpdateRepository.new);
     // lazySingleton por el mismo motivo que la sesión: lo que sabe —que hay
     // una versión nueva— es un hecho de la aplicación, no de una pantalla, y
     // dos instancias serían dos respuestas a la misma pregunta, cada una

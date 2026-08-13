@@ -88,7 +88,7 @@ func TestLaCuarentenaNoSeVuelveAEscribirEnCadaBarrido(t *testing.T) {
 	antes := len(b.firewall.cuarentenaTrasPurgas)
 
 	for i := 0; i < 3; i++ {
-		b.sesión.RefreshAlerts(ctx())
+		b.session.RefreshAlerts(ctx())
 	}
 
 	if después := len(b.firewall.cuarentenaTrasPurgas); después != antes {

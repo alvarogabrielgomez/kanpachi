@@ -74,9 +74,9 @@ func preguntar(pregunta, porDefecto string) string {
 // confirmar pide un sí o un no. Sin terminal devuelve el defecto, para que el
 // instalador funcione igual desde un script.
 func confirmar(pregunta string, porDefecto bool) bool {
-	opciones := "s/N"
+	opciones := "y/N"
 	if porDefecto {
-		opciones = "S/n"
+		opciones = "Y/n"
 	}
 	r := strings.ToLower(preguntar(pregunta+" "+cTenue.Render("("+opciones+")"), ""))
 	switch r {

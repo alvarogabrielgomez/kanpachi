@@ -22,15 +22,15 @@ package main
 // seed puede hacerlo porque lo instaló un `install.sh` que copia ficheros y no
 // hay ninguna base de datos a la que contradecir.
 //
-// # Qué versión hay: se le pregunta al SEED, no a GitHub
+// # Qué versión hay: se le pregunta al CANAL, que es GitHub
 //
-// El seed ya publica `/api/version` con `client`, ya lo cachea una vez por hora,
-// y es un host con el que este cliente habla de todas formas. GitHub queda de
-// respaldo para el caso de un seed viejo o caído. Ver `registry/http.go`.
+// Y nunca al registro de la sala, aunque antes fuera al revés. El registro lo
+// levanta cualquiera desde que dejó de venir compilado, y creerle qué versión
+// hay es dejar que una máquina ajena elija a cuál te llevas. Ver
+// [últimaPublicada], y [selfupdate.Repo] para moverlo en un fork.
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,6 +40,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/state/jsonfile"
 	"github.com/accentiostudios/kanpachi/internal/selfupdate"
 )
 
@@ -82,7 +83,7 @@ func cmdUpgrade(ctx context.Context, op opciones, args []string) error {
 	tag := pedida
 	if tag == "" {
 		var err error
-		tag, err = últimaPublicada(ctx, op)
+		tag, err = últimaPublicada(ctx)
 		if err != nil {
 			return fmt.Errorf("could not find out which version is published: %w", err)
 		}
@@ -112,7 +113,7 @@ func cmdUpgrade(ctx context.Context, op opciones, args []string) error {
 		return nil
 	}
 
-	if err := sePuedeActualizarAcá(); err != nil {
+	if err := sePuedeActualizarAcá(op); err != nil {
 		return err
 	}
 	if !sinPreguntar && !hayTerminal() {
@@ -167,40 +168,67 @@ func cmdUpgrade(ctx context.Context, op opciones, args []string) error {
 	return nil
 }
 
-// últimaPublicada pregunta primero al seed y después a GitHub.
+// últimaPublicada le pregunta al CANAL DE ACTUALIZACIÓN, que es GitHub.
 //
-// El seed va primero porque ya tiene la respuesta cacheada una hora y es un host
-// con el que este cliente habla igual. GitHub es el respaldo, no al revés: su
-// API tiene límite por IP sin autenticar, y una máquina que pregunte seguido se
-// queda sin respuesta justo cuando la necesita.
-func últimaPublicada(ctx context.Context, op opciones) (string, error) {
-	seed := seedDeLaSala(op)
-	url := "https://" + seed + "/api/version"
-	if datos, err := selfupdate.Get(ctx, url, 1<<16); err == nil {
-		var cuerpo struct {
-			Client string `json:"client"`
-		}
-		if json.Unmarshal(datos, &cuerpo) == nil && cuerpo.Client != "" {
-			return cuerpo.Client, nil
-		}
-	}
+// # Por qué ya no se le pregunta al registro, que era lo de antes
+//
+// Preguntaba primero al registro de esta máquina y caía a GitHub. Tenía sentido
+// mientras el registro era uno solo y compilado: era un host con el que este
+// cliente hablaba igual, y su respuesta estaba cacheada para todos.
+//
+// Con registros de cualquiera eso pasa a ser **una máquina ajena decidiendo qué
+// versión instalas**. No puede servirte un binario, porque el paquete y su
+// manifiesto salen los dos de GitHub y se verifican, y sí puede hacer dos cosas:
+// contestar un tag viejo, y entonces `Outdated` dice que estás al día y te
+// congela en tu versión callado, o contestar una publicación real que no es la
+// última, y dirigirte a una con un fallo conocido.
+//
+// El motivo por el que existía el rodeo era la cuota de GitHub, 60 por hora y
+// por IP, compartida por toda la casa. Ese argumento era de la comprobación
+// AUTOMÁTICA, que preguntaba varias veces por sesión sin que nadie lo pidiera.
+// A pedido, un `upgrade --check` que alguien escribe gasta una de sesenta.
+func últimaPublicada(ctx context.Context) (string, error) {
 	return selfupdate.Latest(ctx)
 }
 
-// seedDeLaSala usa el registro de la sala abierta, si la hay.
+// seedDeEstaMáquina contesta el registro de esta máquina, o cadena vacía.
 //
-// Quien se autohospeda tiene su propio seed y su propia cadencia de
-// publicación, así que preguntarle al de por omisión le contestaría por un
-// producto que no es el que él reparte. Sin sala, el de por omisión, que es lo
-// único que se puede saber.
-func seedDeLaSala(op opciones) string {
-	// Que el daemon no conteste NO es un fallo acá: actualizar tiene que poder
-	// hacerse con el servicio caído, que además es cuando más falta hace.
-	st, err := estadoParaElMenú(op)
-	if err == nil && st.Seed != "" {
+// # Para qué queda, si la versión ya no se le pregunta
+//
+// Para NOMBRAR la página de descarga en Windows, y para nada más. Ese registro
+// sirve la página de la que salió el instalador de quien lo instaló desde ahí,
+// así que es la dirección útil que se le puede dar. La versión se le pregunta al
+// canal de actualización, ver [últimaPublicada].
+//
+// # Las dos fuentes, y por qué hacen falta las dos
+//
+// La sala abierta primero, que es el dato más fresco. Y el fichero del daemon
+// como respaldo, **leído directamente**: actualizar tiene que poder hacerse con
+// el servicio caído, que además es cuando más falta hace, y ahí no hay a quién
+// preguntarle. Por eso ese fichero es el único del estado que no va sellado, ver
+// `jsonfile.Store.LoadSeed`.
+//
+// Vacío no es un fallo: es una instalación que todavía no hospedó ni entró a
+// ninguna sala, o sea una que acaba de instalarse. Ahí se le pregunta a GitHub,
+// que es de donde salió el binario que está corriendo.
+func seedDeEstaMáquina(op opciones) string {
+	// Que el daemon no conteste NO es un fallo acá, ver arriba.
+	if st, err := estadoParaElMenú(op); err == nil && st.Seed != "" {
 		return st.Seed
 	}
-	return domain.DefaultSeedHost
+	raw, err := os.ReadFile(filepath.Join(op.datos, jsonfile.SeedFile))
+	if err != nil {
+		return ""
+	}
+	// Por el parser del dominio y no por un `TrimSpace`: de este valor sale una
+	// URL a la que este proceso va a marcar, y un fichero de disco merece la
+	// misma desconfianza que un enlace pegado. Ver [domain.ParseOwnSeed].
+	seed, err := domain.ParseOwnSeed(raw)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kanpachi: the saved registry is not a valid name, ignoring it: %v\n", err)
+		return ""
+	}
+	return seed
 }
 
 func bajarYVerificar(ctx context.Context, tag string) ([]byte, error) {
@@ -224,11 +252,21 @@ func bajarYVerificar(ctx context.Context, tag string) ([]byte, error) {
 //
 // Tres negativas y las tres tempranas: bajar cuarenta megas para descubrir
 // después que no hay `apt` es gastarle a alguien su ancho de banda por nada.
-func sePuedeActualizarAcá() error {
+//
+// Recibe las opciones solo por la primera: la dirección de descarga sale del
+// registro de esta máquina, y para leerlo hay que saber dónde vive el estado.
+func sePuedeActualizarAcá(op opciones) error {
 	if runtime.GOOS != "linux" {
-		return negativa("`upgrade` installs a `.deb`, so it only works on Linux.\n" +
-			"  On Windows the update goes through the installer: https://" +
-			domain.DefaultSeedHost + "/download")
+		// La página de descarga la sirve un registro, así que la dirección sale
+		// del registro de ESTA máquina. Sin ninguno configurado no hay página que
+		// nombrar, y se manda a las publicaciones, que es de donde salió con
+		// certeza el binario que está corriendo.
+		dónde := selfupdate.Releases
+		if seed := seedDeEstaMáquina(op); seed != "" {
+			dónde = "https://" + seed + "/download"
+		}
+		return negativa("`upgrade` installs a `.deb`, so it only works on Linux.\n"+
+			"  On Windows the update goes through the installer: %s", dónde)
 	}
 	if runtime.GOARCH != "amd64" {
 		return negativa("the published package is %s and this machine is %s.\n"+

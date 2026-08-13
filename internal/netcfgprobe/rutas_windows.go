@@ -22,11 +22,11 @@ import (
 // pierde contra cualquier ruta real de la máquina.
 const métricaDeMentira = 9999
 
-// adaptadorDeLaSala lee la IP virtual de la sala abierta.
+// roomAdapter lee la IP virtual de la sala abierta.
 //
 // Falla si no hay sala, y ese es el punto: sin adaptador este arnés no mide
 // nada, igual que una medición de sockets con `no_tun` no medía nada.
-func adaptadorDeLaSala() (netip.Addr, netip.Prefix, error) {
+func roomAdapter() (netip.Addr, netip.Prefix, error) {
 	iface, err := net.InterfaceByName(domain.AdapterName)
 	if err != nil {
 		return netip.Addr{}, netip.Prefix{}, fmt.Errorf(
@@ -52,12 +52,12 @@ func adaptadorDeLaSala() (netip.Addr, netip.Prefix, error) {
 	return netip.Addr{}, netip.Prefix{}, fmt.Errorf("%s no tiene dirección IPv4", domain.AdapterName)
 }
 
-// hayRuta pregunta al SISTEMA si el destino está sobre el adaptador de la sala.
+// routeExists pregunta al SISTEMA si el destino está sobre el adaptador de la sala.
 //
 // Se le pregunta al sistema y nunca a netcfg. Si el que verifica usara el
 // recuerdo del que escribe, un `Apply` que no escribió nada y se lo apuntó igual
 // pasaría en verde.
-func hayRuta(p netip.Prefix) bool {
+func routeExists(p netip.Prefix) bool {
 	luid, err := luidDeLaSala()
 	if err != nil {
 		return false
@@ -95,12 +95,12 @@ func luidDeLaSala() (uint64, error) {
 	return luid, nil
 }
 
-// ponerRutaPorDefecto fabrica el caso que netcfg tiene que limpiar.
+// setDefaultRoute fabrica el caso que netcfg tiene que limpiar.
 //
 // Con `route.exe`, que es una herramienta del sistema y no nuestro código: así
 // la ruta que se va a borrar la puso alguien de fuera, que es exactamente el
 // caso real (el motor instalando lo que aprendió de la red).
-func ponerRutaPorDefecto() error {
+func setDefaultRoute() error {
 	args := []string{"add", "0.0.0.0", "mask", "0.0.0.0", "0.0.0.0",
 		"metric", strconv.Itoa(métricaDeMentira), "if", ifIndex()}
 	if out, err := exec.Command("route.exe", args...).CombinedOutput(); err != nil {
@@ -109,7 +109,7 @@ func ponerRutaPorDefecto() error {
 	return nil
 }
 
-func quitarRutaPorDefecto() error {
+func removeDefaultRoute() error {
 	return exec.Command("route.exe", "delete", "0.0.0.0", "mask", "0.0.0.0", "if", ifIndex()).Run()
 }
 

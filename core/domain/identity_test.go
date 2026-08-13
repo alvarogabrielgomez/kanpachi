@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -123,35 +124,78 @@ func TestParseInviteIDRechaza(t *testing.T) {
 	}
 }
 
-// TestParseRoomAceptaLasSeisFormas es la tabla de docs/03-arquitectura.md.
-// Las seis producen el mismo invite ID, que es la promesa de "el usuario nunca
-// tiene que saber cuál es la correcta".
-func TestParseRoomAceptaLasSeisFormas(t *testing.T) {
+// TestParseRoomAceptaLasFormasConSeed es la tabla de docs/03-arquitectura.md.
+// Todas producen el mismo invite ID y el mismo seed, que es la promesa de "el
+// usuario nunca tiene que saber cuál es la correcta".
+func TestParseRoomAceptaLasFormasConSeed(t *testing.T) {
 	const canonico = "A7K2M9QX"
-	casos := []struct {
-		entrada  string
-		wantSeed string
-	}{
-		{"A7K2M9QX", DefaultSeedHost},
-		{"a7k2-m9qx", DefaultSeedHost},
-		{"kanpachi://A7K2-M9QX", DefaultSeedHost},
-		{"A7K2-M9QX@seed.midominio.com", "seed.midominio.com"},
-		{"kanpachi.accentio.dev/A7K2-M9QX", "kanpachi.accentio.dev"},
-		{"https://kanpachi.accentio.dev/A7K2-M9QX", "kanpachi.accentio.dev"},
+	const seed = "seed.midominio.com"
+	casos := []string{
+		"A7K2M9QX@seed.midominio.com",
+		"a7k2-m9qx@seed.midominio.com",
+		"kanpachi://A7K2-M9QX@seed.midominio.com",
+		"seed.midominio.com/A7K2-M9QX",
+		"https://seed.midominio.com/A7K2-M9QX",
+		"HTTPS://Seed.MiDominio.COM/a7k2m9qx",
 	}
-	for _, c := range casos {
-		t.Run(c.entrada, func(t *testing.T) {
-			r, err := ParseRoom(c.entrada)
+	for _, entrada := range casos {
+		t.Run(entrada, func(t *testing.T) {
+			r, err := ParseRoom(entrada)
 			if err != nil {
-				t.Fatalf("ParseRoom(%q) falló: %v", c.entrada, err)
+				t.Fatalf("ParseRoom(%q) falló: %v", entrada, err)
 			}
 			if r.InviteID.Raw() != canonico {
 				t.Errorf("invite ID = %q, se esperaba %q", r.InviteID.Raw(), canonico)
 			}
-			if r.Seed != c.wantSeed {
-				t.Errorf("seed = %q, se esperaba %q", r.Seed, c.wantSeed)
+			if r.Seed != seed {
+				t.Errorf("seed = %q, se esperaba %q", r.Seed, seed)
 			}
 		})
+	}
+}
+
+// TestParseRoomRechazaUnCodigoSinSeed es el cambio que abrió Kanpachi al
+// público, y el centinela propio es la mitad que importa.
+//
+// Un ID pelado tiene forma perfecta y le falta a QUÉ registro pertenece. Antes
+// caía al seed compilado, y eso convertía el caso peor en el silencioso: pegar
+// el código de un amigo que hospeda en su propio servidor entraba a OTRA sala
+// con el mismo ID, sin un solo error en pantalla.
+//
+// Se comprueba que el error sea [ErrSeedMissing] y no [ErrInputShape], porque de
+// esa distinción cuelga el mensaje: uno puede enseñar la forma completa, y el
+// otro solo puede decir "eso no tiene forma de código" sobre ocho caracteres que
+// se ven impecables.
+func TestParseRoomRechazaUnCodigoSinSeed(t *testing.T) {
+	for _, entrada := range []string{
+		"A7K2M9QX",
+		"a7k2-m9qx",
+		"kanpachi://A7K2-M9QX",
+		"kanpachi://A7K2M9QX/",
+		"A7K2M9QX#k7Rm2xQv",
+	} {
+		t.Run(entrada, func(t *testing.T) {
+			_, err := ParseRoom(entrada)
+			if !errors.Is(err, ErrSeedMissing) {
+				t.Errorf("ParseRoom(%q) dio %v, se esperaba ErrSeedMissing", entrada, err)
+			}
+		})
+	}
+}
+
+// TestElIDSeValidaAntesQueLaFaltaDeSeed cuida el ORDEN, que es lo que hace útil
+// al centinela.
+//
+// Al revés, `HOLA` y `A7K2M9QX` contestarían los dos que falta el servidor, y a
+// lo primero lo que le falta es ser un código. El mensaje que enseña la forma
+// completa se le daría a alguien que escribió cualquier cosa.
+func TestElIDSeValidaAntesQueLaFaltaDeSeed(t *testing.T) {
+	_, err := ParseRoom("HOLA")
+	if errors.Is(err, ErrSeedMissing) {
+		t.Error("un ID que no es un ID contestó que le falta el seed, y lo que le falta es ser un código")
+	}
+	if err == nil {
+		t.Fatal("ParseRoom(\"HOLA\") no falló")
 	}
 }
 
@@ -190,14 +234,14 @@ func TestParseRoomAceptaElURIQueEntregaWindows(t *testing.T) {
 		seed    string
 	}{
 		{
-			nombre:  "seed por defecto con fragmento",
-			entrada: "kanpachi://AB4N548B/#z39-MCRbmvy94i8hoxe9O_yGveuMhObC5XiZKhde9Gw",
-			seed:    DefaultSeedHost,
+			nombre:  "con fragmento",
+			entrada: "kanpachi://AB4N548B@seed.midominio.com/#z39-MCRbmvy94i8hoxe9O_yGveuMhObC5XiZKhde9Gw",
+			seed:    "seed.midominio.com",
 		},
 		{
-			nombre:  "seed por defecto sin fragmento",
-			entrada: "kanpachi://AB4N548B/",
-			seed:    DefaultSeedHost,
+			nombre:  "sin fragmento",
+			entrada: "kanpachi://AB4N548B@seed.midominio.com/",
+			seed:    "seed.midominio.com",
 		},
 		{
 			nombre:  "seed propio con fragmento",
@@ -264,13 +308,19 @@ func TestParseRoomTopeDeLongitudSeAplicaAntesDeParsear(t *testing.T) {
 	}
 }
 
+// TestInviteURLSeVuelveAParsear cierra el círculo: lo que la app GENERA lo
+// tiene que poder leer la app.
+//
+// Vale más desde que un código sin seed se rechaza. La forma generada es la
+// única que se reparte, así que si dejara de parsearse, el fallo no sería un
+// caso raro: sería que ningún código funciona.
 func TestInviteURLSeVuelveAParsear(t *testing.T) {
-	r, err := ParseRoom("a7k2-m9qx")
+	r, err := ParseRoom("a7k2-m9qx@seed.midominio.com")
 	if err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 	url := r.InviteURL()
-	if want := "kanpachi.accentio.dev/A7K2-M9QX"; url != want {
+	if want := "seed.midominio.com/A7K2-M9QX"; url != want {
 		t.Fatalf("InviteURL() = %q, se esperaba %q", url, want)
 	}
 	back, err := ParseRoom(url)

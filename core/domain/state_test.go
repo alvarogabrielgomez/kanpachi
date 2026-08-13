@@ -46,7 +46,7 @@ func TestVolverAIdleLimpiaLaSala(t *testing.T) {
 	r := RoomState{
 		Conn:        StateConnected,
 		Role:        RoleHost,
-		Room:        Room{Seed: DefaultSeedHost},
+		Room:        Room{Seed: "seed.midominio.com"},
 		Name:        "La sala",
 		Peers:       []Peer{{Name: Nickname{value: "alvaro"}}},
 		HostPresent: true,

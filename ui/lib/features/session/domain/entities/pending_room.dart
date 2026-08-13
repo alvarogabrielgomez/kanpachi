@@ -41,6 +41,10 @@ class PendingRoom {
 
   final String seed;
 
+  /// El código como se enseña, con su registro. Mismo motivo que
+  /// [Room.displayCode]: pelado no identifica una sala.
+  String get displayCode => seed.isEmpty ? code : '$code@$seed';
+
   /// El nombre que tenía la sala. Vacío es legal: una sala puede no tenerlo.
   final String name;
 

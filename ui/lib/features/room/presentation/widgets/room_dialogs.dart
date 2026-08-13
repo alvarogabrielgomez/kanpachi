@@ -6,6 +6,7 @@ import 'package:kanpachi_ui/core/design_system/atoms/app_kicker.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_dialog.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/features/seed/presentation/ask_to_host.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
@@ -101,18 +102,22 @@ class ConfirmGameDialog extends StatelessWidget {
             // because there is already a room to come back to. See
             // `SessionCubit.createRoom`.
             onConfirm: () async {
-              shell.closeDialog();
               if (insideRoom) {
+                shell.closeDialog();
                 shell.go(AppScreen.room);
                 await session.applyGame(game);
                 return;
               }
-              if (await session.createRoom(
-                name: 'Sala de Kanpachi',
-                game: game,
-              )) {
-                shell.go(AppScreen.room);
-              }
+              // Crear con juego elegido pasa por la MISMA confianza que crear
+              // sin él. Sin esto quedaba un camino a abrir sala que no enseñaba
+              // el registro, y sería el que más se usa: el botón grande de la
+              // portada es este.
+              //
+              // El juego elegido sobrevive porque vive en la sesión, no acá:
+              // `askToHost` no lo toca y el diálogo de confianza lo recoge de
+              // ahí. Por eso este camino NO cierra el diálogo antes de tiempo,
+              // `askTrust` lo reemplaza.
+              await askToHost(context, suggestedName: 'Sala de Kanpachi');
             },
           ),
         ],
@@ -348,8 +353,8 @@ class _ResumeRoomBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String cual = pending.name.isEmpty
-        ? 'La sala con el código ${pending.code}'
-        : '"${pending.name}", con el código ${pending.code}';
+        ? 'La sala con el código ${pending.displayCode}'
+        : '"${pending.name}", con el código ${pending.displayCode}';
 
     return Text(
       '$cual.\n'

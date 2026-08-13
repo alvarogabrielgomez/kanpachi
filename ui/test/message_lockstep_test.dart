@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kanpachi_ui/core/messages/message_keys.dart';
+import 'package:kanpachi_ui/features/seed/domain/seed_password.dart';
 
 /// El candado que hace verdadera la frase "espejo del backend".
 ///
@@ -300,6 +301,74 @@ void main() {
       CanaryVerdict.values.map((CanaryVerdict v) => v.wire).toList(),
     );
   });
+
+  // Los NOMBRES de método, que hasta ahora no los vigilaba nada.
+  //
+  // Los enums del cable llevaban candado y esto no, y se notó al agregar
+  // `own_seed`: la constante entró en Go y en Dart no se puso rojo nada. El
+  // fallo que deja pasar es peor que el de un enum, porque no degrada: un
+  // método que la interfaz nombra mal no sale como mensaje de reserva, sale
+  // como `bad_request` en mitad de una operación que la persona pidió.
+  group('los nombres de método no se quedan atrás del daemon', () {
+    test('DaemonMethods no nombra ninguno que el daemon no tenga', () {
+      final Set<String> enGo = _metodosDelProtocolo(repo);
+      final Set<String> enDart = _metodosDeDart();
+
+      expect(
+        enGo,
+        isNotEmpty,
+        reason:
+            'no se leyó ningún método de protocol.go: la ruta cambió y este '
+            'test no está vigilando nada',
+      );
+      expect(
+        enDart.difference(enGo),
+        isEmpty,
+        reason:
+            'la interfaz llama a métodos que el daemon no conoce. La lista de '
+            'métodos es CERRADA, así que eso no degrada: es un bad_request en '
+            'mitad de lo que alguien pidió',
+      );
+    });
+
+    // La dirección contraria NO se exige, y hay que decir por qué: el daemon
+    // tiene métodos que solo usa el CLI, y va a seguir teniéndolos. Exigir
+    // igualdad obligaría a la interfaz a declarar constantes que no llama, que
+    // es código muerto puesto para que un test calle.
+    test('la interfaz nombra los métodos que de verdad usa', () {
+      expect(_metodosDeDart(), contains('seed_password'));
+      expect(_metodosDeDart(), contains('own_seed'));
+    });
+  });
+
+  // La regla del password, que vive en los dos lados a la fuerza.
+  //
+  // La interfaz tiene que decidir si habilita el botón antes de hablar con
+  // nadie. Separadas, la app acepta lo que el daemon rechaza y quien lo escribe
+  // concluye que la app está rota.
+  group('la regla del password del registro es la misma en los dos lados', () {
+    test('SeedPassword espeja las constantes de core/domain', () {
+      final int minGo = _constanteDeGo(
+        repo: repo,
+        archivo: 'core/domain/seedauth.go',
+        nombre: 'MinSeedPasswordLen',
+      );
+      final int maxGo = _constanteDeGo(
+        repo: repo,
+        archivo: 'core/domain/seedauth.go',
+        nombre: 'MaxSeedPasswordLen',
+      );
+
+      expect(
+        SeedPassword.minLength,
+        equals(minGo),
+        reason:
+            'el mínimo se separó: la app habilita el botón con algo que el '
+            'daemon rechaza, o al revés',
+      );
+      expect(SeedPassword.maxLength, equals(maxGo));
+    });
+  });
 }
 
 /// Saca las cadenas devueltas dentro de una función de Go.
@@ -343,4 +412,51 @@ Set<String> _codigosDelProtocolo(Directory repo) {
       .allMatches(fuente.readAsStringSync())
       .map((RegExpMatch m) => m.group(1)!)
       .toSet();
+}
+
+/// Saca los valores del bloque de constantes `Method` de protocol.go.
+Set<String> _metodosDelProtocolo(Directory repo) {
+  final File fuente = File(
+    '${repo.path}/daemon/transport/protocol/protocol.go',
+  );
+  if (!fuente.existsSync()) {
+    fail('no se encuentra protocol.go desde ${repo.path}');
+  }
+
+  return RegExp(r'Method\s*=\s*"([a-z_]+)"')
+      .allMatches(fuente.readAsStringSync())
+      .map((RegExpMatch m) => m.group(1)!)
+      .toSet();
+}
+
+/// Saca las constantes de `DaemonMethods`.
+Set<String> _metodosDeDart() {
+  final File fuente = File(
+    'lib/features/session/infra/daemon/daemon_methods.dart',
+  );
+  if (!fuente.existsSync()) {
+    fail('no se encuentra daemon_methods.dart');
+  }
+
+  return RegExp(r"static const String \w+ = '([a-z_]+)';")
+      .allMatches(fuente.readAsStringSync())
+      .map((RegExpMatch m) => m.group(1)!)
+      .toSet();
+}
+
+/// Saca un entero de una constante de Go, por nombre.
+int _constanteDeGo({
+  required Directory repo,
+  required String archivo,
+  required String nombre,
+}) {
+  final File fuente = File('${repo.path}/$archivo');
+  if (!fuente.existsSync()) {
+    fail('no se encuentra $archivo desde ${repo.path}');
+  }
+  final RegExpMatch? m = RegExp(
+    nombre + r'\s*=\s*(\d+)',
+  ).firstMatch(fuente.readAsStringSync());
+  if (m == null) fail('no se encontró la constante $nombre en $archivo');
+  return int.parse(m.group(1)!);
 }

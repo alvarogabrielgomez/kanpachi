@@ -55,7 +55,7 @@ func TestLaSalaGuardadaVaYVuelvePorElDecodificadorDelDominio(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tengo, err := domain.DecodePersistedRoom(leído)
+	tengo, err := domain.DecodeHostedRoom(leído)
 	if err != nil {
 		t.Fatalf("lo que se guardó no se pudo releer: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestGuardarNoDejaTemporalesSueltos(t *testing.T) {
 		}
 	}
 	if len(entradas) != 1 {
-		t.Fatalf("archivos en el directorio = %d, se esperaba solo %s", len(entradas), RoomFile)
+		t.Fatalf("archivos en el directorio = %d, se esperaba solo %s", len(entradas), HostedRoomFile)
 	}
 }
 
@@ -144,7 +144,7 @@ func TestGuardarReemplazaEnUnSoloPaso(t *testing.T) {
 func TestUnArchivoCortadoSeLeeYLoRechazaElDominio(t *testing.T) {
 	dir := t.TempDir()
 	s := New(dir)
-	if err := os.WriteFile(filepath.Join(dir, RoomFile), []byte(`{"invite_id":"A7K2M9QX",`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, HostedRoomFile), []byte(`{"invite_id":"A7K2M9QX",`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -152,7 +152,7 @@ func TestUnArchivoCortadoSeLeeYLoRechazaElDominio(t *testing.T) {
 	if err != nil {
 		t.Fatalf("el adaptador se negó a leer un archivo cortado: %v", err)
 	}
-	if _, err := domain.DecodePersistedRoom(raw); !errors.Is(err, domain.ErrPersistedShape) {
+	if _, err := domain.DecodeHostedRoom(raw); !errors.Is(err, domain.ErrPersistedShape) {
 		t.Fatalf("el dominio aceptó un archivo cortado: %v", err)
 	}
 }
@@ -181,9 +181,9 @@ func TestLaSalaYLaÚltimaSalaSonArchivosDistintos(t *testing.T) {
 	}
 }
 
-func salaDePrueba(t *testing.T) domain.PersistedRoom {
+func salaDePrueba(t *testing.T) domain.HostedRoom {
 	t.Helper()
-	room, err := domain.ParseRoom("A7K2M9QX")
+	room, err := domain.ParseRoom("A7K2M9QX@seed.midominio.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func salaDePrueba(t *testing.T) domain.PersistedRoom {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := domain.PersistedRoom{
+	p := domain.HostedRoom{
 		Room:    room,
 		Name:    "Los panas",
 		Host:    host,

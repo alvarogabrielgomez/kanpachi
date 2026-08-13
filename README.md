@@ -235,6 +235,39 @@ flowchart LR
   U --> O[Open Kanpachi or download]
 ```
 
+## Forking: Where The Branding Lives
+
+Everything that says *who published this binary* is in one file per language,
+and a fork edits those and nothing else.
+
+| Language | File | What it holds |
+|---|---|---|
+| Go | `internal/brand/brand.go` | `Repo`, `UpdatesEnabled`, `Docs` |
+| Dart | `ui/lib/core/brand.dart` | The same two values, mirrored |
+
+Nothing else in the tree may spell the repository out. The page receives it from
+the server in its SSR state, the systemd units import the Go constant, the Inno
+Setup installer takes it as a `/DRepo=` parameter, and `seed/install.sh` is the
+one exception, because it is fetched over a URL that already contains the
+repository. `internal/arch/marca_test.go` fails the build if a copy reappears
+anywhere, and a second test keeps the Go and Dart values in lockstep.
+
+The Rust engine has no branding file. It carries no such constant in its source:
+its only two URLs are in `Cargo.toml`, where `repository` is the canonical Rust
+place for it and points at a different repository anyway.
+
+`UpdatesEnabled = false` turns the version check off entirely, in both faces.
+That switch exists because the alternative — pointing `Repo` at a repository
+that does not publish — does not disable the check, it turns it into a 404 every
+time somebody asks.
+
+**What must never move into these files:** anything the two machines in a room
+compute independently. The Argon2id parameters, the invite ID alphabet, and the
+pinned EasyTier version look like configuration and are not. They are frozen,
+with golden vectors in the tests, because both sides derive them separately and
+without talking; a fork that "configures" them produces rooms where people paste
+the same code and end up alone, with nothing on screen pointing at the cause.
+
 ## Quick Technical Notes
 
 This section is intentionally short and points to auditable sources.

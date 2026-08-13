@@ -56,8 +56,19 @@ func pintarSala(w io.Writer, st protocol.RoomView) {
 	fmt.Fprintf(w, "  %-34s %s, %s\n", nombre, papel(st.Role), estadoDeConexión(st.Conn))
 	fmt.Fprintln(w, raya)
 
+	// Las DOS formas, y con el registro pegado en la corta.
+	//
+	// Un invite ID solo significa algo en el registro que lo emitió, así que
+	// enseñarlo pelado ofrece para copiar una cosa que en otro registro es una
+	// sala distinta. En una terminal no hay botón de copiar: lo que hace las
+	// veces es que las dos formas estén ahí para seleccionar, la corta para
+	// dictar y el enlace para pegar en un chat.
 	if st.Code != "" {
-		fmt.Fprintf(w, "  Code     %s\n", conGuion(st.Code))
+		fmt.Fprintf(w, "  Code     %s", conGuion(st.Code))
+		if st.Seed != "" {
+			fmt.Fprintf(w, "@%s", st.Seed)
+		}
+		fmt.Fprintln(w)
 	}
 	if st.Link != "" {
 		fmt.Fprintf(w, "  Link     %s\n", st.Link)

@@ -68,7 +68,21 @@ type API interface {
 	ReapplyProtection(ctx context.Context) (domain.RoomState, error)
 	ObserveGame(ctx context.Context, root domain.ProcessRef, tree map[int]bool, keepSteam bool) ([]domain.PortRange, error)
 
-	PendingRoom() (domain.PersistedRoom, bool)
+	// OwnSeed, SuggestedSeed y SetOwnSeed son el registro de esta máquina.
+	//
+	// Están en la API y no en el host de la interfaz porque **son estado del
+	// daemon**: de acá sale a quién se le pide abrir una sala, y las dos caras
+	// del cliente, la ventana y la terminal, tienen que ver el mismo valor. Es la
+	// diferencia con el apodo, que viaja como parámetro en cada orden y por eso
+	// puede vivir en cada cliente.
+	OwnSeed() string
+	SuggestedSeed() string
+	SetOwnSeed(seed string) (string, error)
+	// SeedPassword entrega el password del registro propio. Ver
+	// [MethodSeedPassword] para lo que no vuelve ni queda de él.
+	SeedPassword(ctx context.Context, password string) error
+
+	PendingRoom() (domain.HostedRoom, bool)
 	ResumeRoom(ctx context.Context) (domain.RoomState, error)
 	DiscardPendingRoom(ctx context.Context) error
 	LastRoom() (domain.LastRoom, bool)
@@ -541,6 +555,12 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 	case MethodAutostart:
 		return s.autostart(req.Params)
 
+	case MethodOwnSeed:
+		return s.ownSeed(req.Params)
+
+	case MethodSeedPassword:
+		return s.seedPassword(ctx, req.Params)
+
 	case MethodPendingRoom:
 		return s.pending()
 
@@ -725,6 +745,59 @@ func (s *Server) autostart(params json.RawMessage) (json.RawMessage, *Error) {
 	return result(struct {
 		Enabled bool `json:"enabled"`
 	}{puesto})
+}
+
+// ownSeed lee o cambia el registro de esta máquina.
+//
+// El valor va en los parámetros y es opcional, igual que en [Server.autostart]:
+// sin él es una lectura. Y se RELEE siempre después de escribir, por lo mismo
+// que allá, con un motivo extra acá: lo que se guarda es el nombre ya
+// normalizado, así que devolver lo que llegó enseñaría lo que se pidió en vez de
+// lo que quedó puesto.
+func (s *Server) ownSeed(params json.RawMessage) (json.RawMessage, *Error) {
+	p, e := decodeStrict[struct {
+		Seed *string `json:"seed"`
+	}](params)
+	if e != nil {
+		return nil, e
+	}
+	if p.Seed != nil {
+		if _, err := s.api.SetOwnSeed(*p.Seed); err != nil {
+			return nil, errorFor(err)
+		}
+	}
+	return result(struct {
+		Seed string `json:"seed"`
+		// Suggested es de dónde salió la última sala a la que se entró, para
+		// prellenar. No es el registro de esta máquina y no manda en nada: la
+		// pantalla la enseña marcada como sugerencia.
+		Suggested string `json:"suggested"`
+	}{s.api.OwnSeed(), s.api.SuggestedSeed()})
+}
+
+// seedPassword entrega el password del registro propio.
+//
+// # Por qué la respuesta está vacía
+//
+// Porque no hay nada que devolver que no sea peor devolver. Los tokens se
+// quedan en el daemon, el password no se repite, y decir si el registro estaba
+// abierto o cerrado sería contestar una pregunta que nadie hizo sobre la máquina
+// de otro. Que no haya error ES la respuesta.
+//
+// El parámetro no se anota en ningún sitio. Este manejador no llama al diario de
+// progreso, no registra nada y devuelve el error del caso de uso tal cual, que
+// ya viene sin el password dentro.
+func (s *Server) seedPassword(ctx context.Context, params json.RawMessage) (json.RawMessage, *Error) {
+	p, e := decodeStrict[struct {
+		Password string `json:"password"`
+	}](params)
+	if e != nil {
+		return nil, e
+	}
+	if err := s.api.SeedPassword(ctx, p.Password); err != nil {
+		return nil, errorFor(err)
+	}
+	return result(struct{}{})
 }
 
 // observe es la foto de sockets, y es la ÚNICA función del programa que mira un

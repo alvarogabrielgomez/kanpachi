@@ -11,6 +11,7 @@
 package registry
 
 import (
+	"context"
 	"crypto/ed25519"
 	"errors"
 	"path/filepath"
@@ -72,7 +73,7 @@ type Room struct {
 // en `Restart=always`, cualquier reinicio contestaba que no conoce salas que
 // están abiertas y alcanzables, y dejaba fuera a todos sus invitados.
 //
-// El host tampoco lo podía reponer: [Store.Publish] exige que la entrada exista,
+// El host tampoco lo podía reponer: [Store.publish] exige que la entrada exista,
 // y **no debe crear**, porque crear reabriría la carrera que el fijado existe
 // para cerrar, o sea que quien se quedó con el código llegaría primero. El único
 // arreglo desde el producto era renovar el código, que mata los enlaces ya
@@ -85,31 +86,31 @@ type Room struct {
 //
 // `Publish` no crea. Lo que se arregla es que la entrada siga estando.
 type Store struct {
-	mu    sync.RWMutex
-	rooms map[string]*Room
-	ahora func() time.Time
-	// nuevoID se inyecta para poder probar la emisión y el agotamiento sin
+	mu          sync.RWMutex
+	rooms       map[string]*Room
+	currentTime func() time.Time
+	// newID se inyecta para poder probar la emisión y el agotamiento sin
 	// depender de la aleatoriedad real.
-	nuevoID func() (domain.InviteID, error)
+	newID func() (domain.InviteID, error)
 
-	// disco es nil en un registro volátil, que es lo que usan los tests y
+	// disc es nil en un registro volátil, que es lo que usan los tests y
 	// `kanpseed serve` sin directorio de estado. Ver [Store.respaldar].
-	disco *keeper
-	// avisar cuenta lo que sale mal al escribir. Nil se traga los fallos en
+	disc *keeper
+	// notify cuenta lo que sale mal al escribir. Nil se traga los fallos en
 	// silencio, y por eso el servidor de verdad siempre le pasa uno.
-	avisar func(error)
+	notify func(error)
 }
 
 // NewStore construye un registro vacío y VOLÁTIL. ahora y nuevoID pueden ser
 // nil, y en ese caso se usan el reloj real y la aleatoriedad real.
-func NewStore(ahora func() time.Time, nuevoID func() (domain.InviteID, error)) *Store {
-	if ahora == nil {
-		ahora = time.Now
+func NewStore(currentTime func() time.Time, newID func() (domain.InviteID, error)) *Store {
+	if currentTime == nil {
+		currentTime = time.Now
 	}
-	if nuevoID == nil {
-		nuevoID = randomInviteID
+	if newID == nil {
+		newID = randomInviteID
 	}
-	return &Store{rooms: map[string]*Room{}, ahora: ahora, nuevoID: nuevoID}
+	return &Store{rooms: map[string]*Room{}, currentTime: currentTime, newID: newID}
 }
 
 // OpenStore construye un registro respaldado por `dir`, cargando lo que haya.
@@ -122,19 +123,19 @@ func NewStore(ahora func() time.Time, nuevoID func() (domain.InviteID, error)) *
 // `avisar` recibe los fallos de escritura posteriores. Se inyecta porque este
 // paquete no tiene logger propio y no va a tenerlo: quien sabe adónde va una
 // línea es el binario.
-func OpenStore(dir string, avisar func(error)) (*Store, int, int, error) {
+func OpenStore(dir string, notify func(error)) (*Store, int, int, error) {
 	s := NewStore(nil, nil)
-	s.disco = &keeper{path: filepath.Join(dir, stateFile)}
-	s.avisar = avisar
+	s.disc = &keeper{path: filepath.Join(dir, stateFile)}
+	s.notify = notify
 
-	rooms, descartadas, err := s.disco.load(s.ahora())
+	rooms, discardedRooms, err := s.disc.load(s.currentTime())
 	if err != nil {
 		// Se arranca igual, con el registro vacío. Quien llama decide qué tan
 		// fuerte lo dice.
-		return s, 0, descartadas, err
+		return s, 0, discardedRooms, err
 	}
 	s.rooms = rooms
-	return s, len(rooms), descartadas, nil
+	return s, len(rooms), discardedRooms, nil
 }
 
 // respaldar vuelca el estado a disco. **Se llama con el lock SUELTO, siempre.**
@@ -148,18 +149,18 @@ func OpenStore(dir string, avisar func(error)) (*Store, int, int, error) {
 // El snapshot se toma bajo lectura y la escritura la serializa el mutex propio
 // del keeper, así que dos mutaciones a la vez no se pisan el fichero.
 func (s *Store) respaldar() {
-	if s.disco == nil {
+	if s.disc == nil {
 		return
 	}
 	s.mu.RLock()
-	copia := make(map[string]*Room, len(s.rooms))
+	copy := make(map[string]*Room, len(s.rooms))
 	for k, r := range s.rooms {
-		copia[k] = r
+		copy[k] = r
 	}
 	s.mu.RUnlock()
 
-	if err := s.disco.save(copia); err != nil && s.avisar != nil {
-		s.avisar(err)
+	if err := s.disc.save(copy); err != nil && s.notify != nil {
+		s.notify(err)
 	}
 }
 
@@ -169,7 +170,10 @@ func (s *Store) respaldar() {
 // es el registro, así que emitir evita el ida y vuelta de proponer y ser
 // rechazado. No hay nada que filtrar al hacerlo: un invite ID no deriva
 // material criptográfico de la sala real, es una llave de búsqueda.
-func (s *Store) Issue(hostKey ed25519.PublicKey, card, sig []byte) (domain.InviteID, error) {
+// The context is the request's, and it reaches all the way down to the
+// derivation brake. An attempt that queues behind another one gives up when its
+// caller hangs up, instead of holding a socket for work nobody is waiting on.
+func (s *Store) Issue(ctx context.Context, hostKey ed25519.PublicKey, card, sig []byte) (domain.InviteID, error) {
 	if len(card) > MaxCardBytes {
 		return domain.InviteID{}, ErrCardTooBig
 	}
@@ -181,7 +185,7 @@ func (s *Store) Issue(hostKey ed25519.PublicKey, card, sig []byte) (domain.Invit
 	// seguidas ya es improbable hasta el absurdo; ocho es un techo que existe
 	// para que un registro lleno falle rápido en vez de girar para siempre.
 	for i := 0; i < 8; i++ {
-		id, err := s.nuevoID()
+		id, err := s.newID()
 		if err != nil {
 			return domain.InviteID{}, err
 		}
@@ -193,8 +197,11 @@ func (s *Store) Issue(hostKey ed25519.PublicKey, card, sig []byte) (domain.Invit
 		// vuelve a comprobar con el lock de escritura tomado y, si perdió la
 		// carrera, el bucle prueba con otro. Ese hueco es el precio de derivar
 		// sin bloquear a nadie, y sale barato.
-		red := redDeEncuentro(id)
-		if s.insertar(id, hostKey, card, red) {
+		red, err := rendezvous(ctx, id)
+		if err != nil {
+			return domain.InviteID{}, err
+		}
+		if s.insert(id, hostKey, card, red) {
 			// Fuera del lock que `insertar` acaba de soltar. Ver [Store.respaldar].
 			s.respaldar()
 			return id, nil
@@ -215,18 +222,46 @@ func (s *Store) Issue(hostKey ed25519.PublicKey, card, sig []byte) (domain.Invit
 // que las creaciones de sala se encolan, y eso da igual: crear una sala es un
 // acto humano y esporádico, mientras que unirse a una, que sí es frecuente, no
 // pasa por acá.
+//
+// **Checking a password shares this slot**, and does not get one of its own.
+// Two independent brakes would put the peak at two derivations at once and make
+// the MemoryMax of the unit false, which is the shape of the failure that
+// already killed this service by OOM. What that couples, measured rather than
+// assumed: a burst of logins degrades CREATING rooms, which is exactly what the
+// password was closing anyway. Looking a room up never gets here, because
+// `Store.Lookup` reads a network that was already derived and stored.
 var derivaciones = make(chan struct{}, 1)
 
-// redDeEncuentro deriva la red de encuentro con el lock del store SUELTO.
+// acquireDerivation takes the single slot, or gives up when the caller does.
+//
+// Waiting on the bare channel send was the earlier shape, and it cannot be
+// interrupted: a request whose client already hung up would still sit in the
+// queue, take its turn, and spend 64 MiB producing an answer for nobody. The
+// rate limit runs BEFORE this, so an attempt that is being throttled never
+// reaches the queue at all.
+func acquireDerivation(ctx context.Context) error {
+	select {
+	case derivaciones <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func releaseDerivation() { <-derivaciones }
+
+// rendezvous deriva la red de encuentro con el lock del store SUELTO.
 //
 // Estaba dentro, y eso convertía cada creación de sala en una parálisis de
 // segundos para todo lo demás: /healthz, la resolución de invite IDs y la
 // página comparten ese mutex. Como el latido del watchdog se comprueba pidiendo
 // /healthz, una creación lenta además se disfrazaba de proceso colgado.
-func redDeEncuentro(id domain.InviteID) string {
-	derivaciones <- struct{}{}
-	defer func() { <-derivaciones }()
-	return domain.DeriveRendezvous(id).NetworkName()
+func rendezvous(ctx context.Context, id domain.InviteID) (string, error) {
+	if err := acquireDerivation(ctx); err != nil {
+		return "", err
+	}
+	defer releaseDerivation()
+	return domain.DeriveRendezvous(id).NetworkName(), nil
 }
 
 // ocupado dice si ese invite ID le pertenece a alguien ahora mismo. Un fijado
@@ -237,12 +272,12 @@ func (s *Store) ocupado(id domain.InviteID) bool {
 	defer s.mu.RUnlock()
 
 	r, hay := s.rooms[id.Raw()]
-	return hay && !s.ahora().After(r.PinUntil)
+	return hay && !s.currentTime().After(r.PinUntil)
 }
 
-// insertar registra la sala y dice si lo consiguió. Devuelve false cuando el
+// insert registra la sala y dice si lo consiguió. Devuelve false cuando el
 // invite ID se ocupó mientras se derivaba su red de encuentro.
-func (s *Store) insertar(id domain.InviteID, hostKey ed25519.PublicKey, card []byte, red string) bool {
+func (s *Store) insert(id domain.InviteID, hostKey ed25519.PublicKey, card []byte, red string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.limpiar()
@@ -250,7 +285,7 @@ func (s *Store) insertar(id domain.InviteID, hostKey ed25519.PublicKey, card []b
 	if _, ocupado := s.rooms[id.Raw()]; ocupado {
 		return false
 	}
-	ahora := s.ahora()
+	ahora := s.currentTime()
 	s.rooms[id.Raw()] = &Room{
 		HostKey:   append(ed25519.PublicKey(nil), hostKey...),
 		Card:      append([]byte(nil), card...),
@@ -261,7 +296,7 @@ func (s *Store) insertar(id domain.InviteID, hostKey ed25519.PublicKey, card []b
 	return true
 }
 
-// Publish actualiza la tarjeta de una sala existente, o revive una cuyo fijado
+// publish actualiza la tarjeta de una sala existente, o revive una cuyo fijado
 // sigue vivo. Es el camino de reabrir con el mismo invite ID.
 //
 // Acá se cierra el agujero que el cifrado no puede cerrar. La clave de la
@@ -269,7 +304,7 @@ func (s *Store) insertar(id domain.InviteID, hostKey ed25519.PublicKey, card []b
 // producir una tarjeta que la página descifra, y el registro no tiene forma de
 // distinguir a un miembro del host. Lo que sí puede es exigir la firma de la
 // llave que fijó ese invite ID la primera vez.
-func (s *Store) Publish(id domain.InviteID, hostKey ed25519.PublicKey, card, sig []byte) error {
+func (s *Store) publish(id domain.InviteID, hostKey ed25519.PublicKey, card, sig []byte) error {
 	if len(card) > MaxCardBytes {
 		return ErrCardTooBig
 	}
@@ -277,7 +312,7 @@ func (s *Store) Publish(id domain.InviteID, hostKey ed25519.PublicKey, card, sig
 		return ErrBadSig
 	}
 
-	if err := s.publicarBajoLock(id, hostKey, card); err != nil {
+	if err := s.publishUnderLock(id, hostKey, card); err != nil {
 		return err
 	}
 	// Fuera del lock, y solo cuando algo cambió de verdad. Ver [Store.respaldar].
@@ -285,14 +320,14 @@ func (s *Store) Publish(id domain.InviteID, hostKey ed25519.PublicKey, card, sig
 	return nil
 }
 
-// publicarBajoLock es el cuerpo de [Store.Publish]. Va aparte para que el
+// publishUnderLock es el cuerpo de [Store.publish]. Va aparte para que el
 // respaldo a disco ocurra con el lock ya soltado.
-func (s *Store) publicarBajoLock(id domain.InviteID, hostKey ed25519.PublicKey, card []byte) error {
+func (s *Store) publishUnderLock(id domain.InviteID, hostKey ed25519.PublicKey, card []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.limpiar()
 
-	ahora := s.ahora()
+	ahora := s.currentTime()
 	r, hay := s.rooms[id.Raw()]
 	if !hay {
 		return ErrNotFound
@@ -306,30 +341,30 @@ func (s *Store) publicarBajoLock(id domain.InviteID, hostKey ed25519.PublicKey, 
 	return nil
 }
 
-// Lookup devuelve la sala si su tarjeta sigue viva.
+// lookup devuelve la sala si su tarjeta sigue viva.
 //
 // Una sala cuya tarjeta expiró pero cuyo fijado sigue en pie NO se devuelve: al
 // visitante le consta que no hay sala, que es la verdad, y al host le consta
 // que su invite ID le sigue perteneciendo cuando la reabre. Las dos cosas a la
 // vez, que es justo lo que la asimetría de TTLs existe para dar.
-func (s *Store) Lookup(id domain.InviteID) (Room, error) {
+func (s *Store) lookup(id domain.InviteID) (Room, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	r, hay := s.rooms[id.Raw()]
-	if !hay || s.ahora().After(r.CardUntil) {
+	if !hay || s.currentTime().After(r.CardUntil) {
 		return Room{}, ErrNotFound
 	}
 	return *r, nil
 }
 
-// Networks lista las redes de encuentro vivas, que es lo que el contador
+// networks lista las redes de encuentro vivas, que es lo que el contador
 // necesita para saber qué mirar del RPC de EasyTier.
-func (s *Store) Networks() []string {
+func (s *Store) networks() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	ahora := s.ahora()
+	ahora := s.currentTime()
 	out := make([]string, 0, len(s.rooms))
 	for _, r := range s.rooms {
 		if !ahora.After(r.CardUntil) {
@@ -359,7 +394,7 @@ func (s *Store) Sweep() int {
 // dure, la entrada se conserva aunque la tarjeta esté muerta, porque es lo que
 // reserva el invite ID para su host.
 func (s *Store) limpiar() int {
-	ahora := s.ahora()
+	ahora := s.currentTime()
 	n := 0
 	for k, r := range s.rooms {
 		if ahora.After(r.PinUntil) {

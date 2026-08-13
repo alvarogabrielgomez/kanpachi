@@ -364,7 +364,7 @@ La otra mitad de lo mismo, y la que escondía un fallo más caro. `CreateRoom` p
 
 Se siguió la cadena entera el 2026-08-12 y ese código no le sirve a nadie:
 
-1. Al no haber respuesta no hay forma de saber a qué registro pertenecería, así que el ID se emitía con el seed por defecto.
+1. Al no haber respuesta no hay forma de saber a qué registro pertenecería, así que el ID se emitía con el seed que estuviera compilado, que en aquel momento era uno de fábrica.
 2. Ese seed es **el mismo** que consulta el invitado, así que no se salta la comprobación de arriba: pregunta, le contestan que esa sala no existe, y rechaza el ingreso antes de arrancar el motor.
 3. El host se quedaba con un código de aspecto normal, lo repartía, y no entraba nadie. Sin ningún error en su pantalla.
 
@@ -495,11 +495,11 @@ type CatalogStore interface {
 // StateStore es lo que sobrevive a un arranque, y devuelve bytes por lo mismo
 // que CatalogStore: el decodificador estricto vive en el dominio.
 //
-//   room.json       SOLO EN EL HOST. Salir limpio lo borra y morir sucio lo
-//                   deja, así que su sola presencia al arrancar es la señal de
-//                   mal cierre. No hay bandera "dirty" dentro
-//   last-room.json  SOLO EN INVITADOS. Código, seed, nombre y nick. Jamás la
-//                   credencial ni la identidad de la red real
+//   hosted-room.json  SOLO EN EL HOST. Salir limpio lo borra y morir sucio lo
+//                     deja, así que su sola presencia al arrancar es la señal
+//                     de mal cierre. No hay bandera "dirty" dentro
+//   last-room.json    SOLO EN INVITADOS. Código, seed, nombre y nick. Jamás la
+//                     credencial ni la identidad de la red real
 type StateStore interface {
     LoadRoom() ([]byte, error)
     SaveRoom([]byte) error
@@ -681,7 +681,7 @@ Cinco puertos tienen adaptador real y siete siguen en `sinimplementar`, fallando
 
 **La auditoría se compone en el binario y no dentro del firewall.** `ExposureAudit` hace tres preguntas y el firewall solo puede contestar dos: `RouterMappings` le habla al router del usuario por IGD, que es otro protocolo sobre otra red. Contestarla `nil, nil` desde dentro del firewall haría que "no hay mapeos" y "nadie miró" fueran indistinguibles, en la única pantalla cuyo trabajo es distinguir esas dos cosas. Se compone explícita y no por embebido, para que el objeto que solo mide no cargue además con `Apply` y `PurgeOwned`.
 
-**Apagar limpio es SALIR.** `LeaveRoomOnShutdown` cierra los puertos, restaura las reglas ajenas suspendidas, revierte los ajustes, borra `room.json` y **vuelve a medir**. Devuelve error, a diferencia de salir de la sala, y la razón es que al apagar no hay nadie mirando la pantalla: una alerta añadida a un estado que el proceso va a tirar en un segundo no es un informe. Y borra el archivo porque su ausencia es lo que dice que la salida fue limpia: conservarlo haría que todo apagado se leyera como una muerte sucia, y el aviso de "quedó una sala abierta" dejaría de significar nada por salir siempre.
+**Apagar limpio es SALIR.** `LeaveRoomOnShutdown` cierra los puertos, restaura las reglas ajenas suspendidas, revierte los ajustes, borra `hosted-room.json` y **vuelve a medir**. Devuelve error, a diferencia de salir de la sala, y la razón es que al apagar no hay nadie mirando la pantalla: una alerta añadida a un estado que el proceso va a tirar en un segundo no es un informe. Y borra el archivo porque su ausencia es lo que dice que la salida fue limpia: conservarlo haría que todo apagado se leyera como una muerte sucia, y el aviso de "quedó una sala abierta" dejaría de significar nada por salir siempre.
 
 ### La regla verificada por un test
 
@@ -816,7 +816,7 @@ La app **genera** el formato URL, que es el más autoexplicativo y sirve de land
 
 Un fragmento después del ID (`/A7K2M9QX#clave`) es enriquecimiento opcional: lleva la clave de la tarjeta de sala. La app lo ignora, no le sirve para nada; el nombre de la sala lo recibe por el canal de control.
 
-**Un invite ID es local al seed que lo emitió.** El mismo ID en dos seeds son dos salas que no se conocen. Un ID pelado usa el seed por defecto, jamás el último usado.
+**Un invite ID es local al seed que lo emitió.** El mismo ID en dos seeds son dos salas que no se conocen. **Un ID pelado se rechaza**, con un centinela propio, `ErrSeedMissing`, que es lo que permite enseñar la forma completa en vez de decir que no se entiende. Ver la decisión 16.
 
 ### Por qué 8 caracteres alcanzan
 
@@ -828,9 +828,10 @@ A cambio se gana lo que el producto necesita: un ID que una persona dicta por te
 
 ### Qué se recuerda y qué no
 
-- **Un código sin host siempre usa el seed por defecto**, jamás el último usado. Recordar el último tiene una trampa real: tras entrar una vez a un seed ajeno, un código pelado de otro amigo fallaría sin explicación.
+- **Un código sin host se rechaza**, y no cae en ningún seed ni recuerda el último. Las dos alternativas tienen la misma trampa y es callada: pegar el código de un amigo que hospeda en su propio servidor llevaría a otra sala con esos mismos ocho caracteres, sin un solo error.
 - **No se recuerda ninguna confirmación.** Todo código que llega de fuera de la app pasa por la tarjeta de confirmación, siempre, sin excepción y sin estado persistido. Ver la regla del canal externo más abajo.
-- El único estado guardado de identidad es el seed propio del usuario, si configuró uno en Avanzado.
+- **El seed propio se guarda, y es lo ÚNICO que se llena de una sola forma**: escribiéndolo en su pantalla. Entrar a la sala de alguien no lo toca, ni siquiera cuando no hay ninguno guardado. Lo que sí hace es prellenar esa pantalla, marcado como sugerencia.
+- **El token de refresco de un seed cerrado se guarda; el password jamás.** Ver el apartado de almacenamiento.
 
 ### Manejador de protocolo
 
@@ -1021,7 +1022,7 @@ Reglas que se derivan:
 - **El host se va:** sus reglas de firewall desaparecen con su máquina. Los invitados no tienen nada abierto, porque en un juego de estrella nunca abrieron nada. La red queda inerte, no insegura.
 
   La excepción, y es la única: un perfil de MALLA, o sea con `client_ports` no vacío, sí abre puertos en cada invitado. Es lo que documenta `06-catalogo.md` y lo que pide el netcode viejo de paso bloqueado, donde cada cliente habla con todos. Poner algo en `client_ports` expande el radio de explosión de todos los miembros y por eso el listón es más alto: se justifica en el perfil, se prueba que NO funcionaba en estrella, y la UI lo dice antes de entrar. La enorme mayoría de los juegos es estrella y ahí la frase de arriba vale literal.
-- **El host vuelve:** su propio daemon conserva la sala en `room.json` con el juego que estaba activo, y al arrancar **pregunta** si reabrirla. Al reabrir, la identidad de la red es la misma, el perfil se repone resolviéndolo contra el catálogo de esa máquina, y las reglas se regeneran para los miembros presentes en ese momento. Nunca reabre sola. Ver decisión 2.
+- **El host vuelve:** su propio daemon conserva la sala en `hosted-room.json` con el juego que estaba activo, y al arrancar **pregunta** si reabrirla. Al reabrir, la identidad de la red es la misma, el perfil se repone resolviéndolo contra el catálogo de esa máquina, y las reglas se regeneran para los miembros presentes en ese momento. Nunca reabre sola. Ver decisión 2.
 - **Nadie hereda el rol.** No hay promoción automática ni elección. Un invitado que quiera hospedar crea una sala nueva.
 - **Se va el último nodo y la red deja de existir.** No queda estado de RED en ningún lado: ningún servidor sostiene la sala, y el seed no puede levantarla. Es la consecuencia natural de no tener servidor de salas, no una limitación que haya que disculpar.
 
@@ -2090,7 +2091,7 @@ La regla que centraliza: **toda mutación persistente de Kanpachi o lleva etique
 | Purgar el grupo `Kanpachi` y soltar la compuerta | Se lleva las dos capas, en el orden que decide el adaptador compuesto |
 | Restaurar reglas ajenas | Son de otra persona, y dejarlas apagadas por un daemon que ya no corre es lo peor que este producto puede hacerle a una máquina |
 | Revertir el libro de ajustes | La política de prefijo IPv6 y DirectPlay, al valor que había ANTES |
-| Borrar `room.json` | Su mera presencia es lo que hace que el arranque siguiente pregunte si reabrir, y ya no hay nada que reabrir |
+| Borrar `hosted-room.json` | Su mera presencia es lo que hace que el arranque siguiente pregunte si reabrir, y ya no hay nada que reabrir |
 
 **Ningún fallo corta la secuencia.** No hay un segundo intento: quien pide un reset lo pide porque nada más funciona, y abortar en el primer paso dejaría el resto puesto justo entonces. Se registran todos y se devuelven juntos.
 
@@ -2098,7 +2099,7 @@ La regla que centraliza: **toda mutación persistente de Kanpachi o lleva etique
 
 **El desinstalador es otra bandera**, `--uninstall-cleanup`, que hace lo mismo y además quita la cuarentena. Esa capacidad vive en **una sola función**, `windowscom.RemoveBaseQuarantineForUninstall`, con el nombre largo a propósito para que aparezca entero en cualquier búsqueda. Está cerrada por tres vías: `port.FirewallPort` no declara nada que pueda quitarla, así que ningún caso de uso puede pedirlo; un guardián exige que sea la única función del daemon que a la vez nombre el grupo base y llame a algo que borra; y otro exige que solo la llame el cableado de `cmd/kanpachid`. El primero de esos guardianes se escribió porque el que ya existía **no mordía**: buscaba llamadas con nombre de verbo destructivo y el grupo entre los argumentos, y el borrado real pasa por un helper propio con el grupo comparado contra el campo de una regla enumerada. Se comprobó escribiendo la función y viendo al guardián viejo callar.
 
-Medido el 2026-08-05 con una sala real y el daemon muerto a lo bruto: quedaban una regla del grupo `Kanpachi`, seis filtros de compuerta y un `room.json`; tras el reset, cero y cero, la cuarentena entera en sus 48 reglas, sin motor huérfano, sin `room.json`, y una sala nueva se creó a continuación. Lo corre `scripts/medir-reset.ps1`.
+Medido el 2026-08-05 con una sala real y el daemon muerto a lo bruto: quedaban una regla del grupo `Kanpachi`, seis filtros de compuerta y un `hosted-room.json`; tras el reset, cero y cero, la cuarentena entera en sus 48 reglas, sin motor huérfano, sin `hosted-room.json`, y una sala nueva se creó a continuación. Lo corre `scripts/medir-reset.ps1`.
 
 ## kanpachi-seed
 
@@ -2196,6 +2197,58 @@ El almacén sigue siendo el mapa en memoria. Lo que se agrega es un respaldo del
 
 El directorio lo elige `--state-dir`, que por defecto lee `STATE_DIRECTORY` del entorno. Sin ninguno de los dos el registro corre volátil, que es lo que usan los tests.
 
+### Quién deriva, y por qué el seed aguanta con un freno de una sola ranura
+
+Argon2id de 64 MiB aparece en los dos lados, y no en los mismos momentos. Confundirlos lleva a dimensionar mal el registro, y a suponer acoplamientos que no existen.
+
+| Momento | Dónde corre la derivación |
+|---|---|
+| **Crear una sala** | En el cliente y también en el seed: `Store.Issue` deriva la red de encuentro del invite ID que acaba de acuñar |
+| **Entrar a una sala** | **Solo en el cliente.** `Store.Lookup` devuelve la red que ya quedó guardada al crear, bajo lock de lectura y sin derivar nada |
+| **Renovar el código** | En el cliente, y en el seed, que acuña otro ID |
+
+Lo caro del seed está entonces en el acto raro y no en el frecuente. Crear una sala es un acto humano y esporádico; entrar a una pasa muchas veces por cada sala. Es lo que hace que `MemoryMax=256M` se sostenga con un freno de concurrencia de **una sola** derivación a la vez: la cola existe, y le toca a la operación que nadie repite.
+
+De ahí sale la consecuencia que importa ahora que el seed puede pedir password para hospedar. Una ráfaga de intentos de autenticación comparte ese freno con la creación de salas, y con nada más. Degrada crear, que es exactamente lo que la autenticación ya cierra. Quien está entrando a una sala no se entera de nada.
+
+### Un seed cerrado: qué exige, qué guarda y qué se niega a decir
+
+Ver la decisión 34 para el porqué. Lo que sigue es dónde vive cada pieza.
+
+**La puerta está en el enrutado, y eso es deliberado.** `Server.Handler` envuelve con `guarded` únicamente las tres rutas que mutan. Resolver un código, `/healthz` y la página no pasan por ahí nunca. `/healthz` fuera de la autenticación no es un olvido: la unidad late pidiéndolo con `WatchdogSec=30s`, así que cubrirlo reiniciaría el seed cada treinta segundos y el `BindsTo` se llevaría el motor con él.
+
+| Ruta | Con el seed cerrado |
+|---|---|
+| `POST /api/rooms`, `PUT /api/i/{id}` | token de acceso |
+| `GET /api/i/{id}`, `GET /healthz`, la página | abiertas, siempre |
+| `POST /api/auth/token`, `POST /api/auth/refresh` | abiertas, con freno propio |
+
+**El fichero de la credencial**, `auth.json` en el directorio de estado, 0600, atómico como el de salas:
+
+| Campo | Qué es |
+|---|---|
+| `hash`, `salt` | Argon2id sobre la prueba que manda el cliente |
+| `signing` | 32 bytes que ACUÑAN tokens. Vale tanto como el password y no caduca |
+| `time`, `memory`, `threads` | Los parámetros con los que se derivó ese hash |
+
+Los parámetros viajan dentro a propósito, y ahí está la diferencia con los de la identidad de encuentro: aquéllos están congelados para la v1 porque **dos máquinas los calculan por separado**, y acá los calcula una sola, contra una sal que ella misma guardó. Cambiarlos algún día verifica las credenciales viejas con los suyos.
+
+**La memoria es `domain.ArgonMemoryKiB` y no un número propio**, y eso sostiene la aritmética de la unidad: `MemoryMax` son cuatro veces esa constante, y autenticar comparte la ranura de derivación en vez de tener una suya.
+
+**Los tokens son opacos y firmados, no almacenados.**
+
+```
+kind(1) ‖ vencimiento(8, big endian) ‖ nonce(16) ‖ HMAC-SHA256(signing, "kanpachi/seed-token/v1" ‖ cuerpo)
+```
+
+El `kind` va DENTRO de lo firmado, así que un token de refresco no se puede presentar donde se espera uno de acceso. El refresco **no desliza**: refrescar acuña un token de acceso nuevo y devuelve el mismo de refresco, de modo que una sesión tiene techo duro en vez de uno que un token robado pueda estirar para siempre.
+
+**Del lado del cliente**, `seed-token.json` guarda el refresco y **nada más**. Es el único fichero del estado que lleva las dos defensas: el sello con la llave de la instalación y además una ACL propia, porque `ProgramData\Kanpachi` da lectura a todos los usuarios de la máquina a propósito. El password no toca el disco en ningún sitio. El seed guardado viaja dentro del fichero, así que un token de un registro jamás se le manda a otro.
+
+**El sobre de error de TODA la API** pasó a ser `{"code": "...", "sub": "..."}`, sin texto. `sub` dice qué hacer y jamás qué pasó, y no hay código para "venció". La prosa la escriben las dos caras del cliente. Con `--json` el CLI contesta un solo documento por stdout, con el código y nada más, y lo vigila `internal/arch/secreto_test.go`.
+
+**`kanpseed password` es otro proceso**, así que no puede escribir en la memoria del que sirve. Escribe el fichero, lo pone a nombre del usuario dinámico que systemd inventó, y manda un `reload`: el mismo SIGHUP que relee la página recarga también la credencial. Un `restart` funcionaría igual y se llevaría el motor por delante.
+
 ## Flujo de una conexión
 
 ```
@@ -2236,12 +2289,20 @@ ProgramData\Kanpachi\
   identity.key               llave privada larga de esta instalación (decisión 25).
                              La crea el primer uso del registro, con ACL propia
   known-hosts.json           libreta de huellas: nick visto, llave con que se lo vio
-  room.json                  SOLO EN EL HOST: invite ID con su seed, identidad de la red
+  hosted-room.json           SOLO EN EL HOST: invite ID con su seed, identidad de la red
                              real, subred, nombre, nick, la tarjeta sellada con su
                              clave, e id del juego activo. Su PRESENCIA al arrancar
                              es la señal de mal cierre: salir limpio lo borra
   last-room.json             SOLO EN INVITADOS: código, seed, nombre de la sala y nick.
                              Jamás la credencial ni la identidad de la red real
+  seed.txt                   el registro donde ESTA máquina abre salas. En claro y
+                             a propósito: viaja dentro de cada código que se
+                             reparte, y sellarlo rompería que `kanpachi upgrade`
+                             funcione con el daemon caído, que es cuando más falta
+                             hace. El 0600 evita que otro usuario lo REESCRIBA
+  seed-token.json            SOLO SI ese registro pide password: el token de
+                             refresco, sellado Y con ACL propia. Jamás el password,
+                             y jamás el token de acceso, que vive quince minutos
   suspended-rules.json       reglas ajenas desactivadas y su estado previo
   logs\kanpachi.log          lo que el daemon dice, Y la traza de un pánico, que
                              antes se perdía. En todo modo salvo consola, que va a
@@ -2259,7 +2320,9 @@ ACL de ProgramData: escritura solo SYSTEM y Administradores, lectura para usuari
 
 **El daemon es la única fuente de verdad.** Cerrar la ventana no cierra la sala, así que el estado tiene que sobrevivir a la UI. La UI lo lee por `Status()` y persiste únicamente cosas de presentación, como el tamaño de la ventana. Guardar la sala también del lado de Flutter crearía dos verdades que se desincronizan justo en el caso que el producto promete soportar, que es cerrar la ventana con la partida viva.
 
-**`room.json` lleva la identidad de la red real, o sea que es portador de acceso a la sala.** La ACL de ProgramData da lectura a los usuarios de la máquina, así que cualquier proceso del usuario puede leerlo. Es coherente con el modelo de amenazas, que ya asume que malware corriendo como el usuario puede usar la API igual que el usuario. Vale escribirlo para que nadie lo trate como inocuo: sobrevive a la sesión.
+**`seed-token.json` es el único fichero de este árbol con ACL propia además del sello**, y `identity.key` el único con ACL propia sin sello. El motivo es el mismo y apunta al revés: el directorio da lectura a todos los usuarios de la máquina a propósito, para que la interfaz lea `api.token` sin elevar, así que un fichero nuevo hereda esa ACL. El sello ya lo vuelve ilegible sin `identity.key`; la ACL está encima porque **el valor por omisión es el permisivo**, y el día que alguien agregue un camino que escriba en claro, lo que quede es lo que el directorio conceda.
+
+**`hosted-room.json` lleva la identidad de la red real, o sea que es portador de acceso a la sala.** La ACL de ProgramData da lectura a los usuarios de la máquina, así que cualquier proceso del usuario puede leerlo. Es coherente con el modelo de amenazas, que ya asume que malware corriendo como el usuario puede usar la API igual que el usuario. Vale escribirlo para que nadie lo trate como inocuo: sobrevive a la sesión.
 
 **La tarjeta sellada se guarda junto a su clave, y siempre las dos a la vez.** Es presentación cifrada, o sea bytes opacos y jamás política: lo peor que consigue un archivo manipulado es publicar basura firmada por la propia llave de este equipo, que es exactamente lo que este equipo ya puede hacer. Está ahí para poder volver a subirla al reabrir sin re-sellar nada, lo cual conserva válidos los enlaces ya repartidos, porque la clave que los abre es la que se acaba de cargar del disco.
 
@@ -2353,7 +2416,9 @@ Se pasó el producto por **OWASP Top 10 (2021)** y el repo por **OWASP Agentic S
 
 **A10 en detalle, con lo que se corrigió al revisarlo.** El invite code es un ticket desechable y el seed viaja pegado a él, así que un código fabricado apunta un destino elegido por otro. La primera versión de esta auditoría nombró un solo consumidor, el cliente HTTP, y **son dos**: el mismo valor entra en `HostSpec.Seeds`, `RendezvousSpec.Seeds` y `GuestSpec.Seeds`, o sea que también son los `--peers` con los que arranca el motor. El segundo es el que más pesa, porque ahí el daemon no consulta una API, intenta armar un túnel.
 
-Lo que el diseño ya garantizaba: un ID pelado usa siempre el seed por defecto y jamás el último usado; `ParseRoom` no interpreta rutas, no acepta argumentos y no adivina; y a un seed hostil le llega el invite ID y la tarjeta cifrada, nada más, o sea que ni ve el `networkID` ni el secreto de la sala. Lo peor que consigue es no contestar, y eso cuesta la tarjeta, no la sala.
+Lo que el diseño ya garantizaba: `ParseRoom` no interpreta rutas, no acepta argumentos y no adivina; y a un seed hostil le llega el invite ID y la tarjeta cifrada, nada más, o sea que ni ve el `networkID` ni el secreto de la sala. Lo peor que consigue es no contestar, y eso cuesta la tarjeta, no la sala.
+
+Un punto de esta lista **cambió de forma** al desaparecer el seed de fábrica. Decía que un ID pelado usa siempre el seed por defecto y jamás el último usado, y hoy un ID pelado **se rechaza**. La propiedad que se protegía es la misma, y ahora se protege sin ningún destino implícito: nada elige un servidor por quien pegó el código.
 
 **Lo que se arregló:** el seed tiene que ser un NOMBRE. Se exige que su última etiqueta lleve al menos una letra, y eso cierra la familia entera de formas de escribir una dirección, no solo la obvia. El resolver del sistema acepta cosas que un comprobador de IP bien formada deja pasar: `127.1` es loopback, `0x7f.0.0.1` también, y antes de esto las dos entraban, igual que `169.254.169.254`, que es el endpoint de metadatos de las nubes. El costo aceptado es que quien hospede su propio seed necesita un nombre, que es gratis, y a cambio la comprobación cubre al cliente HTTP y al motor de una vez.
 
@@ -2403,5 +2468,11 @@ Las comprobaciones van en CADA uso, no solo la primera vez: `last-room.json` gua
 | Miembro intenta hacerse pasar por el host EN LA SALA | No puede. Los invitados marcan hacia una dirección conocida y no aceptan conexiones entrantes |
 | Alguien con el código ocupa la dirección del host EN EL VESTÍBULO | **Puede, y hoy no hay defensa criptográfica.** Ahí las direcciones son autoasignadas y verificar exige la llave larga de la decisión 25, que sigue diferida. La víctima entra a la red del impostor en vez de a la del host, o sea que el daño es no entrar a la sala que quería. Renovar el código lo desarma, porque el vestíbulo deriva del invite ID |
 | Miembro que deja de recibir para trabar al host | Toda escritura del canal lleva plazo, y vencido se le cierra la conexión |
-| Malware local como el usuario | Usa la API igual que el usuario: unirse a salas, aplicar perfiles del catálogo. No puede abrir puertos arbitrarios. Puede leer `room.json` y con eso entrar a la sala |
+| Malware local como el usuario | Usa la API igual que el usuario: unirse a salas, aplicar perfiles del catálogo. No puede abrir puertos arbitrarios. Puede leer `hosted-room.json` y con eso entrar a la sala |
 | Malware local con admin | Fuera del alcance: con admin ya controla la máquina completa |
+| Desconocido de internet quiere hospedar en un seed ajeno | Con el seed cerrado, no puede: las tres rutas que mutan exigen token, y el token sale de un password que el operador reparte. Resolver un código sigue abierto para todos |
+| Fuerza bruta contra el password de un seed | Freno por IP mucho más estrecho que el general, retardo global creciente con tope, y la ranura única de Argon2id. Un intento frenado no llega a tocar la derivación |
+| Alguien expone el registro sin proxy delante | `X-Forwarded-For` solo se cree cuando la conexión viene de loopback. Publicado directo, el freno cuenta por `RemoteAddr`, que el otro extremo no puede escribir |
+| Operador de un seed intenta cosechar passwords | Recibe un SHA-256 con el host de su propio seed dentro, así que lo que aprende no vale en ningún otro sitio, ni siquiera en otro seed suyo |
+| Disco robado de una máquina que hospeda en un seed cerrado | Entrega un token de refresco sellado, que caduca y que el operador revoca cambiando el password. **El password no está en el disco** |
+| **Otro usuario de la MISMA PC, en Windows** | **El password del seed NO lo cubre**, y hay que decirlo para que nadie lo suponga al revés. El canal local se le concede al usuario interactivo a propósito, para que la ventana hable sin elevar, así que ese usuario puede pedirle al daemon que abra una sala usando el token ya guardado. El password le cierra la puerta a desconocidos de internet, no a quien ya se sentó en esa máquina. En Linux no ocurre: el socket es 0600 de root |

@@ -473,6 +473,15 @@ type apiFalsa struct {
 
 	reposiciones int
 	errReponer   error
+
+	// seed es el registro de esta máquina y sugerido el de la última sala a la
+	// que se entró. Vacíos por omisión, que es una instalación nueva.
+	seed     string
+	sugerido string
+	// passwordLen es cuántos caracteres llegó a SeedPassword, y no cuáles. Ver
+	// [apiFalsa.SeedPassword].
+	passwordLen     int
+	errSeedPassword error
 }
 
 func (a *apiFalsa) Now() time.Time { return a.ahora }
@@ -572,12 +581,40 @@ func (a *apiFalsa) ObserveGame(context.Context, domain.ProcessRef, map[int]bool,
 	return nil, nil
 }
 
-func (a *apiFalsa) PendingRoom() (domain.PersistedRoom, bool)            { return domain.PersistedRoom{}, false }
+func (a *apiFalsa) PendingRoom() (domain.HostedRoom, bool)               { return domain.HostedRoom{}, false }
 func (a *apiFalsa) ResumeRoom(context.Context) (domain.RoomState, error) { return a.estado, nil }
 func (a *apiFalsa) DiscardPendingRoom(context.Context) error             { return nil }
 func (a *apiFalsa) LastRoom() (domain.LastRoom, bool)                    { return domain.LastRoom{}, false }
-func (a *apiFalsa) Progress() domain.Progress                            { return domain.Progress{} }
-func (a *apiFalsa) Cancel() bool                                         { return false }
+
+// El registro de esta máquina. `seed` guarda lo último que se fijó, para que un
+// test pueda comprobar que escribir y releer devuelven lo mismo.
+func (a *apiFalsa) OwnSeed() string       { return a.seed }
+func (a *apiFalsa) SuggestedSeed() string { return a.sugerido }
+func (a *apiFalsa) SetOwnSeed(seed string) (string, error) {
+	limpio, err := domain.ParseOwnSeed([]byte(seed))
+	if err != nil {
+		return "", err
+	}
+	a.seed = limpio
+	return limpio, nil
+}
+
+// SeedPassword guarda LA LONGITUD de lo que llegó y no lo que llegó.
+//
+// Es deliberado, y es lo que hace que este falso no se pueda usar para
+// comprobar lo contrario de lo que el diseño promete: un test que quisiera
+// afirmar que el password viajó bien tendría que empezar por guardarlo, y ese
+// es exactamente el hábito que este método no puede tener.
+func (a *apiFalsa) SeedPassword(_ context.Context, password string) error {
+	a.passwordLen = len(password)
+	if err := domain.ValidateSeedPassword(password); err != nil {
+		return err
+	}
+	return a.errSeedPassword
+}
+
+func (a *apiFalsa) Progress() domain.Progress { return domain.Progress{} }
+func (a *apiFalsa) Cancel() bool              { return false }
 
 // TestLaSesiónDeVerdadSatisfaceLaAPI.
 //

@@ -41,7 +41,7 @@ var grupos = []struct {
 	{"The game:", []string{"games", "game"}},
 	{"Checking:", []string{"exposure", "diag", "probe", "protect"}},
 	{"What was left from before:", []string{"pending", "resume", "discard", "last"}},
-	{"The system:", []string{"doctor", "upgrade"}},
+	{"The system:", []string{"seed", "password", "doctor", "upgrade"}},
 	{"Other:", []string{"version", "help"}},
 }
 
@@ -92,6 +92,10 @@ func init() {
 			correr: cmdDiscard},
 		"last": {breve: "the last room you entered as a guest",
 			correr: cmdLast},
+		"seed": {args: "[host]", breve: "the registry this machine opens rooms on; with no host, shows it",
+			correr: cmdSeed},
+		"password": {breve: "the password of a registry that asks for one to host. Never on the command line",
+			correr: cmdPassword},
 		"doctor": {args: "[--fix]", breve: "what this needs to work, and what is broken",
 			correr: cmdDoctor},
 		"upgrade": {args: "[--check] [--version v] [--yes]",
@@ -206,8 +210,19 @@ func cmdWatch(ctx context.Context, op opciones, _ []string) error {
 }
 
 func cmdHost(_ context.Context, op opciones, args []string) error {
+	args, sinPreguntar := sacarSí(args)
 	nick, err := apodo(op)
 	if err != nil {
+		return err
+	}
+	// El registro se lee y se confirma ANTES de anunciar el minuto de espera.
+	// Preguntar después de "esto tarda un minuto" haría que la pregunta pareciera
+	// parte de la espera, y lo que se está decidiendo es si empezarla.
+	seed, err := registroDeEstaMáquina(op)
+	if err != nil {
+		return err
+	}
+	if err := confiarEnElRegistro(op, seed, "Opening a room", sinPreguntar); err != nil {
 		return err
 	}
 	nombre := strings.Join(args, " ")
@@ -234,14 +249,25 @@ func cmdHost(_ context.Context, op opciones, args []string) error {
 // entrada hostil del producto. Normalizar antes de llamarla es probar otra cosa
 // distinta de la que se quiere probar.
 func cmdJoin(_ context.Context, op opciones, args []string) error {
+	args, sinPreguntar := sacarSí(args)
 	if len(args) == 0 {
 		return uso("join needs the code or the link.\n" +
-			"  All six forms work: VA3BSF5L, va3b-sf5l, kanpachi://VA3BSF5L,\n" +
-			"  VA3BSF5L@another-seed.com, kanpachi.accentio.dev/VA3BSF5L and https://...")
+			"  Every form works as long as it carries the registry:\n" +
+			"  VA3BSF5L@seed.example.com, seed.example.com/VA3BSF5L,\n" +
+			"  https://seed.example.com/VA3BSF5L#key and kanpachi://VA3BSF5L@seed.example.com")
 	}
 	nick, err := apodo(op)
 	if err != nil {
 		return err
+	}
+	// Vacío cuando el texto no parsea, y ahí NO se pregunta: quien tiene que
+	// explicar qué le falta a ese código es el daemon, que es la frontera de
+	// entrada hostil. Preguntar por un registro que no se pudo leer sería
+	// nombrar una máquina inventada.
+	if seed := registroDelCódigo(args[0]); seed != "" {
+		if err := confiarEnElRegistro(op, seed, "Entering that room", sinPreguntar); err != nil {
+			return err
+		}
 	}
 	if !op.json {
 		fmt.Println("Entering...")
@@ -546,6 +572,75 @@ func cmdLast(_ context.Context, op opciones, _ []string) error {
 	}
 	fmt.Printf("  %s  %s@%s  (as %s)\n", v.Room.Name, v.Room.Code, v.Room.Seed, v.Room.Nick)
 	fmt.Printf("\n  To go back:  kanpachi join %s@%s\n", v.Room.Code, v.Room.Seed)
+	return nil
+}
+
+// ─── El registro de esta máquina ─────────────────────────────────────────────
+
+// cmdSeed enseña o cambia el registro en el que esta máquina abre sus salas.
+//
+// # Por qué hace falta un comando, si antes no hacía falta nada
+//
+// Porque desapareció el seed por defecto. Hasta el 2026-08-12 un código pelado
+// significaba una máquina concreta, compilada dentro; ahora el registro viaja en
+// cada código, y al CREAR no hay código todavía, porque el código es justo lo que
+// el registro emite. Así que crear necesita saber a quién preguntarle, y esto es
+// dónde se contesta desde una terminal.
+//
+// # Por qué NO se adopta solo el de la sala a la que entraste
+//
+// Porque la siguiente sala que abras se hospedaría en el servidor de un
+// desconocido sin que nadie lo haya decidido. Lo que ese registro sí hace es
+// aparecer acá como sugerencia, para no tener que ir a buscarlo a un chat.
+func cmdSeed(_ context.Context, op opciones, args []string) error {
+	nuevo := ""
+	switch len(args) {
+	case 0:
+	case 1:
+		nuevo = args[0]
+		if strings.HasPrefix(nuevo, "-") {
+			return uso("seed takes a host name, not a flag: kanpachi seed seed.example.com")
+		}
+	default:
+		return uso("seed takes at most one host name")
+	}
+
+	c, err := abrir(op)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = c.Close() }()
+
+	var params any
+	if nuevo != "" {
+		params = struct {
+			Seed string `json:"seed"`
+		}{nuevo}
+	}
+	v, hecho, err := pedir[struct {
+		Seed      string `json:"seed"`
+		Suggested string `json:"suggested"`
+	}](c, op, protocol.MethodOwnSeed, params)
+	if hecho || err != nil {
+		return err
+	}
+
+	if v.Seed == "" {
+		fmt.Println("This machine has no registry configured, so it cannot open rooms yet.")
+		// La sugerencia se ofrece con el comando ya escrito, y no se aplica sola:
+		// entrar a la sala de alguien no elige dónde vas a hospedar tú.
+		if v.Suggested != "" {
+			fmt.Printf("\n  The last room you entered was on %s.\n", v.Suggested)
+			fmt.Printf("  To use that one:  kanpachi seed %s\n", v.Suggested)
+		} else {
+			fmt.Println("\n  To set one:  kanpachi seed seed.example.com")
+		}
+		return nil
+	}
+	fmt.Printf("Rooms opened from this machine live on %s.\n", v.Seed)
+	if v.Suggested != "" && v.Suggested != v.Seed {
+		fmt.Printf("\n  The last room you entered was on %s, which is a different one.\n", v.Suggested)
+	}
 	return nil
 }
 

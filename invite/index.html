@@ -228,7 +228,11 @@
   button.chip { cursor: pointer; transition: filter .18s; }
   button.chip:hover { filter: brightness(.96); }
   .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); animation: pulse 2.4s ease-in-out infinite; }
-  .bar .foreign { color: var(--warn); }
+  /* NO hay estilo de "seed ajeno", y se quitó al abrir el proyecto. Marcaba el
+     host del pie en rojo cuando no era el de Accentio, y sin seed por defecto
+     eso no significa nada: todo seed es el de alguien, y quien mira esta página
+     ya está en ese seed. La advertencia con peso vive en el diálogo de
+     confianza de la app, que ahora sale siempre. */
 
   .primary {
     position: relative; overflow: hidden;
@@ -470,7 +474,24 @@
   // el usuario cree que el problema es la app. Hay un test que los ata.
   var ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
   var CODE_LEN = 8;
-  var DEFAULT_SEED = "kanpachi.accentio.dev";
+
+  // NO HAY seed compilado en esta página, y la ausencia es la decisión.
+  //
+  // Había `DEFAULT_SEED = "kanpachi.accentio.dev"`, y hacía dos cosas que
+  // dejaron de significar algo cuando el producto se abrió:
+  //
+  //   1. Respaldo cuando no hay hostname, o sea la página abierta desde el
+  //      disco. Sin seed por defecto, esa página no tiene ninguno que ofrecer,
+  //      y lo correcto es decirlo en vez de inventar uno que mandaría a la
+  //      gente al registro de otro.
+  //   2. Marcar el host del pie cuando era "ajeno". Ya no hay ajeno: TODO seed
+  //      es el de alguien, y quien mira esta página está en ese seed. La
+  //      advertencia con peso vive en el diálogo de confianza de la app, que
+  //      ahora aparece siempre y no solo cuando el destino es raro.
+  //
+  // El seed sale de `window.location.hostname` y de ningún otro sitio, que es
+  // lo que hace que el registro de cualquiera reparta códigos apuntando a sí
+  // mismo sin editar una línea. Lo vigila `internal/arch/invite_test.go`.
 
   // Tope antes de mirar el contenido. La ruta y el fragmento los controla
   // quien manda el link, así que se tratan como entrada hostil.
@@ -491,7 +512,16 @@
   // redirige al fichero de la última publicación. Es el mismo mecanismo que ya
   // usa `seed/install.sh`, y lo que hace que publicar un tag actualice esta
   // página sin tocarla.
-  var REPO = "https://github.com/alvarogabrielgomez/kanpachi";
+  // Sale del SERVIDOR, que lo saca de `internal/selfupdate.Repo`, y no de una
+  // copia escrita acá. Con la copia, un fork que cambiara la constante de Go
+  // seguía publicando esta página apuntando al repositorio original, y lo
+  // vigila un guardián en `internal/arch`.
+  //
+  // **Vacío no lleva respaldo**, y es la misma decisión que con el registro:
+  // esta página abierta desde el disco no tiene servidor que se lo diga, y el
+  // repositorio que se inventara mandaría a bajar el producto de otro. Ahí se
+  // dice que no hay descarga, ver [renderDownload].
+  var REPO = ssrRepo() ? "https://github.com/" + ssrRepo() : "";
   var SETUP = REPO + "/releases/latest/download/kanpachi-setup.exe";
   // El mismo mecanismo de URL permanente, y por el mismo motivo: el nombre del
   // fichero no lleva la versión, así que publicar un tag actualiza esta página
@@ -600,18 +630,21 @@
   var params = new URLSearchParams(window.location.search);
   var preview = params.get("preview");
 
-  // El seed sale del dominio que sirve esta página. Quien se autohospeda sube
-  // su registro a su dominio y los enlaces que genera llevan su host solos, sin
-  // editar nada y sin que sus invitados configuren nada. Decisión 16.
-  var host = window.location.hostname || DEFAULT_SEED;
-  var isDefault = (host === DEFAULT_SEED);
-  text("bar-host", host);
-  // Un seed ajeno se marca en el pie, donde el host ya se muestra, en vez de
-  // ocupar un chip. Es un dato, no una alarma: la advertencia con peso está en
-  // la tarjeta de confirmación de la app, que aparece siempre.
-  if (!isDefault) $("bar-host").classList.add("foreign");
-  $("bar-source").setAttribute("href", REPO);
-  $("bar-version").setAttribute("href", RELEASES);
+  // El seed sale del dominio que sirve esta página, y de ningún otro sitio.
+  // Quien se autohospeda sube su registro a su dominio y los enlaces que genera
+  // llevan su host solos, sin editar nada y sin que sus invitados configuren
+  // nada. Decisión 16.
+  //
+  // Vacío significa una cosa concreta: esta página se abrió desde el disco, sin
+  // servidor. Ahí no hay registro que ofrecer y **no se inventa uno**, porque el
+  // que se inventara mandaría a la gente al registro de otro con un código que
+  // ahí no existe.
+  var host = window.location.hostname;
+  text("bar-host", host || "sin servidor");
+  if (REPO) {
+    $("bar-source").setAttribute("href", REPO);
+    $("bar-version").setAttribute("href", RELEASES);
+  }
 
   var path = window.location.pathname.replace(/^\/+|\/+$/g, "");
 
@@ -787,6 +820,18 @@
     var b = $("dl-button");
     b.textContent = "Descargar la última versión";
 
+    // Sin repositorio no hay de dónde bajar, y se dice en vez de ofrecer un
+    // enlace roto. Pasa con esta página abierta desde el disco: la sirve un
+    // seed, y sin seed nadie le dijo de dónde salió este producto.
+    if (!REPO) {
+      b.textContent = "Esta página se abrió sin servidor";
+      b.removeAttribute("href");
+      hide("dl-portable");
+      notaDeDescarga("Ábrela desde el servidor que te pasó el código.");
+      show("sec-download");
+      return;
+    }
+
     if (isLinux) {
       text("dl-sub", "Ubuntu 22.04 o más nueva · amd64 · sin ventana");
       b.setAttribute("href", DEB);
@@ -856,6 +901,9 @@
       nota.appendChild(document.createTextNode(antesDelEnlace));
       nota.appendChild(document.createElement("br"));
     }
+    // Sin repositorio no hay publicación que enlazar, y el enlace que se armara
+    // sería relativo a este servidor, o sea a ninguna parte.
+    if (!REPO) return;
     nota.appendChild(document.createTextNode("El número de versión y el SHA256 están en "));
     var enlace = document.createElement("a");
     enlace.setAttribute("href", RELEASES);
@@ -864,14 +912,18 @@
     nota.appendChild(document.createTextNode("."));
   }
 
-  // Le pregunta al seed cuál es la última versión y la escribe en el botón.
+  // Escribe la versión en el botón, LEYÉNDOLA de lo que sirvió el servidor.
   //
-  // # Por qué al seed y no a GitHub
+  // # Por qué no se le pregunta a nadie
   //
-  // Preguntarle a `api.github.com` desde acá manda la IP de quien mira la
-  // página a un tercero, gasta la cuota de sesenta por hora DE ESA PERSONA, y
-  // obliga a abrir `connect-src` a un origen ajeno en la CSP, que está cerrada
-  // a `'self'` a propósito. El seed pregunta una vez por hora para todos.
+  // Porque ya llegó. La versión viene incrustada con la página, así que esto no
+  // hace ninguna petición: ni a `api.github.com`, que mandaría la IP de quien
+  // mira la página a un tercero y gastaría su cuota de sesenta por hora, ni al
+  // propio origen, que costaba un viaje y obligaba a justificar `connect-src`.
+  // El seed le pregunta a GitHub una vez al día, para todos.
+  //
+  // Sincrónica, y por eso ya no hace falta comprobar que la pantalla de
+  // descarga siga puesta: no hay respuesta que pueda llegar tarde.
   //
   // # Por qué es un añadido y no un requisito
   //
@@ -881,17 +933,12 @@
   // todavía sin resolver— no pasa nada: se queda el texto de siempre. Por eso
   // el fallo se traga entero y no hay mensaje de error en ninguna rama.
   function versionEnElBoton() {
-    fetch("/api/version", { cache: "no-store" })
-      .then(function (res) { return res.ok ? res.json() : null; })
-      .then(function (data) {
-        if (!data || typeof data.client !== "string" || !data.client) return;
-        // Solo si sigue siendo la pantalla de descarga: entre la petición y su
-        // respuesta el usuario pudo haber pegado un código.
-        var b = $("dl-button");
-        if (!b || $("sec-download").classList.contains("hidden")) return;
-        b.textContent = "Descargar " + data.client;
-      })
-      .catch(function () {});
+    var ssr = estadoDelServidor();
+    var v = ssr && typeof ssr.version === "string" ? ssr.version : "";
+    if (!v) return;
+    var b = $("dl-button");
+    if (!b) return;
+    b.textContent = "Descargar " + v;
   }
 
   function renderRoom(id) {
@@ -903,8 +950,9 @@
     // pieza no lo hiciera para que la sala "no exista" sin motivo visible.
     // Lo que se ve, se copia y se pega sí lleva guion; lo que viaja, no.
     //
-    // Un ID pelado significa el seed por defecto. Para cualquier otro host se
-    // agrega explícitamente, porque el cliente jamás asume el último usado.
+    // El host va SIEMPRE. Antes había una rama que lo omitía cuando la página
+    // era la del seed compilado, y ese seed ya no existe: un ID pelado no
+    // significa nada, porque el cliente no tiene ningún registro que asumir.
     //
     // La clave de la tarjeta viaja también, y hace falta: es lo que permite a
     // la app enseñar el nombre de la sala y cómo se identifica quien invita en
@@ -912,7 +960,7 @@
     // máquina —el esquema lo atiende Kanpachi en este mismo PC— y no cambia a
     // qué sala apunta el enlace: el cliente descarta el fragmento antes de
     // decidir eso, y solo lo usa para descifrar.
-    var target = isDefault ? "kanpachi://" + id : "kanpachi://" + id + "@" + host;
+    var target = "kanpachi://" + id + "@" + host;
     if (cardKey) target += "#" + cardKey;
 
     if (!isWindows) {
@@ -990,6 +1038,19 @@
     }
   }
 
+  // La tarjeta cuelga de `.room`, y llega null en toda ruta que no sea un
+  // invite ID vivo. El hueco ahora viaja SIEMPRE, porque también lleva la
+  // versión y el repositorio; antes su mera presencia significaba "hay sala".
+  function salaDelServidor() {
+    var v = estadoDelServidor();
+    return v && v.room && typeof v.room === "object" ? v.room : null;
+  }
+
+  function ssrRepo() {
+    var v = estadoDelServidor();
+    return v && typeof v.repo === "string" ? v.repo : "";
+  }
+
   // Una sola petición, al MISMO origen, y solo si el servidor no resolvió ya.
   // Si falla, la página se queda como está: tarjeta genérica, contador oculto,
   // y el botón de entrar intacto.
@@ -1000,7 +1061,7 @@
   // fallo explicado por un botón que no está, y encima sobre una medición de
   // hace un instante.
   function loadCard(id, eyebrowID, nameID) {
-    var ya = estadoDelServidor();
+    var ya = salaDelServidor();
     if (ya) { applyCard(ya, eyebrowID, nameID); return; }
 
     fetch("/api/i/" + encodeURIComponent(id), { cache: "no-store" })

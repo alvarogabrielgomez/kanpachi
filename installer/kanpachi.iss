@@ -16,7 +16,16 @@
   #define VersionInfo  "0.0.0"
 #endif
 #define AppPublisher   "Accentio Studios"
-#define AppURL         "https://kanpachi.accentio.dev"
+; El repositorio llega POR PARAMETRO, igual que la version, y no escrito aca.
+;
+; Inno Setup no puede importar la constante de Go, y una copia mas de esa cadena
+; es una que un fork edita en un sitio y se olvida en otro: lo vigila
+; `internal/arch/marca_test.go`. El respaldo es para compilar a mano, donde no
+; hay canal que respetar porque ese instalador no se publica.
+#ifndef Repo
+  #define Repo "ejemplo/kanpachi"
+#endif
+#define AppURL         "https://github.com/" + Repo
 #define ServiceName    "kanpachi-daemon"
 #define DaemonExe      "kanpachid.exe"
 #define UiExe          "kanpachiui.exe"

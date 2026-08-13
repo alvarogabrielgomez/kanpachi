@@ -85,14 +85,14 @@ func main() {
 
 	datos := flag.String("data", "data", "directorio de datos de ESTA herramienta")
 	dirLog := flag.String("log", "", "dónde dejar "+LogFile+" (por omisión, junto al ejecutable)")
-	// El seed gobierna el REGISTRO de esta máquina, y nada más.
+	// El seed gobierna dónde ABRE salas esta máquina, y nada más.
 	//
-	// La asimetría es real y confunde si no se dice: un código pelado siempre
-	// resuelve al seed por defecto dentro de `domain.ParseRoom`, mire lo que
-	// mire este flag. Para entrar a una sala de otro registro hay que pegar
-	// `CODIGO@ese-seed`, que es una de las seis formas que el producto acepta.
-	seed := flag.String("seed", domain.DefaultSeedHost,
-		"host del registro al que esta máquina publica y pregunta")
+	// Ya no hay valor por defecto que poner, porque el producto dejó de tener
+	// uno: sin esta bandera, esta sonda no puede crear una sala, igual que el
+	// producto sin registro configurado. Para ENTRAR no hace falta, porque el
+	// registro sale del código pegado, que ahora siempre trae el suyo.
+	seed := flag.String("seed", "",
+		"host del registro donde esta máquina abre salas. Sin él solo se puede entrar")
 	force := flag.Bool("force", false,
 		"arrancar aunque el servicio kanpachi-daemon esté corriendo (le purga las reglas)")
 	flag.Parse()

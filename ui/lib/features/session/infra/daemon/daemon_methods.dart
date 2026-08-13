@@ -61,6 +61,20 @@ abstract final class DaemonMethods {
   /// Read, and optionally change, whether Kanpachi starts with Windows.
   static const String autostart = 'autostart';
 
+  /// Read, and optionally change, the registry this machine opens rooms on.
+  ///
+  /// One call for both, like [autostart] and for the same reason: the screen
+  /// that changes it needs to read it back to draw what actually landed. It
+  /// also answers the SUGGESTION, which is the registry of the last room this
+  /// machine entered — that one decides nothing, it only prefills the field.
+  static const String ownSeed = 'own_seed';
+
+  /// El password del registro propio. Ver `protocol.MethodSeedPassword`.
+  ///
+  /// La respuesta es un acuse vacío: no vuelven tokens, no vuelve el estado de
+  /// la puerta y no vuelve lo que se mandó.
+  static const String seedPassword = 'seed_password';
+
   /// Cut short the long operation in flight. Same rule as [progress]: it goes
   /// down a connection of its own, because the one carrying the operation is
   /// busy carrying it.

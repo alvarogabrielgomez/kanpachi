@@ -63,7 +63,7 @@ type Sala interface {
 	LeaveRoomOnShutdown(ctx context.Context) error
 
 	// PendingRoom is the room left by the previous run, if there is one.
-	PendingRoom() (domain.PersistedRoom, bool)
+	PendingRoom() (domain.HostedRoom, bool)
 	// ResumeRoom reopens it with the SAME code and the SAME network.
 	ResumeRoom(ctx context.Context) (domain.RoomState, error)
 }

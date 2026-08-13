@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -61,8 +62,39 @@ type lookupBody struct {
 	Members *int `json:"members"`
 }
 
+// errorBody is the whole of what a failure says, and it says no prose.
+//
+// The registry used to answer `{"error": "<texto en claro>"}` and that message
+// went into what a person read. It does not any more, on purpose: a message
+// that explains is a message that distinguishes, and on the auth path telling
+// "that token expired" from "that token was never valid" is free information
+// for whoever is guessing a password. The sentences live on this side now,
+// where the language of the reader is known.
 type errorBody struct {
-	Error string `json:"error"`
+	Code string `json:"code"`
+	Sub  string `json:"sub"`
+}
+
+// The sub-codes this client acts on. Mirrors of `registry.SubReauth` and
+// `registry.SubPassword`, and the contract test is what keeps them together.
+const (
+	subReauth   = "reauth"
+	subPassword = "password"
+)
+
+// The two bodies of the auth endpoints.
+type authBody struct {
+	Proof string `json:"proof"`
+}
+
+type refreshRequest struct {
+	Refresh string `json:"refresh_token"`
+}
+
+type tokenBody struct {
+	Access    string `json:"access_token"`
+	Refresh   string `json:"refresh_token"`
+	ExpiresIn int    `json:"expires_in"`
 }
 
 func b64(raw []byte) string { return base64.RawURLEncoding.EncodeToString(raw) }
@@ -166,7 +198,42 @@ func dialVerified(
 
 // do is the single request path. Everything goes through here so that the caps
 // and the strict decoding cannot be forgotten in one method out of three.
+//
+// # The one retry, and why it is not a retry policy
+//
+// A 401 that asks to reauthenticate costs one refresh and ONE repeat of the
+// call. That is not the retry loop this adapter refuses to have: it does not
+// fire on a timeout, on a 5xx or on being throttled, and it cannot happen twice
+// for the same call. What it covers is the one case where the first answer was
+// not about the request at all, which is an access token that ran out fifteen
+// minutes into a room that is still open.
+//
+// Without it, every renewal of a code on a closed seed would surface as a
+// failure that the person fixes by typing a password they already typed.
 func (d *Directory) do(ctx context.Context, method, ruta string, in, out any, esperado int) error {
+	// The bearer that is ABOUT to be sent, captured before the call. If the
+	// refresh finds a different one, somebody else already renewed while this
+	// call was queued behind it, and there is nothing left to do but retry.
+	stale := d.accessToken()
+
+	if err := d.attempt(ctx, method, ruta, in, out, esperado); err != nil {
+		if !errors.Is(err, errReauth) {
+			return err
+		}
+		if err := d.refreshAccess(ctx, stale); err != nil {
+			return err
+		}
+		return d.attempt(ctx, method, ruta, in, out, esperado)
+	}
+	return nil
+}
+
+// errReauth never leaves this package. It is the marker that says "the answer
+// was about the token, not about the request", and [Directory.do] is the only
+// thing that ever sees it.
+var errReauth = errors.New("el registro pide reautenticar")
+
+func (d *Directory) attempt(ctx context.Context, method, ruta string, in, out any, esperado int) error {
 	var cuerpo io.Reader
 	if in != nil {
 		raw, err := json.Marshal(in)
@@ -184,6 +251,12 @@ func (d *Directory) do(ctx context.Context, method, ruta string, in, out any, es
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/json")
+	// The bearer only goes out when there is one. An open seed never asks, and
+	// sending a token to a seed that did not ask hands a credential to whoever
+	// runs it.
+	if tok := d.accessToken(); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
 
 	resp, err := d.client.Do(req)
 	if err != nil {
@@ -219,35 +292,61 @@ func (d *Directory) do(ctx context.Context, method, ruta string, in, out any, es
 	return nil
 }
 
-// errorDelRegistro turns a status code into something a person can act on.
+// errorDelRegistro turns a coded answer into something a person can act on.
+//
+// The prose is written HERE and not by the registry, which is the point of the
+// coded envelope: a seed that a stranger runs no longer chooses what appears on
+// somebody's screen, and a code cannot leak the distinction between an expired
+// token and an invalid one because there is only one code for both.
 //
 // The 429 says explicitly that nothing is being retried. The registry's rate
 // limit counts failures too, so a client that retries on being throttled is a
 // client that turns one stumble into a locked door.
-func errorDelRegistro(código int, raw []byte) error {
+func errorDelRegistro(status int, raw []byte) error {
 	var e errorBody
 	_ = json.Unmarshal(raw, &e)
-	detalle := e.Error
-	if detalle == "" {
-		detalle = http.StatusText(código)
-	}
 
-	switch código {
+	switch status {
+	case http.StatusUnauthorized:
+		// The two ways out, and the sub-code is what picks between them. Reauth
+		// means an access token that ran out, which one refresh fixes without
+		// anybody noticing; password means the refresh is gone too, and the only
+		// move left is a person typing.
+		if e.Sub == subReauth {
+			return errReauth
+		}
+		return fmt.Errorf("%w: %s", port.ErrSeedPassword, codeText(status, e))
 	case http.StatusNotFound:
 		// Envuelto en el centinela, y es la única respuesta del registro que lo
 		// lleva. Es lo que permite que entrar a una sala falle en el primer
-		// segundo con un código que no existe, sin que un registro caído
+		// segundo con un status que no existe, sin que un registro caído
 		// impida entrar a una que sí. Ver [port.ErrUnknownRoom].
-		return fmt.Errorf("%w (%s)", port.ErrUnknownRoom, detalle)
+		return fmt.Errorf("%w (%s)", port.ErrUnknownRoom, codeText(status, e))
 	case http.StatusForbidden:
 		return fmt.Errorf("el registro no acepta esta llave para esa sala, "+
-			"así que la reservó otro equipo (%s)", detalle)
+			"así que la reservó otro equipo (%s)", codeText(status, e))
 	case http.StatusRequestEntityTooLarge:
-		return fmt.Errorf("la tarjeta de la sala no le entra al registro (%s)", detalle)
+		return fmt.Errorf("la tarjeta de la sala no le entra al registro (%s)", codeText(status, e))
 	case http.StatusTooManyRequests:
 		return fmt.Errorf("el registro está frenando las consultas de esta red, "+
-			"y no se reintenta porque reintentar es lo que alarga el freno (%s)", detalle)
+			"y no se reintenta porque reintentar es lo que alarga el freno (%s)", codeText(status, e))
+	case http.StatusConflict:
+		return fmt.Errorf("el registro contestó que no pide password (%s)", codeText(status, e))
 	default:
-		return fmt.Errorf("el registro contestó %d: %s", código, detalle)
+		return fmt.Errorf("el registro contestó %d: %s", status, codeText(status, e))
 	}
+}
+
+// codeText names what came back without pretending it is a sentence. The
+// code is a token of this repository's own vocabulary, so printing it is
+// printing a fact; falling back to the HTTP text covers a body that never
+// arrived or never parsed.
+func codeText(status int, e errorBody) string {
+	if e.Code == "" {
+		return http.StatusText(status)
+	}
+	if e.Sub == "" {
+		return e.Code
+	}
+	return e.Code + "/" + e.Sub
 }

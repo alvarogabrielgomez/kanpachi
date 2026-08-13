@@ -20,7 +20,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
 	"github.com/accentiostudios/kanpachi/core/usecase"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/canary/opener"
@@ -557,22 +556,6 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 
 	canal := control.New(control.Deps{Clock: relojReal{}, Log: log})
 
-	// El registro del seed, que es SOLO presentación: si no contesta, la sala se
-	// crea igual y lo que se pierde es la tarjeta de la página de invitación.
-	//
-	// El seed sale del dominio y no de una bandera: hoy es uno solo. El campo
-	// existe para el día que "Avanzado" deje elegir otro, y ese día es esto lo
-	// que cambia, no el caso de uso.
-	directorio, err := directory.New(directory.Deps{
-		DataDir: datos,
-		Seed:    domain.DefaultSeedHost,
-		Log:     log,
-		Protect: protegerFichero,
-	})
-	if err != nil {
-		return abortar(err)
-	}
-
 	// The key that seals what stays on disk, derived from this machine's
 	// identity.
 	//
@@ -595,6 +578,34 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 	if err != nil {
 		return abortar(err)
 	}
+
+	// El almacén se nombra en vez de construirse dentro de `usecase.Deps`, porque
+	// la fábrica de registros de abajo tiene que leer de él ANTES de que la
+	// sesión exista.
+	almacén := statestore.NewSealed(datos, claveDelEstado)
+
+	// Los registros del seed, en plural desde que dejó de haber uno por defecto.
+	//
+	// # Por qué una fábrica y no un cliente
+	//
+	// Porque el registro depende de la pregunta: al ENTRAR manda el que emitió el
+	// código pegado, y al CREAR el que esta máquina tiene configurado. Con un
+	// cliente fijo, entrar con un código ajeno se saltaba la comprobación entera
+	// y quien se autohospedaba no podía abrir una sala en su propio registro.
+	//
+	// El propio puede venir vacío, que es lo normal en una instalación que
+	// todavía no hospedó ni entró a ninguna sala. Sin él, crear falla con
+	// `port.ErrNoOwnSeed`, que lleva a configurarlo y no a reintentar.
+	// `Tokens` es el MISMO almacén sellado que guarda la sala, y le entra el
+	// protector además del sello: el refresh token de un seed cerrado va a un
+	// directorio que en Windows todos los usuarios pueden leer a propósito. Ver
+	// [jsonfile.Store.SaveSeedToken].
+	registros := directory.NewFactory(directory.Deps{
+		DataDir: datos,
+		Log:     log,
+		Protect: protegerFichero,
+		Tokens:  almacén.Protect(protegerFichero),
+	}, seedPropio(almacén, log))
 
 	// El motor REAL. Vive al lado de este binario y no se busca en el PATH: un
 	// PATH que alguien pueda escribir es una forma de que este proceso, que
@@ -678,15 +689,15 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 		// nunca al instalar: la LAN de una laptop cambia entre la casa y la
 		// oficina, y un rango elegido en la instalación sería correcto solo el
 		// primer día.
-		Routes:    routes.New(),
-		Store:     catalogstore.New(builtinCatalogDir(), datos, log),
-		State:     statestore.NewSealed(datos, claveDelEstado),
-		Library:   watch.Library,
-		Directory: directorio,
-		Control:   canal,
-		Audit:     audit,
-		Inspector: watch.Inspector,
-		Prober:    probe.New(),
+		Routes:      routes.New(),
+		Store:       catalogstore.New(builtinCatalogDir(), datos, log),
+		State:       almacén,
+		Library:     watch.Library,
+		Directories: registros,
+		Control:     canal,
+		Audit:       audit,
+		Inspector:   watch.Inspector,
+		Prober:      probe.New(),
 		// El canario es real desde el primer día, y puede serlo porque es `net`
 		// puro: no toca Windows ni necesita privilegios para ligar en el
 		// adaptador virtual. Ver daemon/adapter/canary.

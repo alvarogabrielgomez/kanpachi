@@ -16,13 +16,13 @@ import (
 //
 // Construye una sesión nueva con las mismas dependencias, sin haber llamado a
 // LeaveRoom: es exactamente lo que deja un corte de luz.
-func reinicia(t *testing.T, b *banco) *banco {
+func reinicia(t *testing.T, b *bank) *bank {
 	t.Helper()
 	s, err := NewSession(ctx(), b.deps)
 	if err != nil {
 		t.Fatalf("no se pudo montar la sesión tras el reinicio: %v", err)
 	}
-	b.sesión = s
+	b.session = s
 	return b
 }
 
@@ -34,23 +34,23 @@ func reinicia(t *testing.T, b *banco) *banco {
 func TestSalirLimpioBorraLaSalaYMorirSucioLaDeja(t *testing.T) {
 	t.Run("morir sucio la deja", func(t *testing.T) {
 		b := salaCreada(t)
-		if len(b.estado.salaGuardada()) == 0 {
+		if len(b.state.salaGuardada()) == 0 {
 			t.Fatal("crear una sala no la guardó")
 		}
 		b = reinicia(t, b)
-		if _, hay := b.sesión.PendingRoom(); !hay {
+		if _, hay := b.session.PendingRoom(); !hay {
 			t.Fatal("tras morir sucio no se detectó la sala anterior")
 		}
 	})
 
 	t.Run("salir limpio la borra", func(t *testing.T) {
 		b := salaCreada(t)
-		b.sesión.LeaveRoom(ctx())
-		if len(b.estado.salaGuardada()) != 0 {
+		b.session.LeaveRoom(ctx())
+		if len(b.state.salaGuardada()) != 0 {
 			t.Fatal("salir por las buenas dejó la sala guardada")
 		}
 		b = reinicia(t, b)
-		if _, hay := b.sesión.PendingRoom(); hay {
+		if _, hay := b.session.PendingRoom(); hay {
 			t.Fatal("hay sala pendiente después de una salida limpia")
 		}
 	})
@@ -67,7 +67,7 @@ func TestArrancarConSalaPendienteNoRehospedaYPurgaIgual(t *testing.T) {
 	purgasAntes := b.firewall.purgas
 	b = reinicia(t, b)
 
-	if st := b.sesión.Status(); st.Conn != domain.StateIdle {
+	if st := b.session.Status(); st.Conn != domain.StateIdle {
 		t.Fatalf("reabrió la sala sin preguntar: %s", st.Conn)
 	}
 	if b.firewall.purgas != purgasAntes+1 {
@@ -83,10 +83,10 @@ func TestArrancarConSalaPendienteNoRehospedaYPurgaIgual(t *testing.T) {
 func TestReabrirConservaLaIdentidadDeLaRed(t *testing.T) {
 	b := salaCreada(t)
 	antes := b.motor.hostSpec
-	código := b.sesión.Status().Room
+	código := b.session.Status().Room
 
 	b = reinicia(t, b)
-	st, err := b.sesión.ResumeRoom(ctx())
+	st, err := b.session.ResumeRoom(ctx())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestReabrirConservaLaIdentidadDeLaRed(t *testing.T) {
 	if st.Conn != domain.StateConnected || st.Role != domain.RoleHost {
 		t.Fatalf("estado tras reabrir: %s, %s", st.Conn, st.Role)
 	}
-	if _, hay := b.sesión.PendingRoom(); hay {
+	if _, hay := b.session.PendingRoom(); hay {
 		t.Fatal("la sala pendiente sigue ahí después de reabrirla")
 	}
 }
@@ -119,12 +119,12 @@ func TestReabrirConservaLaIdentidadDeLaRed(t *testing.T) {
 // prohibidos.
 func TestReabrirReponeElJuegoResolviéndoloContraElCatálogoPropio(t *testing.T) {
 	b := salaCreada(t)
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
 	b = reinicia(t, b)
 
-	st, err := b.sesión.ResumeRoom(ctx())
+	st, err := b.session.ResumeRoom(ctx())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,14 +141,14 @@ func TestReabrirReponeElJuegoResolviéndoloContraElCatálogoPropio(t *testing.T)
 // TestReabrirSinElPerfilDejaLaSalaSinJuego: el estado por defecto y el seguro.
 func TestReabrirSinElPerfilDejaLaSalaSinJuego(t *testing.T) {
 	b := salaCreada(t)
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
 	// El catálogo de la máquina que reabre ya no tiene ese perfil.
-	b.almacén.builtin = []byte(`{"kanpachi_catalog":1,"profiles":[]}`)
+	b.catalog.builtin = []byte(`{"kanpachi_catalog":1,"profiles":[]}`)
 	b = reinicia(t, b)
 
-	st, err := b.sesión.ResumeRoom(ctx())
+	st, err := b.session.ResumeRoom(ctx())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestReabrirNoRestauraMiembros(t *testing.T) {
 	b.motor.peers = nil
 	b = reinicia(t, b)
 
-	st, err := b.sesión.ResumeRoom(ctx())
+	st, err := b.session.ResumeRoom(ctx())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,19 +182,19 @@ func TestDescartarLaSalaAnteriorLaBorraYDejaEnIdle(t *testing.T) {
 	b := salaCreada(t)
 	b = reinicia(t, b)
 
-	if err := b.sesión.DiscardPendingRoom(ctx()); err != nil {
+	if err := b.session.DiscardPendingRoom(ctx()); err != nil {
 		t.Fatal(err)
 	}
-	if len(b.estado.salaGuardada()) != 0 {
+	if len(b.state.salaGuardada()) != 0 {
 		t.Fatal("descartar no borró el archivo")
 	}
-	if _, hay := b.sesión.PendingRoom(); hay {
+	if _, hay := b.session.PendingRoom(); hay {
 		t.Fatal("descartar dejó la sala pendiente")
 	}
-	if st := b.sesión.Status(); st.Conn != domain.StateIdle {
+	if st := b.session.Status(); st.Conn != domain.StateIdle {
 		t.Fatalf("descartar movió el estado: %s", st.Conn)
 	}
-	if err := b.sesión.DiscardPendingRoom(ctx()); !errors.Is(err, ErrNoPendingRoom) {
+	if err := b.session.DiscardPendingRoom(ctx()); !errors.Is(err, ErrNoPendingRoom) {
 		t.Fatalf("descartar dos veces = %v", err)
 	}
 }
@@ -206,10 +206,10 @@ func TestDescartarLaSalaAnteriorLaBorraYDejaEnIdle(t *testing.T) {
 // quisieran volver.
 func TestElCódigoNuevoLlegaALosQueEstánDentro(t *testing.T) {
 	b, _ := salaConDosYJuego(t)
-	viejo := b.sesión.Status().Room
-	b.registro.siguiente = "B8L3N4PZ"
+	viejo := b.session.Status().Room
+	b.registry.siguiente = "B8L3N4PZ"
 
-	st, err := b.sesión.RotateInviteCode(ctx())
+	st, err := b.session.RotateInviteCode(ctx())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestQueFalleElRepartoNoInvalidaLaRenovación(t *testing.T) {
 	b, _ := salaConDosYJuego(t)
 	b.control.errCódigo = errors.New("no se pudo mandar")
 
-	if _, err := b.sesión.RotateInviteCode(ctx()); err != nil {
+	if _, err := b.session.RotateInviteCode(ctx()); err != nil {
 		t.Fatalf("un reparto fallido invalidó la renovación: %v", err)
 	}
 }
@@ -240,16 +240,16 @@ func TestQueFalleElRepartoNoInvalidaLaRenovación(t *testing.T) {
 // TestElInvitadoCambiaSuCódigoYElGuardado.
 func TestElInvitadoCambiaSuCódigoYElGuardado(t *testing.T) {
 	b := salaConInvitado(t)
-	nuevo, err := domain.ParseRoom("B8L3N4PZ")
+	nuevo, err := domain.ParseRoom("B8L3N4PZ@seed.midominio.com")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	st := b.sesión.OnCodeRotated(ctx(), nuevo)
+	st := b.session.OnCodeRotated(ctx(), nuevo)
 	if st.Room != nuevo {
 		t.Fatalf("el invitado no tomó el código nuevo: %v", st.Room)
 	}
-	last, hay := b.sesión.LastRoom()
+	last, hay := b.session.LastRoom()
 	if !hay {
 		t.Fatal("no quedó última sala guardada")
 	}
@@ -262,13 +262,13 @@ func TestElInvitadoCambiaSuCódigoYElGuardado(t *testing.T) {
 // modificado dejarlo publicando una puerta que no existe.
 func TestUnHostNoTomaCódigosDeNadie(t *testing.T) {
 	b := salaCreada(t)
-	suyo := b.sesión.Status().Room
-	otro, err := domain.ParseRoom("B8L3N4PZ")
+	suyo := b.session.Status().Room
+	otro, err := domain.ParseRoom("B8L3N4PZ@seed.midominio.com")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if st := b.sesión.OnCodeRotated(ctx(), otro); st.Room != suyo {
+	if st := b.session.OnCodeRotated(ctx(), otro); st.Room != suyo {
 		t.Fatalf("un host tomó el código de otro: %v", st.Room)
 	}
 }
@@ -277,9 +277,9 @@ func TestUnHostNoTomaCódigosDeNadie(t *testing.T) {
 // comprueba acá y no se confía en que el otro lado mandara algo coherente.
 func TestUnCódigoNuevoIncompletoSeIgnora(t *testing.T) {
 	b := salaConInvitado(t)
-	suyo := b.sesión.Status().Room
+	suyo := b.session.Status().Room
 
-	if st := b.sesión.OnCodeRotated(ctx(), domain.Room{}); st.Room != suyo {
+	if st := b.session.OnCodeRotated(ctx(), domain.Room{}); st.Room != suyo {
 		t.Fatalf("se tomó un código vacío: %v", st.Room)
 	}
 }
@@ -292,7 +292,7 @@ func TestUnCódigoNuevoIncompletoSeIgnora(t *testing.T) {
 func TestLaÚltimaSalaNoLlevaCredencialNiIdentidadDeRed(t *testing.T) {
 	b := salaConInvitado(t)
 
-	raw, err := b.estado.LoadLast()
+	raw, err := b.state.LoadLast()
 	if err != nil {
 		t.Fatalf("entrar no guardó la última sala: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestLaÚltimaSalaNoLlevaCredencialNiIdentidadDeRed(t *testing.T) {
 		}
 	}
 
-	last, hay := b.sesión.LastRoom()
+	last, hay := b.session.LastRoom()
 	if !hay {
 		t.Fatal("no se pudo releer la última sala")
 	}
@@ -319,9 +319,9 @@ func TestLaÚltimaSalaNoLlevaCredencialNiIdentidadDeRed(t *testing.T) {
 // seguir siendo un click.
 func TestExpulsarNoBorraLaÚltimaSala(t *testing.T) {
 	b := salaConInvitado(t)
-	b.sesión.OnRoomNotice(ctx(), domain.RoomNotice{Kind: domain.NoticeKicked})
+	b.session.OnRoomNotice(ctx(), domain.RoomNotice{Kind: domain.NoticeKicked})
 
-	if _, hay := b.sesión.LastRoom(); !hay {
+	if _, hay := b.session.LastRoom(); !hay {
 		t.Fatal("que te expulsen borró la última sala")
 	}
 }
@@ -329,13 +329,13 @@ func TestExpulsarNoBorraLaÚltimaSala(t *testing.T) {
 // TestUnArchivoDeSalaIlegibleNoImpideArrancar.
 func TestUnArchivoDeSalaIlegibleNoImpideArrancar(t *testing.T) {
 	b := nuevoBanco(t)
-	b.estado.sala = []byte(`{"invite_id":"A7K2M9QX","seed":`)
+	b.state.room = []byte(`{"invite_id":"A7K2M9QX","seed":`)
 
 	b = reinicia(t, b)
-	if _, hay := b.sesión.PendingRoom(); hay {
+	if _, hay := b.session.PendingRoom(); hay {
 		t.Fatal("un archivo cortado se tomó por sala válida")
 	}
-	if st := b.sesión.Status(); st.Conn != domain.StateIdle {
+	if st := b.session.Status(); st.Conn != domain.StateIdle {
 		t.Fatalf("estado tras un archivo ilegible: %s", st.Conn)
 	}
 }
@@ -347,7 +347,7 @@ func TestUnArchivoDeSalaIlegibleNoImpideArrancar(t *testing.T) {
 // de catálogo inválido se rechaza completo.
 func TestUnaSalaGuardadaConUnCampoDeMásSeRechazaEntera(t *testing.T) {
 	b := salaCreada(t)
-	bueno := b.estado.salaGuardada()
+	bueno := b.state.salaGuardada()
 
 	casos := map[string]string{
 		"un plazo colado":  `"host_absence_limit": 0`,
@@ -357,7 +357,7 @@ func TestUnaSalaGuardadaConUnCampoDeMásSeRechazaEntera(t *testing.T) {
 	for nombre, extra := range casos {
 		t.Run(nombre, func(t *testing.T) {
 			roto := bytes.Replace(bueno, []byte("{\n"), []byte("{\n  "+extra+",\n"), 1)
-			if _, err := domain.DecodePersistedRoom(roto); !errors.Is(err, domain.ErrPersistedShape) {
+			if _, err := domain.DecodeHostedRoom(roto); !errors.Is(err, domain.ErrPersistedShape) {
 				t.Fatalf("se aceptó un archivo con %s: %v", nombre, err)
 			}
 		})
@@ -368,12 +368,12 @@ func TestUnaSalaGuardadaConUnCampoDeMásSeRechazaEntera(t *testing.T) {
 // igual, incluido el juego activo.
 func TestLaSalaGuardadaSobreviveUnaVuelta(t *testing.T) {
 	b := salaCreada(t)
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
-	st := b.sesión.Status()
+	st := b.session.Status()
 
-	guardada, err := domain.DecodePersistedRoom(b.estado.salaGuardada())
+	guardada, err := domain.DecodeHostedRoom(b.state.salaGuardada())
 	if err != nil {
 		t.Fatal(err)
 	}

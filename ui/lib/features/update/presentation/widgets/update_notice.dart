@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kanpachi_ui/core/brand.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
@@ -6,12 +7,12 @@ import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/core/platform/system_browser.dart';
 import 'package:kanpachi_ui/features/update/presentation/cubit/update_cubit.dart';
 
-/// The download page, which is where this notice goes and nowhere else.
+/// Where this notice goes, and nowhere else.
 ///
-/// `/download` and not `/descargar`: everything published outwards is in
-/// English — the changelog, the release notes, the file names — and the seed
-/// still answers the old path for the links already handed out.
-const String kDownloadUrl = 'https://kanpachi.accentio.dev/download';
+/// The RELEASES page, not a seed's download page. It used to be the latter, on
+/// a compiled host, and that host stopped meaning anything: a registry is
+/// anybody's now and it is not where this binary came from. What is certain
+/// about a build is the channel it was published on. See [Brand.releases].
 
 /// One line in the status bar saying a newer version exists.
 ///
@@ -67,7 +68,7 @@ class _UpdateNoticeState extends State<UpdateNotice> {
             // that only answers on the pixels it paints is one you have to aim
             // at, and this one is 12 pixels tall.
             behavior: HitTestBehavior.opaque,
-            onTap: () => SystemBrowser.open(kDownloadUrl),
+            onTap: () => SystemBrowser.open(Brand.releases),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[

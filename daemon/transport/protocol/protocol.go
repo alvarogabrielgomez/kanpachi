@@ -29,6 +29,7 @@ import (
 	"fmt"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/port"
 	"github.com/accentiostudios/kanpachi/core/usecase"
 )
 
@@ -124,6 +125,33 @@ const (
 	// la misma pregunta y la pantalla que la cambia necesita leerla justo
 	// después para dibujar el interruptor.
 	MethodAutostart Method = "autostart"
+	// MethodOwnSeed lee o cambia el registro en el que esta máquina abre salas.
+	//
+	// Uno solo para las dos cosas, como [MethodAutostart] y por lo mismo: la
+	// pantalla que lo cambia necesita releerlo justo después para dibujar lo que
+	// quedó puesto.
+	//
+	// Devuelve además la SUGERENCIA, que es el registro de la última sala a la
+	// que se entró. Van juntas porque la pantalla las pinta juntas, y separarlas
+	// en dos llamadas dejaría un instante en el que enseña una y no la otra.
+	MethodOwnSeed Method = "own_seed"
+
+	// MethodSeedPassword entrega el password del registro propio, para poder
+	// HOSPEDAR en un seed cerrado.
+	//
+	// # Lo que no vuelve, y lo que no queda
+	//
+	// La respuesta es un acuse vacío. No devuelve tokens, no devuelve el estado
+	// de la puerta y no repite lo que llegó: el password entra, se convierte en
+	// una prueba con el host dentro y se olvida. Lo que sobrevive es un refresh
+	// token sellado que el daemon guarda solo.
+	//
+	// Sus parámetros NO entran en el diario de progreso ni en el log ni en el
+	// informe de diagnóstico. Es la misma clase de fuga que ya se cerró en el log
+	// del motor, y falla igual de callada.
+	//
+	// Entrar a una sala jamás lo necesita, en ningún seed.
+	MethodSeedPassword Method = "seed_password"
 )
 
 // métodos es la tabla. Su existencia es la que hace que la lista sea cerrada.
@@ -161,6 +189,8 @@ var métodos = map[Method]bool{
 	MethodPendingInvite:       true,
 	MethodShutdown:            true,
 	MethodAutostart:           true,
+	MethodOwnSeed:             true,
+	MethodSeedPassword:        true,
 }
 
 // Known dice si el método existe. Lo que no está no se interpreta.
@@ -197,12 +227,32 @@ const (
 	CodeNoPending   Code = "no_pending"    // no hay sala del arranque anterior
 	CodeNoSuchRoom  Code = "no_such_room"  // el registro dice que ese código no existe
 	CodeNoRegistry  Code = "no_registry"   // el registro no contestó nada
-	CodeCanceled    Code = "canceled"      // el usuario canceló la operación
-	CodeBadNickname Code = "bad_nickname"  // el nombre no cumple la decisión 21
-	CodeBadCode     Code = "bad_code"      // el invite ID no tiene forma de código
-	CodeBadProfile  Code = "bad_profile"   // el perfil no pasa las invariantes
-	CodeUnavailable Code = "unavailable"   // el adaptador de abajo falló
-	CodeInternal    Code = "internal"      // lo que no encaja en ninguno de arriba
+	// CodeSeedPassword es que ese registro pide password para HOSPEDAR y esta
+	// máquina no tiene con qué contestarle.
+	//
+	// Cubre los tres casos a la vez: nunca se escribió ninguno, el refresh
+	// caducó, y el operador cambió el password. Son uno solo porque **lo que hay
+	// que hacer es idéntico**, y porque el registro se niega a decir cuál fue:
+	// distinguirlos solo le regalaría información a quien esté probando.
+	//
+	// Entrar a una sala nunca lo produce.
+	CodeSeedPassword Code = "seed_password"
+	// CodeNoOwnSeed es que esta máquina todavía no tiene registro donde abrir
+	// salas, así que no hay a quién pedirle un código.
+	//
+	// Es el hermano de [CodeSeedPassword] y son dos a propósito: acá falta
+	// elegir el servidor, allá falta la credencial de uno ya elegido. Llevan a
+	// dos pantallas distintas y a dos comandos distintos.
+	//
+	// Entrar a una sala tampoco lo produce: ahí el registro viene dentro del
+	// código pegado.
+	CodeNoOwnSeed Code = "no_own_seed"
+	CodeCanceled     Code = "canceled"     // el usuario canceló la operación
+	CodeBadNickname  Code = "bad_nickname" // el nombre no cumple la decisión 21
+	CodeBadCode      Code = "bad_code"     // el invite ID no tiene forma de código
+	CodeBadProfile   Code = "bad_profile"  // el perfil no pasa las invariantes
+	CodeUnavailable  Code = "unavailable"  // el adaptador de abajo falló
+	CodeInternal     Code = "internal"     // lo que no encaja en ninguno de arriba
 )
 
 // Request es lo que entra. Una línea de JSON.
@@ -279,6 +329,16 @@ func errorFor(err error) *Error {
 	// pedir un código nuevo, contra volver a intentarlo en un rato.
 	case errors.Is(err, usecase.ErrNoRegistry):
 		code = CodeNoRegistry
+	// Va antes que los de forma de entrada: `SeedPassword` envuelve el fallo del
+	// adaptador, y ese fallo trae el centinela. Sin este caso caería en
+	// `internal` y la interfaz no sabría a qué pantalla ir.
+	case errors.Is(err, port.ErrSeedPassword):
+		code = CodeSeedPassword
+	// Sin esto caía en `internal`, que es el código de "lo que no encaja en
+	// ningún otro", y hospedar en una instalación recién hecha es justo lo que
+	// más encaja: falta configurar el registro y hay un comando que lo hace.
+	case errors.Is(err, port.ErrNoOwnSeed):
+		code = CodeNoOwnSeed
 	case errors.Is(err, usecase.ErrCanceled):
 		code = CodeCanceled
 	case errors.Is(err, domain.ErrNicknameEmpty), errors.Is(err, domain.ErrNicknameTooLong),

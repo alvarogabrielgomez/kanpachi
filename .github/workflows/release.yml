@@ -196,6 +196,7 @@ jobs:
           & $iscc `
             "/DCarga=$env:GITHUB_WORKSPACE\dist\carga" `
             "/DAppVersion=$env:VERSION" `
+            "/DRepo=${{ github.repository }}" `
             "/DVersionInfo=$env:VERSION_NUM" `
             "/O$env:GITHUB_WORKSPACE\dist" `
             "installer\kanpachi.iss"
@@ -383,7 +384,7 @@ jobs:
             `kanpachi-amd64.deb`
 
             ```
-            curl -fsSLO https://github.com/alvarogabrielgomez/kanpachi/releases/latest/download/kanpachi-amd64.deb
+            curl -fsSLO https://github.com/${{ github.repository }}/releases/latest/download/kanpachi-amd64.deb
             sudo apt install ./kanpachi-amd64.deb
             ```
 
@@ -415,7 +416,7 @@ jobs:
             product carry the same number. To install or upgrade:
 
             ```
-            curl -fsSL https://raw.githubusercontent.com/alvarogabrielgomez/kanpachi/main/seed/install.sh | sudo sh
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/seed/install.sh | sudo sh
             ```
 
             On a seed that is already installed, also:

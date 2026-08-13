@@ -50,6 +50,10 @@ type Deps struct {
 	// at the home network without depending on anybody's DNS. Nil uses the real
 	// resolver.
 	Resolve func(host string) ([]netip.Addr, error)
+	// Tokens is where the refresh token of a closed seed survives a restart.
+	// Nil remembers nothing, which is what the tests and the tools get. The
+	// password never reaches it. See auth.go.
+	Tokens TokenStore
 
 	// The test hooks, unexported on purpose so that no caller outside this
 	// package can reach them. Same trick as engine.Deps.spawn.
@@ -72,6 +76,20 @@ type Directory struct {
 	// file with its own ACL on disk for a user who only ever joins.
 	mu   sync.Mutex
 	priv ed25519.PrivateKey
+
+	// The credential of a closed seed. TWO locks and not one, and that is what
+	// keeps this from deadlocking: `authMu` guards the fields and is never held
+	// across a request, while `refreshMu` serializes the refresh itself, which
+	// IS a request and goes out asking `accessToken()` what bearer to carry.
+	//
+	// `loaded` distinguishes "not read from disk yet" from "read, and there was
+	// nothing", so a machine with no credential does not open the sealed state
+	// once per call.
+	authMu    sync.Mutex
+	access    string
+	refresh   string
+	loaded    bool
+	refreshMu sync.Mutex
 }
 
 var _ port.RoomDirectory = (*Directory)(nil)

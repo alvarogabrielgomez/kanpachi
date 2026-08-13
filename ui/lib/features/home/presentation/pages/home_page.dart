@@ -19,6 +19,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/invite_code.dart';
 import 'package:kanpachi_ui/features/session/domain/room_names.dart';
+import 'package:kanpachi_ui/features/seed/presentation/ask_to_host.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
 import 'package:kanpachi_ui/features/session/presentation/widgets/failure_notice.dart';
@@ -39,6 +40,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _code = TextEditingController();
+
+  /// El campo del nombre de sala. Su texto es una COPIA del borrador que vive
+  /// en la sesión, y las dos direcciones están cableadas: lo que se escribe acá
+  /// sube con [SessionCubit.setRoomNameDraft], y lo que cambie en el diálogo de
+  /// confianza baja por el oyente de [build]. Ver [SessionState.roomNameDraft].
   final TextEditingController _roomName = TextEditingController();
 
   /// Se sortea una vez y se queda. Volver a sortearlo en cada rebuild haría
@@ -71,16 +77,18 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  void _onCodeChanged(String raw) {
-    final String masked = InviteCode.mask(raw);
-    if (masked != _code.text) {
-      _code.value = TextEditingValue(
-        text: masked,
-        selection: TextSelection.collapsed(offset: masked.length),
-      );
-    }
-    setState(() {});
-  }
+  /// **El campo ya no enmascara**, y quitarlo arregló un fallo callado.
+  ///
+  /// Enmascaraba filtrando al alfabeto y cortando a ocho, y eso destruía cuatro
+  /// de las formas que el daemon acepta sin decir nada:
+  /// `A7K2-M9QX@seed.ejemplo.com` se quedaba en `A7K2-M9QX`, y
+  /// `https://seed.ejemplo.com/A7K2-M9QX` en `HTTP-SKAN`. El del `@` era el
+  /// peor: borraba el registro en silencio, y un mismo ID en otro registro es
+  /// una sala DISTINTA, así que llevaba a la sala equivocada sin un solo error.
+  ///
+  /// Lo que quedó es redibujar el botón. Interpretar lo pegado es de
+  /// [InviteCode.parse], y decidir si vale, del daemon.
+  void _onCodeChanged(String raw) => setState(() {});
 
   /// Joins, and only navigates if it joined.
   ///
@@ -90,19 +98,37 @@ class _HomeScreenState extends State<HomeScreen> {
   /// on. The failure notice was drawn underneath and could not be reached.
   Future<void> _join() async {
     if (!InviteCode.isComplete(_code.text)) return;
-    final SessionCubit session = context.read<SessionCubit>();
-    final ShellCubit shell = context.read<ShellCubit>();
-    if (await session.joinRoom(_code.text)) shell.go(AppScreen.room);
+    // No se entra: se PREGUNTA. Ese registro es la máquina de un tercero, y el
+    // diálogo es donde se ve a cuál antes de hablarle. Quien confirma es quien
+    // llama a `joinRoom`, así que este camino termina acá.
+    //
+    // El nombre sale del código PEGADO, y este lado no lo normaliza: el texto
+    // viaja tal cual al daemon, que es la frontera de entrada hostil.
+    final String seed = InviteCode.seedOf(_code.text);
+    if (seed.isEmpty) return;
+    context.read<ShellCubit>().askTrust(
+      TrustRequest.joining(seed: seed, code: _code.text),
+    );
   }
 
   /// Same rule as [_join]: the screen moves only once there is a room.
-  Future<void> _createEmpty() async {
-    final SessionCubit session = context.read<SessionCubit>();
-    final ShellCubit shell = context.read<ShellCubit>();
-    final String name = _roomName.text.trim().isEmpty
-        ? _nameHint
-        : _roomName.text.trim();
-    if (await session.createRoom(name: name)) shell.go(AppScreen.room);
+  ///
+  /// El nombre no viaja desde acá: lo lleva el borrador de la sesión, y lo que
+  /// se pasa es la SUGERENCIA, para cuando nadie escribió nada. El diálogo lo
+  /// enseña y se puede cambiar ahí mismo.
+  Future<void> _createEmpty() => askToHost(context, suggestedName: _nameHint);
+
+  /// Baja al campo lo que se haya escrito en el diálogo.
+  ///
+  /// Con la posición del cursor al final, que es lo que hace que no salte: sin
+  /// tocar la selección, Flutter la conserva apuntando a un sitio que en el
+  /// texto nuevo puede no existir.
+  void _bajarBorrador(String draft) {
+    if (draft == _roomName.text) return;
+    _roomName.value = TextEditingValue(
+      text: draft,
+      selection: TextSelection.collapsed(offset: draft.length),
+    );
   }
 
   @override
@@ -113,42 +139,56 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final ActionFailure? failure = session.failure;
 
-    return ScreenPanels(
-      // El fallo va ARRIBA del todo y no flotando sobre la pantalla, que es
-      // donde vivía. Flotando abajo tapaba la biblioteca y el botón de crear
-      // sala justo cuando había que volver a pulsarlo; acá empuja el formulario
-      // hacia abajo, que es el precio, y a cambio se lee entero, se puede
-      // desplegar el detalle y se recorre con el resto de los avisos sin que la
-      // columna de la derecha se mueva.
-      left: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          if (failure != null) ...<Widget>[
-            FailureNotice(
-              failure: failure,
-              verbose: session.verbose,
-              onDismiss: () => context.read<SessionCubit>().clearFailure(),
+    return BlocListener<SessionCubit, SessionState>(
+      // Solo cuando el borrador cambia, y solo si lo cambió OTRO: el propio
+      // campo ya tiene el texto puesto, y reescribirlo en cada tecla movería el
+      // cursor al final mientras alguien corrige por el medio.
+      listenWhen: (SessionState a, SessionState b) =>
+          a.roomNameDraft != b.roomNameDraft,
+      listener: (BuildContext _, SessionState st) =>
+          _bajarBorrador(st.roomNameDraft),
+      // El cuerpo va INCRUSTADO y no en un método que devuelva Widget: la regla
+      // de la casa es widget-clase, y un helper acá además obligaría a
+      // reconstruir la portada entera con cada tecla del nombre.
+      child: ScreenPanels(
+        // El fallo va ARRIBA del todo y no flotando sobre la pantalla, que es
+        // donde vivía. Flotando abajo tapaba la biblioteca y el botón de crear
+        // sala justo cuando había que volver a pulsarlo; acá empuja el formulario
+        // hacia abajo, que es el precio, y a cambio se lee entero, se puede
+        // desplegar el detalle y se recorre con el resto de los avisos sin que la
+        // columna de la derecha se mueva.
+        left: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            if (failure != null) ...<Widget>[
+              FailureNotice(
+                failure: failure,
+                verbose: session.verbose,
+                onDismiss: () => context.read<SessionCubit>().clearFailure(),
+              ),
+              const SizedBox(height: AppSpacing.x5l),
+            ],
+            _JoinAndCreate(
+              code: _code,
+              roomName: _roomName,
+              nameHint: _nameHint,
+              canJoin: canJoin,
+              daemonDown: session.daemonDown,
+              seedDown: session.health.seedDown,
+              alerts: session.health.alerts,
+              onRoomNameChanged: (String v) =>
+                  context.read<SessionCubit>().setRoomNameDraft(v),
+              onCodeChanged: _onCodeChanged,
+              onJoin: _join,
+              onCreate: _createEmpty,
             ),
-            const SizedBox(height: AppSpacing.x5l),
           ],
-          _JoinAndCreate(
-            code: _code,
-            roomName: _roomName,
-            nameHint: _nameHint,
-            canJoin: canJoin,
-            daemonDown: session.daemonDown,
-            seedDown: session.health.seedDown,
-            alerts: session.health.alerts,
-            onCodeChanged: _onCodeChanged,
-            onJoin: _join,
-            onCreate: _createEmpty,
-          ),
-        ],
-      ),
-      right: _MyGames(
-        games: session.installed,
-        artMode: shell.artMode,
-        total: session.catalog.length,
+        ),
+        right: _MyGames(
+          games: session.installed,
+          artMode: shell.artMode,
+          total: session.catalog.length,
+        ),
       ),
     );
   }
@@ -163,6 +203,7 @@ class _JoinAndCreate extends StatelessWidget {
     required this.daemonDown,
     required this.seedDown,
     required this.alerts,
+    required this.onRoomNameChanged,
     required this.onCodeChanged,
     required this.onJoin,
     required this.onCreate,
@@ -194,6 +235,7 @@ class _JoinAndCreate extends StatelessWidget {
   /// pueda plegar.
   final List<HealthAlert> alerts;
   final ValueChanged<String> onCodeChanged;
+  final ValueChanged<String> onRoomNameChanged;
   final VoidCallback onJoin;
   final VoidCallback onCreate;
 
@@ -360,7 +402,18 @@ class _MyGames extends StatelessWidget {
           children: <Widget>[
             for (final Game game in games)
               AppRow(
-                onTap: () => shell.openGamePicker(fromRoom: false),
+                // Abre ESE juego, que es lo que un atajo significa.
+                //
+                // Llevaba al selector, o sea que pulsar Doom y pulsar «Ver toda
+                // la biblioteca» hacían lo mismo: la lista de arriba estaba
+                // pintada como si fuera accionable y no lo era, y quien la
+                // usaba terminaba buscando en una lista larga el juego que
+                // acababa de tocar. Es el MISMO camino que el selector, con la
+                // misma confirmación de puertos detrás.
+                onTap: () {
+                  context.read<SessionCubit>().proposeGame(game);
+                  shell.showDialog(AppDialog.confirmGame);
+                },
                 child: _GameRow(
                   game: game,
                   showCover: artMode == GameArtMode.cover,

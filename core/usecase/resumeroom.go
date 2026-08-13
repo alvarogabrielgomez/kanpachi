@@ -22,7 +22,7 @@ var ErrNoPendingRoom = errors.New("no hay ninguna sala del arranque anterior")
 // invariante de que nada que llegue de fuera de la app surte efecto sin
 // confirmación dentro de la app, y acá lo de fuera es un archivo del arranque
 // anterior.
-func (s *Session) PendingRoom() (domain.PersistedRoom, bool) {
+func (s *Session) PendingRoom() (domain.HostedRoom, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -41,7 +41,7 @@ func (s *Session) DiscardPendingRoom(_ context.Context) error {
 	if err := s.deps.State.ClearRoom(); err != nil {
 		return fmt.Errorf("borrando la sala del arranque anterior: %w", err)
 	}
-	s.pending = domain.PersistedRoom{}
+	s.pending = domain.HostedRoom{}
 	s.hasPending = false
 	s.deps.Log.Info("la sala del arranque anterior se descartó")
 	return nil
@@ -172,7 +172,7 @@ func (s *Session) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
 	s.republishCardLocked(ctx)
 
 	s.saveRoomLocked()
-	s.pending = domain.PersistedRoom{}
+	s.pending = domain.HostedRoom{}
 	s.hasPending = false
 
 	ok = true
@@ -222,10 +222,10 @@ func (s *Session) restoreGameLocked(ctx context.Context, gameID string) {
 // que es exactamente lo que este puerto promete costar. Y se intenta UNA vez,
 // porque el límite de tasa del registro cuenta también lo que falla.
 //
-// Sin tarjeta guardada no se llama a nadie: es el caso de un `room.json` escrito
-// antes de que el campo existiera, y el del respaldo de crear, donde el invite ID
-// lo generó esta máquina y el registro no lo emitió nunca. Esa guarda es además
-// lo que hace que esto sea SOLO del host por el dato y no por convención: un
+// Sin tarjeta guardada no se llama a nadie: es el caso de un `hosted-room.json`
+// escrito antes de que el campo existiera, y el del respaldo de crear, donde el
+// invite ID lo generó esta máquina y el registro no lo emitió nunca. Esa
+// guarda es además lo que hace que esto sea SOLO del host por el dato y no por convención: un
 // invitado jamás llena sealedCard.
 //
 // # Por qué ya no lo llama solo reabrir
@@ -247,7 +247,19 @@ func (s *Session) republishCardLocked(ctx context.Context) {
 	// también cuentan cuando fallan.
 	s.lastPublish = s.deps.Clock.Now()
 
-	err := s.deps.Directory.Publish(ctx, s.state.Room.InviteID, s.sealedCard)
+	// El registro que EMITIÓ este código, tomado de la sala y no el propio.
+	// Suelen ser el mismo, y no tienen por qué: una sala reabierta desde el
+	// fichero del arranque anterior conserva su seed, y ese es el único registro
+	// donde su entrada existe. Publicar en otro daría "no conozco esa sala" para
+	// siempre, que es justo el estado que este código vigila.
+	dir, err := s.deps.Directories.For(s.state.Room.Seed)
+	if err != nil {
+		s.deps.Log.Warn("no se pudo abrir el registro de la sala para republicar",
+			"seed", s.state.Room.Seed, "error", err)
+		return
+	}
+
+	err = dir.Publish(ctx, s.state.Room.InviteID, s.sealedCard)
 
 	// "No conozco esa sala" es distinto de "no contesto", y por eso se separa.
 	// Lo primero es definitivo: la entrada se fue del registro y publicar no

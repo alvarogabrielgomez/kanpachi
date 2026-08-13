@@ -10,15 +10,16 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/accentiostudios/kanpachi/registry"
 	"github.com/accentiostudios/kanpachi/registry/setup"
 )
 
 func cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
-	dominio := fs.String("domain", "", "dominio por el que se sirve la página, solo para imprimir el bloque del proxy")
-	puerto := fs.Int("port", 0, "puerto interno del registro. Por defecto, el primero libre desde 8010")
-	puertoMotor := fs.Int("engine-port", 0, "puerto público del motor. Por defecto 11010")
-	pagina := fs.String("page", "", "ruta a index.html. Por defecto, el que venga junto al binario")
+	dominio := fs.String("domain", "", "domain the page is served on, only used to print the proxy block")
+	puerto := fs.Int("port", 0, "internal port of the registry. Defaults to the first free one from 8010")
+	puertoMotor := fs.Int("engine-port", 0, "public port of the engine. Defaults to 11010")
+	pagina := fs.String("page", "", "path to index.html. Defaults to the one next to the binary")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -30,7 +31,7 @@ func cmdInit(args []string) error {
 		return err
 	}
 
-	banner("Kanpachi seed", "una ejecución configura todo")
+	banner("Kanpachi seed", "one run configures everything")
 
 	// Si ya está instalado, se respeta lo que hay. Reinstalar no puede mover
 	// el puerto en silencio: el proxy inverso de la máquina apunta a él.
@@ -40,15 +41,15 @@ func cmdInit(args []string) error {
 		return err
 	}
 	if yaInstalado {
-		aviso("ya hay un seed instalado, escuchando en el puerto %d", previa.PuertoRegistro)
+		aviso("there is already a seed installed here, listening on port %d", previa.PuertoRegistro)
 		// El texto tiene que decir lo que va a pasar de verdad. Anunciar que se
 		// conservan los puertos mientras se está moviendo uno a petición del
 		// usuario es peor que no decir nada: quien lo lee deja de mirar el
 		// número del resumen, que es el único dato por el que existe.
 		if *puerto != 0 && *puerto != previa.PuertoRegistro {
-			tenue("  se va a mover al %d, así que hay que actualizar el proxy inverso", *puerto)
+			tenue("  it is being moved to %d, so the reverse proxy needs updating", *puerto)
 		} else {
-			tenue("  se conservan los puertos actuales. Para cambiarlos: kanpseed config")
+			tenue("  the current ports are kept. To change them: kanpseed config")
 		}
 		fmt.Println()
 	}
@@ -62,25 +63,25 @@ func cmdInit(args []string) error {
 		cfg.Dominio = previa.Dominio
 	}
 	if cfg.Dominio == "" {
-		cfg.Dominio = preguntar("¿Por qué dominio se va a servir la página?", "kanpachi.accentio.dev")
+		cfg.Dominio = preguntar("What domain will the page be served on?", "kanpachi.accentio.dev")
 	}
 
-	seccion("Instalando")
+	seccion("Installing")
 
 	descargado, err := setup.InstalarEasyTier(setup.DirLib, func(m string) { tenue("  %s", m) })
 	if err != nil {
 		return err
 	}
 	if descargado {
-		ok("EasyTier %s instalado en %s", setup.VersionEasyTier, setup.DirLib)
+		ok("EasyTier %s installed in %s", setup.VersionEasyTier, setup.DirLib)
 	} else {
-		ok("EasyTier %s ya estaba instalado", setup.VersionEasyTier)
+		ok("EasyTier %s was already installed", setup.VersionEasyTier)
 	}
 
 	if err := instalarPagina(*pagina); err != nil {
 		return err
 	}
-	ok("página de invitación en %s", filepath.Join(setup.DirLib, "index.html"))
+	ok("invitation page in %s", filepath.Join(setup.DirLib, "index.html"))
 
 	if err := instalarseAsiMismo(); err != nil {
 		return err
@@ -89,14 +90,14 @@ func cmdInit(args []string) error {
 	if err := cfg.Guardar(); err != nil {
 		return err
 	}
-	ok("configuración en %s", setup.RutaConfig())
+	ok("configuration in %s", setup.RutaConfig())
 
 	if _, err := setup.EscribirUnits(cfg); err != nil {
 		return err
 	}
-	ok("servicios escritos en %s", setup.DirUnits)
+	ok("services written to %s", setup.DirUnits)
 
-	seccion("Arrancando")
+	seccion("Starting")
 	for _, u := range []string{setup.UnitMotor, setup.UnitReg} {
 		if err := setup.Systemctl("enable", u); err != nil {
 			return err
@@ -108,17 +109,60 @@ func cmdInit(args []string) error {
 		return err
 	}
 	if err := setup.Systemctl("restart", setup.UnitReg); err != nil {
-		return fmt.Errorf("%w\n\nÚltimas líneas del diario:\n%s", err, setup.LogsDeUnit(setup.UnitReg, 15))
+		return fmt.Errorf("%w\n\nLast lines of the journal:\n%s", err, setup.LogsDeUnit(setup.UnitReg, 15))
 	}
 
 	if err := esperarSalud(cfg, 20*time.Second); err != nil {
-		return fmt.Errorf("%w\n\nÚltimas líneas del diario:\n%s", err, setup.LogsDeUnit(setup.UnitReg, 15))
+		return fmt.Errorf("%w\n\nLast lines of the journal:\n%s", err, setup.LogsDeUnit(setup.UnitReg, 15))
 	}
-	ok("el registro responde en 127.0.0.1:%d", cfg.PuertoRegistro)
-	ok("el motor escucha en el %d, TCP y UDP", cfg.PuertoMotor)
+	ok("the registry answers on 127.0.0.1:%d", cfg.PuertoRegistro)
+	ok("the engine listens on %d, TCP and UDP", cfg.PuertoMotor)
+
+	if err := pasoDelPassword(cfg); err != nil {
+		return err
+	}
 
 	imprimirResumen(cfg)
 	avisarCortafuegos(cfg)
+	return nil
+}
+
+// pasoDelPassword ofrece cerrar el seed, al final y no al principio.
+//
+// # Por qué al final, y por qué preguntando
+//
+// Al final porque el password se guarda en el directorio de estado que systemd
+// acaba de crear, y porque cerrar un seed que todavía no arrancó es una promesa
+// sobre algo que no se ha visto funcionar.
+//
+// Preguntando, y con «no» por defecto, porque **abierto es el caso normal**: un
+// seed que se levanta para tres amigos no gana nada con un password, y el roce
+// de tenerlo lo paga cada vez que alguien abre una sala. Cerrar es para quien
+// publica el suyo y no quiere hospedar a internet entera.
+//
+// Que falle NO deshace la instalación. El seed quedó levantado y sirviendo, y
+// lo que falta se arregla con un comando que existe: se dice cuál.
+func pasoDelPassword(cfg setup.Config) error {
+	if !interactivo() {
+		return nil
+	}
+	seccion("Hosting")
+	tenue("  Anyone who reaches this seed can open rooms on it. Entering a room")
+	tenue("  never asks for anything, and it stays that way either way.")
+	fmt.Println()
+	if !confirmar("Ask for a password to HOST on this seed?", false) {
+		tenue("  left open. To close it later: sudo kanpseed password")
+		return nil
+	}
+
+	auth, err := registry.OpenAuth(setup.DirState)
+	if err != nil {
+		return err
+	}
+	if err := closeTheSeed(auth, cfg); err != nil {
+		aviso("the password was not set: %v", err)
+		tenue("  the seed is up and open. To try again: sudo kanpseed password")
+	}
 	return nil
 }
 
@@ -149,7 +193,7 @@ func decidirPuertos(previa setup.Config, yaInstalado bool, pedido, pedidoMotor i
 			return c, err
 		}
 		if p != pedido {
-			return c, fmt.Errorf("el puerto %d está ocupado", pedido)
+			return c, fmt.Errorf("port %d is taken", pedido)
 		}
 		c.PuertoRegistro = p
 	case yaInstalado && previa.PuertoRegistro != 0:
@@ -186,11 +230,11 @@ func decidirPuertos(previa setup.Config, yaInstalado bool, pedido, pedidoMotor i
 	// El puerto del motor solo se comprueba si está libre AHORA. Si el propio
 	// seed ya lo tiene tomado, ocupado es lo correcto y no un problema.
 	if !yaInstalado && !setup.PuertoPublicoLibre(motor) {
-		aviso("el puerto %d ya está ocupado en esta máquina", motor)
-		tenue("  los clientes llevan ese puerto compilado, así que moverlo obliga a")
-		tenue("  publicar una versión nueva del cliente. Revisa qué lo tiene tomado.")
-		if !confirmar("¿Seguir de todas formas?", false) {
-			return c, fmt.Errorf("cancelado: el puerto %d del motor está ocupado", motor)
+		aviso("port %d is already taken on this machine", motor)
+		tenue("  clients carry that port compiled in, so moving it forces publishing a")
+		tenue("  new version of the client. Check what is holding it.")
+		if !confirmar("Carry on anyway?", false) {
+			return c, fmt.Errorf("cancelled: the engine port %d is taken", motor)
 		}
 	}
 	return c, nil
@@ -226,7 +270,7 @@ func instalarPagina(indicada string) error {
 		}
 		return copiarArchivo(c, destino, 0o644)
 	}
-	return fmt.Errorf("no encuentro index.html. Indícalo con --page /ruta/a/index.html")
+	return fmt.Errorf("index.html not found. Point at it with --page /path/to/index.html")
 }
 
 // instalarseAsiMismo copia el binario a /usr/local/bin si se está ejecutando
@@ -247,7 +291,7 @@ func instalarseAsiMismo() error {
 	if err := copiarArchivo(propio, destino, 0o755); err != nil {
 		return err
 	}
-	ok("binario instalado en %s", destino)
+	ok("binary installed in %s", destino)
 	return nil
 }
 
@@ -281,17 +325,17 @@ func copiarArchivo(origen, destino string, modo os.FileMode) error {
 }
 
 func imprimirResumen(c setup.Config) {
-	seccion("Listo")
+	seccion("Done")
 	fmt.Println()
 	fmt.Println(cCaja.Render(
-		cTitulo.Render("PUERTO INTERNO DEL REGISTRO: "+strconv.Itoa(c.PuertoRegistro)) + "\n" +
-			cTenue.Render("Es el que hay que poner en el proxy inverso")))
+		cTitulo.Render("INTERNAL REGISTRY PORT: "+strconv.Itoa(c.PuertoRegistro)) + "\n" +
+			cTenue.Render("This is what goes in the reverse proxy")))
 	fmt.Println()
 	fmt.Print(setup.BloqueDeProxy(c))
-	seccion("Después")
+	seccion("Next")
 	codigo(
-		"kanpseed doctor      revisa que todo esté bien",
-		"kanpseed nginx       vuelve a imprimir el bloque de arriba",
+		"kanpseed doctor      checks that everything is fine",
+		"kanpseed nginx       reprints the block above",
 		"journalctl -u "+setup.UnitReg+" -f",
 	)
 	fmt.Println()

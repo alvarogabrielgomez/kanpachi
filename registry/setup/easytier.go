@@ -91,7 +91,7 @@ func InstalarEasyTier(destino string, progreso func(string)) (bool, error) {
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("descargando %s: el servidor respondió %s", url, res.Status)
+		return false, fmt.Errorf("downloading %s: the server answered %s", url, res.Status)
 	}
 
 	suma := sha256.New()
@@ -101,7 +101,7 @@ func InstalarEasyTier(destino string, progreso func(string)) (bool, error) {
 	tengo := hex.EncodeToString(suma.Sum(nil))
 	if tengo != quiero {
 		return false, fmt.Errorf("el SHA256 no coincide\n  esperado %s\n  obtenido %s\n"+
-			"  no se instala nada: esto termina ejecutándose como servicio en un servidor público", quiero, tengo)
+			"  nothing is installed: this ends up running as a service on a public server", quiero, tengo)
 	}
 	progreso("SHA256 verificado")
 
@@ -172,7 +172,7 @@ func extraer(zipPath, destino string) error {
 		encontrados++
 	}
 	if encontrados != len(BinariosNecesarios) {
-		return fmt.Errorf("el archivo de EasyTier no traía los %d binarios esperados, se hallaron %d",
+		return fmt.Errorf("the EasyTier archive did not carry the %d expected binaries, %d were found",
 			len(BinariosNecesarios), encontrados)
 	}
 	return nil

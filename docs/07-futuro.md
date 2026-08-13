@@ -100,9 +100,19 @@ Si un día Kanpachi se archiva como juguete, este es el valor que queda.
 
 Solo con lanzamiento público, siempre opt-in, nunca en el modo privado. Lo mínimo que responde preguntas reales: tasa de directo contra relay, versión, tipo de NAT agregado. Jamás qué juega quién ni con quién.
 
-## 8. Host headless en Linux, con asistente de terminal
+## 8. Host headless en Linux, con asistente de terminal: HECHO
 
-**Disparador:** alguien del grupo quiere hospedar desde un VPS que ya paga, en vez de desde su PC. El caso típico es un servidor de Minecraft que ya corre ahí de todos modos.
+**Ya no es futuro, y hay que decirlo acá porque este documento se lee para saber qué falta.** El disparador se cumplió y está construido: hay daemon de Linux con su servicio, `daemon/cmd/kanpachi` con subcomandos y `--json`, un asistente que sale al escribir `kanpachi` a secas, y `kanpachi upgrade` que instala un `.deb`. El transporte es un socket Unix 0600 de root, con `SO_PEERCRED` en cada conexión.
+
+**Lo que confirmó de la arquitectura**, que es lo que este punto prometía: `core/` no se tocó. Lo que se escribió fue periferia, tal como estaba previsto en la tabla de abajo.
+
+**Lo que queda pendiente de este punto**, y sigue siendo futuro de verdad: la implementación nftables de `FirewallPort` y el equivalente de `netcfg` con `iproute2`. Hasta que existan, un host de Linux abre la sala y no contiene nada, así que el modo headless sirve para hospedar en una máquina donde el filtrado lo pone otra cosa.
+
+**Lo que sigue valiendo:** el modelo de identidad, el catálogo, las invariantes de puertos y el rol de host de la decisión 20. Un host en Linux es un host, con las mismas reglas.
+
+**La excepción a "el usuario nunca abre una terminal" se confirmó, y quedó escrita en `CLAUDE.md`.** Esa regla protege al jugador de Windows, que no tiene por qué saber qué es una terminal. Quien administra un VPS ya vive en una.
+
+Lo que sigue es el análisis original, que se conserva porque es lo que se cumplió:
 
 **Qué es:** un binario de Kanpachi para Linux, sin interfaz gráfica, con un asistente interactivo en la terminal que hace el mismo recorrido que la UI de Flutter. Se abre, elige el juego de la biblioteca, y muestra el código. Ese código se pasa por Telegram y lo usan clientes Windows normales, que no se enteran de nada. Para ellos la sala es idéntica a una creada desde Windows.
 
@@ -115,11 +125,7 @@ Solo con lanzamiento público, siempre opt-in, nunca en el modo privado. Lo mín
 | Entrada | Asistente de terminal en vez de Flutter, sobre el mismo protocolo JSON-RPC |
 | Transporte | Socket Unix en vez de named pipe |
 
-**Una decisión que se toma hoy y lo habilita gratis:** el protocolo de la API local se define aparte de su transporte. El named pipe es una implementación, no el contrato. Eso ya está reflejado en `03-arquitectura.md` y no cuesta nada mientras solo exista Windows.
-
-**Es la excepción explícita a "el usuario nunca abre una terminal".** Esa regla protege al jugador, que no tiene por qué saber qué es una terminal. Quien administra un VPS ya vive en una, y para esa persona la terminal es la interfaz natural. Personas distintas, contextos distintos. La regla sigue intacta para el cliente Windows, que es el producto.
-
-**Lo que NO cambia:** el modelo de identidad, el catálogo, las invariantes de puertos, el rol de host de la decisión 20. Un host en Linux es un host, con las mismas reglas.
+**La decisión que lo habilitó gratis:** el protocolo de la API local se define aparte de su transporte. El named pipe es una implementación, no el contrato. Eso estaba escrito en `03-arquitectura.md` antes de que existiera ningún Linux, y es lo que hizo que el socket Unix costara un fichero.
 
 ## 9. Fijar la clave pública del seed
 

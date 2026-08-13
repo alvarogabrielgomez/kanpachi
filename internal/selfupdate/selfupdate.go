@@ -28,22 +28,44 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/accentiostudios/kanpachi/internal/brand"
 )
 
-// Repo es el repositorio de GitHub que publica los releases.
+// Repo, Enabled y las URL que salen de ellos viven en [brand].
 //
-// OJO: no coincide con la ruta del módulo (`accentiostudios/kanpachi`). El
-// módulo se nombró así antes de que el repositorio existiera, y quien los
-// confunda escribe una URL que devuelve 404.
-const Repo = "alvarogabrielgomez/kanpachi"
+// Se movieron ahí para que exista UN fichero que se llama como lo que contiene,
+// y porque `registry/http.go` importaba este paquete solo para poner un nombre
+// de repositorio dentro de una página, que es una dependencia con la forma
+// equivocada. Acá se reexportan porque este es el paquete que las USA.
+const (
+	Repo    = brand.Repo
+	Enabled = brand.UpdatesEnabled
+)
 
 const apiLatest = "https://api.github.com/repos/" + Repo + "/releases/latest"
+
+// Releases es la página de publicaciones, para mandar a alguien a bajar a mano.
+//
+// Existe para el caso en que no haya registro al que preguntarle: una
+// instalación que todavía no hospedó ni entró a ninguna sala no tiene seed
+// configurado, y el único sitio del que se sabe con certeza que salió este
+// binario es este.
+const Releases = "https://github.com/" + Repo + "/releases/latest"
+
+// ErrUpdatesDisabled es que este build no tiene canal de actualización.
+//
+// Centinela propio y no un error de red, porque lo que hay que hacer con él es
+// distinto: acá no se reintenta ni se revisa la conexión, no hay nada que
+// preguntar. Ver [Enabled].
+var ErrUpdatesDisabled = errors.New("este build no comprueba versiones")
 
 // Timeout es el plazo total de un `upgrade`. Generoso porque incluye bajar
 // decenas de MB por la red de un servidor cualquiera.
@@ -61,6 +83,12 @@ func Base(tag string) string {
 // instala una máquina nueva y lo que instala un `upgrade` tienen que ser la
 // misma cosa, o "actualizado" dejaría de significar nada.
 func Latest(ctx context.Context) (string, error) {
+	// El interruptor se mira ACÁ, en el único sitio que sale a la red, y no en
+	// cada llamador. Un fork que lo apague no tiene que ir a buscar los sitios
+	// que preguntan: no queda ninguno que pueda escaparse.
+	if !Enabled {
+		return "", ErrUpdatesDisabled
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiLatest, nil)
 	if err != nil {
 		return "", err

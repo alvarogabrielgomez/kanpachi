@@ -42,6 +42,7 @@ class AppField extends StatefulWidget {
     this.maxLength,
     this.textStyle,
     this.mono = false,
+    this.obscure = false,
     this.autofocus = false,
     this.onSubmitted,
     this.onChanged,
@@ -72,6 +73,15 @@ class AppField extends StatefulWidget {
 
   /// Datos literales en monoespaciada: códigos, puertos, direcciones.
   final bool mono;
+
+  /// Oculta lo tecleado. Lo usa el único campo que lleva un secreto, que es la
+  /// contraseña de un servidor.
+  ///
+  /// Enmascarar no es solo pudor: la ventana se comparte por pantalla, y quien
+  /// escribe una contraseña delante de otros tiene que poder hacerlo sin
+  /// pensarlo. Lo que este atributo NO hace es proteger la memoria del proceso,
+  /// y por eso el valor no se guarda en ningún sitio: ver `SeedPasswordScreen`.
+  final bool obscure;
 
   final bool autofocus;
   final ValueChanged<String>? onSubmitted;
@@ -181,6 +191,7 @@ class _AppFieldState extends State<AppField> {
               controller: widget.controller,
               focusNode: _focus,
               autofocus: widget.autofocus,
+              obscureText: widget.obscure,
               maxLines: 1,
               style: style.copyWith(color: colors.text),
               cursorColor: colors.accent,

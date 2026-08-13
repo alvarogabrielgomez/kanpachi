@@ -18,7 +18,7 @@ import (
 // identidad de sala produciría una sala que no es la que se guardó.
 var ErrPersistedShape = errors.New("el estado guardado no se puede interpretar")
 
-// PersistedRoom es la sala del HOST, guardada para sobrevivir a un apagón.
+// HostedRoom es la sala del HOST, guardada para sobrevivir a un apagón.
 //
 // # Lo que lleva es IDENTIDAD y REFERENCIAS, jamás política
 //
@@ -43,7 +43,7 @@ var ErrPersistedShape = errors.New("el estado guardado no se puede interpretar")
 // Salir limpio lo borra y morir sucio lo deja. No hay bandera `dirty`, porque
 // una bandera es un campo más que alguien puede escribir a mano y este hecho no
 // se puede falsificar desde dentro del archivo.
-type PersistedRoom struct {
+type HostedRoom struct {
 	// Room es el invite ID vigente con su seed. Sobrevive porque la sala es un
 	// objeto durable que el host posee, y honrar el mismo código tras un
 	// reinicio es media decisión 2.
@@ -66,7 +66,7 @@ type PersistedRoom struct {
 	// registro guarda las tarjetas en memoria y con vencimiento, así que un
 	// daemon que vuelve encuentra su sala en pie y su tarjeta muerta. Subir los
 	// MISMOS bytes conserva los enlaces que ya se repartieron, porque la clave
-	// que los abre es [PersistedRoom.CardKey] y sigue siendo esta.
+	// que los abre es [HostedRoom.CardKey] y sigue siendo esta.
 	//
 	// **Vacío es válido y significa que no hay nada que republicar.** Es el caso
 	// de un archivo escrito antes de que este campo existiera, y también el del
@@ -92,8 +92,8 @@ type PersistedRoom struct {
 // la red REAL en los logs locales, que se copian al portapapeles con el botón de
 // diagnóstico y se pegan en el grupo. Lo que va al log es identidad de sala, no
 // portadores de acceso a ella.
-func (p PersistedRoom) String() string {
-	return fmt.Sprintf("PersistedRoom{%s, %q, host:%s, %s, juego:%q, secretos:REDACTADOS}",
+func (p HostedRoom) String() string {
+	return fmt.Sprintf("HostedRoom{%s, %q, host:%s, %s, juego:%q, secretos:REDACTADOS}",
 		p.Room.InviteID, p.Name, p.Host, p.Subnet, p.GameID)
 }
 
@@ -138,7 +138,7 @@ type lastRoomJSON struct {
 }
 
 // Encode serializa la sala del host.
-func (p PersistedRoom) Encode() ([]byte, error) {
+func (p HostedRoom) Encode() ([]byte, error) {
 	if p.Room.InviteID.IsZero() {
 		return nil, fmt.Errorf("%w: no hay invite ID que guardar", ErrPersistedShape)
 	}
@@ -157,38 +157,38 @@ func (p PersistedRoom) Encode() ([]byte, error) {
 	}, "", "  ")
 }
 
-// DecodePersistedRoom es el ÚNICO decodificador de la sala del host.
+// DecodeHostedRoom es el ÚNICO decodificador de la sala del host.
 //
 // Estricto por las dos vías, igual que el del catálogo: campos desconocidos
 // rechazan el archivo, y contenido después del objeto también. Esa segunda
 // comprobación existe porque `json.Decode` se detiene feliz en el primer valor
 // completo, así que sin ella un archivo con un segundo objeto pegado detrás
 // cargaría el primero y nadie vería el resto.
-func DecodePersistedRoom(raw []byte) (PersistedRoom, error) {
+func DecodeHostedRoom(raw []byte) (HostedRoom, error) {
 	j, err := decodeStrict[persistedRoomJSON](raw)
 	if err != nil {
-		return PersistedRoom{}, err
+		return HostedRoom{}, err
 	}
 
 	room, err := roomFrom(j.InviteID, j.Seed)
 	if err != nil {
-		return PersistedRoom{}, err
+		return HostedRoom{}, err
 	}
 	host, err := ParseNickname(j.Host)
 	if err != nil {
-		return PersistedRoom{}, fmt.Errorf("%w: el nick del host: %v", ErrPersistedShape, err)
+		return HostedRoom{}, fmt.Errorf("%w: el nick del host: %v", ErrPersistedShape, err)
 	}
 
-	out := PersistedRoom{Room: room, Name: ClampRoomName(j.Name), Host: host, GameID: j.GameID}
+	out := HostedRoom{Room: room, Name: ClampRoomName(j.Name), Host: host, GameID: j.GameID}
 
 	if err := fixedFromBase64(j.NetworkID, out.NetworkID[:], "network_id"); err != nil {
-		return PersistedRoom{}, err
+		return HostedRoom{}, err
 	}
 	if err := fixedFromBase64(j.NetworkSecret, out.NetworkSecret[:], "network_secret"); err != nil {
-		return PersistedRoom{}, err
+		return HostedRoom{}, err
 	}
 	if err := fixedFromBase64(j.CardKey, out.CardKey[:], "card_key"); err != nil {
-		return PersistedRoom{}, err
+		return HostedRoom{}, err
 	}
 
 	// La tarjeta es de largo variable y OPCIONAL: un archivo escrito antes de
@@ -198,10 +198,10 @@ func DecodePersistedRoom(raw []byte) (PersistedRoom, error) {
 	if j.Card != "" {
 		card, err := base64.StdEncoding.DecodeString(j.Card)
 		if err != nil {
-			return PersistedRoom{}, fmt.Errorf("%w: la tarjeta: %v", ErrPersistedShape, err)
+			return HostedRoom{}, fmt.Errorf("%w: la tarjeta: %v", ErrPersistedShape, err)
 		}
 		if len(card) > MaxCardBytes {
-			return PersistedRoom{}, fmt.Errorf("%w: la tarjeta mide %d bytes y el tope es %d",
+			return HostedRoom{}, fmt.Errorf("%w: la tarjeta mide %d bytes y el tope es %d",
 				ErrPersistedShape, len(card), MaxCardBytes)
 		}
 		out.Card = card
@@ -211,21 +211,21 @@ func DecodePersistedRoom(raw []byte) (PersistedRoom, error) {
 	// restaurada en el /24 del vestíbulo, o fuera del espacio previsto, es la
 	// forma de que un archivo editado a mano mande el tráfico a otra parte.
 	if out.Subnet, err = netip.ParsePrefix(j.Subnet); err != nil {
-		return PersistedRoom{}, fmt.Errorf("%w: la subred: %v", ErrPersistedShape, err)
+		return HostedRoom{}, fmt.Errorf("%w: la subred: %v", ErrPersistedShape, err)
 	}
 	if err := checkRoomSubnet(out.Subnet); err != nil {
-		return PersistedRoom{}, err
+		return HostedRoom{}, err
 	}
 
 	// Un id que no cumple las reglas del catálogo no puede casar con ningún
 	// perfil, así que se rechaza acá en vez de dejar que falle silenciosamente
 	// en el `Find` y la sala reabra sin juego sin decir por qué.
 	if out.GameID != "" && !validProfileID(out.GameID) {
-		return PersistedRoom{}, fmt.Errorf("%w: %v: %q", ErrPersistedShape, ErrProfileID, out.GameID)
+		return HostedRoom{}, fmt.Errorf("%w: %v: %q", ErrPersistedShape, ErrProfileID, out.GameID)
 	}
 
 	if out.SavedAt, err = parseSavedAt(j.SavedAt); err != nil {
-		return PersistedRoom{}, err
+		return HostedRoom{}, err
 	}
 	return out, nil
 }

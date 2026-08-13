@@ -8,6 +8,7 @@ import 'package:kanpachi_ui/core/design_system/atoms/app_chip.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_kicker.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/features/seed/presentation/widgets/seed_trust_block.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
@@ -96,17 +97,22 @@ class InviteScreen extends StatelessWidget {
             ),
           if (invite.understood) ...<Widget>[
             const SizedBox(height: AppSpacing.x4l),
-            AppExplainer(
-              invite.unknown
-                  // El registro contestó que no la conoce. Es un hecho
-                  // afirmado, no un silencio, y por eso se puede decir así.
-                  ? 'El servidor no conoce esa sala. Puede que ya se haya '
-                        'cerrado, o que el código se haya renovado desde que te '
-                        'llegó el enlace.'
-                  : 'Al entrar, tu equipo se conecta con los demás miembros de '
-                        'esta sala. Nada de tu PC queda expuesto hasta que se '
-                        'elija un juego.',
-            ),
+            if (invite.unknown)
+              // El registro contestó que no la conoce. Es un hecho afirmado, no
+              // un silencio, y por eso se puede decir así. Acá no va el bloque
+              // de confianza: no hay decisión que tomar sobre un servidor si la
+              // sala no existe, y ponerlo sería pedir que se confíe en algo
+              // para nada.
+              const AppExplainer(
+                'El servidor no conoce esa sala. Puede que ya se haya cerrado, '
+                'o que el código se haya renovado desde que te llegó el enlace.',
+              )
+            else
+              // El MISMO bloque que enseña el diálogo de confianza, y no un
+              // texto propio: es la misma advertencia sobre la misma clase de
+              // máquina, y escribirla dos veces es cómo una acaba diciendo algo
+              // distinto de la otra. Ver [SeedTrustBlock].
+              const SeedTrustBlock(),
           ],
           const SizedBox(height: AppSpacing.x7l),
           // 5:7, que es el 1:1,4 del diseño, y el MISMO alto en los dos. Con
@@ -138,7 +144,10 @@ class InviteScreen extends StatelessWidget {
                 Expanded(
                   flex: 7,
                   child: AppButton(
-                    label: 'Entrar a la sala',
+                    // «Confiar y entrar», que es lo que el botón hace de
+                    // verdad: esta pantalla ya no solo enseña a qué sala vas,
+                    // enseña a qué SERVIDOR, y entrar es aceptarlo.
+                    label: 'Confiar y entrar',
                     height: 46,
                     // Sin navegar a mano. La pantalla de sala aparece cuando el
                     // daemon dice que hay sala, y quien lo vigila es el latido:

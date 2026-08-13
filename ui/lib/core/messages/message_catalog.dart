@@ -349,6 +349,23 @@ abstract final class AppMessages {
           'El servidor de encuentro no responde, así que ahora mismo no se '
           'puede crear una sala ni entrar a una. Prueba de nuevo en un rato.',
     ),
+    // Los dos que se arreglan yendo a una pantalla, y por eso el texto no dice
+    // «prueba otra vez»: no hay nada que reintentar hasta que alguien elija.
+    FailureCode.noOwnSeed => const AppMessage(
+      severity: MessageSeverity.warn,
+      body:
+          'Todavía no elegiste en qué servidor abres tus salas. Entrar a la '
+          'sala de alguien no lo elige por ti.',
+    ),
+    // El fallo de esta lista que se arregla escribiendo algo. El texto
+    // no dice si el password nunca se puso, si caducó o si lo cambiaron,
+    // porque el registro tampoco lo dice y lo que hay que hacer es lo mismo.
+    FailureCode.seedPassword => const AppMessage(
+      severity: MessageSeverity.warn,
+      body:
+          'Ese servidor pide una contraseña para poder abrir salas en él. '
+          'Entrar a una sala nunca la pide.',
+    ),
     // Neutral y no advertencia: no falló nada, se pulsó un botón.
     FailureCode.canceled => const AppMessage(
       severity: MessageSeverity.neutral,

@@ -229,11 +229,11 @@ try {
     Get-Process kanpachi-engine -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Seconds 2
 
-    if (-not (Test-Path (Join-Path $Data 'room.json'))) {
-        Mal "la muerte sucia no dejo room.json, asi que no hay nada que reabrir"
+    if (-not (Test-Path (Join-Path $Data 'hosted-room.json'))) {
+        Mal "la muerte sucia no dejo hosted-room.json, asi que no hay nada que reabrir"
         $fallos++
     }
-    else { Bien "quedo room.json, que es la senal de mal cierre" }
+    else { Bien "quedo hosted-room.json, que es la senal de mal cierre" }
 
     $daemon = Arranca
     $r = Ctl 'resume_room' $null

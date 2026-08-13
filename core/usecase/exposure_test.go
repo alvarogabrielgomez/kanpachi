@@ -7,14 +7,14 @@ import (
 
 func TestExposureShowsTheGamePortsThatAreReallyOpen(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
 
-	r := b.sesión.Exposure(ctx())
+	r := b.session.Exposure(ctx())
 	if r.Blind() {
 		t.Fatal("la medición se declaró ciega con la auditoría funcionando")
 	}
@@ -35,19 +35,19 @@ func TestExposureGoesBlindInsteadOfLooking(t *testing.T) {
 	// Lo que no se pudo medir se dice. Rellenar con la última lista buena sería
 	// enseñar una pantalla verde sobre una medición que no ocurrió.
 	b := nuevoBanco(t)
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.sesión.ActivateProfile(ctx(), "project-zomboid"); err != nil {
+	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
 		t.Fatal(err)
 	}
-	if r := b.sesión.Exposure(ctx()); len(r.Ports) == 0 {
+	if r := b.session.Exposure(ctx()); len(r.Ports) == 0 {
 		t.Fatal("este test no prueba nada: no había nada que ocultar")
 	}
 
-	b.auditoría.errIntactas = errors.New("no se pudo enumerar")
+	b.audit.errIntactas = errors.New("no se pudo enumerar")
 
-	r := b.sesión.Exposure(ctx())
+	r := b.session.Exposure(ctx())
 	if !r.Blind() {
 		t.Fatal("una medición caída se informó como buena")
 	}
@@ -61,7 +61,7 @@ func TestExposureWithNoRoomDoesNotDemandTheGate(t *testing.T) {
 	// alerta encendida en reposo.
 	b := nuevoBanco(t)
 
-	r := b.sesión.Exposure(ctx())
+	r := b.session.Exposure(ctx())
 	if r.Blind() {
 		t.Fatal("medir en reposo se declaró ciego")
 	}
@@ -72,12 +72,12 @@ func TestExposureWithNoRoomDoesNotDemandTheGate(t *testing.T) {
 
 func TestExposureReportsRulesNobodyAskedFor(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.sesión.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
 		t.Fatal(err)
 	}
-	b.auditoría.tamper()
+	b.audit.tamper()
 
-	r := b.sesión.Exposure(ctx())
+	r := b.session.Exposure(ctx())
 	if len(r.Unexpected) == 0 {
 		t.Fatal("una regla del grupo propio que nadie pidió no se informó")
 	}

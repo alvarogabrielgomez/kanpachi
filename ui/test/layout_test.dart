@@ -90,6 +90,10 @@ void main() {
     required Size ventana,
     required AppScreen pantalla,
     AppDialog dialogo = AppDialog.none,
+
+    /// Con qué petición se abre [AppDialog.trustSeed]. Sin ella ese diálogo se
+    /// dibuja vacío, y el test pasaría midiendo nada.
+    TrustRequest? confianza,
     Map<String, Object?>? sala,
     Map<String, Object?>? invite,
     ThemeMode tema = ThemeMode.dark,
@@ -120,7 +124,11 @@ void main() {
     final SessionCubit session = SessionCubit(
       PipeSessionRepository(daemonTestConnector(responde)),
     )..watchSession();
-    if (dialogo != AppDialog.none) shell.showDialog(dialogo);
+    if (confianza != null) {
+      shell.askTrust(confianza);
+    } else if (dialogo != AppDialog.none) {
+      shell.showDialog(dialogo);
+    }
 
     try {
       await tester.binding.setSurfaceSize(ventana);
@@ -189,6 +197,34 @@ void main() {
                 '$pantalla se desborda en ${ventana.key}. Algo tiene ancho '
                 'fijo donde tendría que ceder:\n${desbordes.join('\n')}',
           );
+        });
+      }
+
+      // El de confianza va aparte porque necesita su petición, y con los DOS
+      // momentos: el texto y las etiquetas de los botones cambian enteros entre
+      // abrir y entrar, así que medir uno solo deja el otro sin medir. El
+      // registro va largo a propósito, que es el caso que desbordaría.
+      for (final MapEntry<String, TrustRequest> caso in <String, TrustRequest>{
+        'al abrir': const TrustRequest.hosting(
+          seed: 'registro.muy-largo.ejemplo.com',
+          suggestedName: 'Sala de Kanpachi',
+        ),
+        'al entrar': const TrustRequest.joining(
+          seed: 'registro.muy-largo.ejemplo.com',
+          code: 'A7K2M9QX@registro.muy-largo.ejemplo.com',
+        ),
+      }.entries) {
+        testWidgets('AppDialog.trustSeed ${caso.key} cabe', (
+          WidgetTester tester,
+        ) async {
+          final List<String> desbordes = await desbordesDe(
+            tester,
+            ventana: ventana.value,
+            pantalla: AppScreen.home,
+            confianza: caso.value,
+          );
+
+          expect(desbordes, isEmpty, reason: desbordes.join('\n'));
         });
       }
 

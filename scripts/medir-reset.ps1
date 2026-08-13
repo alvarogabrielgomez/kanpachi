@@ -9,7 +9,7 @@
     oportunidad de limpiar.
 
     Lo que queda entonces es lo que hay que medir: reglas del grupo Kanpachi
-    puestas, filtros de compuerta en WFP, un room.json que dice que hay sala, y
+    puestas, filtros de compuerta en WFP, un hosted-room.json que dice que hay sala, y
     posiblemente un motor huerfano. Despues corre --reset y comprueba lo unico
     que importa de verdad:
 
@@ -17,7 +17,7 @@
       2. Cero filtros de la compuerta.
       3. La cuarentena de base ENTERA, porque el reset la repone y no la quita.
       4. Sin motor huerfano.
-      5. room.json borrado, y last-room.json intacto.
+      5. hosted-room.json borrado, y last-room.json intacto.
       6. Y despues del reset se puede volver a crear una sala.
 
     El punto 3 es el que separa este comando del desinstalador. Un reset se pide
@@ -96,10 +96,10 @@ Start-Sleep -Seconds 2
 $sucio = @{
     reglas  = CuantasReglasDe 'Kanpachi'
     filtros = FiltrosDeLaCompuerta
-    sala    = Test-Path (Join-Path $Data 'room.json')
+    sala    = Test-Path (Join-Path $Data 'hosted-room.json')
     motor   = @(Get-Process kanpachi-engine -ErrorAction SilentlyContinue).Count
 }
-Write-Host ("  reglas Kanpachi={0} filtros={1} room.json={2} motores={3}" -f `
+Write-Host ("  reglas Kanpachi={0} filtros={1} hosted-room.json={2} motores={3}" -f `
     $sucio.reglas, $sucio.filtros, $sucio.sala, $sucio.motor)
 if ($sucio.reglas -eq 0 -and $sucio.filtros -eq 0 -and -not $sucio.sala) {
     throw "la muerte sucia no dejo NADA que limpiar, asi que el reset no probaria nada"
@@ -135,11 +135,11 @@ $motores = @(Get-Process kanpachi-engine -ErrorAction SilentlyContinue).Count
 if ($motores -eq 0) { Bien "sin motor huerfano" }
 else { Mal "quedaron $motores motor(es) vivos"; $fallos++ }
 
-if (Test-Path (Join-Path $Data 'room.json')) {
-    Mal "room.json sigue ahi, asi que el arranque siguiente ofreceria reabrir una sala que ya no existe"
+if (Test-Path (Join-Path $Data 'hosted-room.json')) {
+    Mal "hosted-room.json sigue ahi, asi que el arranque siguiente ofreceria reabrir una sala que ya no existe"
     $fallos++
 }
-else { Bien "room.json borrado" }
+else { Bien "hosted-room.json borrado" }
 
 # last-room.json se conserva a proposito: resetear la configuracion no es
 # olvidar a que sala volver.

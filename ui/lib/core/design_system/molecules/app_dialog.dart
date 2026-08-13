@@ -98,6 +98,7 @@ class AppModalActions extends StatelessWidget {
     required this.onConfirm,
     required this.onCancel,
     this.cancelLabel = 'Cancelar',
+    this.stretch = false,
     super.key,
   });
 
@@ -106,34 +107,56 @@ class AppModalActions extends StatelessWidget {
   final VoidCallback onCancel;
   final String cancelLabel;
 
+  /// Los dos botones OCUPAN el ancho, en proporción 1:1,5.
+  ///
+  /// El valor por omisión los deja a su ancho natural pegados a la derecha, que
+  /// es lo que pide el diseño cuando las etiquetas son cortas. Con etiquetas
+  /// largas —«Cancelar» y «Confiar y entrar»— esa fila se sale del modal: no es
+  /// que quepan justas, es que su ancho natural no depende del sitio que hay.
+  /// Estirándolos, el texto se reparte el ancho disponible y la fila deja de
+  /// poder desbordar.
+  final bool stretch;
+
   @override
   Widget build(BuildContext context) {
     // Alto explícito y el MISMO en los dos: el diseño los estira a la altura
     // de la fila, y dejando que cada uno midiera por su padding salían
     // desnivelados — el ghost lleva `label` (13,5 con interlínea 1,3) y el
     // relleno `button` (13,5 con 1), así que la misma caja da dos alturas.
+    final AppButton cancelar = AppButton(
+      label: cancelLabel,
+      onPressed: onCancel,
+      variant: AppButtonVariant.ghost,
+      height: 39.5,
+      horizontalPadding: stretch ? AppSpacing.lg : AppSpacing.x5l,
+    );
+    final AppButton confirmar = AppButton(
+      label: confirmLabel,
+      onPressed: onConfirm,
+      variant: AppButtonVariant.primaryFlat,
+      height: 39.5,
+      horizontalPadding: stretch ? AppSpacing.lg : AppSpacing.x6l,
+      // `primaryFlat` mapea al CTA de 14,5 px de «Unirse» y «Crear sala»;
+      // acá el diseño pide 13,5, así que se pide por sitio y no se toca
+      // el arquetipo.
+      textStyle: context.type.buttonSm,
+    );
+    if (!stretch) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: <Widget>[
+          cancelar,
+          const SizedBox(width: AppSpacing.lg),
+          confirmar,
+        ],
+      );
+    }
+    // 2:3, que es el 1:1,5 del diseño en enteros.
     return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
       children: <Widget>[
-        AppButton(
-          label: cancelLabel,
-          onPressed: onCancel,
-          variant: AppButtonVariant.ghost,
-          height: 39.5,
-          horizontalPadding: AppSpacing.x5l,
-        ),
-        const SizedBox(width: AppSpacing.lg),
-        AppButton(
-          label: confirmLabel,
-          onPressed: onConfirm,
-          variant: AppButtonVariant.primaryFlat,
-          height: 39.5,
-          horizontalPadding: AppSpacing.x6l,
-          // `primaryFlat` mapea al CTA de 14,5 px de «Unirse» y «Crear sala»;
-          // acá el diseño pide 13,5, así que se pide por sitio y no se toca
-          // el arquetipo.
-          textStyle: context.type.buttonSm,
-        ),
+        Expanded(flex: 2, child: cancelar),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(flex: 3, child: confirmar),
       ],
     );
   }

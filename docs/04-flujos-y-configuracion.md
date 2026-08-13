@@ -260,7 +260,7 @@ kanpseed-registry.service   kanpseed serve, sirve / y /api
 
 ### El CLI
 
-Un solo binario, `kanpseed`. Se llama así y no `kanpachi` porque ese nombre queda reservado para el cliente de terminal de Linux, que entrará y creará salas y es otra cosa.
+Un solo binario, `kanpseed`. Se llama así y no `kanpachi` porque ese nombre lo tiene el cliente de terminal de Linux, que entra y crea salas y es otra cosa. **Todo lo que imprime va en inglés**, como el README que se lee por `ssh`.
 
 | Comando | Para qué |
 |---|---|
@@ -268,10 +268,32 @@ Un solo binario, `kanpseed`. Se llama así y no `kanpachi` porque ese nombre que
 | `kanpseed upgrade` | se pone en la última versión publicada y reinicia. `--check` solo mira. Un comando y no dos: la parte que depende del código nuevo la corre el binario nuevo |
 | `kanpseed reconfigure` | reescribe las units como las quiere esta versión y reinicia. Lo llama `upgrade` por dentro |
 | `kanpseed doctor` | revisa archivos, servicios, puertos, RPC y salud, y dice qué hacer con cada fallo |
-| `kanpseed config` | muestra o cambia puertos y dominio, reescribe las units y reinicia |
+| `kanpseed config` | muestra o cambia puertos y dominio, reescribe las units y reinicia. Sin argumentos enseña además si hospedar pide password |
+| `kanpseed password` | pide un password para HOSPEDAR en este seed. `--open` lo quita |
 | `kanpseed nginx` | repite el bloque del proxy, para no tener que recordar el puerto |
 | `kanpseed uninstall` | deja la máquina como estaba |
 | `kanpseed serve` | lo arranca systemd. No hace falta a mano |
+
+### Cerrar el seed, y las tres cosas que hay que saber antes
+
+Ver la decisión 34 para el porqué, y `03-arquitectura.md` para dónde vive cada pieza. Lo de acá es lo que le pasa al operador.
+
+**Entrar a una sala nunca pide nada.** El password es para abrir salas, publicar la tarjeta y renovar el código. Un invitado no se entera de que el seed está cerrado.
+
+**El password queda atado al dominio configurado.** Va dentro del hash que manda el cliente, así que tiene que ser el nombre que la gente escribe de verdad. `kanpseed password` se niega si no hay dominio y dice cómo ponerlo. Quien alcance ese seed por otro nombre no va a poder hospedar en él.
+
+**Cambiarlo bota a todos los hosts en el acto**, porque rota la clave que firma los tokens. Vuelven a entrar escribiendo el nuevo. El comando lo dice antes de preguntar, no después.
+
+```
+sudo kanpseed password          lo pide enmascarado, dos veces
+sudo kanpseed password --open   lo quita, y con él mueren todos los tokens
+```
+
+**Enter con el campo vacío es lo mismo que `--open`**, y se dice en el propio prompt: es donde alguien expresa «no quiero password», y mandarlo a leer la ayuda para descubrir la bandera sería un callejón.
+
+**No existe `--password`**, y no va a existir: cualquier usuario de la máquina lee `/proc/<pid>/cmdline`, y el shell guarda historial. Se teclea, o entra por la entrada estándar, que es la forma correcta de automatizarlo con un fichero 0600.
+
+`init` lo ofrece al final, con «no» por defecto, porque abierto es el caso normal: un seed levantado para tres amigos no gana nada con un password, y el roce lo paga cada vez que alguien abre una sala.
 
 ### El puerto interno se elige y se imprime
 

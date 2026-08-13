@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/internal/selfupdate"
 )
 
 const invitePage = "../../invite/index.html"
@@ -76,14 +77,41 @@ func TestPaginaDeInvitacionCoincideConElDominio(t *testing.T) {
 		}
 	})
 
-	t.Run("seed por defecto", func(t *testing.T) {
-		re := regexp.MustCompile(`var DEFAULT_SEED = "([^"]*)"`)
-		m := re.FindStringSubmatch(html)
-		if m == nil {
-			t.Fatal("no se encontró DEFAULT_SEED en la página")
+	// La página NO puede llevar un seed compilado, y este caso cambió de sentido
+	// cuando el proyecto se abrió.
+	//
+	// Antes comprobaba que el `DEFAULT_SEED` de la página coincidiera con el del
+	// dominio, o sea que los dos dijeran `kanpachi.accentio.dev`. Ahora no hay
+	// seed por defecto en ningún lado, y lo que hay que vigilar es lo contrario:
+	// que nadie vuelva a escribir un host ahí.
+	//
+	// **Es lo que hace que el registro de cualquiera funcione sin editar nada.**
+	// La página saca su seed de `window.location.hostname`, así que servida desde
+	// `seed.midominio.com` reparte códigos que apuntan a `seed.midominio.com`. Un
+	// literal compilado la haría repartir códigos del servidor de otro, con IDs
+	// que ahí no existen.
+	t.Run("la pagina no lleva ningun seed compilado", func(t *testing.T) {
+		if strings.Contains(html, "var DEFAULT_SEED") {
+			t.Error("la página volvió a declarar DEFAULT_SEED: su seed sale del origen que la sirve")
 		}
-		if m[1] != domain.DefaultSeedHost {
-			t.Errorf("el seed por defecto de la página es %q y el del dominio es %q", m[1], domain.DefaultSeedHost)
+		if !strings.Contains(html, "window.location.hostname") {
+			t.Error("la página no lee su propio host, así que no puede saber qué seed reparte")
+		}
+		// El dominio de Accentio no puede aparecer en el CÓDIGO de la página. Se
+		// mira solo dentro del `<script>`: en la prosa de arriba y en los
+		// comentarios se nombra a propósito, para contar qué se quitó.
+		i := strings.Index(html, "<script>")
+		if i < 0 {
+			t.Fatal("no se encontró el bloque de script de la página")
+		}
+		for _, línea := range strings.Split(html[i:], "\n") {
+			limpia := strings.TrimSpace(línea)
+			if strings.HasPrefix(limpia, "//") || strings.HasPrefix(limpia, "*") {
+				continue
+			}
+			if strings.Contains(limpia, "kanpachi.accentio.dev") {
+				t.Errorf("la página lleva un seed escrito a mano: %q", limpia)
+			}
 		}
 	})
 
@@ -91,7 +119,7 @@ func TestPaginaDeInvitacionCoincideConElDominio(t *testing.T) {
 		// La app genera `seed/A7K2-M9QX` y la página lee el invite ID de la
 		// ruta. Si una de las dos cambia de forma, el enlace deja de abrir nada
 		// y el síntoma aparece en producción, no acá. Este caso ata las dos.
-		r, err := domain.ParseRoom("A7K2M9QX")
+		r, err := domain.ParseRoom("A7K2M9QX@seed.midominio.com")
 		if err != nil {
 			t.Fatalf("setup: %v", err)
 		}
@@ -137,19 +165,27 @@ func TestPaginaDeInvitacionRespetaSusInvariantes(t *testing.T) {
 			}
 		}
 
-		// El repositorio es la única URL absoluta admitida, y siempre es un
-		// href sobre el que el usuario decide, no una carga automática. Los
-		// logos van EN LÍNEA justamente para no necesitar ninguna otra.
-		//
-		// El prefijo es el del repositorio DE VERDAD, que es el que tiene que
-		// resolver: `seed/install.sh` y `release-seed.yml` bajan de ahí. Decía
-		// `accentiostudios`, que es el camino del módulo de Go y no existe como
-		// repositorio, así que el enlace del pie llevaba a un 404 y esto lo
-		// defendía.
+		// GitHub es el único origen absoluto admitido, y siempre como un href
+		// sobre el que el usuario decide, jamás una carga automática. Los logos
+		// van EN LÍNEA justamente para no necesitar ninguna otra.
 		for _, u := range regexp.MustCompile(`https?://[^"'\s)]+`).FindAllString(html, -1) {
-			if !strings.HasPrefix(u, "https://github.com/alvarogabrielgomez/kanpachi") {
+			if !strings.HasPrefix(u, "https://github.com/") {
 				t.Errorf("URL absoluta inesperada en la página: %q", u)
 			}
+		}
+
+		// Y el REPOSITORIO no puede estar escrito acá.
+		//
+		// Este guardián decía lo contrario: exigía que las URL empezaran por
+		// `https://github.com/alvarogabrielgomez/kanpachi`, o sea que el nombre
+		// del repositorio estuviera dentro del HTML. Eso era una segunda copia
+		// de `internal/selfupdate.Repo`, y con ella un fork que cambiara la
+		// constante de Go seguía repartiendo una página que apunta al
+		// repositorio original. Ahora el nombre lo sirve el servidor en el hueco
+		// de estado, y lo que este guardián protege es que no vuelva a copiarse.
+		if strings.Contains(html, selfupdate.Repo) {
+			t.Errorf("la página lleva %q escrito: el repositorio viaja en el hueco de estado, "+
+				"para que un fork cambie una sola constante", selfupdate.Repo)
 		}
 	})
 

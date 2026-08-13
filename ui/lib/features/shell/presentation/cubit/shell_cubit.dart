@@ -28,6 +28,21 @@ enum AppScreen {
   /// Los dos ajustes que hay. Se llega por el engranaje del menú de cuenta, y
   /// desde ningún otro sitio: nada de acá hace falta para jugar.
   settings,
+
+  /// A qué registro le pide sala esta máquina.
+  ///
+  /// Es una pantalla propia y no un campo dentro de ajustes porque se llega a
+  /// ella desde el diálogo de confianza, con «Cambiar registro», en mitad de
+  /// abrir una sala. Y porque va a crecer: el paso 2 es el password que un
+  /// registro cerrado pide para hospedar.
+  seed,
+
+  /// La contraseña que un registro cerrado pide para HOSPEDAR.
+  ///
+  /// Se llega a ella cuando abrir una sala falla con [FailureCode.seedPassword],
+  /// y desde ningún otro sitio. Preguntarla antes le cobraría a todo el mundo el
+  /// roce de un caso que casi ningún registro tiene.
+  seedPassword,
 }
 
 /// Los diálogos, que se dibujan por encima de la pantalla actual.
@@ -47,6 +62,15 @@ enum AppDialog {
   /// latido al descubrir el archivo del arranque anterior. Preguntar y no
   /// reabrir sola es la invariante; ver `docs/05-ui.md`.
   resumeRoom,
+
+  /// Confiar en un registro, antes de abrir una sala o de entrar a una.
+  ///
+  /// Es UNO para los dos momentos porque es la misma decisión: hablarle a la
+  /// máquina de un tercero, que ve tu IP pública y por la que pasa todo el
+  /// mundo de esa sala. Cambia de quién sale el nombre, y no qué se decide: al
+  /// crear sale del registro que esta máquina tiene configurado, y al entrar
+  /// del código que te pegaron.
+  trustSeed,
 }
 
 /// Cómo se listan los juegos.
@@ -66,6 +90,7 @@ class ShellState {
     this.pickerCameFromRoom = false,
     this.portable = false,
     this.kickTarget,
+    this.trust,
   });
 
   final AppScreen screen;
@@ -112,6 +137,13 @@ class ShellState {
 
   final Member? kickTarget;
 
+  /// Qué se está por hacer contra qué registro, mientras el diálogo pregunta.
+  ///
+  /// Nulo salvo con [AppDialog.trustSeed] arriba. Va en el estado y no en un
+  /// callback guardado porque este estado es inmutable y comparable: una
+  /// función dentro rompería la igualdad y con ella el redibujado.
+  final TrustRequest? trust;
+
   ShellState copyWith({
     AppScreen? screen,
     List<AppScreen>? history,
@@ -124,6 +156,8 @@ class ShellState {
     bool? pickerCameFromRoom,
     Member? kickTarget,
     bool clearKickTarget = false,
+    TrustRequest? trust,
+    bool clearTrust = false,
   }) => ShellState(
     portable: portable,
     screen: screen ?? this.screen,
@@ -136,7 +170,50 @@ class ShellState {
     accountMenuOpen: accountMenuOpen ?? this.accountMenuOpen,
     pickerCameFromRoom: pickerCameFromRoom ?? this.pickerCameFromRoom,
     kickTarget: clearKickTarget ? null : (kickTarget ?? this.kickTarget),
+    trust: clearTrust ? null : (trust ?? this.trust),
   );
+}
+
+/// Lo que el diálogo de confianza necesita saber para preguntar y para actuar.
+@immutable
+class TrustRequest {
+  const TrustRequest.hosting({required this.seed, required this.suggestedName})
+    : joining = false,
+      code = '';
+
+  const TrustRequest.joining({required this.seed, required this.code})
+    : joining = true,
+      suggestedName = '';
+
+  /// El registro que se va a usar. Nunca vacío: sin nombre no hay nada que
+  /// enseñar, y un diálogo que pregunta por una máquina sin nombre no pregunta
+  /// nada.
+  final String seed;
+
+  /// Entrar, contra abrir. Cambia el texto entero y qué se hace al confirmar.
+  final bool joining;
+
+  /// El código pegado, TAL CUAL. Solo con [joining].
+  final String code;
+
+  /// Con qué nombre se abre si nadie escribió ninguno. Solo sin [joining].
+  ///
+  /// **No es el nombre**, es el respaldo. El nombre lo lleva el borrador de la
+  /// sesión, que se edita en el campo de la portada Y dentro de este diálogo, y
+  /// es el mismo dato en los dos: cambiarlo en uno mueve el otro mientras se
+  /// mira. Ver [SessionState.roomNameDraft].
+  final String suggestedName;
+
+  @override
+  bool operator ==(Object other) =>
+      other is TrustRequest &&
+      other.seed == seed &&
+      other.joining == joining &&
+      other.code == code &&
+      other.suggestedName == suggestedName;
+
+  @override
+  int get hashCode => Object.hash(seed, joining, code, suggestedName);
 }
 
 /// Navegación y preferencias de presentación.
@@ -253,8 +330,17 @@ class ShellCubit extends Cubit<ShellState> {
 
   void showDialog(AppDialog dialog) => emit(state.copyWith(dialog: dialog));
 
-  void closeDialog() =>
-      emit(state.copyWith(dialog: AppDialog.none, clearKickTarget: true));
+  void closeDialog() => emit(
+    state.copyWith(
+      dialog: AppDialog.none,
+      clearKickTarget: true,
+      clearTrust: true,
+    ),
+  );
+
+  /// Abre el diálogo de confianza con lo que se está por hacer.
+  void askTrust(TrustRequest req) =>
+      emit(state.copyWith(dialog: AppDialog.trustSeed, trust: req));
 
   void askKick(Member member) =>
       emit(state.copyWith(dialog: AppDialog.confirmKick, kickTarget: member));

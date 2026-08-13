@@ -11,7 +11,7 @@ import (
 
 // salaDeInvitado deja la sesión dentro de una sala, como invitado, con el host
 // presente en la lista de miembros.
-func salaDeInvitado(t *testing.T) (*banco, netip.Addr) {
+func salaDeInvitado(t *testing.T) (*bank, netip.Addr) {
 	t.Helper()
 
 	b := nuevoBanco(t)
@@ -23,14 +23,14 @@ func salaDeInvitado(t *testing.T) (*banco, netip.Addr) {
 		VirtualIP: yo,
 		Subnet:    netip.MustParsePrefix("100.87.3.0/24"),
 	}
-	if _, err := b.sesión.JoinRoom(ctx(), "A7K2M9QX", nick(t, "humberto")); err != nil {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto")); err != nil {
 		t.Fatal(err)
 	}
 	b.motor.peers = []domain.Peer{
 		{VirtualIP: yo, Name: nick(t, "humberto"), Self: true},
 		{VirtualIP: host, Name: nick(t, "alvaro"), Host: true},
 	}
-	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
 	return b, host
@@ -40,7 +40,7 @@ func TestElSondeoMarcaAlHostYNoAOtro(t *testing.T) {
 	b, host := salaDeInvitado(t)
 	b.sonda.contesta(domain.ControlPort, domain.ProbeAnswered)
 
-	r, err := b.sesión.ProbeHost(ctx())
+	r, err := b.session.ProbeHost(ctx())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestElSondeoConservaElOrdenDeLaLista(t *testing.T) {
 	b, _ := salaDeInvitado(t)
 	b.sonda.contesta(domain.ControlPort, domain.ProbeAnswered)
 
-	r, err := b.sesión.ProbeHost(ctx())
+	r, err := b.session.ProbeHost(ctx())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestUnPuertoAbiertoQueNadiePidioSaleComoFuga(t *testing.T) {
 	b.sonda.contesta(domain.ControlPort, domain.ProbeAnswered)
 	b.sonda.contesta(445, domain.ProbeAnswered)
 
-	r, err := b.sesión.ProbeHost(ctx())
+	r, err := b.session.ProbeHost(ctx())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestUnPuertoAbiertoQueNadiePidioSaleComoFuga(t *testing.T) {
 func TestSinRespuestaDelCanalElSondeoNoAfirmaNada(t *testing.T) {
 	b, _ := salaDeInvitado(t)
 
-	r, err := b.sesión.ProbeHost(ctx())
+	r, err := b.session.ProbeHost(ctx())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestSinRespuestaDelCanalElSondeoNoAfirmaNada(t *testing.T) {
 func TestElHostNoSePuedeSondearASiMismo(t *testing.T) {
 	b := salaCreada(t)
 
-	if _, err := b.sesión.ProbeHost(ctx()); !errors.Is(err, ErrProbeSelf) {
+	if _, err := b.session.ProbeHost(ctx()); !errors.Is(err, ErrProbeSelf) {
 		t.Fatalf("error = %v, se esperaba ErrProbeSelf", err)
 	}
 	// Y no se marcó nada: el tráfico a la propia dirección no atraviesa el
@@ -144,7 +144,7 @@ func TestElHostNoSePuedeSondearASiMismo(t *testing.T) {
 func TestSinSalaNoHayNadaQueSondear(t *testing.T) {
 	b := nuevoBanco(t)
 
-	if _, err := b.sesión.ProbeHost(ctx()); !errors.Is(err, ErrNoRoom) {
+	if _, err := b.session.ProbeHost(ctx()); !errors.Is(err, ErrNoRoom) {
 		t.Fatalf("error = %v, se esperaba ErrNoRoom", err)
 	}
 	if n := b.sonda.cuántos(); n != 0 {
@@ -157,11 +157,11 @@ func TestSinHostEnLaListaNoSeInventaUnaDireccion(t *testing.T) {
 	b.motor.peers = []domain.Peer{
 		{VirtualIP: netip.MustParseAddr("100.87.3.5"), Name: nick(t, "humberto"), Self: true},
 	}
-	if _, err := b.sesión.OnPeersChanged(ctx()); err != nil {
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := b.sesión.ProbeHost(ctx()); !errors.Is(err, ErrProbeNoHost) {
+	if _, err := b.session.ProbeHost(ctx()); !errors.Is(err, ErrProbeNoHost) {
 		t.Fatalf("error = %v, se esperaba ErrProbeNoHost", err)
 	}
 }
@@ -178,7 +178,7 @@ func TestElSondeoNoSostieneElCandadoDeLaSesion(t *testing.T) {
 	listo := make(chan struct{})
 	go func() {
 		defer close(listo)
-		if _, err := b.sesión.ProbeHost(ctx()); err != nil {
+		if _, err := b.session.ProbeHost(ctx()); err != nil {
 			t.Errorf("el sondeo falló: %v", err)
 		}
 	}()
@@ -191,7 +191,7 @@ func TestElSondeoNoSostieneElCandadoDeLaSesion(t *testing.T) {
 	}
 
 	// Con el sondeo a medias, la sala se tiene que poder consultar igual.
-	if st := b.sesión.Status(); !st.Conn.InRoom() {
+	if st := b.session.Status(); !st.Conn.InRoom() {
 		t.Fatal("Status contestó fuera de la sala mientras el sondeo corría")
 	}
 	close(suelta)

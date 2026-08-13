@@ -10,12 +10,27 @@ import (
 
 // Cadencia es cada cuánto se le vuelve a preguntar a GitHub por el release.
 //
-// Una hora. Publicar una versión pasa unas pocas veces al mes, así que
-// preguntar más seguido es gastar la cuota de la API para enterarse antes de
-// algo que no cambia. La cuota sin autenticar son 60 peticiones por hora y por
-// IP: con esto se usa UNA, y le sobra sitio a `kanpseed upgrade --check`, que
-// pregunta por su cuenta desde la misma máquina.
-const Cadencia = time.Hour
+// Un día. Publicar una versión pasa unas pocas veces al mes, así que preguntar
+// veinticuatro veces diarias es gastar cuota para enterarse antes de algo que no
+// cambia. Era una hora, y su único consumidor ahora es la página: el cliente
+// dejó de preguntarle al registro por la versión, y `/api/version` se borró al
+// quedarse sin llamadores.
+//
+// La espera no se nota al publicar: `kanpseed upgrade` reinicia el servicio, y
+// un proceso nuevo arranca sin nada cacheado. Para recargar sin reiniciar está
+// [Release.Olvidar], colgado del SIGHUP que ya relee la página.
+const Cadencia = 24 * time.Hour
+
+// CadenciaTrasFallo es cuándo se reintenta cuando GitHub no contestó.
+//
+// # Por qué hace falta un plazo aparte, y no lo hacía antes
+//
+// Porque [Release.refrescar] toca el sello de tiempo también cuando falla, a
+// propósito: sin eso, un GitHub caído dispararía una consulta nueva con cada
+// visita a la página. Con la cadencia en una hora, un fallo costaba una hora de
+// desfase. Con un día costaría un día, o sea que una caída de cinco minutos
+// dejaría la página sin versión hasta mañana.
+const CadenciaTrasFallo = 10 * time.Minute
 
 // PlazoRelease acota la consulta. GitHub colgado no puede colgar la página.
 const PlazoRelease = 5 * time.Second
@@ -50,6 +65,9 @@ type Release struct {
 	tag      string
 	visto    time.Time
 	buscando bool
+	// falló dice si la última consulta salió mal, y con eso se elige el plazo
+	// del siguiente intento. Ver [CadenciaTrasFallo].
+	falló bool
 }
 
 func NewRelease() *Release {
@@ -66,11 +84,42 @@ func (r *Release) Latest() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if !r.buscando && time.Since(r.visto) >= r.cadencia {
+	if !r.buscando && time.Since(r.visto) >= r.esperaActual() {
 		r.buscando = true
 		go r.refrescar()
 	}
 	return r.tag
+}
+
+// esperaActual es cuánto hay que esperar desde la última consulta, y depende de
+// si aquélla salió bien. Asume el candado tomado.
+func (r *Release) esperaActual() time.Duration {
+	if r.falló {
+		return CadenciaTrasFallo
+	}
+	return r.cadencia
+}
+
+// Olvidar hace que la próxima visita vuelva a preguntar, sin esperar el día.
+//
+// # Por qué una señal y no pasarle el tag ya sabido
+//
+// Porque quien acaba de publicar es OTRO PROCESO. `kanpseed upgrade` corre en la
+// terminal y el servidor es un servicio: la CLI no puede escribirle nada en
+// memoria, así que "dejarle el tag que acaba de recibir" no tiene por dónde
+// llegar. Lo que sí llega es un SIGHUP, que ya existe para releer la página, y
+// eso alcanza: olvidar lo cacheado hace que la visita siguiente consulte.
+//
+// **Actualizar el seed no la necesita**, y por eso esto no es el camino normal:
+// `kanpseed upgrade` reinicia el servicio, y un proceso nuevo arranca sin nada
+// cacheado. Esto es para el otro caso, el operador que recarga sin reiniciar.
+//
+// No borra el tag conocido: mientras la consulta nueva no conteste, la página
+// sigue diciendo lo último cierto, que es lo mismo que hace ante un fallo.
+func (r *Release) Olvidar() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.visto = time.Time{}
 }
 
 // refrescar consulta y guarda. Corre fuera del hilo que sirve la página.
@@ -82,7 +131,8 @@ func (r *Release) Latest() string {
 //
 // El sello de tiempo se toca en los dos casos, y eso es lo que impide el otro
 // fallo: sin él, un GitHub que contesta error dispararía una consulta nueva
-// con cada visita a la página.
+// con cada visita a la página. Lo que SÍ cambia entre los dos casos es cuándo
+// se vuelve a intentar, ver [CadenciaTrasFallo].
 func (r *Release) refrescar() {
 	ctx, cancel := context.WithTimeout(context.Background(), PlazoRelease)
 	defer cancel()
@@ -93,7 +143,8 @@ func (r *Release) refrescar() {
 	defer r.mu.Unlock()
 	r.buscando = false
 	r.visto = time.Now()
-	if err == nil && tag != "" {
+	r.falló = err != nil || tag == ""
+	if !r.falló {
 		r.tag = tag
 	}
 }

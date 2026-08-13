@@ -36,6 +36,7 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/paths"
 	"github.com/accentiostudios/kanpachi/daemon/transport/client"
 	"github.com/accentiostudios/kanpachi/daemon/transport/pipe"
+	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
 )
 
 // opciones son los flags globales ya resueltos.
@@ -81,7 +82,7 @@ func correr(ctx context.Context, args []string) int {
 	// haber leído nada, que en un servidor recién instalado es el caso normal.
 	if len(resto) == 0 {
 		if err := asistente(ctx, op); err != nil {
-			return informar(err)
+			return informar(op, err)
 		}
 		return 0
 	}
@@ -93,41 +94,93 @@ func correr(ctx context.Context, args []string) int {
 		return 2
 	}
 	if err := cmd.correr(ctx, op, resto[1:]); err != nil {
-		return informar(err)
+		return informar(op, err)
 	}
 	return 0
 }
 
-// informar imprime el fallo y elige el código de salida.
+// informar cuenta el fallo, en la forma que corresponda, y elige con qué código
+// de salida se termina. Los códigos los reparte [clasificar].
 //
-// # Por qué hay tres códigos y no uno
-//
-// Porque un script tiene que poder distinguir "el daemon dijo que no" de "no
-// hay daemon". El primero es una respuesta del producto y el script puede
-// seguir; el segundo significa que nada de lo que venga después va a funcionar.
-//
-//	1  el daemon contestó con un error suyo
-//	2  el comando estaba mal escrito
-//	3  no se pudo hablar con el daemon
-func informar(err error) int {
+// Las DOS formas salen por sitios distintos, y eso es el contrato: la prosa por
+// stderr para quien lee, el JSON por stdout para quien parsea. Nunca las dos.
+func informar(op opciones, err error) int {
 	if errors.Is(err, errInterrumpido) || errors.Is(err, context.Canceled) {
 		// Sin mensaje: quien pulsa Ctrl+C ya sabe lo que hizo, y el 130 es lo que
 		// todo el mundo usa para "lo mató una señal".
 		return 130
 	}
+	código, salida := clasificar(err)
+	if op.json {
+		// **Con `--json`, un fallo sale como CÓDIGO y nada más.**
+		//
+		// La prosa se queda fuera, y no por estética. Este es el sitio donde
+		// "nunca texto en claro con el motivo" se puede romper sin que nadie
+		// mire: la salida de un script no la lee una persona, así que un mensaje
+		// de más ahí no molesta a nadie y se queda para siempre. Con el registro
+		// pidiendo password, el mensaje que llegaba hasta acá podía distinguir
+		// un token vencido de uno inválido, que es justo la distinción que la
+		// API se molesta en no hacer.
+		//
+		// Va a STDOUT y no a stderr, y con eso `--json` pasa a contestar un solo
+		// documento JSON siempre, pase lo que pase: un script hace un parse y no
+		// dos comprobaciones.
+		fmt.Printf("{\"error\":{\"code\":%q}}\n", código)
+		return salida
+	}
 	fmt.Fprintln(os.Stderr, "kanpachi:", err)
+	if arreglo := arreglaEsto(código); arreglo != "" {
+		fmt.Fprintf(os.Stderr, "  %s\n", arreglo)
+	}
+	return salida
+}
+
+// arreglaEsto es el comando que resuelve ese fallo, o vacío.
+//
+// # Por qué acá y no en cada subcomando
+//
+// Porque los dos fallos que tienen arreglo salen de VARIOS comandos: hospedar,
+// renovar el código y renombrar la sala pasan todos por el registro. Repetir el
+// consejo en cada uno daría tres sitios donde envejece, y el que se olvida es
+// siempre el que menos se usa.
+//
+// **No se imprime con `--json`**, por la misma regla que la prosa: ahí sale el
+// código y quien parsea decide qué hacer con él. Por eso vive en la rama de
+// abajo de [informar] y no antes.
+func arreglaEsto(código protocol.Code) string {
+	switch código {
+	case protocol.CodeNoOwnSeed:
+		return "This machine has no registry yet:  kanpachi seed <host>"
+	case protocol.CodeSeedPassword:
+		return "That registry asks for a password to host:  kanpachi password"
+	}
+	return ""
+}
+
+// clasificar dice con qué código sale un fallo, y con qué número.
+//
+// # Por qué hay tres códigos de salida y no uno
+//
+// Porque un script tiene que poder distinguir "el daemon dijo que no" de "no
+// hay daemon". El primero es una respuesta del producto y el script puede
+// seguir; el segundo significa que nada de lo que venga después va a funcionar.
+//
+// El código de texto es el del PROTOCOLO cuando lo hay, así que un script mira
+// la misma palabra que mira la interfaz. Los dos que no vienen del daemon
+// llevan nombre propio para que tampoco haya que adivinarlos por el número.
+func clasificar(err error) (protocol.Code, int) {
 	if c := client.Code(err); c != "" {
-		return 1
+		return c, 1
 	}
 	var mal *errDeUso
 	if errors.As(err, &mal) {
-		return 2
+		return "usage", 2
 	}
 	var no *errNegativa
 	if errors.As(err, &no) {
-		return 1
+		return "refused", 1
 	}
-	return 3
+	return "no_daemon", 3
 }
 
 // errDeUso es un comando mal escrito, que es culpa de quien lo escribió y no del

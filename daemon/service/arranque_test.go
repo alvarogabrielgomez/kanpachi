@@ -340,8 +340,8 @@ func (s *salaFalsa) LeaveRoomOnShutdown(ctx context.Context) error {
 	return nil
 }
 
-func (s *salaFalsa) PendingRoom() (domain.PersistedRoom, bool) {
-	return domain.PersistedRoom{}, s.pendiente
+func (s *salaFalsa) PendingRoom() (domain.HostedRoom, bool) {
+	return domain.HostedRoom{}, s.pendiente
 }
 
 func (s *salaFalsa) ResumeRoom(ctx context.Context) (domain.RoomState, error) {

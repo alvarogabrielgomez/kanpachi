@@ -38,17 +38,17 @@ func revisarCortafuegos(cfg setup.Config, malo func(string, ...any)) {
 
 	switch {
 	case !r.Instalado:
-		tenue("  ufw no está instalado, así que no filtra el puerto del motor")
+		tenue("  ufw is not installed, so it is not filtering the engine port")
 
 	case !r.Legible:
-		aviso("ufw está instalado pero no puedo leer sus reglas sin root")
+		aviso("ufw is installed and its rules cannot be read without root")
 		codigo("sudo kanpseed doctor")
 
 	case !r.Activo:
-		ok("ufw está inactivo: nada bloquea el puerto %d", cfg.PuertoMotor)
+		ok("ufw is inactive: nothing is blocking port %d", cfg.PuertoMotor)
 
 	case r.TCP && r.UDP:
-		ok("ufw deja entrar el %d por TCP y UDP", cfg.PuertoMotor)
+		ok("ufw lets %d in over TCP and UDP", cfg.PuertoMotor)
 
 	default:
 		// Que falte uno de los dos es peor que que falten los dos: el motor
@@ -61,9 +61,9 @@ func revisarCortafuegos(cfg setup.Config, malo func(string, ...any)) {
 		if !r.UDP {
 			faltan = append(faltan, "UDP")
 		}
-		malo("ufw está activo y no deja entrar el %d por %s: los clientes no van a poder conectarse",
+		malo("ufw is active and is not letting %d in over %s: no client will be able to connect",
 			cfg.PuertoMotor, strings.Join(faltan, " ni "))
-		tenue("  con Docker esto funcionaba porque publicar un puerto se salta ufw. Nativo no.")
+		tenue("  under Docker this worked because publishing a port steps around ufw. Native does not.")
 		codigo(comandosUFW(cfg.PuertoMotor, r)...)
 	}
 }
@@ -78,9 +78,9 @@ func avisarCortafuegos(cfg setup.Config) {
 		return
 	}
 	fmt.Println()
-	aviso("ufw está activo y no deja entrar el puerto %d del motor", cfg.PuertoMotor)
-	tenue("  el seed está arriba, pero ningún cliente va a poder conectarse hasta que")
-	tenue("  abras el puerto. No lo hago yo: abrir al mundo lo decides tú.")
+	aviso("ufw is active and is not letting the engine port %d in", cfg.PuertoMotor)
+	tenue("  the seed is up, and no client will be able to connect until you open")
+	tenue("  the port. Not done for you: opening to the world is your call.")
 	codigo(comandosUFW(cfg.PuertoMotor, r)...)
 }
 

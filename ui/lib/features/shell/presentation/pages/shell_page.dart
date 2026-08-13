@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
@@ -7,6 +5,7 @@ import 'package:kanpachi_ui/features/session/presentation/widgets/failure_notice
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/messages/loading_phrases.dart';
+import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/features/games/presentation/pages/game_picker_page.dart';
 import 'package:kanpachi_ui/features/games/presentation/pages/manual_game_page.dart';
 import 'package:kanpachi_ui/features/home/presentation/pages/home_page.dart';
@@ -17,12 +16,14 @@ import 'package:kanpachi_ui/features/room/presentation/pages/room_page.dart';
 import 'package:kanpachi_ui/features/room/presentation/widgets/room_dialogs.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/presentation/pages/loading_page.dart';
+import 'package:kanpachi_ui/features/seed/presentation/pages/seed_password_screen.dart';
+import 'package:kanpachi_ui/features/seed/presentation/pages/seed_screen.dart';
+import 'package:kanpachi_ui/features/seed/presentation/widgets/trust_seed_dialog.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
 import 'package:kanpachi_ui/features/settings/presentation/pages/settings_page.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/shell_bars.dart';
-import 'package:kanpachi_ui/features/update/presentation/cubit/update_cubit.dart';
 
 /// El marco de la aplicación: la ventana ES la app.
 ///
@@ -72,7 +73,13 @@ class ShellPage extends StatelessWidget {
   /// línea, y llenarla de datos la convierte en ruido que nadie lee.
   static String _statusRight(SessionState session) {
     final Room? room = session.room;
-    if (room == null) return 'kanpachi.accentio.dev';
+    // Sin sala, el registro CONFIGURADO. Acá había un dominio escrito a mano,
+    // el del seed que venía de fábrica, y desde que no hay ninguno de fábrica
+    // era una línea que decía lo mismo apuntara esta máquina donde apuntara.
+    // Vacío significa que nadie eligió uno todavía, y eso también se dice.
+    if (room == null) {
+      return session.ownSeed.isEmpty ? 'sin servidor' : session.ownSeed;
+    }
     final Member self = room.members.firstWhere(
       (Member m) => m.isSelf,
       orElse: () => room.members.first,
@@ -171,12 +178,10 @@ class _RoomFollower extends StatelessWidget {
           listener: (BuildContext context, SessionState state) {
             final ShellCubit shell = context.read<ShellCubit>();
             final AppScreen ahora = shell.state.screen;
-            // Dos de los tres momentos en que se pregunta por una versión
-            // nueva —abrir una sala y cerrarla—, y por eso cuelga del oyente
-            // del borde y no de cada uno por su lado: los dos son el mismo
-            // hecho visto desde los dos lados. El tercero es el arranque, en
-            // `main`. Ver [UpdateCubit] para por qué son tres y no un timer.
-            unawaited(context.read<UpdateCubit>().check());
+            // Acá se preguntaba por una versión nueva, al abrir y al cerrar
+            // sala, y ya no: la comprobación pasó a ser a pedido. Ver
+            // [UpdateCubit] para el motivo, que es de a QUIÉN se le pregunta y
+            // no de cuándo.
             if (state.room != null) {
               if (_sinSala.contains(ahora)) shell.go(AppScreen.room);
               return;
@@ -184,6 +189,25 @@ class _RoomFollower extends StatelessWidget {
             if (ahora == AppScreen.room || ahora == AppScreen.exposure) {
               shell.leftRoom();
             }
+          },
+        ),
+        // **Un registro que pide contraseña lleva a escribirla, y no a un
+        // aviso que hay que interpretar.**
+        //
+        // Es el único fallo de la lista que se arregla escribiendo algo, así
+        // que dejarlo como mensaje en la portada obligaría a leerlo, deducir
+        // qué hacer y buscar dónde. Lleva a la pantalla, y el mismo código
+        // cubre los tres casos: nunca se puso ninguna, caducó, o la cambiaron.
+        //
+        // Se dispara con el fallo APARECIENDO y no con cada cambio de estado:
+        // sin eso, cerrar el aviso volvería a navegar.
+        BlocListener<SessionCubit, SessionState>(
+          listenWhen: (SessionState a, SessionState b) =>
+              a.failure?.code != b.failure?.code &&
+              _pantallaDelFallo(b.failure?.code) != null,
+          listener: (BuildContext context, SessionState state) {
+            final AppScreen? destino = _pantallaDelFallo(state.failure?.code);
+            if (destino != null) context.read<ShellCubit>().go(destino);
           },
         ),
         // **Un enlace que llega manda, esté donde esté el usuario.**
@@ -409,6 +433,8 @@ class _CurrentScreen extends StatelessWidget {
       // decir a qué sala vas a entrar.
       AppScreen.invite => InviteScreen(invite: session.invite!),
       AppScreen.settings => const SettingsScreen(),
+      AppScreen.seed => const SeedScreen(),
+      AppScreen.seedPassword => const SeedPasswordScreen(),
     };
   }
 }
@@ -461,6 +487,22 @@ class _DialogLayer extends StatelessWidget {
         session.pendingRoom == null
             ? const SizedBox.shrink()
             : ResumeRoomDialog(pending: session.pendingRoom!),
+      AppDialog.trustSeed =>
+        shell.trust == null
+            ? const SizedBox.shrink()
+            : TrustSeedDialog(request: shell.trust!),
     };
   }
+}
+
+/// A qué pantalla lleva un fallo, cuando lleva a alguna.
+///
+/// Son los DOS que se arreglan yendo a un sitio, y son dos pantallas distintas
+/// porque son dos cosas: falta elegir el servidor, o falta la contraseña de uno
+/// ya elegido. El resto de los fallos se quedan como aviso en la portada, que es
+/// lo correcto para lo que se arregla reintentando o no se arregla.
+AppScreen? _pantallaDelFallo(String? code) {
+  if (code == FailureCode.noOwnSeed.wire) return AppScreen.seed;
+  if (code == FailureCode.seedPassword.wire) return AppScreen.seedPassword;
+  return null;
 }

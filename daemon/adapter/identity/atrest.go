@@ -40,9 +40,9 @@ const stateKeyInfo = "kanpachi/state-at-rest/v1"
 // `ProgramData\Kanpachi` grants read to every user of the machine, on purpose,
 // because the interface reads from there without elevating. `identity.key` is
 // the exception with its own ACL. So before this, any user of the PC could open
-// `room.json` and read `NetworkSecret`, which is the real network's identity,
-// and `CardKey`. Now they read a blob, and the key to it is behind the one ACL
-// that never let them through.
+// `hosted-room.json` and read `NetworkSecret`, which is the real network's
+// identity, and `CardKey`. Now they read a blob, and the key to it is behind
+// the one ACL that never let them through.
 //
 // The whole private key goes in as the secret, seed and public half together.
 // It is what `ed25519.NewKeyFromSeed` returns and it is deterministic from the

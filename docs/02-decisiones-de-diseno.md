@@ -595,16 +595,22 @@ Un adaptador sin puerta de enlace queda como "Red no identificada" y cae en el p
 **Elección:** embebido en el código, con parser tolerante a seis formatos y la forma URL como la que se genera por defecto.
 
 ```
-A7K2M9QX                          → seed por defecto
-kanpachi.accentio.dev/A7K2M9QX    → ese seed
 A7K2M9QX@seed.midominio.com       → ese seed
+kanpachi://A7K2M9QX@seed.midominio.com
+seed.midominio.com/A7K2M9QX
+https://seed.midominio.com/A7K2M9QX
+https://seed.midominio.com/A7K2M9QX#clave
 ```
 
-**Un invite ID solo significa algo en el seed que lo emitió.** No es global, es local a un registro. `A7K2M9QX` en `kanpachi.accentio.dev` y `A7K2M9QX` en `seed.midominio.com` son dos salas distintas que no se conocen. La forma URL lleva su seed encima y por eso es la que se genera; un ID pelado significa el seed por defecto, jamás el último usado.
+**No hay seed por defecto, y un código pelado se rechaza.** Lo hubo hasta el 2026-08-12: `kanpachi.accentio.dev` estaba compilado en el dominio, y `A7K2M9QX` a secas significaba esa máquina. Eso dejó de sostenerse al abrir el proyecto, por un motivo que se ve mejor con un ejemplo que con un argumento. Un amigo hospeda en su propio servidor y te dicta su código de ocho caracteres; con default, pegarlo te lleva a **otra sala con el mismo ID en el registro de fábrica**, sin un solo error en pantalla. El caso peor era el silencioso.
+
+Ahora `domain.ParseRoom` contesta `ErrSeedMissing`, que es un centinela propio y no un genérico de forma, y eso es lo que permite que la app enseñe la forma completa en vez de decir que no se entiende.
+
+**Un invite ID solo significa algo en el seed que lo emitió.** No es global, es local a un registro. `A7K2M9QX` en `kanpachi.accentio.dev` y `A7K2M9QX` en `seed.midominio.com` son dos salas distintas que no se conocen. Por eso el seed viaja pegado en todas las formas, y por eso el código nunca se enseña pelado: copiar da `A7K2-M9QX@seed`, y compartir da la URL entera.
 
 **Razones.**
 
-1. **La independencia la paga quien la quiere, no sus invitados.** El self-hoster configura su URL una vez en Avanzado, y desde ahí todos los códigos que genera la llevan solos. Sus amigos no configuran nada.
+1. **La independencia la paga quien la quiere, no sus invitados.** Quien hospeda elige su registro una vez, en su propia pantalla, y desde ahí todos los códigos que genera lo llevan solos. Sus amigos no configuran nada: al entrar, el registro sale del código que les pegaron.
 2. **La forma URL puede existir de verdad.** Quien haga click sin tener Kanpachi cae en una landing que explica qué hacer y ofrece la descarga. Resuelve invitación y distribución en el mismo string.
 3. **Un solo campo tolerante evita enseñar formatos.** El usuario pega lo que le llegó y funciona.
 
@@ -615,7 +621,8 @@ A7K2M9QX@seed.midominio.com       → ese seed
 - Pegar un código puede conectarte al servidor de un desconocido. Ese servidor ve tu IP pública, el invite ID que consultaste y la red de encuentro que le corresponde. Jamás ve el secreto de la sala real, así que no puede unirse a ella. La confirmación dentro de la app es obligatoria y no se recuerda, ver decisión 17.
 - El manejador `kanpachi://` es superficie de ataque clásica. Validación estricta de todo lo que entre por ahí.
 - **El seed tiene que ser un nombre y no una dirección.** Salió de la auditoría de ciberseguridad: de ese valor salen dos destinos, la consulta al registro y los `--peers` con los que arranca el motor, así que un literal de IP hace que el daemon, que corre como SYSTEM, hable con la red de casa de quien pegó el código o con su propia máquina. Se exige que la última etiqueta lleve una letra, que cierra también las formas legadas que el resolver acepta y un comprobador de IP bien formada deja pasar, `127.1` y `0x7f.0.0.1` entre ellas. Quien hospede el suyo necesita un nombre, que es gratis. Un nombre bien formado puede resolver igual a una dirección privada, y eso lo comprueba el adaptador al conectar con `domain.CheckSeedAddr`, en cada uso.
-- Un código pelado siempre usa el seed por defecto, nunca el último usado. Recordar el último produce fallos inexplicables cuando un amigo manda un código de otra procedencia.
+- **Entrar a la sala de alguien no configura tu registro.** Se evaluó adoptarlo del primer código al que se entrara, que resuelve un roce real y trae una consecuencia peor: la siguiente sala que abras se hospedaría en el servidor de un desconocido por omisión, y el diálogo que te lo enseña para confirmar te llegaría con ese nombre ya puesto. Lo adoptado no manda en ninguna decisión que no sea de esa sala. Lo que sí hace es **prellenar** la pantalla de configuración, marcado como lo que es, para no obligar a nadie a ir a buscar el nombre del servidor a un chat.
+- **Consultar el registro antes de confirmar entrega tu IP pública a esa máquina.** Es el precio de fallar rápido con un código que no existe, y está aceptado arriba. Lo que se hace con él es acotarlo: la consulta va por HTTPS con el nombre verificado, sin proxy del entorno, sin seguir redirecciones y con `CheckSeedAddr` sobre cada dirección resuelta.
 
 ## 17. La página de invitación, con el invite ID en la ruta
 
@@ -1456,7 +1463,7 @@ Los dos pasos baratos se quedan igual porque contestan otra cosa. Convierten «n
 
 La tercera convierte a la segunda en una trampa: un `systemctl restart`, o cualquier despliegue, vaciaba el almacén, y a partir de ahí el registro contestaba que no conoce salas abiertas y alcanzables. **Un reinicio del seed dejaba fuera a todo invitado de toda sala abierta.** El host tampoco lo podía reponer, porque publicar actualiza y no crea, que es la regla que impide que quien se quedó con un código se apropie de la sala. El único arreglo desde el producto era renovar el código, que mata los enlaces ya repartidos.
 
-Y la primera era falsa de raíz. Se siguió la cadena entera el 2026-08-12: sin respuesta del registro, el invite ID se generaba en la máquina del host, con el seed por defecto porque no hay forma de saber a cuál pertenecería. Ese seed es el mismo que consulta el invitado, así que la comprobación de arriba no se salta: pregunta, le contestan que no existe, y rechaza el ingreso. El host se quedaba con un código de aspecto normal, lo repartía, y no entraba nadie, sin un solo error en su pantalla.
+Y la primera era falsa de raíz. Se siguió la cadena entera el 2026-08-12: sin respuesta del registro, el invite ID se generaba en la máquina del host, con el seed que estuviera compilado, porque sin respuesta no hay forma de saber a cuál pertenecería. Ese seed es el mismo que consulta el invitado, así que la comprobación de arriba no se salta: pregunta, le contestan que no existe, y rechaza el ingreso. El host se quedaba con un código de aspecto normal, lo repartía, y no entraba nadie, sin un solo error en su pantalla.
 
 **Alternativas:** relajar la comprobación del invitado para que no se crea el "no". Recrear la sala desde el cliente cuando el registro la haya olvidado. Sostener la sala sin registro. Persistir el registro y endurecer las dos operaciones.
 
@@ -1481,3 +1488,71 @@ Es una consecuencia aceptada y es una decisión de producto, dicha por su dueño
 **Se avisa antes de que nadie invierta nada.** Las dos operaciones que descubren esto son las que alguien lanza después de elegir un juego y escribir ocho caracteres, así que el daemon sondea el registro por su cuenta y lo enseña en la portada con la pantalla todavía vacía. Es el mismo argumento de la decisión 32. La diferencia con aquella es qué hace el aviso: el del adaptador virtual cierra Kanpachi al aceptar, porque el almacén de drivers necesita que alguien toque la máquina; este no cierra nada, porque se cura solo en cuanto el registro vuelva.
 
 **Los dos fallos son códigos distintos**, `no_such_room` y `no_registry`, y esa separación es la mitad del valor. Con el primero hay que conseguir otro código y reintentar no sirve de nada; con el segundo el código puede estar perfecto y lo único que corresponde es esperar. Un solo texto para los dos manda a la mitad de la gente a hacer justo lo que no funciona.
+
+## 34. Un seed se cierra con un password compartido, y solo para hospedar
+
+**El problema:** con el proyecto abierto, cualquiera levanta un seed. Quien levante el suyo y lo publique en internet no quiere hospedar salas para desconocidos: le paga el ancho de banda del relay y le queda la máquina como punto de encuentro de gente que no conoce. Un seed que no se puede cerrar solo se puede apagar.
+
+**Alternativas:** cuentas con usuario y contraseña. Lista de llaves públicas autorizadas. Un token largo generado por el operador. Un password compartido. No cerrar nada y confiar en que el seed sea secreto.
+
+**Elección:** un password compartido, sin cuentas, exigido únicamente para hospedar.
+
+```
+Abrir sala, publicar tarjeta, renovar código   →  pide credencial
+Resolver un código, /healthz, la página        →  abiertas, siempre
+```
+
+**Entrar a una sala no pide nada, en ningún seed.** Es la mitad más importante de la decisión. El roce del invitado es lo que este producto existe para eliminar, y hospedar ya supone un papel algo más técnico: quien abre una sala eligió un servidor y sabe a quién pedirle la clave. Cobrarle el password al invitado destruiría la propiedad que hace que Kanpachi valga la pena.
+
+**Razones.**
+
+1. **Sin cuentas no hay nada que administrar.** El caso real es un grupo de amigos con un seed. Un sistema de usuarios traería alta, baja, recuperación y una base de datos, para distinguir entre personas que ya se conocen entre sí.
+2. **La forma de botar a todos es cambiarlo.** Es la operación que el operador necesita de verdad, y con un password compartido es la única que hay. Ver más abajo cómo se implementa sin almacenar nada.
+3. **Cuatro caracteres bastan.** Lo que guarda esa puerta es el freno de tasa y el de memoria del registro, no la entropía de lo que alguien teclea. Un mínimo alto empujaría al operador a no ponerlo.
+
+### El password no viaja, y el operador no lo aprende
+
+Lo que sale del cliente es un hash, no el password:
+
+```
+H = SHA256( host-del-seed ‖ 0x00 ‖ "kanpachi/seed-auth/v1" ‖ password )
+```
+
+TLS ya da confidencialidad en el cable, así que esto resuelve otra cosa: **el operador de un seed es un tercero**, y la gente reusa contraseñas. Con el hash, lo que ese operador ve, guarda y podría filtrar es un valor que no sirve en ningún otro sitio.
+
+**El host va dentro a propósito.** Para el servidor ese hash ES el password: lo que autentica una vez autentica siempre. Sin la separación, un valor capturado en un seed abriría salas en todos los demás seeds de la misma persona, que es justo el reuso que hashear venía a cortar.
+
+**El trabajo caro se queda del lado del servidor.** El hash del cliente es rápido; el registro corre Argon2id encima, con la sal que él guarda.
+
+### Cómo se bota a todos, sin almacenar tokens
+
+El seed guarda tres cosas: el Argon2id de la prueba, su sal, y una clave de firma de 32 bytes. Los tokens que emite son opacos y **firmados con esa clave**, no almacenados.
+
+**Cambiar el password rota la clave de firma.** Con eso todo token emitido deja de verificar en el mismo instante, sin enumerar nada y sin recorrer ninguna tabla. Un almacén de tokens vivos sería un sitio que hay que barrer, y un barrido que se atrasa es una puerta que sigue abierta.
+
+Se descartó guardar además un contador de época. Rotar la clave ya invalida todo, así que para revocar no aportaba nada; lo único que agregaría es poder distinguir "de una época anterior" de "basura", **que es exactamente la distinción que la API prohíbe hacer**.
+
+### Lo que la API se niega a decir
+
+El sobre de error de todo el registro pasó a ser `{"code": "...", "sub": "..."}`, sin texto. `sub` dice qué HACER, jamás qué pasó, y **no existe un código para "venció"**: un token caducado y uno falso llevan al mismo sitio, que es refrescar y después escribir el password. Distinguirlos solo le regala información a quien esté probando.
+
+La prosa no desapareció del producto, cambió de sitio: la escriben las dos caras del cliente, que conocen el idioma de quien lee. Con `--json` sale el código y nada más.
+
+### Los dos frenos, y por qué comparten uno
+
+Autenticar cuesta una derivación Argon2id de 64 MiB, contra un `MemoryMax` calculado como cuatro veces eso. **Autenticar comparte el MISMO freno de concurrencia que la derivación de encuentro**, y no tiene uno propio: dos frenos independientes dejarían el pico en dos derivaciones a la vez y volverían falso el número de la unidad, que es la forma en que este servicio ya murió una vez por OOM.
+
+El orden importa y es el que se implementó: **freno de tasa, retardo creciente, y recién entonces la ranura de derivación**, tomada con el contexto de la petición. Un intento frenado no llega a tocar Argon2id, y uno encolado se muere con su socket en vez de gastar memoria para alguien que ya colgó.
+
+El retardo creciente es global y no por cuenta, porque no hay cuentas: bloquear "la cuenta" sería un ataque de denegación contra todos los hosts del seed a la vez. Tiene tope, para que la defensa no se convierta en la caída que viene a evitar.
+
+**A qué acopla el freno compartido, medido.** La ranura tiene capacidad uno, y lo que hay detrás de ella **no es entrar a una sala**: resolver un código lee una red de encuentro ya derivada y guardada. Quien entra deriva en su propia PC. Así que una ráfaga de intentos degrada **crear salas**, que es justo lo que el password ya cerraba.
+
+**Lo que cuesta, y se acepta:**
+
+| Costo | Por qué se acepta |
+|---|---|
+| El password queda atado al dominio configurado en el seed | Es el nombre que la gente escribe, y esa atadura es lo que impide reusar una prueba en otro seed. `kanpseed password` se niega si no hay dominio, y lo dice |
+| Un seed sin directorio de estado no se puede cerrar | Un password que desaparece al reiniciar es peor que ninguno: el operador cree cerrada una puerta que sigue abierta. Se dice al arrancar |
+| En Windows, el password no protege contra otro usuario de la MISMA PC | El canal local se lo concede al usuario interactivo a propósito, para que la ventana hable sin elevar. El password le cierra la puerta a desconocidos de internet, no a quien ya se sentó en esa máquina. En Linux no ocurre: el socket es 0600 de root |
+| Un refresh token queda en disco del lado del cliente | Sellado con la llave de la instalación y además con ACL propia. El password no toca el disco: un disco robado entrega una credencial que caduca y que el operador revoca cambiando el password |
