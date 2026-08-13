@@ -101,17 +101,38 @@ class _AppRowState extends State<AppRow> {
   }
 }
 
+/// Cómo se ve una [AppTappableCard] EN REPOSO.
+///
+/// Encendida se ven todas igual —relleno de chip y línea continua con el
+/// acento—, y por eso el estilo sólo describe el reposo. Es un estilo y no dos
+/// banderas sueltas porque las banderas admitían combinaciones que no existen
+/// en el diseño, como discontinua y hundida a la vez, y nadie sabía cuál de las
+/// dos ganaba.
+enum AppTappableCardStyle {
+  /// Línea continua. Las portadas de la rejilla.
+  outlined,
+
+  /// Línea discontinua: lo que todavía no existe, como una sala sin juego.
+  dashed,
+
+  /// Relleno hundido, para una llamada que descansa sobre la propia página.
+  sunken,
+}
+
 /// La tarjeta que se resalta con el acento al pasar por encima: las de la
 /// rejilla de portadas y las dos llamadas grandes ("Crear la sala sin juego",
 /// "Ver toda la biblioteca").
+///
+/// Las tres son ESTA, con estilos distintos. Una tarjeta propia por variante
+/// tendría tres hover con tres velocidades, que es justo el defecto que se
+/// midió acá: sólo se nota comparando dos en la misma pantalla.
 class AppTappableCard extends StatefulWidget {
   const AppTappableCard({
     required this.child,
     required this.onTap,
     this.padding,
     this.selected = false,
-    this.dashed = false,
-    this.filled = false,
+    this.style = AppTappableCardStyle.outlined,
     super.key,
   });
 
@@ -122,8 +143,8 @@ class AppTappableCard extends StatefulWidget {
   /// El juego ya elegido queda marcado con el acento sin necesidad de hover.
   final bool selected;
 
-  final bool dashed;
-  final bool filled;
+  /// Cómo se ve en reposo. Ver [AppTappableCardStyle].
+  final AppTappableCardStyle style;
 
   @override
   State<AppTappableCard> createState() => _AppTappableCardState();
@@ -136,43 +157,81 @@ class _AppTappableCardState extends State<AppTappableCard> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final bool lit = _hovered || widget.selected;
+
+    // Discontinua sólo en reposo: iluminarse la pasa a línea continua con el
+    // acento, que es lo que hace el diseño.
+    final bool guiones =
+        widget.style == AppTappableCardStyle.dashed && !lit;
+
+    final Widget caja = AnimatedContainer(
+      duration: AppMotion.hover,
+      padding: widget.padding,
+      decoration: BoxDecoration(
+        color: lit
+            ? colors.chip
+            : (widget.style == AppTappableCardStyle.sunken
+                  ? colors.surfaceSunken
+                  : Colors.transparent),
+        borderRadius: AppRadius.allLg,
+        // **El borde se reserva SIEMPRE**, y con guiones va transparente.
+        //
+        // Un `Border` ocupa sitio DENTRO de la caja, así que quitarlo en reposo
+        // dejaba la tarjeta dos píxeles más chica que al pasar por encima: el
+        // texto saltaba y lo de debajo se movía con él. El trazo discontinuo lo
+        // pinta el painter, que no ocupa nada, así que este hueco es lo único
+        // que iguala los dos estados.
+        border: Border.all(
+          color: guiones
+              ? Colors.transparent
+              : (lit ? colors.accent : colors.border),
+          width: AppStroke.hairline,
+        ),
+      ),
+      child: widget.child,
+    );
+
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
         onTap: widget.onTap,
-        child: AnimatedContainer(
+        // Los guiones envuelven la CAJA, no al hijo. Envolvían al hijo, o sea
+        // que caían por dentro del padding: el rectángulo discontinuo rodeaba
+        // al texto, y la línea continua del hover aparecía en otro sitio.
+        //
+        // # Por qué el `CustomPaint` está SIEMPRE, incluso sin nada que pintar
+        //
+        // Porque la forma del árbol no puede cambiar entre los dos estados.
+        // `Widget.canUpdate` compara el runtimeType, así que envolver sólo en
+        // reposo hacía que al iluminarse el `AnimatedContainer` se desactivara
+        // y naciera de cero, con los valores finales ya puestos: esta tarjeta
+        // saltaba de golpe mientras la de al lado hacía sus 160 ms. Se ve sólo
+        // comparando dos en la misma pantalla.
+        //
+        // Y los guiones se desvanecen con la MISMA duración, en vez de
+        // desaparecer de un fotograma al siguiente: mientras el borde continuo
+        // aparece, el discontinuo se va.
+        child: TweenAnimationBuilder<double>(
           duration: AppMotion.hover,
-          padding: widget.padding,
-          decoration: BoxDecoration(
-            color: lit
-                ? colors.chip
-                : (widget.filled ? colors.surfaceSunken : Colors.transparent),
-            borderRadius: AppRadius.allLg,
-            border: widget.dashed && !lit
-                ? null
-                : Border.all(
-                    color: lit ? colors.accent : colors.border,
-                    width: AppStroke.hairline,
-                  ),
-          ),
-          child: widget.dashed && !lit
-              ? _Dashed(child: widget.child)
-              : widget.child,
+          tween: Tween<double>(begin: 0, end: guiones ? 1 : 0),
+          // Por acá y no dentro del builder: así la caja no se reconstruye en
+          // cada fotograma de la transición.
+          child: caja,
+          builder: (BuildContext context, double t, Widget? child) =>
+              CustomPaint(
+                painter: t == 0
+                    ? null
+                    : DashedBorderPainter(
+                        color: colors.border.withValues(
+                          alpha: colors.border.a * t,
+                        ),
+                        radius: AppRadius.allLg,
+                      ),
+                child: child,
+              ),
         ),
       ),
     );
-  }
-}
-
-class _Dashed extends StatelessWidget {
-  const _Dashed({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(dashed: true, radius: AppRadius.allLg, child: child);
   }
 }

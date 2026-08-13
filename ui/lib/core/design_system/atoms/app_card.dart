@@ -44,9 +44,14 @@ class AppCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: filled ? colors.surfaceSunken : null,
         borderRadius: radius,
-        border: dashed
-            ? null
-            : Border.all(color: colors.border, width: AppStroke.hairline),
+        // **El borde se reserva SIEMPRE**, y con guiones va transparente: el
+        // trazo lo pinta el painter, que no ocupa nada. Sin este hueco la misma
+        // tarjeta mide dos píxeles menos con guiones que con línea continua, y
+        // cambiar de una a otra mueve lo que tenga debajo.
+        border: Border.all(
+          color: dashed ? Colors.transparent : colors.border,
+          width: AppStroke.hairline,
+        ),
       ),
       child: child,
     );

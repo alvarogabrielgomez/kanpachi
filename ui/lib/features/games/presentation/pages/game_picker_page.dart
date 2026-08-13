@@ -104,7 +104,7 @@ class _GamePickerScreenState extends State<GamePickerScreen> {
           // la tarjeta del juego.
           if (!fromRoom) ...<Widget>[
             AppTappableCard(
-              dashed: true,
+              style: AppTappableCardStyle.dashed,
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.x4l,
                 vertical: AppSpacing.xxl,
@@ -147,7 +147,7 @@ class _GamePickerScreenState extends State<GamePickerScreen> {
           ),
           const SizedBox(height: AppSpacing.x6l),
           AppTappableCard(
-            filled: true,
+            style: AppTappableCardStyle.sunken,
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.x4l,
               vertical: AppSpacing.x3l,
