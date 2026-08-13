@@ -652,6 +652,8 @@ func pathName(p domain.PathKind) string {
 		return "relay"
 	case domain.PathSelf:
 		return "self"
+	case domain.PathUnconfirmed:
+		return "unconfirmed"
 	default:
 		return "unknown"
 	}

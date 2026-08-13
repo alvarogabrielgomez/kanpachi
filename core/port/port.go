@@ -784,6 +784,29 @@ type ControlChannel interface {
 	// solo emite lo que llegó por la conexión al host.
 	Notices() <-chan domain.RoomNotice
 
+	// ConnectedMembers son las direcciones con el canal de la sala ABIERTO
+	// ahora mismo, en el host. Vacío en el invitado, que no escucha nada.
+	//
+	// # Por qué el canal de control es una fuente de presencia, y hace falta
+	//
+	// Porque la tabla del motor cuenta de menos en el host, medido el
+	// 2026-08-13 con dos máquinas: el invitado veía dos miembros y el host uno.
+	// Los puertos del juego se abren hacia los miembros presentes, así que un
+	// invitado que el host no cuenta no puede jugar, aunque esté dentro.
+	//
+	// Esto NO es un segundo intento de adivinar lo mismo: es una fuente
+	// distinta y de primera mano. El host asignó esa dirección al emitir la
+	// credencial, su oyente solo acepta a las direcciones autorizadas, y lo que
+	// se devuelve es que HAY un socket abierto desde ahí. No es un mensaje que
+	// alguien pueda falsificar, es la existencia de una conexión, igual que
+	// [ControlChannel.HostPresence] del otro lado.
+	//
+	// Es una CONSULTA y no un evento a propósito. Quien la usa relee la lista de
+	// miembros entera y necesita las dos fuentes en el mismo instante; con un
+	// evento habría que llevar una copia del conjunto y mantenerla, que es un
+	// segundo estado que se puede quedar viejo.
+	ConnectedMembers() []netip.Addr
+
 	// AnnounceCode le reparte el invite ID NUEVO a los miembros presentes, tras
 	// renovarlo. SOLO el host.
 	//

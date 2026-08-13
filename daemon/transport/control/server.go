@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -556,6 +557,34 @@ func (c *Channel) AnnounceCode(_ context.Context, r domain.Room) error {
 		}
 	}
 	return errors.Join(fallos...)
+}
+
+// ConnectedMembers son las direcciones con el canal de la sala abierto.
+//
+// Sin oyente devuelve vacío y no error: en el invitado no hay nada que
+// escuchar, y esto lo llama el mismo camino que relee miembros en los dos
+// roles. Un error ahí obligaría a mirar el rol antes de preguntar, que es la
+// clase de rama que se olvida.
+//
+// Ver el contrato en [port.ControlChannel.ConnectedMembers].
+func (c *Channel) ConnectedMembers() []netip.Addr {
+	c.mu.Lock()
+	srv := c.srv
+	c.mu.Unlock()
+	if srv == nil {
+		return nil
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	out := make([]netip.Addr, 0, len(srv.conns))
+	for ip := range srv.conns {
+		out = append(out, ip)
+	}
+	// Ordenadas porque el llamador arma con esto una lista de miembros y un
+	// conjunto de reglas, y el orden de un mapa cambia en cada recorrido: sin
+	// esto, la firma que decide si las reglas cambiaron cambiaría sola.
+	sort.Slice(out, func(i, j int) bool { return out[i].Less(out[j]) })
+	return out
 }
 
 func (c *Channel) host() (*server, error) {

@@ -313,6 +313,8 @@ func camino(s string) string {
 		return "relayed"
 	case "self":
 		return "you"
+	case "unconfirmed":
+		return "path unknown"
 	default:
 		return "?"
 	}

@@ -993,6 +993,21 @@ Los eventos de red son los cinco del motor, y el supervisor los traduce uno a un
 
 **Estar en `Reconnecting` no es eterno.** A los 10 minutos sin túnel se sale de la sala con motivo propio, se cierran los puertos y se revierten los ajustes. Ver decisión 20.
 
+##### Cuántas veces se aplican las reglas de verdad, medido
+
+`EnginePeersChanged` regenera y aplica el conjunto entero, sin camino incremental. La pregunta era cuánto trabajo es eso en una sala que se mueve. Medido el 2026-08-13 en el invitado de Linux, contando las líneas de `compuerta puesta`, que es una por cada aplicación real de nftables:
+
+| | |
+|---|---|
+| Aplicaciones en la sesión | **594** |
+| Veces que el conjunto deseado CAMBIÓ | **1** |
+| Pico, con el host recién caído | ~2 por segundo, sostenido cuatro minutos |
+| En reposo, con la sala quieta | 0 |
+
+El motor republica el conjunto de confianza aproximadamente cada segundo, así que la tabla de rutas se toca todo el tiempo sin que cambie quién está. **593 de las 594 aplicaciones escribieron lo mismo que ya estaba puesto.**
+
+El log ya no las repite: la firma del conjunto se compara antes de escribir, y solo se anota el cambio. Lo que sigue corriendo entero es el cálculo y la transacción del firewall. Es el número que dice si conviene gatear `applyPolicy` por cambio real del conjunto deseado, y también dice que **coalescer encima no compraría nada**: un gate por firma ya colapsa la ráfaga, porque lo que la ráfaga repite es exactamente la misma firma.
+
 #### `Degraded` se DERIVA de la tabla de miembros, no se recuerda
 
 Degradado es que el túnel sigue en pie y va peor, normalmente porque alguien llega por el relay del seed. Sigue sin arrancar ningún plazo, y esa ausencia importa igual que antes: contarlo como caída echaría de la sala a quien está jugando por relay, que es un caso soportado.
@@ -1050,6 +1065,33 @@ RotateInviteCode(ctx) (domain.Room, error)
 `KickMember` hace dos cosas en el mismo acto, y ninguna es cooperativa: revoca la credencial de ese miembro por el `EnginePort`, y saca su IP de la lista de miembros para que `policy/` regenere el `RuleSet` completo. La primera lo saca de la red en alrededor de un segundo, medido. La segunda garantiza que, aunque siguiera en la red, no alcance ningún puerto.
 
 Solo el host puede llamar a las dos. Un invitado que las invoque recibe un error de la API.
+
+#### Quién cuenta como miembro, y por qué el host tiene dos fuentes
+
+La lista de miembros del invitado sale de una sola fuente, la tabla de rutas del motor. La del host sale de dos: **esa tabla, más quién tiene el canal de la sala abierto ahora mismo.** La segunda existe porque la primera cuenta de menos, y eso está medido.
+
+**Lo medido, el 2026-08-13, con dos máquinas de verdad.** Host de Windows, invitado de Linux en WSL, los dos con binarios del día, el invitado llegando por el relay del seed:
+
+| Quién mira | Qué ve |
+|---|---|
+| `members` en el HOST | **1**, solo él mismo |
+| `members` en el INVITADO | **2**, él y el host, marcado `relayed` |
+| El socket del canal de control, en el host | `Established 10.99.186.1 → 10.99.186.2` |
+| La exposición del host | lleva `toward 10.99.186.2`, o sea que sí le abrió esa regla |
+
+Sostenido treinta segundos muestreando cada cinco: no era retraso.
+
+**La consecuencia no era cosmética, y por eso el arreglo no es de pantalla.** Los puertos del juego se abren hacia los miembros presentes. Con Counter-Strike activo, la exposición del host tenía dos reglas y las dos eran del canal de control, **ninguna del juego**. O sea que un invitado ya dentro de la sala, al que el host acababa de abrirle el canal, no podía jugar.
+
+**Dónde estaba la contradicción.** En la misma función, con cinco líneas de diferencia: los puertos del juego se abrían hacia `MemberIPs(state.Peers)` y el canal de control hacia `authorizedControlIPsLocked()`, que ya unía la tabla del motor con las credenciales emitidas. Dos respuestas a la misma pregunta, y la que decidía lo que importa era la que no veía.
+
+**El arreglo.** `withAdmittedLocked` le suma a la tabla del motor las direcciones que cumplen las tres cosas a la vez: tienen credencial viva emitida por este host, tienen el canal de la sala abierto, y no acaban de ser expulsadas. Van con camino `PathUnconfirmed`, que se pinta apagado y se escribe "sin confirmar": un socket prueba que alguien está, y no dice si llega directo o por relay. Por eso ese camino **no cuenta para degradado**, que es lo que decide `AnyRelay`.
+
+**Por qué el canal de control puede decidir esto.** Porque para el host es conocimiento de primera mano y la tabla del motor es de segunda: la dirección la asignó él al emitir la credencial, su oyente solo acepta a las direcciones autorizadas, y lo que se comprueba es que hay un socket abierto desde ahí. No es un mensaje que alguien pueda falsificar, es la existencia de una conexión, igual que la presencia del host del otro lado. Y no amplía ninguna confianza: a esa misma pareja de fuentes ya se le confiaba abrir el puerto donde escucha código corriendo como SYSTEM, que es una puerta bastante más seria que la de un juego.
+
+**Lo que esto arregla de rebote.** El latido que empuja el vencimiento de las credenciales solo renueva a los presentes, a propósito, para que la dirección de un ausente se libere sola. Con el host contando de menos, un miembro invisible dejaba de renovarse y se caía a las 24 h.
+
+**Lo que queda abierto.** Por qué la tabla del motor no reporta al invitado en el host no está medido: la asimetría es del motor, no del daemon. Este arreglo no la explica, la rodea con una fuente que el host ya tenía.
 
 ### transport/pipe, implementa la entrada
 
@@ -2100,6 +2142,18 @@ La regla que centraliza: **toda mutación persistente de Kanpachi o lleva etique
 **El desinstalador es otra bandera**, `--uninstall-cleanup`, que hace lo mismo y además quita la cuarentena. Esa capacidad vive en **una sola función**, `windowscom.RemoveBaseQuarantineForUninstall`, con el nombre largo a propósito para que aparezca entero en cualquier búsqueda. Está cerrada por tres vías: `port.FirewallPort` no declara nada que pueda quitarla, así que ningún caso de uso puede pedirlo; un guardián exige que sea la única función del daemon que a la vez nombre el grupo base y llame a algo que borra; y otro exige que solo la llame el cableado de `cmd/kanpachid`. El primero de esos guardianes se escribió porque el que ya existía **no mordía**: buscaba llamadas con nombre de verbo destructivo y el grupo entre los argumentos, y el borrado real pasa por un helper propio con el grupo comparado contra el campo de una regla enumerada. Se comprobó escribiendo la función y viendo al guardián viejo callar.
 
 Medido el 2026-08-05 con una sala real y el daemon muerto a lo bruto: quedaban una regla del grupo `Kanpachi`, seis filtros de compuerta y un `hosted-room.json`; tras el reset, cero y cero, la cuarentena entera en sus 48 reglas, sin motor huérfano, sin `hosted-room.json`, y una sala nueva se creó a continuación. Lo corre `scripts/medir-reset.ps1`.
+
+**Y la otra mitad, medida en Linux el 2026-08-13.** La pregunta abierta era si hace falta código para limpiar lo que un `kill -9` deja. La respuesta es que no, y el arranque siguiente ya lo hace:
+
+| Momento | Qué había |
+|---|---|
+| Con la sala en pie | `table inet kanpachi` con sus cuatro reglas, el adaptador `kanpachi0` vivo |
+| Justo tras `kill -9` | **La tabla sigue entera.** El adaptador NO: muere con el proceso que lo abrió |
+| Al arrancar de nuevo | `compuerta barrida [tabla kanpachi]`, y la tabla ya no existe |
+
+**El detalle que hay que mirar es el del medio.** Con el adaptador muerto, la regla que decía `iif "kanpachi0"` pasa a leerse `iif 7`: nftables resuelve el nombre a un índice al cargar la regla, no en cada paquete. Ese índice queda libre y el núcleo se lo puede dar a la siguiente interfaz que se cree, así que entre el `kill -9` y el arranque siguiente hay una regla de descarte apuntando a una interfaz que todavía no existe. Es una ventana chica y su barrido es incondicional, y va escrito porque el modo de fallo sería de los callados: tráfico entrante descartado en una interfaz que nada tiene que ver con Kanpachi.
+
+Con la cuarentena de base no pasa: se repone entera al arrancar, sus 44 reglas, que es exactamente lo que se espera de ella.
 
 ## kanpachi-seed
 

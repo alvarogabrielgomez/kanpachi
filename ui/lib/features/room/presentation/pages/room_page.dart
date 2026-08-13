@@ -1054,6 +1054,9 @@ class _MemberRow extends StatelessWidget {
       PeerPath.self => colors.textMuted,
       PeerPath.relay => colors.warn,
       PeerPath.direct => colors.ok,
+      // Apagado y no ámbar: ámbar es relay, o sea "la red va lenta", y de este
+      // miembro lo que no se sabe es por dónde llega, no que llegue mal.
+      PeerPath.unconfirmed => colors.textMuted,
     };
     return Row(
       children: <Widget>[

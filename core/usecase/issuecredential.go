@@ -92,11 +92,11 @@ const ArrivalGrace = 10 * time.Minute
 // está en la tabla del motor porque su ingreso está en curso, no porque se haya
 // ido. Ese caso se reconoce por la fecha de emisión y no por una lista aparte.
 //
-// **Esto depende de que la lista de miembros sea correcta**, y hay un defecto
-// abierto que la hace contar de menos en el host. Mientras ese defecto exista,
-// un miembro invisible deja de renovarse y se cae a las 24 h, que es exactamente
-// lo que pasa hoy con todos. O sea que esto nunca empeora lo que había, y lo
-// arregla del todo cuando la lista deje de mentir.
+// **Esto depende de que la lista de miembros sea correcta**, y hasta el
+// 2026-08-13 no lo era: contaba de menos en el host, así que un miembro
+// invisible dejaba de renovarse y se caía a las 24 h. Lo cierra
+// [Session.withAdmittedLocked], que suma a quien tiene el canal de la sala
+// abierto.
 //
 // # Qué se hace cuando el motor dice que no
 //
@@ -168,6 +168,100 @@ func (s *Session) renewCredentialsLocked(ctx context.Context) {
 	s.deps.Log.Info("credenciales renovadas",
 		"renovadas", renovadas, "ausentes", ausentes, "fallidas", fallidas,
 		"la primera vence", primero, "siguiente ronda en", RenewInterval)
+}
+
+// withAdmittedLocked le suma a la tabla del motor los miembros que ESTE host
+// admitió y que tienen el canal de la sala abierto.
+//
+// # El defecto que cierra, medido con dos máquinas el 2026-08-13
+//
+// Host de Windows, invitado de Linux, los dos con binarios del día. El invitado
+// contaba dos miembros; el host contaba UNO, solo él mismo. Sostenido treinta
+// segundos muestreando cada cinco, o sea que no era retraso. Al mismo tiempo, en
+// el host había un socket `Established 10.99.186.1 → 10.99.186.2` y una regla de
+// firewall `toward 10.99.186.2`: las dos sabían del invitado con su dirección.
+//
+// **La consecuencia no era cosmética.** Los puertos del juego se abren hacia los
+// miembros presentes, y los miembros presentes salían solo de la tabla del
+// motor. Con Counter-Strike activo, la exposición del host tenía dos reglas y
+// las dos eran del canal de control: **ninguna del juego**. O sea que un
+// invitado conectado, al que el host ya le había abierto el canal, no podía
+// jugar.
+//
+// # Por qué el canal de control puede decidir esto
+//
+// Porque el host tiene conocimiento de primera mano y la tabla del motor es de
+// segunda. La dirección la asignó él al emitir la credencial, su oyente solo
+// acepta a las direcciones autorizadas, y lo que se comprueba es que hay un
+// socket abierto desde ahí. Ver [port.ControlChannel.ConnectedMembers].
+//
+// Ya se le confiaba MÁS que esto: la misma pareja de fuentes decide desde
+// siempre a quién se le abre el canal de control, que es el puerto que escucha
+// código corriendo como SYSTEM. Abrirle además el puerto de un juego a quien ya
+// puede hablarle a eso no amplía ninguna confianza; lo que hace es dejar de
+// contestar dos cosas distintas a la misma pregunta en la misma función, cinco
+// líneas más abajo. Ver [Session.desiredRuleSetLocked].
+//
+// # Los tres filtros, y qué caso cierra cada uno
+//
+//   - **Ya reportado por el motor**: se salta, para no duplicar a nadie. Manda
+//     lo que dice el motor, que además trae el camino y el RTT de verdad.
+//   - **Credencial vencida**: se salta. Una credencial vencida ya no autoriza, y
+//     su entrada se limpia sola en [Session.forgetExpiredCredentialsLocked].
+//   - **Expulsado hace poco**: se salta. Es el mismo motivo por el que existe
+//     [Session.kicked]: el motor tarda alrededor de un segundo en cerrarle la
+//     sesión, y sin esto la relectura de miembros le devolvería el puerto
+//     durante esa ventana.
+//
+// No hace falta un cuarto filtro por "todavía no llegó": quien pidió la
+// credencial y no terminó de entrar no tiene el canal de la sala abierto, así
+// que no entra por acá. Su puerta la abre [Session.authorizedControlIPsLocked],
+// que es lo que le permite llegar a abrirlo.
+//
+// Asume el candado tomado.
+func (s *Session) withAdmittedLocked(peers []domain.Peer) []domain.Peer {
+	if !s.state.IsHost() {
+		return peers
+	}
+	conectados := s.deps.Control.ConnectedMembers()
+	if len(conectados) == 0 {
+		return peers
+	}
+
+	now := s.deps.Clock.Now()
+	s.forgetOldKicks(now)
+
+	visto := make(map[netip.Addr]bool, len(peers))
+	for _, p := range peers {
+		visto[p.VirtualIP] = true
+	}
+
+	// Se recorre `conectados` y no `issued`, y el orden importa: la lista del
+	// canal viene ordenada por dirección, así que la de miembros sale igual en
+	// cada relectura. Recorrer el mapa daría un orden distinto cada vez, y con
+	// él una firma de reglas distinta cada vez.
+	for _, ip := range conectados {
+		if visto[ip] {
+			continue
+		}
+		c, ok := s.issued[ip]
+		if !ok || c.Expired(now) {
+			continue
+		}
+		if _, kicked := s.kicked[ip]; kicked {
+			continue
+		}
+		visto[ip] = true
+		peers = append(peers, domain.Peer{
+			VirtualIP: ip,
+			// El nombre sale de la credencial, que es donde el host lo guardó al
+			// emitirla. El motor lo trae del otro lado; acá no hay otro lado del
+			// que traerlo, y sin nombre la lista tendría un hueco.
+			Name: c.Name,
+			Path: domain.PathUnconfirmed,
+		})
+	}
+	return peers
 }
 
 // forgetExpiredCredentialsLocked saca del mapa lo que ya no autoriza a nadie.

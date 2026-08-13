@@ -19,6 +19,15 @@ const (
 	PathRelay
 	// PathSelf es uno mismo. No hay ruta que describir.
 	PathSelf
+	// PathUnconfirmed es quien el host admitió y tiene el canal de control
+	// abierto, y a quien el motor todavía no reporta en su tabla de rutas.
+	//
+	// El camino NO se inventa. Lo que prueba su presencia es el socket del canal
+	// de control, y un socket no dice si el tráfico va directo o por relay: eso
+	// solo lo sabe el motor. Elegir "directo" pintaría la sala de verde sobre
+	// una medición que nadie hizo, y elegir "relay" la acusaría de lenta sin
+	// motivo. Ver [RoomState.AnyRelay], que por eso no cuenta este camino.
+	PathUnconfirmed
 )
 
 func (p PathKind) String() string {
@@ -29,6 +38,8 @@ func (p PathKind) String() string {
 		return "relay"
 	case PathSelf:
 		return ""
+	case PathUnconfirmed:
+		return "sin confirmar"
 	default:
 		return "desconocido"
 	}

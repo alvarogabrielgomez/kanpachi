@@ -58,6 +58,7 @@ This file is in English, like commit messages and release notes, because a relea
 - Keep more of the engine log before it wraps, which at two megabytes rolled over mid-session ([e6a5ca7](https://github.com/alvarogabrielgomez/kanpachi-engine/commit/e6a5ca7), in `kanpachi-engine`)
 - Keep open rooms reachable when the meeting server restarts, which used to empty its list of rooms and tell every guest of every open room that the room did not exist, with no way for the host to put it back but to renew the code and kill the links already handed out ([c6b44b0](https://github.com/alvarogabrielgomez/kanpachi/commit/c6b44b0))
 - Say why the virtual adapter failed while entering a room, which was the one moment the reason was thrown away, and stop waiting thirty seconds for an address that is never coming ([c6b44b0](https://github.com/alvarogabrielgomez/kanpachi/commit/c6b44b0), with [9f6dd6b](https://github.com/alvarogabrielgomez/kanpachi-engine/commit/9f6dd6b) in `kanpachi-engine`)
+- Let a guest actually play. The host counted only the members its tunnel engine reported, and with a guest arriving through the seed it counted none of them: measured with two machines, the guest saw two members in the room and the host saw one. Game ports are opened towards the members present, so a guest already inside, with its control channel open and its firewall rule written, never got a single game port. The host now also counts whoever it admitted and has an open channel with
 
 ### Security
 

@@ -520,6 +520,9 @@ type mockControl struct {
 	scope     domain.ControlScope
 	alcance   []netip.Addr
 	marcados  []netip.Addr
+	// conectados son las direcciones con el canal de la sala abierto, que es lo
+	// que el host suma a la tabla del motor. Ver [Session.withAdmittedLocked].
+	conectados []netip.Addr
 	// fallarDesde hace fallar Dial a partir de la n-ésima llamada, 1-indexada.
 	fallarDesde     int
 	presencia       chan bool
@@ -669,6 +672,16 @@ func (c *mockControl) Notify(_ context.Context, to netip.Addr, n domain.RoomNoti
 }
 
 func (c *mockControl) Notices() <-chan domain.RoomNotice { return c.avisosEntrantes }
+
+// ConnectedMembers devuelve lo que el test haya puesto en `conectados`.
+//
+// Vacío por defecto, que es un host sin nadie dentro: así los tests que no
+// hablan de esto siguen midiendo solo la tabla del motor.
+func (c *mockControl) ConnectedMembers() []netip.Addr {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]netip.Addr(nil), c.conectados...)
+}
 
 func (c *mockControl) últimoAviso() (avisoFalso, bool) {
 	c.mu.Lock()

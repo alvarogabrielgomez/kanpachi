@@ -12,7 +12,14 @@ enum PeerPath {
   relay('relay', 'relay'),
 
   /// Uno mismo. No hay ruta que describir.
-  self('self', '');
+  self('self', ''),
+
+  /// Está en la sala y todavía no se sabe por dónde llega.
+  ///
+  /// Lo manda el host de quien admitió y tiene el canal de la sala abierto,
+  /// mientras el motor no lo reporta en su tabla. El camino no se inventa: un
+  /// socket prueba que está, y no dice si el tráfico va directo o por relay.
+  unconfirmed('unconfirmed', 'sin confirmar');
 
   const PeerPath(this.wire, this.label);
 
@@ -31,6 +38,7 @@ enum PeerPath {
   static PeerPath fromWire(String? s) => switch (s) {
     'relay' => PeerPath.relay,
     'self' => PeerPath.self,
+    'unconfirmed' => PeerPath.unconfirmed,
     _ => PeerPath.direct,
   };
 }

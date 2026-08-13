@@ -456,7 +456,8 @@ func (s *Session) refreshPeersLocked(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("consultando los miembros de la sala: %w", err)
 	}
-	s.state.Peers = markRoles(peers, s.state.LocalIP, s.state.Role, s.state.Subnet)
+	s.state.Peers = s.withAdmittedLocked(
+		markRoles(peers, s.state.LocalIP, s.state.Role, s.state.Subnet))
 	// La calidad de la conexión sale de esta tabla y de nada más. Va ANTES de
 	// deducir la presencia del host, que exige un estado concreto para no
 	// dispararse a mitad de un ingreso.

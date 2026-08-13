@@ -741,6 +741,19 @@ func (s *Session) applyPolicy(ctx context.Context) error {
 // es lo que hace que la comprobación de la decisión 19 mida lo que de verdad se
 // pidió, en vez de una segunda versión del cálculo que puede separarse.
 //
+// # Las dos listas de miembros que hay acá, y por qué siguen siendo dos
+//
+// Los puertos del juego se abren hacia `MemberIPs(s.state.Peers)`, o sea hacia
+// quien ESTÁ. El canal de control se abre además hacia quien acaba de recibir
+// credencial y todavía no entró, que es lo que evita que su primer intento de
+// conexión rebote contra el firewall. Ver [Session.authorizedControlIPsLocked].
+//
+// La diferencia es deliberada y ahora es la única que queda. Hasta el
+// 2026-08-13 había otra, sin querer: la tabla del motor contaba de menos en el
+// host, así que un invitado ya dentro tenía canal de control y no tenía puertos
+// de juego. Eso lo cierra [Session.withAdmittedLocked], que le suma a la lista
+// de miembros a quien tiene el canal de la sala abierto.
+//
 // Asume el candado tomado.
 func (s *Session) desiredRuleSetLocked() (domain.RuleSet, error) {
 	desired, err := domain.BuildRuleSet(

@@ -1577,3 +1577,21 @@ El retardo creciente es global y no por cuenta, porque no hay cuentas: bloquear 
 | Un seed sin directorio de estado no se puede cerrar | Un password que desaparece al reiniciar es peor que ninguno: el operador cree cerrada una puerta que sigue abierta. Se dice al arrancar |
 | En Windows, el password no protege contra otro usuario de la MISMA PC | El canal local se lo concede al usuario interactivo a propósito, para que la ventana hable sin elevar. El password le cierra la puerta a desconocidos de internet, no a quien ya se sentó en esa máquina. En Linux no ocurre: el socket es 0600 de root |
 | Un refresh token queda en disco del lado del cliente | Sellado con la llave de la instalación y además con ACL propia. El password no toca el disco: un disco robado entrega una credencial que caduca y que el operador revoca cambiando el password |
+
+## 35. Un miembro es quien el motor ve MÁS quien tiene el canal abierto
+
+**El problema, medido el 2026-08-13 con dos máquinas.** Host de Windows, invitado de Linux, el invitado dentro de la sala y llegando por relay. El invitado contaba dos miembros. El host contaba **uno**, solo él mismo, sostenido treinta segundos. En el mismo instante, el host tenía un socket establecido contra la dirección del invitado y una regla de firewall abierta hacia ella.
+
+**Por qué eso es un fallo de producto y no de pantalla.** Los puertos del juego se abren hacia los miembros presentes. Con el juego activo, la exposición del host tenía dos reglas y las dos eran del canal de control: ninguna del juego. Un invitado ya admitido no podía jugar, y la única señal era un número en una lista.
+
+**La decisión: en el host, la lista de miembros tiene dos fuentes y no una.** La tabla de rutas del motor, más las direcciones con el canal de la sala abierto. Una dirección entra por la segunda si cumple las tres cosas: credencial viva emitida por este host, socket abierto ahora, y no acaba de ser expulsada.
+
+**Por qué el canal de control es una fuente legítima.** Porque para el host es de primera mano. Él asignó esa dirección al emitir la credencial, su oyente solo acepta a las direcciones autorizadas, y lo que se comprueba es la existencia de una conexión, no un mensaje que alguien pueda escribir. Es la misma clase de evidencia que ya sostiene la salida automática a los veinte minutos, leída del otro lado.
+
+**Y no amplía ninguna confianza.** Esa misma pareja de fuentes ya decidía a quién se le abre el canal de control, que es el puerto donde escucha código corriendo como SYSTEM. Abrirle además el puerto de un juego a quien ya puede hablarle a eso es la operación más chica de las dos.
+
+**El camino no se inventa.** Un miembro que entra por esta segunda fuente se marca `sin confirmar` y se pinta apagado. Un socket prueba que alguien está, y no dice si su tráfico va directo o por el relay. Marcarlo "directo" pintaría la sala de verde sobre una medición que nadie hizo, y "relay" la acusaría de lenta sin motivo, así que **este camino no cuenta para el estado degradado**.
+
+**Lo que NO se hace, y por qué.** No se cuenta como miembro a quien tiene credencial y todavía no abrió el canal. Ese caso ya está resuelto donde corresponde: su dirección se preautoriza en el canal de control en cuanto se emite la credencial, que es justo lo que le permite llegar a abrirlo. Contarlo como presente reservaría su dirección para siempre y renovaría la credencial de alguien que quizá nunca llegó.
+
+**Lo que queda sin explicar.** Por qué la tabla del motor no reporta al invitado en el host. La asimetría es del motor y no está medida. Esta decisión no la explica: la rodea con una fuente que el host ya tenía y no estaba mirando.
