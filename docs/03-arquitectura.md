@@ -2211,6 +2211,27 @@ Lo caro del seed está entonces en el acto raro y no en el frecuente. Crear una 
 
 De ahí sale la consecuencia que importa ahora que el seed puede pedir password para hospedar. Una ráfaga de intentos de autenticación comparte ese freno con la creación de salas, y con nada más. Degrada crear, que es exactamente lo que la autenticación ya cierra. Quien está entrando a una sala no se entera de nada.
 
+### Medido contra el droplet, con el seed cerrado y desplegado
+
+El párrafo de arriba era una predicción. Esto es lo que pasó al hacerla, con 40 intentos de login en paralelo desde direcciones distintas, contra la instalación real.
+
+| Qué se midió | Resultado |
+|---|---|
+| Memoria del registro, techo 256 MiB | Antes 139, pico **152**. Nunca se acercó |
+| Reinicios de la unit | **0**. Sin OOM, sin watchdog disparado |
+| Las 40 respuestas | 6 llegaron a contestar 401, **34 vencieron a los 60 s** sin respuesta |
+| `GET /healthz` durante la ráfaga | 200, entre 0,49 y 0,70 s |
+| `GET /api/i/{id}` durante la ráfaga | 404, entre 0,44 y 0,55 s |
+| Lo mismo sin ráfaga | 0,18 s |
+
+**La predicción se sostiene y el freno hace lo suyo.** La cola se come los intentos, el atacante no saca nada, la memoria no se mueve, y **entrar a una sala sigue funcionando**: resolver un código pasó de 0,18 s a medio segundo, o sea unas tres veces más lento y muy lejos de molestar. Es lo que dice el reparto de quién deriva: resolver lee bajo lock de lectura y no toca Argon2id.
+
+**Lo que la medición agregó, que no estaba escrito.** Durante la ráfaga, **un host legítimo tampoco entra**: su login se encola detrás de los intentos en la misma ranura y nginx le devuelve 502. La ráfaga no tumba el seed, deja fuera de hospedar a quien tiene el password, que es negarle el servicio justo a quien la puerta existe para dejar pasar. Sigue siendo el intercambio correcto frente al OOM, y conviene tenerlo escrito antes de que alguien lo descubra como sorpresa.
+
+**Y de dónde salen los segundos del camino feliz.** Un login legítimo tarda 3,3 s y abrir una sala 3,9 s, contra 0,18 s de resolver un código. No es el algoritmo: la unit lleva `CPUQuota=25%` sobre un droplet de 2 vCPU, o sea **medio núcleo**, y cada derivación pide `argonThreads = 4`. La cuota es lo que convierte una derivación de decenas de milisegundos en una de segundos. Bajarla no es gratis y no es este documento quien lo decide: subir la cuota acelera al atacante en la misma proporción que al host.
+
+**Cómo se midió, porque importa para leerlo.** Las 40 peticiones salieron del propio droplet contra `127.0.0.1:8010` con `X-Forwarded-For` inventado, que es la única forma de simular direcciones distintas. Desde internet no se puede: el registro **escucha solo en loopback**, así que la cabecera solo se cree viniendo de nginx, y por IP real el freno son 5 por minuto. Un atacante necesita tantas direcciones como derivaciones quiera encolar.
+
 ### Un seed cerrado: qué exige, qué guarda y qué se niega a decir
 
 Ver la decisión 34 para el porqué. Lo que sigue es dónde vive cada pieza.
