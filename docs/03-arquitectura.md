@@ -2221,6 +2221,7 @@ Ver la decisión 34 para el porqué. Lo que sigue es dónde vive cada pieza.
 |---|---|
 | `POST /api/rooms`, `PUT /api/i/{id}` | token de acceso |
 | `GET /api/i/{id}`, `GET /healthz`, la página | abiertas, siempre |
+| Cualquier otra bajo `/api/` | 404 con el sobre de error, jamás la página |
 | `POST /api/auth/token`, `POST /api/auth/refresh` | abiertas, con freno propio |
 
 **El fichero de la credencial**, `auth.json` en el directorio de estado, 0600, atómico como el de salas:

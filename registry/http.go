@@ -83,8 +83,31 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/auth/token", s.authLimited(s.login))
 	mux.HandleFunc("POST /api/auth/refresh", s.authLimited(s.refresh))
 	mux.HandleFunc("GET /healthz", s.salud)
+	// Todo lo que cuelgue de /api/ y no case arriba muere acá, con el sobre de
+	// error y no con la página.
+	//
+	// **Medido contra el despliegue, y era un fallo de verdad.** Sin esta línea,
+	// `/api/version` contestaba 200 con el HTML de la invitación, porque caía en
+	// el comodín de abajo. Ese endpoint se borró en este arco, así que los
+	// clientes viejos que lo piden reciben una página donde esperan JSON, y una
+	// ruta mal escrita contesta que todo va bien. La decisión del sobre de error
+	// existe justo para que la API no explique nada en prosa, y una página entera
+	// es la prosa más larga posible.
+	//
+	// El comodín se queda porque es como se sirve la invitación: `/{CÓDIGO}` es
+	// una ruta legítima y no se puede enumerar. Lo que se acota es el prefijo de
+	// la API, que sí es un espacio cerrado.
+	mux.HandleFunc("/api/", s.apiNoExiste)
 	mux.HandleFunc("/", s.servirPagina)
 	return cabecerasSeguras(mux)
+}
+
+// apiNoExiste contesta el sobre de error a cualquier ruta de API que no exista.
+//
+// No dice cuál era la ruta ni sugiere parecidas: eso es contestarle a quien está
+// probando el espacio, que es lo mismo que el 401 se niega a hacer.
+func (s *Server) apiNoExiste(w http.ResponseWriter, r *http.Request) {
+	respondError(w, http.StatusNotFound, CodeNotFound, "")
 }
 
 // ---- API ------------------------------------------------------------------
