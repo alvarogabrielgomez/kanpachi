@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
+import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/features/seed/domain/seed_password.dart';
+import 'package:kanpachi_ui/features/session/domain/daemon_failure.dart';
 import 'package:kanpachi_ui/features/session/presentation/daemon_failure_text.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
@@ -59,23 +61,56 @@ class _SeedPasswordScreenState extends State<SeedPasswordScreen> {
 
   bool get _valido => SeedPassword.isValid(_controller.text);
 
+  /// Entrega la contraseña y SIGUE con la sala que se estaba abriendo.
+  ///
+  /// # Por qué continúa sola, y por qué no vuelve a preguntar la confianza
+  ///
+  /// Porque esta pantalla es un paso de abrir una sala, no un destino. Se
+  /// llegó acá porque el servidor pidió credencial en mitad de una creación
+  /// que YA pasó por el diálogo de confianza: volver a la portada obligaba a
+  /// pulsar «Crear» otra vez, a confirmar otra vez el mismo servidor, y a
+  /// saber que había que hacerlo. Con el token guardado no falta nada más.
+  ///
+  /// Sin intención pendiente se vuelve por donde se vino, que es lo correcto
+  /// para las otras dos puertas: renovar el código, y reabrir la sala.
   Future<void> _enviar() async {
     if (!_valido || _enviando) return;
+    final SessionCubit session = context.read<SessionCubit>();
+    final ShellCubit shell = context.read<ShellCubit>();
     setState(() => _enviando = true);
     try {
-      await context.read<SessionCubit>().seedPassword(_controller.text);
+      await session.seedPassword(_controller.text);
       if (!mounted) return;
-      // Atrás y no a la portada: se llegó acá en mitad de abrir una sala, y
-      // devolver a quien lo escribió al sitio donde estaba es lo que hace que
-      // pueda volver a pulsar el botón que falló.
-      context.read<ShellCubit>().back();
+      shell.back();
+      if (session.hasHostIntent) await session.resumeHostIntent();
     } on Object catch (e) {
       if (!mounted) return;
       setState(() {
         _enviando = false;
-        _error = daemonFailureText(e);
+        _error = _textoDelFallo(e);
       });
     }
+  }
+
+  /// El texto pegado al campo, con el caso propio de esta pantalla.
+  ///
+  /// Una contraseña rechazada llega como [FailureCode.unauthorized], y el copy
+  /// del catálogo para ese código habla del saludo con el daemon, que no es
+  /// esto. Acá el único significado posible es que esa contraseña no es la de
+  /// ese servidor.
+  ///
+  /// **No se distingue de una que caducó, y es a propósito**: el registro se
+  /// niega a decir cuál de las dos fue, porque distinguirlas solo le regalaría
+  /// información a quien esté probando contraseñas. Lo que hay que hacer es lo
+  /// mismo en los dos casos, que es escribir la buena.
+  String _textoDelFallo(Object e) {
+    if (e is DaemonError &&
+        (e.resolved == FailureCode.unauthorized ||
+            e.resolved == FailureCode.seedPassword)) {
+      return 'Esa contraseña no es la de este servidor. Pídesela a quien lo '
+          'administra y vuelve a escribirla.';
+    }
+    return daemonFailureText(e);
   }
 
   @override
@@ -107,7 +142,13 @@ class _SeedPasswordScreenState extends State<SeedPasswordScreen> {
       onSubmit: _enviar,
       // Volver deja el password sin escribir y devuelve a donde se estaba, que
       // es abrir una sala. Sin flecha, la única salida era escribirlo.
-      onBack: context.read<ShellCubit>().back,
+      //
+      // Y ABANDONA la creación: quien vuelve atrás decidió no abrirla, así que
+      // la intención no puede sobrevivirle esperando a resucitar sola.
+      onBack: () {
+        context.read<SessionCubit>().dropHostIntent();
+        context.read<ShellCubit>().back();
+      },
     );
   }
 }

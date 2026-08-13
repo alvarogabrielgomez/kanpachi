@@ -77,7 +77,9 @@ type API interface {
 	// puede vivir en cada cliente.
 	OwnSeed() string
 	SuggestedSeed() string
-	SetOwnSeed(seed string) (string, error)
+	// SetOwnSeed lleva contexto porque COMPRUEBA que el registro conteste antes
+	// de guardarlo, y esa comprobación es una petición de red con su plazo.
+	SetOwnSeed(ctx context.Context, seed string) (string, error)
 	// SeedPassword entrega el password del registro propio. Ver
 	// [MethodSeedPassword] para lo que no vuelve ni queda de él.
 	SeedPassword(ctx context.Context, password string) error
@@ -556,7 +558,7 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 		return s.autostart(req.Params)
 
 	case MethodOwnSeed:
-		return s.ownSeed(req.Params)
+		return s.ownSeed(ctx, req.Params)
 
 	case MethodSeedPassword:
 		return s.seedPassword(ctx, req.Params)
@@ -754,7 +756,7 @@ func (s *Server) autostart(params json.RawMessage) (json.RawMessage, *Error) {
 // que allá, con un motivo extra acá: lo que se guarda es el nombre ya
 // normalizado, así que devolver lo que llegó enseñaría lo que se pidió en vez de
 // lo que quedó puesto.
-func (s *Server) ownSeed(params json.RawMessage) (json.RawMessage, *Error) {
+func (s *Server) ownSeed(ctx context.Context, params json.RawMessage) (json.RawMessage, *Error) {
 	// Sin parámetros es LEER, y esa es la mitad más usada del método.
 	//
 	// Medido corriendo `kanpachi seed` a secas contra el daemon: el cliente
@@ -778,7 +780,7 @@ func (s *Server) ownSeed(params json.RawMessage) (json.RawMessage, *Error) {
 		p.Seed = leído.Seed
 	}
 	if p.Seed != nil {
-		if _, err := s.api.SetOwnSeed(*p.Seed); err != nil {
+		if _, err := s.api.SetOwnSeed(ctx, *p.Seed); err != nil {
 			return nil, errorFor(err)
 		}
 	}

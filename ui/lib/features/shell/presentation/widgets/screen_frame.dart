@@ -515,6 +515,9 @@ class ScreenPrompt extends StatelessWidget {
             hint: hint,
             maxLength: maxLength,
             obscure: obscure,
+            // El borde marca lo que la línea de abajo explica. Los dos salen
+            // del mismo dato, así que no pueden discrepar.
+            invalid: error != null,
             onSubmitted: (_) => onSubmit(),
           ),
           if (linea != null) ...<Widget>[

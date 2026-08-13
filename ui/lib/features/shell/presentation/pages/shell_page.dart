@@ -5,7 +5,7 @@ import 'package:kanpachi_ui/features/session/presentation/widgets/failure_notice
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/messages/loading_phrases.dart';
-import 'package:kanpachi_ui/core/messages/message_keys.dart';
+import 'package:kanpachi_ui/features/shell/presentation/failure_navigation.dart';
 import 'package:kanpachi_ui/features/games/presentation/pages/game_picker_page.dart';
 import 'package:kanpachi_ui/features/games/presentation/pages/manual_game_page.dart';
 import 'package:kanpachi_ui/features/home/presentation/pages/home_page.dart';
@@ -204,9 +204,9 @@ class _RoomFollower extends StatelessWidget {
         BlocListener<SessionCubit, SessionState>(
           listenWhen: (SessionState a, SessionState b) =>
               a.failure?.code != b.failure?.code &&
-              _pantallaDelFallo(b.failure?.code) != null,
+              screenForFailure(b.failure?.code) != null,
           listener: (BuildContext context, SessionState state) {
-            final AppScreen? destino = _pantallaDelFallo(state.failure?.code);
+            final AppScreen? destino = screenForFailure(state.failure?.code);
             if (destino != null) context.read<ShellCubit>().go(destino);
           },
         ),
@@ -336,6 +336,11 @@ class _FailureLayer extends StatelessWidget {
     final SessionState session = context.watch<SessionCubit>().state;
     final ActionFailure? failure = session.failure;
     if (failure == null) return const SizedBox.shrink();
+    // Un fallo que ya llevó a su pantalla no se cuenta además como aviso: el
+    // aviso diría «pide contraseña» flotando sobre la pantalla que la pide.
+    if (screenForFailure(failure.code) != null) {
+      return const SizedBox.shrink();
+    }
     if (_withPanels.contains(_visibleScreen(shell, session))) {
       return const SizedBox.shrink();
     }
@@ -495,14 +500,3 @@ class _DialogLayer extends StatelessWidget {
   }
 }
 
-/// A qué pantalla lleva un fallo, cuando lleva a alguna.
-///
-/// Son los DOS que se arreglan yendo a un sitio, y son dos pantallas distintas
-/// porque son dos cosas: falta elegir el servidor, o falta la contraseña de uno
-/// ya elegido. El resto de los fallos se quedan como aviso en la portada, que es
-/// lo correcto para lo que se arregla reintentando o no se arregla.
-AppScreen? _pantallaDelFallo(String? code) {
-  if (code == FailureCode.noOwnSeed.wire) return AppScreen.seed;
-  if (code == FailureCode.seedPassword.wire) return AppScreen.seedPassword;
-  return null;
-}

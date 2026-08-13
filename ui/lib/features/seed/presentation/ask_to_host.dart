@@ -26,9 +26,18 @@ Future<void> askToHost(
   // Sin registro configurado no hay nada que confirmar: lo que falta es
   // elegirlo. Un diálogo preguntando «¿confías en?» sobre un nombre vacío sería
   // una pregunta sin dato.
+  //
+  // La intención se recuerda ANTES de desviar: elegir servidor es un paso de
+  // este flujo, no un destino, y al guardar uno la pantalla continúa con la
+  // creación en vez de devolver a la portada con la sala sin abrir. La flecha
+  // de volver de esa pantalla es la que la olvida.
   final OwnSeed propio = await session.ownSeed();
   if (!context.mounted) return;
   if (!propio.canHost) {
+    session.rememberHostIntent(
+      name: suggestedName,
+      game: session.state.pendingGame,
+    );
     shell.go(AppScreen.seed);
     return;
   }

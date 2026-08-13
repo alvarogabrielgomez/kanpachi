@@ -72,8 +72,17 @@ class _TrustSeedDialogState extends State<TrustSeedDialog> {
     final SessionCubit session = context.read<SessionCubit>();
     final bool entrando = widget.request.joining;
 
+    // Cerrar este diálogo ABANDONA la creación, se cierre por donde se cierre:
+    // la cruz, el velo, Escape o «Cancelar». Sin esto, quien viene de elegir
+    // servidor y aquí se arrepiente dejaría la intención viva, y la siguiente
+    // pantalla que la mire abriría una sala que ya nadie pidió.
+    void abandonar() {
+      session.dropHostIntent();
+      shell.closeDialog();
+    }
+
     return AppModal(
-      onDismiss: shell.closeDialog,
+      onDismiss: abandonar,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -96,11 +105,15 @@ class _TrustSeedDialogState extends State<TrustSeedDialog> {
           AppModalActions(
             stretch: true,
             confirmLabel: entrando ? 'Confiar y entrar' : 'Confiar y crear',
-            onCancel: shell.closeDialog,
+            onCancel: abandonar,
             onConfirm: () async {
               shell.closeDialog();
               // El juego, si lo hubo, sale de la sesión y no de la petición:
               // quien lo eligió fue el diálogo anterior y ahí sigue guardado.
+              //
+              // **Sin `dropHostIntent` acá.** Confirmar no abandona: la
+              // creación que arranca es la que decide, y es ella la que
+              // recuerda la intención cuando falla por falta de contraseña.
               final bool ok = entrando
                   ? await session.joinRoom(widget.request.code)
                   : await session.createRoom(

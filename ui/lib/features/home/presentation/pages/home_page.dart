@@ -24,6 +24,7 @@ import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.da
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
 import 'package:kanpachi_ui/features/session/presentation/widgets/failure_notice.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
+import 'package:kanpachi_ui/features/shell/presentation/failure_navigation.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
 
 /// La portada: sin sala.
@@ -137,7 +138,13 @@ class _HomeScreenState extends State<HomeScreen> {
     final SessionState session = context.watch<SessionCubit>().state;
     final bool canJoin = InviteCode.isComplete(_code.text);
 
-    final ActionFailure? failure = session.failure;
+    // Sin los fallos que ya llevaron a su pantalla: pintarlos acá además sería
+    // contar dos veces lo mismo, y la segunda en una pantalla que ya no es la
+    // que lo resuelve. Ver [screenForFailure].
+    final ActionFailure? failure =
+        screenForFailure(session.failure?.code) == null
+        ? session.failure
+        : null;
 
     return BlocListener<SessionCubit, SessionState>(
       // Solo cuando el borrador cambia, y solo si lo cambió OTRO: el propio

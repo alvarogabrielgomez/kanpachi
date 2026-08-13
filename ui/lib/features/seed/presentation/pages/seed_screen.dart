@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_chip.dart';
+import 'package:kanpachi_ui/core/messages/message_keys.dart';
+import 'package:kanpachi_ui/features/session/domain/daemon_failure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/own_seed.dart';
 import 'package:kanpachi_ui/features/session/presentation/daemon_failure_text.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
@@ -83,26 +85,60 @@ class _SeedScreenState extends State<SeedScreen> {
 
   bool get _valido => _controller.text.trim().isNotEmpty && !_guardando;
 
-  /// Guarda y vuelve por donde se vino.
+  /// Guarda y sigue: por donde se vino, o con la sala que se estaba abriendo.
   ///
   /// El nombre lo valida el DAEMON, que es quien tiene la misma comprobación
-  /// que aplica al registro de un código pegado. Acá solo se exige que haya
-  /// algo escrito: repetir la regla de un nombre de dominio en Dart daría dos
-  /// sitios donde arreglarla y uno de los dos se olvidaría.
+  /// que aplica al registro de un código pegado, **y además comprueba que ese
+  /// servidor conteste antes de guardarlo**: el momento de descubrir un nombre
+  /// mal escrito o un servidor caído es ahora, mirando el campo, no la próxima
+  /// vez que se intente abrir una sala. Acá solo se exige que haya algo
+  /// escrito: repetir la regla de un nombre de dominio en Dart daría dos sitios
+  /// donde arreglarla y uno de los dos se olvidaría.
+  ///
+  /// # Cuando se llegó acá abriendo una sala
+  ///
+  /// Esta pantalla es un paso, no un destino: se vuelve a donde se estaba y se
+  /// reabre el diálogo de confianza con el servidor recién puesto, que es
+  /// exactamente donde el flujo se había interrumpido. La confianza SÍ se
+  /// pregunta, aunque el nombre lo haya escrito la misma persona hace un
+  /// segundo: es el diálogo donde además se confirma el nombre de la sala, y es
+  /// la única puerta por la que se abre una. Ver [SessionCubit.hasHostIntent].
   Future<void> _guardar() async {
     if (!_valido) return;
+    final SessionCubit session = context.read<SessionCubit>();
+    final ShellCubit shell = context.read<ShellCubit>();
     setState(() => _guardando = true);
     try {
-      await context.read<SessionCubit>().ownSeed(seed: _controller.text.trim());
+      final OwnSeed v = await session.ownSeed(seed: _controller.text.trim());
       if (!mounted) return;
-      context.read<ShellCubit>().back();
+      final String? nombre = session.hostIntentName;
+      shell.back();
+      if (nombre != null && v.configured.isNotEmpty) {
+        shell.askTrust(
+          TrustRequest.hosting(seed: v.configured, suggestedName: nombre),
+        );
+      }
     } on Object catch (e) {
       if (!mounted) return;
       setState(() {
         _guardando = false;
-        _error = daemonFailureText(e);
+        _error = _textoDelFallo(e);
       });
     }
+  }
+
+  /// El texto del hueco de error, con el caso propio de esta pantalla.
+  ///
+  /// El daemon contesta [FailureCode.noRegistry] cuando el servidor no
+  /// contestó, y el copy del catálogo habla de crear y entrar a salas, que es
+  /// donde ese código nace. Acá el contexto es otro: alguien acaba de escribir
+  /// un nombre, y lo que hay que decirle es qué puede tener de malo ESO.
+  String _textoDelFallo(Object e) {
+    if (e is DaemonError && e.resolved == FailureCode.noRegistry) {
+      return 'Ese servidor no contesta. Puede estar caído, o el nombre no ser '
+          'el suyo: revísalo, prueba con otro, o inténtalo más tarde.';
+    }
+    return daemonFailureText(e);
   }
 
   @override
@@ -136,7 +172,14 @@ class _SeedScreenState extends State<SeedScreen> {
       // salía guardando. A esta pantalla se llega desde Configuración, desde
       // el diálogo de confianza y desde intentar abrir una sala sin servidor,
       // y en los tres hay un sitio del que se vino.
-      onBack: context.read<ShellCubit>().back,
+      //
+      // Volver ABANDONA: la sala que se estaba abriendo se olvida acá, porque
+      // si no, guardar el servidor desde Configuración semanas después abriría
+      // una sala que ya nadie estaba abriendo.
+      onBack: () {
+        context.read<SessionCubit>().dropHostIntent();
+        context.read<ShellCubit>().back();
+      },
     );
   }
 }

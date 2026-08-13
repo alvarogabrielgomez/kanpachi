@@ -453,6 +453,64 @@ class SessionCubit extends Cubit<SessionState> {
 
   void cancelProposal() => emit(state.copyWith(clearPending: true));
 
+  // ----------------------------------------------- la intención de hospedar
+
+  /// La sala que quedó A MEDIO ABRIR mientras se resuelve un requisito.
+  ///
+  /// # El hueco que cierra
+  ///
+  /// Abrir una sala puede toparse con dos pantallas por el camino: elegir el
+  /// servidor, y escribir su contraseña. Las dos son transitorias, y sin esto
+  /// se comportaban como destinos: se guardaba lo escrito y se volvía a la
+  /// portada, con la sala que motivó todo el viaje sin abrir. Quien pulsó
+  /// «Crear» tenía que volver a pulsarlo, y saber que tenía que hacerlo.
+  ///
+  /// Con la intención recordada, esas pantallas CONTINÚAN: elegido el servidor
+  /// se vuelve al diálogo de confianza, y aceptada la contraseña se crea la
+  /// sala directamente, porque la confianza ya se dio.
+  ///
+  /// # Por qué son campos y no estado
+  ///
+  /// Nada se redibuja con esto: lo leen tres callbacks en momentos puntuales.
+  /// En el estado sería una razón más de rebuild para todas las pantallas que
+  /// hacen `watch`, a cambio de nada.
+  String? _pendingHostName;
+  Game? _pendingHostGame;
+
+  /// Si hay una creación de sala esperando a que se resuelva un requisito.
+  bool get hasHostIntent => _pendingHostName != null;
+
+  /// El nombre con el que se iba a abrir. Null sin intención pendiente.
+  String? get hostIntentName => _pendingHostName;
+
+  /// Recuerda que se estaba por abrir una sala. Lo llama quien desvía el flujo
+  /// hacia una pantalla transitoria, ANTES de desviarlo.
+  void rememberHostIntent({required String name, Game? game}) {
+    _pendingHostName = name;
+    _pendingHostGame = game;
+  }
+
+  /// Olvida la intención. Lo llama cada salida que ABANDONA el flujo: la
+  /// flecha de volver de las dos pantallas, y cancelar el diálogo de
+  /// confianza. Sin esto, la intención sobreviviría al abandono y guardar el
+  /// servidor desde Configuración, semanas después, abriría una sala que ya
+  /// nadie estaba abriendo.
+  void dropHostIntent() {
+    _pendingHostName = null;
+    _pendingHostGame = null;
+  }
+
+  /// Reintenta la creación pendiente, con el nombre y el juego de entonces.
+  ///
+  /// Falso si no había nada pendiente. La confianza NO se vuelve a pedir: se
+  /// dio al confirmar el diálogo que arrancó esta creación, y lo único que se
+  /// interpuso fue un requisito que ya se resolvió.
+  Future<bool> resumeHostIntent() async {
+    final String? name = _pendingHostName;
+    if (name == null) return false;
+    return createRoom(name: name, game: _pendingHostGame);
+  }
+
   /// Opens a room. Returns whether it opened.
   ///
   /// **The caller must not navigate until this answers.** It used to navigate
@@ -481,7 +539,20 @@ class SessionCubit extends Cubit<SessionState> {
     });
     _stopWatching();
     await _afterWait();
-    return !isClosed && state.room != null;
+    final bool ok = !isClosed && state.room != null;
+    // La intención queda puesta SOLO cuando el fallo se arregla en una pantalla
+    // y volver a intentar tiene sentido: falta el servidor, o su contraseña.
+    // Cualquier otro final la borra, incluido el éxito: una intención que
+    // sobreviva a su sala es una sala fantasma esperando un descuido.
+    final String? code = isClosed ? null : state.failure?.code;
+    if (!ok &&
+        (code == FailureCode.seedPassword.wire ||
+            code == FailureCode.noOwnSeed.wire)) {
+      rememberHostIntent(name: name, game: game);
+    } else {
+      dropHostIntent();
+    }
+    return ok;
   }
 
   /// Joins a room. Returns whether it joined. Same rule as [createRoom].

@@ -10,6 +10,9 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Fixed
 
+- Carry on opening the room after choosing a server or typing its password, instead of dropping you back on the home screen with nothing opened and no sign that you had to press Crear again
+- Check the server answers before saving it, with the button showing it is working: a well-spelled name for a machine that does not exist used to be saved, and the failure surfaced later, while opening a room, with the name long gone from the screen
+- Stop showing "ese servidor pide una contraseña" as a red notice on top of the screen that is asking for the password, and say "esa contraseña no es la de este servidor" under the field, with the field outlined in red, when it is rejected
 - Ask for the password when a server wants one to host, which never happened: opening a room on a password-protected server answered "the meeting server does not answer, try again in a moment". It had answered, and what it said was that a password was missing, so retrying was advice that could not work and the password screen was unreachable ([e1bcfa6](https://github.com/alvarogabrielgomez/kanpachi/commit/e1bcfa6))
 - Say the real version in the file properties of every Kanpachi executable. v0.2.0 shipped a service that called itself v0.1.9-10-g3f1c599, a portable that called itself v0.1.9-9-gc1da1b5 and a window that called itself 0.1.2+3 ([e1bcfa6](https://github.com/alvarogabrielgomez/kanpachi/commit/e1bcfa6))
 - Say the room is being reopened from the first frame when Kanpachi starts with a room left from the previous run, instead of showing the home screen for the half minute it takes and then jumping to the room ([0d69b4d](https://github.com/alvarogabrielgomez/kanpachi/commit/0d69b4d))

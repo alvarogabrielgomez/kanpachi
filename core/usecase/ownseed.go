@@ -11,10 +11,21 @@ package usecase
 // con dos registros distintos según quién pregunte no es nada.
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 )
+
+// seedCheckTimeout es cuánto se espera a que el registro conteste antes de
+// negarse a guardarlo.
+//
+// Más corto que el plazo del pipe (diez segundos en las dos caras) a propósito:
+// si esto lo agotara, el cliente se rendiría primero y el fallo llegaría como
+// "el daemon no contestó", que manda a sospechar del daemon en vez del nombre
+// que se acaba de escribir.
+const seedCheckTimeout = 6 * time.Second
 
 // OwnSeed contesta a qué registro abre salas esta máquina, o "" si todavía no
 // hay ninguno.
@@ -59,23 +70,51 @@ func (s *Session) SuggestedSeed() string {
 //
 // # El orden importa
 //
-// Valida, escribe en disco, y solo entonces cambia la memoria. Al revés, un
-// fallo del disco dejaría esta sesión hablando con un registro que el próximo
-// arranque no va a recordar, que es la clase de estado partido que nadie
-// diagnostica: funciona hoy y deja de funcionar mañana sin que nadie toque nada.
+// Valida, comprueba que el registro CONTESTE, escribe en disco, y solo entonces
+// cambia la memoria. Al revés, un fallo del disco dejaría esta sesión hablando
+// con un registro que el próximo arranque no va a recordar, que es la clase de
+// estado partido que nadie diagnostica: funciona hoy y deja de funcionar mañana
+// sin que nadie toque nada.
+//
+// # Por qué se comprueba antes de guardar, y qué cuesta
+//
+// Porque el momento de descubrir un nombre mal escrito o un servidor caído es
+// cuando alguien lo está mirando, no la próxima vez que intente abrir una sala.
+// Guardarlo sin comprobar diferiría el fallo al peor momento posible: en mitad
+// de crear, con el nombre ya fuera de la pantalla y la sospecha apuntando a
+// cualquier otra cosa.
+//
+// Lo que cuesta, dicho entero: guardar el registro ahora exige red, así que no
+// se puede configurar sin conexión ni con el servidor caído. Es el intercambio
+// que se quiere, porque un registro que no contesta tampoco sirve para nada de
+// lo que se guarda para hacer.
+//
+// El fallo sale como [ErrNoRegistry], que es el mismo centinela de crear y
+// entrar cuando el registro no contesta: la cara ya sabe qué decir de él.
 //
 // # Se puede cambiar con una sala abierta
 //
 // Y no la toca. Publicar la tarjeta, renovar el código y reabrir van al registro
 // de ESA sala, que viaja dentro de ella. Lo único que cambia es dónde se abre la
 // siguiente.
-func (s *Session) SetOwnSeed(seed string) (string, error) {
+func (s *Session) SetOwnSeed(ctx context.Context, seed string) (string, error) {
 	limpio, err := domain.ParseOwnSeed([]byte(seed))
 	if err != nil {
 		return "", err
 	}
 	if limpio == "" {
 		return "", fmt.Errorf("%w: hace falta el nombre del registro", domain.ErrInputShape)
+	}
+	// Por la fábrica y no por `Own()`: el que hay que sondear es el que se está
+	// GUARDANDO, y el propio todavía es el anterior, o ninguno.
+	dir, err := s.deps.Directories.For(limpio)
+	if err != nil {
+		return "", err
+	}
+	sondeo, cancel := context.WithTimeout(ctx, seedCheckTimeout)
+	defer cancel()
+	if err := dir.Reachable(sondeo); err != nil {
+		return "", fmt.Errorf("%w: %s no contestó: %v", ErrNoRegistry, limpio, err)
 	}
 	if err := s.deps.State.SaveSeed([]byte(limpio)); err != nil {
 		return "", fmt.Errorf("no se pudo guardar el registro: %w", err)

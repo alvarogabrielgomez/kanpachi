@@ -25,6 +25,7 @@ import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.da
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
 import 'package:kanpachi_ui/features/session/presentation/widgets/failure_notice.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
+import 'package:kanpachi_ui/features/shell/presentation/failure_navigation.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
 
 /// La sala. Es la misma pantalla para el host y para el invitado.
@@ -70,7 +71,13 @@ class _RoomScreenState extends State<RoomScreen> {
 
     final DensityTokens d = context.density;
 
-    final ActionFailure? failure = session.failure;
+    // Sin los fallos que ya llevaron a su pantalla, igual que en la portada:
+    // renovar el código con la credencial vencida navega a escribir la
+    // contraseña, y el aviso repetiría acá lo que esa pantalla está pidiendo.
+    final ActionFailure? failure =
+        screenForFailure(session.failure?.code) == null
+        ? session.failure
+        : null;
 
     // **Los avisos bajaron al panel izquierdo, y ya no van de borde a borde.**
     //

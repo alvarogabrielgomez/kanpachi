@@ -43,6 +43,7 @@ class AppField extends StatefulWidget {
     this.textStyle,
     this.mono = false,
     this.obscure = false,
+    this.invalid = false,
     this.autofocus = false,
     this.onSubmitted,
     this.onChanged,
@@ -82,6 +83,21 @@ class AppField extends StatefulWidget {
   /// pensarlo. Lo que este atributo NO hace es proteger la memoria del proceso,
   /// y por eso el valor no se guarda en ningún sitio: ver `SeedPasswordScreen`.
   final bool obscure;
+
+  /// Lo que hay escrito se rechazó, y el borde lo dice.
+  ///
+  /// # Por qué el color no basta y aun así el borde va
+  ///
+  /// El borde rojo es refuerzo, jamás el mensaje: quien no distingue rojo de
+  /// gris se queda sin enterarse, así que el motivo se escribe SIEMPRE debajo
+  /// del campo y esto solo lo señala. Es lo que ata la frase al sitio donde hay
+  /// que corregir cuando la pantalla tiene más de una cosa que leer.
+  ///
+  /// **El foco gana**, y es deliberado: quien volvió al campo ya está
+  /// corrigiendo, y dejarlo rojo mientras teclea acusa al texto nuevo de lo que
+  /// hizo el viejo. Las pantallas además borran el error en cuanto alguien
+  /// escribe, así que esto se apaga solo.
+  final bool invalid;
 
   final bool autofocus;
   final ValueChanged<String>? onSubmitted;
@@ -174,7 +190,9 @@ class _AppFieldState extends State<AppField> {
         color: colors.surfaceSunken,
         borderRadius: radius,
         border: Border.all(
-          color: _focused ? colors.accent : colors.border,
+          color: _focused
+              ? colors.accent
+              : (widget.invalid ? colors.danger : colors.border),
           width: AppStroke.hairline,
         ),
       ),

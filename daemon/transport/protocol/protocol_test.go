@@ -590,7 +590,7 @@ func (a *apiFalsa) LastRoom() (domain.LastRoom, bool)                    { retur
 // test pueda comprobar que escribir y releer devuelven lo mismo.
 func (a *apiFalsa) OwnSeed() string       { return a.seed }
 func (a *apiFalsa) SuggestedSeed() string { return a.sugerido }
-func (a *apiFalsa) SetOwnSeed(seed string) (string, error) {
+func (a *apiFalsa) SetOwnSeed(_ context.Context, seed string) (string, error) {
 	limpio, err := domain.ParseOwnSeed([]byte(seed))
 	if err != nil {
 		return "", err
