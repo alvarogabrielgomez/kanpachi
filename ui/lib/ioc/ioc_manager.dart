@@ -23,6 +23,10 @@ abstract final class IocManager {
     Injector? injector,
     AppPreferences? preferences,
     bool portable = false,
+
+    /// Si el daemon dijo, en la línea de comandos, que está reabriendo la sala
+    /// del arranque anterior. Ver `kResumeHostedRoomFlag` en `main.dart`.
+    bool resumingHostedRoom = false,
   }) {
     Injector.instance = injector ?? GetItInjector();
     if (preferences != null) {
@@ -30,12 +34,15 @@ abstract final class IocManager {
         () => preferences,
       );
     }
-    _registerSession(preferences);
+    _registerSession(preferences, resumingHostedRoom);
     _registerShell(portable);
     _registerUpdate(preferences);
   }
 
-  static void _registerSession(AppPreferences? preferences) {
+  static void _registerSession(
+    AppPreferences? preferences,
+    bool resumingHostedRoom,
+  ) {
     final Injector i = Injector.instance;
 
     // El daemon de verdad, y no hay otra opción a propósito.
@@ -60,6 +67,7 @@ abstract final class IocManager {
         // The stored default already leans on the build kind; see
         // [AppPreferences.verbose].
         verbose: preferences?.verbose ?? false,
+        resumingHostedRoom: resumingHostedRoom,
       ),
     );
   }

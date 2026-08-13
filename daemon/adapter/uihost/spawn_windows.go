@@ -151,6 +151,11 @@ func (h *Host) launch(show, persistent bool) error {
 	if show {
 		línea += " " + h.deps.ShowFlag
 	}
+	// Solo si HAY reapertura en marcha, preguntado ahora y no recordado. Ver
+	// [Deps.Resuming] para por qué es una función.
+	if h.deps.ResumeFlag != "" && h.deps.Resuming != nil && h.deps.Resuming() {
+		línea += " " + h.deps.ResumeFlag
+	}
 	// La carpeta del log, entrecomillada por lo mismo que el ejecutable: el
 	// camino portable la deja en la carpeta desde donde alguien abrió el
 	// bundle, que perfectamente puede ser `C:\Users\...\Mis descargas`. Ver

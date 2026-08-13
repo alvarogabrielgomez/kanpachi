@@ -56,6 +56,35 @@ type Deps struct {
 	// abriéndose sola encima de lo que estuvieras haciendo al encender la PC.
 	ShowFlag string
 
+	// ResumeFlag es la bandera con la que se le dice a la ventana que el daemon
+	// está reabriendo la sala del arranque anterior AHORA MISMO.
+	//
+	// # Qué hueco cierra
+	//
+	// El daemon sabe que hay sala que reabrir antes de lanzar la ventana: lo lee
+	// del disco. La ventana no sabe nada hasta que conecta y llega el primer
+	// estado, y reabrir tarda: levantar dos redes, tomar direcciones, medir el
+	// MTU. Durante todo ese rato la ventana enseñaba la PORTADA, que dice
+	// exactamente lo contrario de lo que está pasando, y después saltaba a la
+	// sala de golpe.
+	//
+	// Con la bandera, el primer fotograma ya es la espera correcta, y el latido
+	// la rellena con los pasos de verdad en cuanto conecta. No se le manda
+	// ningún dato de la sala: solo QUE hay una en camino. Lo que se enseñe sale
+	// del daemon como todo lo demás.
+	ResumeFlag string
+
+	// Resuming contesta si en ESTE instante hay una reapertura en marcha.
+	//
+	// Función y no bandera fija porque la ventana se lanza más de una vez: al
+	// arrancar, al pedirla desde la bandeja, y al relanzarla si se cayó. Con un
+	// valor fijo, la de la bandeja pediría esperar por una sala que lleva media
+	// hora abierta. Preguntado en cada lanzamiento, sale bien en los tres.
+	//
+	// Nula significa que no. Un lanzador que no sepa contestarlo tiene que
+	// fallar hacia el lado que no promete nada, igual que [ShowFlag].
+	Resuming func() bool
+
 	// LogDir es dónde la interfaz deja SU log, y viaja en la línea de comandos.
 	//
 	// **Se le DICE, y eso va contra la doctrina del marcador** que defiende

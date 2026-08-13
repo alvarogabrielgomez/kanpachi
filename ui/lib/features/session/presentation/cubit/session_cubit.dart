@@ -38,12 +38,34 @@ class SessionCubit extends Cubit<SessionState> {
     /// Whether to narrate what the daemon is doing. Seeded from the stored
     /// preference, which defaults to on while developing.
     bool verbose = false,
+
+    /// Si esta ventana la abrió el daemon MIENTRAS reabría la sala del arranque
+    /// anterior.
+    ///
+    /// Lo único que hace es decidir la fase de partida, y con ella lo que se
+    /// pinta en el PRIMER fotograma: la espera en vez de la portada. No es un
+    /// dato de la sala y no se guarda en ningún sitio; el primer latido lo pisa
+    /// con lo que el daemon diga de verdad, sea la sala abierta, sea el fallo
+    /// de no haber podido reabrirla.
+    bool resumingHostedRoom = false,
     // The lint asks for `this._preferences`, which Dart does not allow: a
     // named parameter cannot start with an underscore. The field stays
     // private and the parameter stays nameable.
     // ignore: prefer_initializing_formals
   }) : _preferences = preferences,
-       super(SessionState(nickname: nickname, verbose: verbose));
+       super(
+         SessionState(
+           nickname: nickname,
+           verbose: verbose,
+           // `creating` y no una fase propia: reabrir la sala propia ES abrirla,
+           // con los mismos pasos y los mismos textos. Una fase nueva sería un
+           // quinto caso en cada `switch` que hay sobre esto para decir
+           // exactamente lo mismo.
+           phase: resumingHostedRoom
+               ? SessionPhase.creating
+               : SessionPhase.idle,
+         ),
+       );
 
   final SessionRepository _repository;
   final AppPreferences? _preferences;

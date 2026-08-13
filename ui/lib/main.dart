@@ -42,6 +42,27 @@ const String kShowFlag = '--show';
 /// archivo. Ver [AppLog.open] para por qué se recibe en vez de deducirse.
 const String kLogFlag = '--log';
 
+/// La bandera con la que el daemon dice que está REABRIENDO la sala del
+/// arranque anterior, ahora mismo.
+///
+/// # Qué hueco cierra
+///
+/// El daemon lo sabe antes de lanzar esta ventana, porque lo lee del disco.
+/// Esta ventana no sabía nada hasta conectar y recibir el primer estado, y
+/// reabrir tarda: dos redes que levantar, direcciones que tomar, un MTU que
+/// medir. Durante todo ese rato se enseñaba la PORTADA, que dice exactamente lo
+/// contrario de lo que está pasando, y después se saltaba a la sala de golpe.
+///
+/// Con la bandera, el primer fotograma ya es la espera correcta, y el latido la
+/// rellena con los pasos de verdad en cuanto conecta. **No trae ningún dato de
+/// la sala**: dice QUE hay una en camino y nada más. Lo que se enseña sale del
+/// daemon, igual que siempre.
+///
+/// Es un CONTRATO con `daemon/cmd/kanpachid`, que la escribe en su constante
+/// `uiResumeFlag`, y falla hacia el lado callado por lo mismo que [kShowFlag]:
+/// sin ella la ventana arranca como arrancaba.
+const String kResumeHostedRoomFlag = '--resume-hosted-room';
+
 void main(List<String> args) {
   // **Todo dentro de la zona, empezando por `ensureInitialized`.**
   //
@@ -136,7 +157,11 @@ Future<void> _arrancar(List<String> args) async {
 
   // El marcador se lee ACÁ, una vez, y baja por el registro de dependencias.
   // La pantalla que lo necesita vive en presentación y no puede importar infra.
-  IocManager.register(preferences: preferences, portable: PipeNames.isPortable);
+  IocManager.register(
+    preferences: preferences,
+    portable: PipeNames.isPortable,
+    resumingHostedRoom: args.contains(kResumeHostedRoomFlag),
+  );
   await _prepareWindow(
     silent: await _shouldStayQuiet(args),
     size: preferences.windowSize ?? AppSpacing.initialWindow,

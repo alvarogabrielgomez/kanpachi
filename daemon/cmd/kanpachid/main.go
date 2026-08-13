@@ -220,6 +220,18 @@ func limpiar(datos string, desinstalar bool) error {
 // Ver `variant.go`.
 const uiShowFlag = "--show"
 
+// uiResumeFlag le dice a la ventana que hay una sala reabriéndose ahora mismo,
+// para que su primer fotograma sea la espera y no la portada.
+//
+// Es un CONTRATO con `ui/lib/main.dart`, que la escribe en su propia constante,
+// igual que [uiShowFlag]. De los que no dan error al romperse: cambiar una sin
+// la otra deja el hueco que esto vino a cerrar, sin que nada falle.
+//
+// **Falla hacia el lado callado**, por lo mismo que la de mostrar: sin ella la
+// ventana arranca como arrancaba. Al revés sería una ventana esperando por una
+// sala que nadie está abriendo.
+const uiResumeFlag = "--resume-hosted-room"
+
 // watchers son los cuatro adaptadores que MIRAN la máquina sin cambiarla: los
 // avisos del sistema, la biblioteca de Steam, la tabla de sockets y los mapeos
 // del router.
@@ -526,6 +538,15 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 	//
 	// Lo decide la VARIANTE y no el sistema, que son dos ejes distintos: ver
 	// `variant.go`.
+	// La sesión nace bastante más abajo y el lanzador de la ventana se arma acá,
+	// así que la pregunta viaja en un hueco que se rellena después. Es el mismo
+	// patrón que `host.apagar` unas líneas más abajo, y por el mismo motivo: la
+	// dependencia es circular por naturaleza.
+	//
+	// Nulo mientras no haya sesión, y eso ya es la respuesta correcta: sin
+	// sesión no hay sala que reabrir.
+	var salaReabriendo func() bool
+
 	var ui *uihost.Host
 	if !consola && hostsUI {
 		ui, err = uihost.New(uihost.Deps{
@@ -534,6 +555,12 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 			// ruta que alguien pueda influir es escalada de privilegios.
 			Exe:      filepath.Join(dirDelBinario(), uiExeName),
 			ShowFlag: uiShowFlag,
+			// Para que el primer fotograma de la ventana sea la espera y no la
+			// portada cuando hay sala reabriéndose. Ver [uiResumeFlag].
+			ResumeFlag: uiResumeFlag,
+			Resuming: func() bool {
+				return salaReabriendo != nil && salaReabriendo()
+			},
 			// La misma carpeta donde este daemon deja SU log, para que los dos
 			// se lean juntos. La interfaz se cae sola y hasta ahora no dejaba
 			// nada; ver [uihost.Deps.LogDir] para por qué se le dice en vez de
@@ -720,6 +747,21 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 	// entera al abrir el canal, con el motor ya levantado. Pasó con el daemon de
 	// verdad: `Attach` existía, estaba probado, y solo lo llamaban los tests.
 	canal.Attach(sesion)
+
+	// Y la pregunta que el lanzador de la ventana dejó pendiente. Se contesta
+	// con DOS hechos y no con uno: que haya sala guardada del arranque anterior,
+	// y que esta sesión todavía no esté dentro de ninguna.
+	//
+	// El segundo hace falta. El fichero de la sala **sigue en disco mientras la
+	// sala vive**, que es lo que la hace sobrevivir a un apagón, así que con el
+	// primero solo la ventana que se abre desde la bandeja media hora después
+	// arrancaría esperando por una sala que lleva media hora abierta.
+	salaReabriendo = func() bool {
+		if _, hay := sesion.PendingRoom(); !hay {
+			return false
+		}
+		return !sesion.Status().Conn.InRoom()
+	}
 
 	bucle, err := supervisor.New(supervisor.Deps{
 		Room:    sesion,
