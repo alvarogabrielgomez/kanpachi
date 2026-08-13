@@ -94,6 +94,11 @@
 //
 //go:generate go run github.com/tc-hib/go-winres@latest make --arch amd64 --out rsrc --product-version git-tag --file-version git-tag
 //
+// El número que `git-tag` deja adentro se congela en el commit donde se corrió
+// `go generate`, así que el workflow de publicación lo regenera con la versión
+// del tag antes de compilar. El motivo entero está en
+// `daemon/cmd/kanpachid/recursos.go`, que es el gemelo de este archivo.
+//
 // Vive en `internal/` para que el producto no lo importe y el instalador no lo
 // distribuya, igual que el resto de las sondas.
 package main

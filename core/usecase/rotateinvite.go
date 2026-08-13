@@ -64,6 +64,14 @@ func (s *Session) RotateInviteCode(ctx context.Context) (domain.RoomState, error
 	// Así que falla, y falla ANTES de tocar el vestíbulo. El código de antes
 	// sigue siendo el bueno y la sala no se entera.
 	room, err := dir.Open(ctx, sealed)
+	// El centinela del password viaja tal cual, por lo mismo que en
+	// [Session.reserveCode] de createroom.go, que lleva el motivo entero: el
+	// registro contestó, y envolverlo en [ErrNoRegistry] borraba la única
+	// respuesta accionable que dio.
+	if errors.Is(err, port.ErrSeedPassword) {
+		s.deps.Log.Warn("el registro pide password para renovar el código", "seed", old.Seed)
+		return domain.RoomState{}, err
+	}
 	if err != nil {
 		s.deps.Log.Error("el registro no contestó al renovar, así que el código no cambia",
 			"seed", old.Seed, "error", err)

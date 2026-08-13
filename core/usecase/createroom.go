@@ -2,10 +2,12 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/port"
 )
 
 // CreateRoom abre una sala y te deja de host.
@@ -264,6 +266,27 @@ func (s *Session) publishCard(ctx context.Context, nick domain.Nickname, roomNam
 	seed := dir.Seed()
 	s.deps.Progress.Stepf(domain.ScopeSeed, "pidiéndole un código al registro (%s)", seed)
 	room, err := dir.Open(ctx, sealed)
+	// Un registro que pide password CONTESTÓ, y contestó exactamente qué falta.
+	// Ese centinela viaja tal cual, sin envolver.
+	//
+	// # El fallo que esto cierra, encontrado corriendo la v0.2.0 publicada
+	//
+	// Abajo se envolvía TODO fallo de `Open` en [ErrNoRegistry], y con `%v`, que
+	// además corta la cadena. Así que abrir una sala en un seed cerrado, desde
+	// una instalación limpia, contestaba `no_registry` con "vuelve a intentarlo
+	// en un momento": un consejo que no funciona nunca, porque reintentar sin
+	// password da exactamente lo mismo.
+	//
+	// Y el daño real no era el texto. `CodeSeedPassword` existe, la UI tiene su
+	// pantalla y su copy, y el adaptador ya devolvía el centinela correcto: lo
+	// único que faltaba era no pisarlo acá. Con él pisado, **la pantalla de
+	// password no aparecía nunca** y hospedar en un seed cerrado era imposible
+	// desde la ventana.
+	if errors.Is(err, port.ErrSeedPassword) {
+		s.deps.Log.Warn("el registro pide password para hospedar", "seed", seed)
+		s.deps.Progress.Stepf(domain.ScopeSeed, "%s pide password para hospedar", seed)
+		return domain.Room{}, key, nil, err
+	}
 	if err != nil {
 		s.deps.Log.Error("el registro no contestó, así que no se abre la sala",
 			"seed", seed, "error", err)

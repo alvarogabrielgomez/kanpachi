@@ -91,7 +91,26 @@ Paso "la interfaz"
 Push-Location (Join-Path $repo 'ui')
 try {
     Nota "version $Version"
-    & flutter build windows --release "--dart-define=KANPACHI_VERSION=$Version" 2>&1 |
+    # --build-name ademas del dart-define, y son dos cosas distintas:
+    #
+    #   - el dart-define es lo que la ventana CREE que es, y con lo que compara
+    #     contra la ultima publicada.
+    #   - --build-name es lo que WINDOWS dice que es en las propiedades del
+    #     .exe. Sin el, Flutter lo saca de la version de pubspec.yaml, que se
+    #     escribe a mano y no la mueve nadie: la v0.2.0 salio con la ventana
+    #     diciendo 0.1.2+3 en sus propiedades.
+    #
+    # Se le pasa la parte numerica: el campo de VERSIONINFO no admite sufijos,
+    # igual que VersionInfoVersion de Inno. Un "dev" no es una version y ahi se
+    # deja lo que traiga pubspec, que es la respuesta honesta para un build a
+    # mano.
+    $flutterArgs = @('build', 'windows', '--release', "--dart-define=KANPACHI_VERSION=$Version")
+    $numerica = ($Version -split '-')[0]
+    if ($numerica -match '^\d+\.\d+\.\d+$') {
+        $flutterArgs += "--build-name=$numerica"
+        Nota "propiedades del .exe: $numerica"
+    }
+    & flutter @flutterArgs 2>&1 |
         Select-Object -Last 3 | ForEach-Object { Nota $_ }
     if ($LASTEXITCODE -ne 0) {
         Mal "no compilo la interfaz"

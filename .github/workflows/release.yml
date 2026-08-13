@@ -178,6 +178,41 @@ jobs:
           flutter analyze --fatal-infos
           flutter test
 
+      # **Los recursos de versión se REGENERAN acá, con la versión del tag.**
+      #
+      # Los `.syso` están commiteados a propósito: llevan los iconos y el
+      # manifiesto que le dice a Windows que estos binarios NO piden elevación,
+      # y sin ellos un `go build` a mano cambiaría ese comportamiento. Lo que no
+      # puede quedar commiteado es el NÚMERO, y quedaba: se generaron una vez
+      # con `--file-version git-tag`, que resuelve `git describe` en el momento
+      # de generarlos, y desde entonces todo binario publicado decía la versión
+      # del día en que alguien corrió `go generate`. La v0.2.0 salió con
+      # `kanpachid.exe` diciendo `v0.1.9-10-g3f1c599` en sus propiedades, y el
+      # portable diciendo `v0.1.9-9-gc1da1b5`, que es otro commit distinto
+      # porque se generaron en días distintos.
+      #
+      # Se pasa la versión EXPLÍCITA y no `git-tag`: el checkout de Actions es
+      # superficial, así que `git describe` acá no tiene de dónde sacarla.
+      #
+      # `--file-version` va con la numérica, por lo mismo que
+      # `VersionInfoVersion` de Inno: el campo binario de VERSIONINFO no admite
+      # sufijos. `--product-version` lleva el tag entero, que es lo que se lee.
+      - name: Sellar la versión en los recursos de Windows
+        shell: pwsh
+        run: |
+          foreach ($p in @('daemon\cmd\kanpachid', 'internal\kanpachibundle')) {
+            Push-Location $p
+            try {
+              & go run github.com/tc-hib/go-winres@latest make `
+                --arch amd64 --out rsrc `
+                --file-version "$env:VERSION_NUM" `
+                --product-version "$env:VERSION"
+              if ($LASTEXITCODE -ne 0) { throw "go-winres salio con $LASTEXITCODE en $p" }
+            }
+            finally { Pop-Location }
+          }
+          Get-ChildItem -Recurse -Filter 'rsrc_windows_amd64.syso' | Format-Table FullName, Length
+
       - name: Armar la carga
         shell: pwsh
         run: |

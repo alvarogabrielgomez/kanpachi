@@ -56,10 +56,25 @@
 //	    --export-width=256 --export-height=256
 //
 // El `.syso` se versiona, porque es una ENTRADA de la compilación y no un
-// resultado: sin él, un clon recién hecho produciría un ejecutable sin nombre y
-// sin icono, y nadie se enteraría hasta verlo en el Administrador de tareas.
+// resultado: sin él, un clon recién hecho produciría un ejecutable sin nombre,
+// sin icono y sin el manifiesto que le dice a Windows que esto NO pide
+// elevación, y nadie se enteraría hasta verlo en el Administrador de tareas.
 // Fuera de Windows amd64 el enlazador lo ignora solo, así que el job de Linux ni
 // se entera.
+//
+// # El número que hay dentro NO es el de la publicación, y por eso se regenera
+//
+// `git-tag` resuelve `git describe` **cuando alguien corre `go generate`**, no
+// al compilar, así que el número queda congelado en el commit del día en que se
+// generó. La v0.2.0 salió con este binario diciendo `v0.1.9-10-g3f1c599` en sus
+// propiedades, y el envoltorio portable diciendo `v0.1.9-9-gc1da1b5`, que es
+// otro commit porque se generaron en días distintos.
+//
+// Lo que corrige eso es un paso del workflow de publicación que vuelve a
+// generar los dos `.syso` con la versión del tag pasada explícita, antes de
+// compilar. Explícita y no `git-tag` porque el checkout de Actions es
+// superficial y ahí `git describe` no tiene de dónde sacarla. Lo commiteado
+// sigue sirviendo para un build a mano, donde `git describe` sí es la verdad.
 //
 //go:generate go run github.com/tc-hib/go-winres@latest make --arch amd64 --out rsrc --product-version git-tag --file-version git-tag
 package main
