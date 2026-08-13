@@ -2609,7 +2609,19 @@ Uno es el vestíbulo y el otro la red real de la sala. **Que el seed los vea ya 
 
 **La entropía del payload dio 6,58 bits por byte de media**, entre 5,99 y 7,40. Conviene no leer de más ese número: las tramas son cortas, y en una de 64 bytes la entropía no puede pasar de 6 por definición, así que el valor está acotado por el tamaño y no dice que el cifrado sea flojo.
 
-**Lo que esta captura NO contesta, y hay que decirlo.** Es tráfico de control contra el seed. El tipo `Data`, que es el del juego, **no aparece ni una vez**, porque no hubo segundo miembro ni partida. Así que la pregunta de si el payload de un juego viaja reconocible sigue abierta, y se cierra con las mediciones que necesitan dos máquinas en la misma sala.
+**Y el plano de DATOS, medido aparte porque la primera captura no lo alcanzó.** Aquella era tráfico de control contra el seed y no llevaba una sola trama de tipo `Data`, que es la del juego, porque no había segundo miembro. Con dos peers de verdad en la sala, un host de Windows y un invitado de Linux que llega **por relay**, o sea pasando por el seed:
+
+| | |
+|---|---|
+| Tramas `Data` capturadas | 16 |
+| De ellas, con la marca de cifrado encendida | **16** |
+| La cadena inconfundible mandada por la red virtual, buscada en el cable | **0 apariciones** |
+| La dirección virtual del host en el cable | **0** |
+
+La aritmética cierra exacta y por eso sirve: 17 `RpcReq` más 17 `RpcResp` más 16 `Data` son las 50 cifradas, y 12 `Ping` más 12 `Pong` más 2 del apretón son las 26 en claro. **Ninguna trama de datos viaja sin cifrar.**
+
+El método fue mandar una cadena que no se parece a nada por la red virtual y buscarla en el cable físico. Es la única forma de contestarlo sin creerle a nadie, y contesta que **el payload de un juego no viaja reconocible**.
+
 
 
 ### El reposo, Windows contra Linux
