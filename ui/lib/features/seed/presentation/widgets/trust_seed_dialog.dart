@@ -4,6 +4,7 @@ import 'package:kanpachi_ui/core/design_system/atoms/app_field.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_kicker.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_dialog.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
+import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/seed/presentation/widgets/seed_trust_block.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
@@ -136,14 +137,32 @@ class _FilaDelSeed extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
       ),
       child: Padding(
+        // El mismo relleno que el aviso de [SeedTrustBlock]. Son las dos cajas
+        // grandes del diálogo, una encima de la otra.
         padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.xl,
-          vertical: AppSpacing.lg,
+          horizontal: AppSpacing.x5l,
+          vertical: AppSpacing.x3l,
         ),
-        child: Text(
-          seed,
-          style: context.type.mono.copyWith(color: colors.text),
-          overflow: TextOverflow.ellipsis,
+        child: Row(
+          children: <Widget>[
+            // El glifo va en acento y no en gris: es la única marca de color
+            // del bloque y lo que dice que esa línea ES el servidor, no un
+            // dato más. `hub` y no `dns` ni `cloud`: un seed no es una nube ni
+            // un disco, es el punto donde se encuentran varios.
+            Icon(Icons.hub_outlined, size: 17, color: colors.accent),
+            const SizedBox(width: AppSpacing.xl),
+            // Expanded y no suelto: la caja ocupa el ancho del diálogo, así
+            // que el nombre corta con puntos en vez de encoger la caja hasta
+            // el largo del texto. Un servidor de nombre corto y uno de nombre
+            // largo tienen que dibujar la misma caja.
+            Expanded(
+              child: Text(
+                seed,
+                style: context.type.mono.copyWith(color: colors.text),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -158,10 +177,31 @@ class _FilaDelSeed extends StatelessWidget {
 /// volver atrás para cambiar una letra sería mandar a cerrar el diálogo que
 /// pregunta si confías. Los dos campos son el MISMO dato: lo que se escriba en
 /// uno se ve en el otro. Ver `SessionState.roomNameDraft`.
-class _NombreDeLaSala extends StatelessWidget {
+///
+/// # Por qué se LEE, y solo se escribe si lo pides
+///
+/// Porque esto no es un formulario: es una confirmación, y el dato que hay que
+/// confirmar es el servidor. Un campo de texto permanente al lado de la caja
+/// del seed compite con ella y hace parecer que lo que se está decidiendo es
+/// cómo llamar a la sala.
+///
+/// Es el mismo gesto que ya existe DENTRO de la sala para renombrarla: el
+/// nombre en texto plano, un lápiz al lado, y el campo aparece al pulsar. Que
+/// los dos sitios donde se renombra una sala se pulsen igual es lo que hace que
+/// no haya que aprender el segundo. Ver `_NameDisplay` en `room_page.dart`.
+class _NombreDeLaSala extends StatefulWidget {
   const _NombreDeLaSala({required this.controller});
 
   final TextEditingController controller;
+
+  @override
+  State<_NombreDeLaSala> createState() => _NombreDeLaSalaState();
+}
+
+class _NombreDeLaSalaState extends State<_NombreDeLaSala> {
+  bool _editando = false;
+
+  void _cerrar() => setState(() => _editando = false);
 
   @override
   Widget build(BuildContext context) {
@@ -169,7 +209,7 @@ class _NombreDeLaSala extends StatelessWidget {
     return Row(
       children: <Widget>[
         Padding(
-          padding: const EdgeInsets.only(right: AppSpacing.md),
+          padding: const EdgeInsets.only(right: AppSpacing.xl),
           child: Text(
             'SALA',
             style: context.type.monoSm.copyWith(
@@ -179,14 +219,84 @@ class _NombreDeLaSala extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: AppField(
-            controller: controller,
-            maxLength: 24,
-            onChanged: (String v) =>
-                context.read<SessionCubit>().setRoomNameDraft(v),
-          ),
+          child: _editando
+              ? AppField(
+                  controller: widget.controller,
+                  shape: AppFieldShape.inline,
+                  maxLength: 24,
+                  autofocus: true,
+                  onSubmitted: (_) => _cerrar(),
+                  onChanged: (String v) =>
+                      context.read<SessionCubit>().setRoomNameDraft(v),
+                )
+              : _NombreEnFirme(
+                  nombre: widget.controller.text,
+                  onEditar: () => setState(() => _editando = true),
+                ),
         ),
       ],
+    );
+  }
+}
+
+/// El nombre en texto plano con su lápiz, y todo el bloque como objetivo.
+///
+/// El objetivo de clic es el bloque entero y no solo el lápiz, por lo mismo que
+/// en la pantalla de sala: el lápiz es chico y quien quiere renombrar pincha el
+/// nombre. La marca al pasar por encima es lo que avisa de que se puede.
+class _NombreEnFirme extends StatefulWidget {
+  const _NombreEnFirme({required this.nombre, required this.onEditar});
+
+  final String nombre;
+  final VoidCallback onEditar;
+
+  @override
+  State<_NombreEnFirme> createState() => _NombreEnFirmeState();
+}
+
+class _NombreEnFirmeState extends State<_NombreEnFirme> {
+  bool _encima = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return MouseRegion(
+      cursor: SystemMouseCursors.text,
+      onEnter: (_) => setState(() => _encima = true),
+      onExit: (_) => setState(() => _encima = false),
+      child: GestureDetector(
+        onTap: widget.onEditar,
+        child: AnimatedContainer(
+          duration: AppMotion.hover,
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.md,
+          ),
+          decoration: BoxDecoration(
+            color: _encima ? colors.surfaceSunken : null,
+            borderRadius: AppRadius.all10,
+            border: Border.all(
+              color: _encima ? colors.border : Colors.transparent,
+              width: AppStroke.hairline,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Flexible(
+                child: Text(
+                  widget.nombre,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.type.label.copyWith(color: colors.text),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Icon(Icons.edit_outlined, size: 15, color: colors.textMuted),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

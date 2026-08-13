@@ -31,6 +31,13 @@ class SeedTrustBlock extends StatefulWidget {
   State<SeedTrustBlock> createState() => _SeedTrustBlockState();
 }
 
+/// Lo que tardan en moverse la flecha y el cuerpo del acordeón.
+///
+/// UNA constante para las dos, porque son el mismo gesto: con dos números el
+/// cuerpo terminaba de abrirse antes o después de que la flecha acabara de
+/// girar, y eso se ve aunque nadie sepa decir qué le pasa.
+const Duration _giro = Duration(milliseconds: 180);
+
 class _SeedTrustBlockState extends State<SeedTrustBlock> {
   bool _abierto = false;
 
@@ -61,24 +68,67 @@ class _SeedTrustBlockState extends State<SeedTrustBlock> {
                 abierto: _abierto,
                 onTap: () => setState(() => _abierto = !_abierto),
               ),
-              if (_abierto)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.xl,
-                    0,
-                    AppSpacing.xl,
-                    AppSpacing.lg,
-                  ),
-                  child: _Prosa(
-                    texto:
-                        'El seed presenta a los invitados entre ellos. Cuando '
-                        'el túnel queda levantado se retira: los datos de la '
-                        'sala van directo entre ustedes y no deberían pasar '
-                        'por él.',
-                    onMasInfo: _abrirDoc,
-                    color: colors.textMuted,
+              // El cuerpo CRECE, no aparece de golpe.
+              //
+              // Con `if (_abierto)` el acordeón saltaba: el diálogo entero
+              // cambiaba de alto en un fotograma y la flecha giraba suave al
+              // lado, que es la peor mezcla de las dos. `AnimatedSize` anima el
+              // alto de esta caja con la misma curva y la misma duración que la
+              // flecha, así que el gesto es uno solo.
+              //
+              // El hijo se mantiene montado y se recorta con altura cero: sacar
+              // el árbol y volver a meterlo no tiene qué animar.
+              AnimatedSize(
+                duration: _giro,
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: ClipRect(
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    heightFactor: _abierto ? 1 : 0,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.x5l,
+                        0,
+                        AppSpacing.x5l,
+                        AppSpacing.x3l,
+                      ),
+                      // El texto además ENTRA: aparece subiendo desde un poco
+                      // más abajo y se va poniendo opaco.
+                      //
+                      // No es adorno encima del alto que crece. La caja
+                      // creciendo sola arrastra el texto ya opaco, así que lo
+                      // que se ve es un párrafo empujando el diálogo hacia
+                      // abajo; con el texto entrando, lo que se lee es que el
+                      // párrafo llega, y el diálogo le hace sitio.
+                      //
+                      // El desplazamiento es fracción de la altura del propio
+                      // texto, así que un párrafo más largo entra desde más
+                      // lejos y tarda lo mismo, que es lo que mantiene la
+                      // velocidad pareja.
+                      child: AnimatedSlide(
+                        offset: _abierto ? Offset.zero : const Offset(0, 0.25),
+                        duration: _giro,
+                        curve: Curves.easeOutCubic,
+                        child: AnimatedOpacity(
+                          opacity: _abierto ? 1 : 0,
+                          duration: _giro,
+                          curve: Curves.easeOutCubic,
+                          child: _Prosa(
+                            texto:
+                                'El seed presenta a los invitados entre ellos. '
+                                'Cuando el túnel queda levantado se retira: los '
+                                'datos de la sala van directo entre ustedes y '
+                                'no deberían pasar por él.',
+                            onMasInfo: _abrirDoc,
+                            color: colors.textMuted,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
+              ),
             ],
           ),
         ),
@@ -88,10 +138,13 @@ class _SeedTrustBlockState extends State<SeedTrustBlock> {
             border: Border.all(color: colors.border),
             borderRadius: BorderRadius.circular(14),
           ),
+          // El aviso respira más que el acordeón, y es el mismo relleno que la
+          // caja del seed: son las dos cajas grandes del diálogo y con
+          // rellenos distintos se leían como piezas de dos pantallas.
           child: Padding(
             padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.xl,
-              vertical: AppSpacing.lg,
+              horizontal: AppSpacing.x5l,
+              vertical: AppSpacing.x3l,
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -140,9 +193,12 @@ class _Cabecera extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Padding(
+        // El mismo margen lateral que el cuerpo que despliega y que el aviso de
+        // abajo: si la cabecera entra más que su propio texto desplegado, al
+        // abrir el acordeón el título se mueve respecto de lo que aparece.
         padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.xl,
-          vertical: 13,
+          horizontal: AppSpacing.x5l,
+          vertical: AppSpacing.xxl,
         ),
         child: Row(
           children: <Widget>[
@@ -157,7 +213,8 @@ class _Cabecera extends StatelessWidget {
             ),
             AnimatedRotation(
               turns: abierto ? 0.5 : 0,
-              duration: const Duration(milliseconds: 180),
+              duration: _giro,
+              curve: Curves.easeOutCubic,
               child: Icon(
                 Icons.keyboard_arrow_down_rounded,
                 size: 18,

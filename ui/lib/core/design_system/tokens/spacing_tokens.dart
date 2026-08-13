@@ -62,7 +62,12 @@ abstract final class AppSpacing {
   /// ocupando media pantalla es una ventana que hay que encoger, y encogerla
   /// es lo que nadie hace. Cabe la portada entera, y las pantallas largas
   /// hacen scroll, que es lo que hacen igual en cualquier tamaño.
-  static const Size initialWindow = Size(888, 565);
+  ///
+  /// El ancho es [contentMax] y no un número aparte: por debajo de ese tope las
+  /// pantallas se acomodan solas, así que abrir justo en él es lo único que
+  /// enseña el diseño sin margen sobrante a los lados ni renglones más largos
+  /// de lo que nadie dibujó.
+  static const Size initialWindow = Size(940, 625);
 
   static const double titleBarHeight = 44;
   static const double statusBarHeight = 38;
