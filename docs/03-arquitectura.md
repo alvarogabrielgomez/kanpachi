@@ -999,12 +999,13 @@ Los eventos de red son los cinco del motor, y el supervisor los traduce uno a un
 
 | | |
 |---|---|
-| Aplicaciones en la sesión | **594** |
+| Aplicaciones en la sesión entera | **709** |
 | Veces que el conjunto deseado CAMBIÓ | **1** |
+| Veces que cambió la firma de la malla | **1** |
 | Pico, con el host recién caído | ~2 por segundo, sostenido cuatro minutos |
-| En reposo, con la sala quieta | 0 |
+| En reposo, con la sala quieta | 0, medido 105 s muestreando cada 15 |
 
-El motor republica el conjunto de confianza aproximadamente cada segundo, así que la tabla de rutas se toca todo el tiempo sin que cambie quién está. **593 de las 594 aplicaciones escribieron lo mismo que ya estaba puesto.**
+El motor republica el conjunto de confianza aproximadamente cada segundo, así que la tabla de rutas se toca todo el tiempo sin que cambie quién está. **708 de las 709 aplicaciones escribieron lo mismo que ya estaba puesto.**
 
 El log ya no las repite: la firma del conjunto se compara antes de escribir, y solo se anota el cambio. Lo que sigue corriendo entero es el cálculo y la transacción del firewall. Es el número que dice si conviene gatear `applyPolicy` por cambio real del conjunto deseado, y también dice que **coalescer encima no compraría nada**: un gate por firma ya colapsa la ráfaga, porque lo que la ráfaga repite es exactamente la misma firma.
 
