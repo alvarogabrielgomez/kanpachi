@@ -40,6 +40,25 @@ const elQueSeCorre = "kanpachid.exe"
 // mismo que `LogFile` en `daemon/cmd/kanpachid/log.go`.
 const nombreDelLog = "kanpachi.log"
 
+// nombreDeDatos es la carpeta de estado, JUNTO AL EJECUTABLE que alguien abrió.
+//
+// Tiene que decir lo mismo que `PortableDataDir` en
+// `daemon/cmd/kanpachid/portable.go`, que es de `package main` y no se puede
+// importar. Se copia por lo mismo que [nombreDelLog].
+//
+// # Por qué se pasa a mano en vez de deducirse del marcador
+//
+// Porque el marcador viaja DENTRO de la carga, así que acaba en el directorio
+// temporal, y eso es lo que el daemon miraba: escribía su llave, su token y su
+// sala ahí, y `limpiar` borraba la carpeta entera al cerrar. Cada arranque
+// estrenaba identidad, y las extracciones que no se pudieron borrar quedaron
+// tiradas en el temporal con la llave dentro.
+//
+// La carpeta desde donde alguien abrió esto es lo único que sobrevive al
+// cierre, y es la que esa persona sabe encontrar. Es la misma decisión que ya
+// estaba tomada para el log, con el mismo motivo.
+const nombreDeDatos = "kanpachi-data"
+
 func correr() error {
 	if !hayCarga {
 		return errors.New("este kanpachibundle se compiló SIN carga, así que no lleva nada dentro.\n" +
@@ -230,11 +249,19 @@ func extraer(dir string) error {
 //     aparecería el icono de la bandeja y ninguna ventana.
 //   - `--log`: la razón entera por la que esa bandera existe. Ver el doc del
 //     paquete.
+//   - `--data`: junto al ejecutable y no en el temporal que se borra. Ver
+//     [nombreDeDatos], que es donde está el motivo entero.
 //
-// El directorio de datos NO se toca: se deja que el daemon lo deduzca del
-// marcador, para que la interfaz llegue a la misma respuesta por su cuenta.
+// La interfaz ya no lo deduce por su cuenta: el daemon se lo dice al lanzarla,
+// por la misma vía que el log. Deducirlo cada uno por su lado era correcto
+// mientras los dos ejecutables vivían en la misma carpeta que el marcador, y
+// dejó de serlo el día que el daemon salió de ahí.
 func argumentos(dirBundle string) []string {
-	return []string{"--daemon", "--show", "--log", dirBundle}
+	return []string{
+		"--daemon", "--show",
+		"--log", dirBundle,
+		"--data", filepath.Join(dirBundle, nombreDeDatos),
+	}
 }
 
 // lanzar corre el daemon portable y espera a que termine.

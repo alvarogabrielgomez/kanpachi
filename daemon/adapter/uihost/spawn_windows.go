@@ -163,6 +163,11 @@ func (h *Host) launch(show, persistent bool) error {
 	if h.deps.LogDir != "" {
 		línea += ` --log "` + h.deps.LogDir + `"`
 	}
+	// Y dónde escribe este daemon, que es donde la interfaz tiene que leer el
+	// token. Entrecomillada por lo mismo. Ver [Deps.DataDir].
+	if h.deps.DataDir != "" {
+		línea += ` --data "` + h.deps.DataDir + `"`
+	}
 
 	exe, err := windows.UTF16PtrFromString(h.deps.Exe)
 	if err != nil {

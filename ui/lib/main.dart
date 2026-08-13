@@ -63,6 +63,25 @@ const String kLogFlag = '--log';
 /// sin ella la ventana arranca como arrancaba.
 const String kResumeHostedRoomFlag = '--resume-hosted-room';
 
+/// La bandera con la que el daemon dice DÓNDE ESCRIBE, o sea dónde está el
+/// token.
+///
+/// Es un CONTRATO con `daemon/adapter/uihost`, que la escribe en `launch`, y se
+/// llama igual que la bandera del propio daemon porque significa lo mismo.
+///
+/// # Qué hueco cierra
+///
+/// El bundle de un solo ejecutable se descomprime en una carpeta temporal, con
+/// el marcador dentro, y arranca al daemon diciéndole que escriba junto al
+/// `.exe` que alguien abrió. Esta ventana deducía del marcador que tenía al
+/// lado, o sea del temporal, y ahí no hay token: enseñaba que no hay servicio
+/// con el servicio corriendo.
+///
+/// Ver [PipeNames.useDataDir] para por qué esto no rompe la doctrina del
+/// marcador. Sin la bandera se deduce como siempre, que es lo correcto en el
+/// producto instalado y en la carpeta portable.
+const String kDataFlag = '--data';
+
 void main(List<String> args) {
   // **Todo dentro de la zona, empezando por `ensureInitialized`.**
   //
@@ -72,7 +91,11 @@ void main(List<String> args) {
   // parece natural.
   runZonedGuarded<Future<void>>(
     () async {
-      AppLog.open(dir: _dirDelLog(args), fallback: PipeNames.dataDir);
+      // **Lo PRIMERO de todo, antes de que nadie pregunte por la carpeta de
+      // datos.** El registro ya la usa de respaldo tres líneas más abajo.
+      PipeNames.useDataDir(_valorDe(args, kDataFlag) ?? '');
+
+      AppLog.open(dir: _valorDe(args, kLogFlag), fallback: PipeNames.dataDir);
 
       // **El arranque también se anota, no solo los errores.** Un registro que
       // solo tiene fallos no distingue "se cerró sola" de "no llegó a
@@ -109,16 +132,16 @@ void main(List<String> args) {
   );
 }
 
-/// La carpeta que pidió el daemon, o null si nadie dijo nada.
+/// Lo que el daemon puso detrás de una bandera, o null si no puso nada.
 ///
-/// Formato `--log <carpeta>`, con la carpeta en el argumento siguiente. Sin
+/// Formato `<bandera> <valor>`, con el valor en el argumento siguiente. Sin
 /// valor detrás, la bandera se ignora: es lo que pasa si alguien la escribe a
 /// mano, y no vale la pena tumbar la ventana por eso.
-String? _dirDelLog(List<String> args) {
-  final int i = args.indexOf(kLogFlag);
+String? _valorDe(List<String> args, String bandera) {
+  final int i = args.indexOf(bandera);
   if (i < 0 || i + 1 >= args.length) return null;
-  final String dir = args[i + 1].trim();
-  return dir.isEmpty ? null : dir;
+  final String valor = args[i + 1].trim();
+  return valor.isEmpty ? null : valor;
 }
 
 Future<void> _arrancar(List<String> args) async {
@@ -151,7 +174,11 @@ Future<void> _arrancar(List<String> args) async {
   // A portable copy narrates by default. See [AppPreferences.verbose] for why,
   // and note this is the marker on disk answering, not a build flag: one
   // `kanpachiui.exe` serves both the installed product and the portable bundle.
+  // Donde escribe el daemon, que en una copia portable es la carpeta desde
+  // donde la abrieron. Antes iban a `%APPDATA%`, o sea fuera de la carpeta y
+  // compartidos con cualquier otro Kanpachi de esta máquina.
   final AppPreferences preferences = await AppPreferences.open(
+    dir: PipeNames.dataDir,
     defaultVerbose: kDebugMode || PipeNames.isPortable,
   );
 

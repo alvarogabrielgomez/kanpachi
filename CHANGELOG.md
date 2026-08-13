@@ -20,6 +20,9 @@ This file is in English, like commit messages and release notes, because a relea
 - Rename the room from the confirmation dialog the way it is renamed inside the room: the name in plain text with a pencil beside it, instead of a text box competing with the server you are being asked to confirm ([4dbd64e](https://github.com/alvarogabrielgomez/kanpachi/commit/4dbd64e))
 - Grow the "what is a seed" explanation instead of making it appear in one frame, with its text fading in, and give the server address its own icon and the full width of the dialog ([4dbd64e](https://github.com/alvarogabrielgomez/kanpachi/commit/4dbd64e))
 
+- Stop "Crear la sala sin juego" from growing by two pixels and shoving the page down when you point at it, and light it up at the same speed as the card below it instead of snapping to lit in one frame
+- Keep everything a portable Kanpachi remembers inside the folder it was run from. The single-file portable kept its identity, its room and its server in the temporary folder it unpacks itself into and deletes on exit, so every launch was a brand new machine to anyone who had played with you, and the window settings went to `%APPDATA%`, outside the folder and shared with every other Kanpachi on the PC
+
 ### Changed
 
 - Open the window at 940x625 the first time, which is the width the design stops growing at ([4dbd64e](https://github.com/alvarogabrielgomez/kanpachi/commit/4dbd64e))

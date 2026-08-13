@@ -107,6 +107,25 @@ type Deps struct {
 	// alguien pasándola a mano es escribir donde ya podía escribir.
 	LogDir string
 
+	// DataDir es el directorio de datos que ESTE daemon está usando de verdad,
+	// y viaja por la misma vía que [LogDir].
+	//
+	// # Por qué se dice, si la interfaz sabía deducirlo
+	//
+	// Porque en el bundle portable deducía MAL, y el fallo era callado. La
+	// interfaz miraba el marcador junto a su propio ejecutable, que en el bundle
+	// vive en un directorio temporal, así que las dos partes contestaban
+	// distinto en cuanto el daemon dejaba de usar ese temporal.
+	//
+	// El marcador sigue contestando lo que sabe contestar, que es "qué producto
+	// soy" —y de ahí salen el nombre del pipe y los defaults—. Dónde escribe
+	// este daemon es otra pregunta, la contesta él, y ahora la dice.
+	//
+	// Vacío significa "que lo deduzca", que es lo correcto en el producto
+	// instalado y en la carpeta portable: ahí los dos ejecutables viven juntos y
+	// llegan a la misma respuesta solos.
+	DataDir string
+
 	// OnGiveUp se llama cuando la interfaz se cae una y otra vez y ya no se
 	// intenta más. Lo correcto entonces es apagar todo, porque un daemon vivo
 	// sin forma de mostrarse es justo lo que la invariante prohíbe.

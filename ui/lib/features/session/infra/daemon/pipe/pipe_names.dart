@@ -100,12 +100,42 @@ abstract final class PipeNames {
   /// name as `PortableDataDir` in `daemon/cmd/kanpachid/portable.go`.
   static const String portableData = 'kanpachi-data';
 
+  /// What the daemon said on the command line, or null if it said nothing.
+  static String? _told;
+
+  /// The daemon telling this window where it actually writes.
+  ///
+  /// # Why this exists at all, when the marker was supposed to settle it
+  ///
+  /// Because the single-file bundle broke the assumption the marker rests on:
+  /// that both executables sit in the same folder. It unpacks itself into a
+  /// temporary directory, marker included, and the daemon it starts writes
+  /// beside the `.exe` somebody double-clicked instead. Deriving from the
+  /// marker, this side looked in the temp copy, found no token, and said there
+  /// was no service — with the service running.
+  ///
+  /// The marker still answers what it can answer, which is *which product am
+  /// I*: the pipe name and the defaults come from it, and those are properties
+  /// of the folder. Where the daemon writes is the daemon's answer to give.
+  ///
+  /// Call once, before anything reads [dataDir]. An empty or missing value
+  /// leaves the derivation alone, which is right for the installed product and
+  /// for the portable folder.
+  static void useDataDir(String dir) {
+    final String clean = dir.trim();
+    if (clean.isEmpty) return;
+    _told = clean;
+  }
+
   /// Where the daemon keeps its data, and therefore the token.
   ///
-  /// Portable first, because a portable folder can be copied onto a machine
-  /// that ALSO has Kanpachi installed, and then both are true. The one that
-  /// wins has to be the one this executable was launched from.
+  /// What it was told wins, and then the folder is derived: portable first,
+  /// because a portable folder can be copied onto a machine that ALSO has
+  /// Kanpachi installed, and then both are true. The one that wins has to be
+  /// the one this executable was launched from.
   static String get dataDir {
+    final String? told = _told;
+    if (told != null) return told;
     final String junto = File(Platform.resolvedExecutable).parent.path;
     if (isPortable) {
       return '$junto\\$portableData';

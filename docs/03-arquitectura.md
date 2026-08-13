@@ -226,7 +226,7 @@ Lo que cuesta, y se dice entero:
 | | Instalado | Portable |
 |---|---|---|
 | UAC | uno solo, al instalar | uno por arranque de Kanpachi |
-| Datos | `ProgramData\Kanpachi` con ACL propia del instalador | `data\` junto al binario, con los permisos de donde esté la carpeta |
+| Datos | `ProgramData\Kanpachi` con ACL propia del instalador | `kanpachi-data\` junto al binario, con los permisos de donde esté la carpeta |
 | Arranque con Windows | sí, servicio con arranque retrasado | no, no hay servicio que Windows pueda levantar |
 | Desinstalar | el desinstalador, con sus 11 pasos | borrar la carpeta |
 
@@ -247,7 +247,7 @@ Lo que lo hace funcionar, y qué pasa si falta:
 - **Eleva el manifiesto, no el código.** El `.syso` del paquete lleva `requireAdministrator`, así que Windows eleva el proceso ANTES de que arranque. La alternativa —arrancar sin permisos y relanzarse elevado— deja DOS procesos, y con ellos dos ventanas y dos iconos en la barra de tareas. El relanzado sigue ahí como red de seguridad para un binario construido sin el `.syso`.
 - **Un solo UAC en toda la sesión.** El daemon hereda el token elevado, y lanza el motor con un `exec.Command` normal, que lo hereda también. Abrir una sala no vuelve a preguntar nada.
 - **Sin consola.** Se enlaza con `-H windowsgui`. Con consola quedaba una ventana negra abierta durante toda la sesión de juego y un segundo icono en la barra, que hace parecer que Kanpachi se abrió dos veces. Lo que se pierde son los mensajes de progreso; un fallo sale por un cuadro de diálogo, con la ruta del log dentro.
-- **El log al lado del ejecutable, los datos en el temporal.** Es la única asimetría y es deliberada. El log viaja con `--log` porque el temporal se borra al salir y ese archivo es lo que se pide cuando algo falla. Los datos se quedan donde están porque la interfaz deduce SU directorio de datos de dónde está ella —el temporal—, y pasárselo por otra vía es exactamente el fallo silencioso que el marcador existe para impedir. El precio: `identity.key` y `last-room.json` mueren en cada corrida, así que "volver a la última sala" no cruza de una a otra.
+- **El log y los datos, los dos al lado del ejecutable.** El log viaja con `--log` y los datos con `--data`, y el temporal solo guarda los binarios que se sueltan. Hubo una versión que dejaba los datos en el temporal, con el argumento de que la interfaz los deduce del marcador y pasárselos sería el fallo silencioso que el marcador existe para impedir. Corrida, esa versión estrenaba `identity.key` en cada arranque, dejaba extracciones sin borrar con la llave dentro, y no conservaba ni la sala ni el servidor propio: quien abría el `.exe` dos veces era dos equipos distintos para quien ya había jugado con él. El marcador sigue contestando lo que sabe, que es qué producto es esto, y de ahí salen el nombre del pipe y los defaults. Dónde escribe el daemon lo contesta el daemon, y **se lo dice a la interfaz al lanzarla**, por la misma vía que el log.
 - **El motor se comprueba antes de empaquetar.** El script elige el más reciente de los sitios donde queda compilado y **se planta** si el binario es más viejo que el código del motor, con una verificación cruzada por SHA256 entre el que eligió y el que acabó dentro. No es celo de más: la primera versión apuntaba a una ruta fija con un motor de tres días antes, sin el commit que hace que el host acepte a los invitados a los que él mismo dio credencial. Un motor viejo ahí dentro no se descubre acá, se descubre en la máquina de la otra persona.
 
 ### Dónde queda escrito lo que el daemon dice
@@ -256,7 +256,7 @@ Lo que lo hace funcionar, y qué pasa si falta:
 
 Por eso todo modo que no sea consola manda el log a `logs\kanpachi.log` dentro del directorio de datos, con rotación por tamaño a los 2 MB y una sola copia anterior. Eso cubre al servicio y también al daemon de una carpeta portable, que tampoco tiene consola. En modo consola sigue yendo a la salida estándar, que es donde está mirando quien programa.
 
-La carpeta se puede mover con `--log`, y existe por un caso concreto: el bundle portable manda los datos a un directorio temporal que borra al salir, y el log no puede morir con él. Con la bandera, la carpeta que se pasa se usa **tal cual**, sin colgarle `logs\` debajo: quien la nombra ya eligió.
+La carpeta se puede mover con `--log`, y existe por un caso concreto: el bundle portable corre desde un directorio temporal que borra al salir, y el log no puede morir con él. Con la bandera, la carpeta que se pasa se usa **tal cual**, sin colgarle `logs\` debajo: quien la nombra ya eligió. `--data` es su pareja y hace lo mismo con el directorio de datos, por el mismo motivo.
 
 No va al Visor de eventos, que sería lo idiomático: exigiría registrar una fuente en el instalador, y si esa fuente falta cada línea se convierte en "no se encuentra la descripción del ID de evento". Un archivo de texto al lado de los otros datos lo abre cualquiera, se pega en un reporte de fallo, y ya está protegido por la ACL que el instalador le puso al directorio.
 
@@ -2422,6 +2422,10 @@ ProgramData\Kanpachi\
                              refresco, sellado Y con ACL propia. Jamás el password,
                              y jamás el token de acceso, que vive quince minutos
   suspended-rules.json       reglas ajenas desactivadas y su estado previo
+  ui-prefs.json              lo que la VENTANA recuerda: apodo, tamaño, si narra
+                             los pasos, y la versión publicada que ya vio. Lo
+                             escribe Flutter, y vive acá para que una copia
+                             portable se lleve sus ajustes dentro de la carpeta
   logs\kanpachi.log          lo que el daemon dice, Y la traza de un pánico, que
                              antes se perdía. En todo modo salvo consola, que va a
                              la salida estándar, que es donde mira quien programa.
@@ -2437,6 +2441,8 @@ En una carpeta portable el árbol de la derecha es el mismo, colgando de `kanpac
 ACL de ProgramData: escritura solo SYSTEM y Administradores, lectura para usuarios de la máquina.
 
 **El daemon es la única fuente de verdad.** Cerrar la ventana no cierra la sala, así que el estado tiene que sobrevivir a la UI. La UI lo lee por `Status()` y persiste únicamente cosas de presentación, como el tamaño de la ventana. Guardar la sala también del lado de Flutter crearía dos verdades que se desincronizan justo en el caso que el producto promete soportar, que es cerrar la ventana con la partida viva.
+
+Eso poco que la ventana recuerda va en `ui-prefs.json`, **dentro del mismo directorio de datos** y no en `%APPDATA%`, que es donde lo dejaba `shared_preferences`. Medido: un solo fichero de perfil compartido por la copia portable, el producto instalado y cada compilación de desarrollo de esta máquina. Así que una copia portable llegaba a otra PC sin apodo con su carpeta de datos entera al lado, borrar la carpeta dejaba rastro fuera, y dos productos que pueden convivir no podían discrepar sobre el tamaño de su propia ventana.
 
 **`seed-token.json` es el único fichero de este árbol con ACL propia además del sello**, y `identity.key` el único con ACL propia sin sello. El motivo es el mismo y apunta al revés: el directorio da lectura a todos los usuarios de la máquina a propósito, para que la interfaz lea `api.token` sin elevar, así que un fichero nuevo hereda esa ACL. El sello ya lo vuelve ilegible sin `identity.key`; la ACL está encima porque **el valor por omisión es el permisivo**, y el día que alguien agregue un camino que escriba en claro, lo que quede es lo que el directorio conceda.
 

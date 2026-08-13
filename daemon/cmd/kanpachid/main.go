@@ -566,6 +566,11 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 			// nada; ver [uihost.Deps.LogDir] para por qué se le dice en vez de
 			// dejar que la deduzca.
 			LogDir: carpetaLog,
+			// Y dónde están los datos de verdad, que es de donde sale el
+			// token. Ver [uihost.Deps.DataDir]: en el bundle portable la
+			// interfaz lo deducía del temporal donde vive su ejecutable, y
+			// el daemon ya no escribe ahí.
+			DataDir: datos,
 			// Si la interfaz no arranca ni a la tercera, se apaga todo. Un
 			// daemon vivo sin forma de mostrarse es justo lo que la invariante
 			// de `docs/03` prohíbe.
