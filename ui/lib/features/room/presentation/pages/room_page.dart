@@ -4,16 +4,15 @@ import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_card.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_glyphs.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_cover.dart';
-import 'package:kanpachi_ui/core/design_system/atoms/app_field.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_icon_button.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_kicker.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_spinner.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_status_dot.dart';
+import 'package:kanpachi_ui/core/design_system/molecules/app_editable_name.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_list.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_notice.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/density_tokens.dart';
-import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
 import 'package:kanpachi_ui/core/messages/message_catalog.dart';
@@ -161,7 +160,6 @@ class _RoomHeader extends StatefulWidget {
 }
 
 class _RoomHeaderState extends State<_RoomHeader> {
-  bool _editing = false;
   late final TextEditingController _name = TextEditingController(
     text: widget.room.name,
   );
@@ -170,12 +168,6 @@ class _RoomHeaderState extends State<_RoomHeader> {
   void dispose() {
     _name.dispose();
     super.dispose();
-  }
-
-  void _commit() {
-    final String value = _name.text.trim();
-    if (value.isNotEmpty) context.read<SessionCubit>().rename(value);
-    setState(() => _editing = false);
   }
 
   @override
@@ -197,13 +189,13 @@ class _RoomHeaderState extends State<_RoomHeader> {
                   const AppKicker('Sala'),
                   SizedBox(
                     height: 44,
-                    child: _editing
-                        ? _NameEditor(controller: _name, onCommit: _commit)
-                        : _NameDisplay(
-                            name: room.name,
-                            canEdit: room.selfIsHost,
-                            onEdit: () => setState(() => _editing = true),
-                          ),
+                    child: AppEditableName(
+                      controller: _name,
+                      canEdit: room.selfIsHost,
+                      editTooltip: 'Renombrar la sala',
+                      onCommit: (String v) =>
+                          context.read<SessionCubit>().rename(v),
+                    ),
                   ),
                 ],
               ),
@@ -303,147 +295,6 @@ class _RenewCodeButton extends StatelessWidget {
       busy: renovando,
       onPressed: () =>
           context.read<ShellCubit>().showDialog(AppDialog.confirmRenew),
-    );
-  }
-}
-
-/// El nombre de la sala y, si eres el host, la zona entera para renombrarla.
-///
-/// El objetivo de clic es todo el bloque y no sólo el lápiz: el lápiz mide 30
-/// px y aparece al lado de un título de 24, así que quien quiere renombrar
-/// pincha el nombre. Que además se marque al pasar por encima es lo que avisa
-/// de que se puede, sin dejar una caja permanente compitiendo con el título.
-class _NameDisplay extends StatefulWidget {
-  const _NameDisplay({
-    required this.name,
-    required this.canEdit,
-    required this.onEdit,
-  });
-
-  final String name;
-  final bool canEdit;
-  final VoidCallback onEdit;
-
-  @override
-  State<_NameDisplay> createState() => _NameDisplayState();
-}
-
-class _NameDisplayState extends State<_NameDisplay> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final Widget fila = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        // Flexible y no suelto: el nombre lo escribe el host, hasta 24
-        // caracteres, y en la ventana mínima no cabe entero junto a los tres
-        // botones de la derecha. Cede él, que se puede recortar; los botones no.
-        Flexible(
-          child: Text(
-            widget.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: context.type.titleLg.copyWith(color: colors.text),
-          ),
-        ),
-        if (widget.canEdit) ...<Widget>[
-          const SizedBox(width: AppSpacing.sm),
-          AppIconButton(
-            icon: Icons.edit_outlined,
-            tooltip: 'Renombrar la sala',
-            width: 30,
-            height: 30,
-            iconSize: 15,
-            danger: true,
-            onPressed: widget.onEdit,
-          ),
-        ],
-      ],
-    );
-
-    if (!widget.canEdit) return fila;
-
-    return MouseRegion(
-      cursor: SystemMouseCursors.text,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onEdit,
-        // El desplazamiento va por `Transform` y no por padding negativo, que
-        // no existe: así la caja del hover alinea con el título sin mover nada
-        // de la cabecera, porque una transformación es sólo pintura.
-        child: Transform.translate(
-          offset: const Offset(-AppSpacing.lg, 0),
-          child: AnimatedContainer(
-            duration: AppMotion.hover,
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-            decoration: BoxDecoration(
-              color: _hovered ? colors.surfaceSunken : null,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: _hovered ? colors.border : Colors.transparent,
-                width: AppStroke.hairline,
-              ),
-            ),
-            child: fila,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _NameEditor extends StatelessWidget {
-  const _NameEditor({required this.controller, required this.onCommit});
-
-  final TextEditingController controller;
-  final VoidCallback onCommit;
-
-  @override
-  Widget build(BuildContext context) {
-    // Tope, no ancho fijo. En la ventana mínima quedan menos de 300 px a la
-    // izquierda de los botones, y un `SizedBox(width: 360)` ahí se desborda
-    // justo cuando el host está escribiendo dentro.
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 360),
-      child: AppField(
-        controller: controller,
-        shape: AppFieldShape.inline,
-        height: 44,
-        radius: AppRadius.all10,
-        maxLength: 24,
-        autofocus: true,
-        textStyle: context.type.titleLg,
-        onSubmitted: (_) => onCommit(),
-        // Relleno de acento y no transparente: es la acción que confirma el
-        // cambio, compite con nada y en el diseño es la única mancha de color
-        // de la cabecera mientras se escribe.
-        trailing: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            onTap: onCommit,
-            child: Tooltip(
-              message: 'Guardar',
-              child: Container(
-                width: 36,
-                height: 34,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: context.colors.accent,
-                  borderRadius: AppRadius.allSm,
-                ),
-                child: Icon(
-                  Icons.check,
-                  size: 15,
-                  color: context.colors.accentInk,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

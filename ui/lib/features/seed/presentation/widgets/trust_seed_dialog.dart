@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:kanpachi_ui/core/design_system/atoms/app_field.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_kicker.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_dialog.dart';
+import 'package:kanpachi_ui/core/design_system/molecules/app_editable_name.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
-import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/seed/presentation/widgets/seed_trust_block.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
@@ -185,23 +184,14 @@ class _FilaDelSeed extends StatelessWidget {
 /// del seed compite con ella y hace parecer que lo que se está decidiendo es
 /// cómo llamar a la sala.
 ///
-/// Es el mismo gesto que ya existe DENTRO de la sala para renombrarla: el
-/// nombre en texto plano, un lápiz al lado, y el campo aparece al pulsar. Que
-/// los dos sitios donde se renombra una sala se pulsen igual es lo que hace que
-/// no haya que aprender el segundo. Ver `_NameDisplay` en `room_page.dart`.
-class _NombreDeLaSala extends StatefulWidget {
+/// Es el MISMO componente que renombra la sala desde dentro, en su tamaño
+/// chico: ver [AppEditableName]. No una copia suya con otras medidas, que es lo
+/// que había acá y es lo que hace que dos sitios de la misma app se pulsen
+/// distinto.
+class _NombreDeLaSala extends StatelessWidget {
   const _NombreDeLaSala({required this.controller});
 
   final TextEditingController controller;
-
-  @override
-  State<_NombreDeLaSala> createState() => _NombreDeLaSalaState();
-}
-
-class _NombreDeLaSalaState extends State<_NombreDeLaSala> {
-  bool _editando = false;
-
-  void _cerrar() => setState(() => _editando = false);
 
   @override
   Widget build(BuildContext context) {
@@ -219,84 +209,19 @@ class _NombreDeLaSalaState extends State<_NombreDeLaSala> {
           ),
         ),
         Expanded(
-          child: _editando
-              ? AppField(
-                  controller: widget.controller,
-                  shape: AppFieldShape.inline,
-                  maxLength: 24,
-                  autofocus: true,
-                  onSubmitted: (_) => _cerrar(),
-                  onChanged: (String v) =>
-                      context.read<SessionCubit>().setRoomNameDraft(v),
-                )
-              : _NombreEnFirme(
-                  nombre: widget.controller.text,
-                  onEditar: () => setState(() => _editando = true),
-                ),
+          child: AppEditableName(
+            controller: controller,
+            size: AppEditableNameSize.sm,
+            // Confirmar acá no manda nada a ningún sitio: la sala todavía no
+            // existe. Lo que hay que mantener al día es el borrador de la
+            // sesión, que es el mismo dato que edita el campo de la portada, y
+            // eso ya lo hace `onChanged` en cada tecla.
+            onCommit: (String _) {},
+            onChanged: (String v) =>
+                context.read<SessionCubit>().setRoomNameDraft(v),
+          ),
         ),
       ],
-    );
-  }
-}
-
-/// El nombre en texto plano con su lápiz, y todo el bloque como objetivo.
-///
-/// El objetivo de clic es el bloque entero y no solo el lápiz, por lo mismo que
-/// en la pantalla de sala: el lápiz es chico y quien quiere renombrar pincha el
-/// nombre. La marca al pasar por encima es lo que avisa de que se puede.
-class _NombreEnFirme extends StatefulWidget {
-  const _NombreEnFirme({required this.nombre, required this.onEditar});
-
-  final String nombre;
-  final VoidCallback onEditar;
-
-  @override
-  State<_NombreEnFirme> createState() => _NombreEnFirmeState();
-}
-
-class _NombreEnFirmeState extends State<_NombreEnFirme> {
-  bool _encima = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return MouseRegion(
-      cursor: SystemMouseCursors.text,
-      onEnter: (_) => setState(() => _encima = true),
-      onExit: (_) => setState(() => _encima = false),
-      child: GestureDetector(
-        onTap: widget.onEditar,
-        child: AnimatedContainer(
-          duration: AppMotion.hover,
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.lg,
-            vertical: AppSpacing.md,
-          ),
-          decoration: BoxDecoration(
-            color: _encima ? colors.surfaceSunken : null,
-            borderRadius: AppRadius.all10,
-            border: Border.all(
-              color: _encima ? colors.border : Colors.transparent,
-              width: AppStroke.hairline,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Flexible(
-                child: Text(
-                  widget.nombre,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.type.label.copyWith(color: colors.text),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Icon(Icons.edit_outlined, size: 15, color: colors.textMuted),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
