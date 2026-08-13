@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -204,4 +205,95 @@ func TestTheForkRefIsNamedInOneDocumentOnly(t *testing.T) {
 			"  Es el sitio canónico: si dejó de decirlo, no queda ninguno que lo diga",
 			canonicalDoc)
 	}
+}
+
+// laAPIDeGitHub casa con la URL que se PIDE, y no con nombrarla.
+//
+// El esquema es el discriminador, y es honesto: tres comentarios de este
+// repositorio explican por qué NO se llama a `api.github.com`, y un guardián que
+// los marcara enseñaría a borrar las explicaciones para poner el test en verde.
+// Lo que importa es una URL que alguien va a buscar.
+var laAPIDeGitHub = regexp.MustCompile(`https://api\.github\.com`)
+
+// dóndeSePuedePedir son los dos ficheros de marca, uno por lenguaje.
+//
+// Dos y no uno porque un lenguaje no puede importar la constante del otro. Que
+// sean EXACTAMENTE los mismos que ya guarda el test del repositorio no es
+// casualidad: quien publica y a quién se le pregunta por la versión son la misma
+// decisión, y repartirla en dos sitios es cómo un fork termina preguntándole al
+// repositorio de otro.
+var dóndeSePuedePedir = map[string]string{
+	filepath.FromSlash("internal/selfupdate/selfupdate.go"): "es la constante de Go",
+	filepath.FromSlash("ui/lib/core/brand.dart"):            "es el espejo de Dart",
+}
+
+// TestTheGitHubAPIIsCalledFromOnePlacePerLanguage.
+//
+// # Por qué existe
+//
+// El canal de actualización pasó de colgar del seed a preguntarle a GitHub, y
+// esa consulta manda la IP de la máquina a un tercero y gasta una cuota de
+// sesenta por hora que se comparte con toda la red de esa persona. Una segunda
+// copia de la URL es un segundo sitio desde el que eso puede empezar a pasar sin
+// que nadie lo lea, y la página es donde más caro sale, porque ahí la cuota es
+// la del visitante.
+func TestTheGitHubAPIIsCalledFromOnePlacePerLanguage(t *testing.T) {
+	checkable := map[string]bool{
+		".go": true, ".dart": true, ".html": true, ".sh": true,
+		".yml": true, ".yaml": true, ".iss": true, ".ps1": true, ".toml": true,
+	}
+
+	var seen int
+	err := filepath.WalkDir("../..", func(ruta string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel("../..", ruta)
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "dist", "target", "build", "node_modules", ".dart_tool", "scratch":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !checkable[strings.ToLower(filepath.Ext(ruta))] || strings.HasSuffix(ruta, "_test.go") {
+			return nil
+		}
+		raw, err := os.ReadFile(ruta)
+		if err != nil {
+			return err
+		}
+		if !laAPIDeGitHub.Match(raw) {
+			return nil
+		}
+		if _, vale := dóndeSePuedePedir[rel]; vale {
+			seen++
+			return nil
+		}
+		t.Errorf("%s pide https://api.github.com.\n"+
+			"  Va en %s y en ningún otro sitio: una segunda copia es un segundo sitio\n"+
+			"  desde el que se le manda la IP de alguien a un tercero sin que nadie lo lea",
+			rel, sitios())
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("recorriendo el árbol: %v", err)
+	}
+
+	// El candado del candado, por lenguaje: si uno de los dos deja de pedirla,
+	// esa mitad del producto se quedó sin comprobar si hay versión nueva.
+	if seen != len(dóndeSePuedePedir) {
+		t.Errorf("solo %d de %d ficheros de marca piden la API de GitHub.\n"+
+			"  Los dos tienen que hacerlo: si uno deja de preguntar, esa cara del\n"+
+			"  producto se queda callada mientras la otra avisa", seen, len(dóndeSePuedePedir))
+	}
+}
+
+func sitios() string {
+	var nombres []string
+	for ruta := range dóndeSePuedePedir {
+		nombres = append(nombres, filepath.ToSlash(ruta))
+	}
+	sort.Strings(nombres)
+	return strings.Join(nombres, " y ")
 }
