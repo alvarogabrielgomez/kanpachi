@@ -18,8 +18,9 @@
       // Fijado para que no pregunte el dispositivo en cada arranque: el
       // cliente de la v1 es solo Windows.
       "deviceId": "windows",
-      // La barra de PROTOTIPO solo se monta en debug, así que es este perfil
-      // el que sirve para recorrer las pantallas.
+      // Es el perfil de desarrollo: recarga en caliente, y el inspector de
+      // widgets de DevTools, que solo existe en debug. La barra de PROTOTIPO
+      // que este comentario nombraba se borró en c31e2bb.
       "flutterMode": "debug"
     },
     {
