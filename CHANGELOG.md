@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+Nothing yet.
+
+## [0.2.0] - 2026-08-13
+
 ### Added
 
 - Choose which server your rooms are opened on, in a screen of its own. Entering somebody else's room never chooses it for you: it offers that server as a suggestion, marked as one, so nobody has to go dig the name out of a chat ([1384e75](https://github.com/alvarogabrielgomez/kanpachi/commit/1384e75))
@@ -190,6 +194,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.2.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.2.0
 [0.1.9]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.9
 [0.1.8]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.8
 [0.1.4]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.4
