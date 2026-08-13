@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.2.1] - 2026-08-13
+
 ### Fixed
 
 - Carry on opening the room after choosing a server or typing its password, instead of dropping you back on the home screen with nothing opened and no sign that you had to press Crear again ([7ff6fc1](https://github.com/alvarogabrielgomez/kanpachi/commit/7ff6fc1))
@@ -214,6 +216,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.2.1]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.2.1
 [0.2.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.2.0
 [0.1.9]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.9
 [0.1.8]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.8
