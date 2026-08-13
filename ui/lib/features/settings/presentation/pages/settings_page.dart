@@ -8,6 +8,7 @@ import 'package:kanpachi_ui/core/design_system/atoms/app_switch.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_card.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/features/seed/presentation/widgets/seed_settings_card.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/update/presentation/widgets/update_check_card.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
@@ -23,13 +24,22 @@ import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dar
 /// algo que configurar antes de empezar. Estos dos existen para la persona que
 /// tiene un problema concreto, y esa persona sabe buscar.
 ///
-/// # Por qué solo dos
+/// # Por qué son estos y no más
 ///
 /// El resto de lo que se podría poner acá ya lo decide alguien mejor: el
 /// firewall lo manda el daemon, el juego lo eligen dentro de la sala, y el
 /// nombre tiene su propia pantalla porque se pide en el alta. Lo que queda son
-/// las dos cosas que el usuario sí tiene derecho a cambiar y nadie más puede
+/// las cosas que el usuario sí tiene derecho a cambiar y nadie más puede
 /// decidir por él.
+///
+/// # El servidor faltaba acá, y era un agujero
+///
+/// Desde que dejó de venir de fábrica es el único ajuste que decide algo del
+/// PRODUCTO y no de la app, y a la pantalla de elegirlo solo se llegaba
+/// fallando: intentando abrir una sala sin ninguno, o desde el diálogo de
+/// confianza. Mientras tanto la barra de estado de esta misma ventana decía
+/// «sin servidor» y desde acá no había forma de contestarle. Ver
+/// [SeedSettingsCard].
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -176,6 +186,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: AppSpacing.x4l),
           ],
+          // El servidor va PRIMERO de los que quedan, y no al final: es el
+          // único ajuste que decide algo del producto, y los otros dos son
+          // sobre la app. En una copia portable es además el primero de todos,
+          // porque «Este equipo» no existe ahí.
+          const SeedSettingsCard(),
+          const SizedBox(height: AppSpacing.x4l),
           const UpdateCheckCard(),
           const SizedBox(height: AppSpacing.x4l),
           AppCard(
