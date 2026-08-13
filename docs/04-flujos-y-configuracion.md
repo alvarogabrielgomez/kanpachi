@@ -266,7 +266,7 @@ Un solo binario, `kanpseed`. Se llama así y no `kanpachi` porque ese nombre lo 
 |---|---|
 | `kanpseed init` | instala y configura todo. Idempotente: repetirlo conserva los puertos |
 | `kanpseed upgrade` | se pone en la última versión publicada y reinicia. `--check` solo mira. Un comando y no dos: la parte que depende del código nuevo la corre el binario nuevo |
-| `kanpseed reconfigure` | reescribe las units como las quiere esta versión y reinicia. Lo llama `upgrade` por dentro |
+| `kanpseed reconfigure` | reescribe las units como las quiere esta versión y reinicia. Lo llama `upgrade` por dentro. **No toca la página**, que la instalan `init` y `upgrade`: quien reemplace el binario a mano tiene que copiar `index.html` también, o queda un binario nuevo sirviendo una página vieja |
 | `kanpseed doctor` | revisa archivos, servicios, puertos, RPC y salud, y dice qué hacer con cada fallo |
 | `kanpseed config` | muestra o cambia puertos y dominio, reescribe las units y reinicia. Sin argumentos enseña además si hospedar pide password |
 | `kanpseed password` | pide un password para HOSPEDAR en este seed. `--open` lo quita |
