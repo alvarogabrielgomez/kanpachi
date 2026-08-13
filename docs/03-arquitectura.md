@@ -2580,7 +2580,37 @@ El secreto de la red real son 32 bytes aleatorios que no derivan de ningún stri
 
 La marca de cifrado apagada es una degradación **entre miembros**, y no una puerta abierta a un desconocido. Para llegar a ser peer hay que pasar el intercambio de `network_secret_digest` y la prueba MAC del secreto, así que quien puede mandar un paquete con esa marca ya está dentro de la sala. Eso la deja en la misma clase que "un miembro manda basura al canal de control", que es la superficie que este documento ya nombra como la más seria del producto.
 
-**Lo que falta, dicho como falta.** Todo esto está leído del fuente que se compila, no capturado del cable. Una captura entre dos máquinas agrega dos cosas que leer no da: que el payload de un paquete del juego no viaja reconocible, y que la marca de cifrado llega encendida en el tráfico real. Va con el resto de las mediciones que necesitan dos máquinas.
+### La captura, y qué contestó de verdad
+
+Lo de arriba estaba leído del fuente. Esto es el cable, capturado con `tcpdump` en el seed mientras esta máquina abría una sala contra él. **212 tramas del protocolo**, parseadas con el formato de `packet_def.rs`.
+
+**El reparto es exacto y no aproximado**, que es lo que lo hace útil:
+
+| Tipo de trama | Cuántas | Cifrada |
+|---|---|---|
+| `RpcReq` | 55 | **sí** |
+| `RpcResp` | 55 | **sí** |
+| `Ping` | 48 | no |
+| `Pong` | 48 | no |
+| Tres tipos del apretón de manos | 6 | no |
+
+O sea 110 cifradas y 102 en claro, y no es que la mitad viaje desnuda al azar: **va cifrado el RPC, y van en claro el latido y el apretón de manos**. Un apretón de manos no puede ir cifrado, porque es lo que establece con qué cifrar, y el `Ping` que se capturó lleva cuatro ceros de payload.
+
+**Lo que NO aparece en toda la captura**, buscado por cadena: el nombre de la sala, el apodo del host, el invite ID en sus dos formas, y las direcciones del rango virtual. Cero coincidencias de cada uno.
+
+**Lo que SÍ viaja en claro son los nombres de red**, los dos:
+
+```
+kanpachi-090527755f832ab326cb1940be1cfb24
+kanpachi-1c2d56d0d3df5d07c1c1cc640bda2e02
+```
+
+Uno es el vestíbulo y el otro la red real de la sala. **Que el seed los vea ya estaba escrito en el modelo de amenazas**, y tiene que verlos para relayar. Lo que la medición agrega es que, sin TLS por encima, **quien esté en el camino ve exactamente lo mismo que el seed**: qué redes hay y quién habla con quién. No es el secreto, y sí es correlacionable en el tiempo.
+
+**La entropía del payload dio 6,58 bits por byte de media**, entre 5,99 y 7,40. Conviene no leer de más ese número: las tramas son cortas, y en una de 64 bytes la entropía no puede pasar de 6 por definición, así que el valor está acotado por el tamaño y no dice que el cifrado sea flojo.
+
+**Lo que esta captura NO contesta, y hay que decirlo.** Es tráfico de control contra el seed. El tipo `Data`, que es el del juego, **no aparece ni una vez**, porque no hubo segundo miembro ni partida. Así que la pregunta de si el payload de un juego viaja reconocible sigue abierta, y se cierra con las mediciones que necesitan dos máquinas en la misma sala.
+
 
 ### El reposo, Windows contra Linux
 
@@ -2617,5 +2647,5 @@ Los dos sistemas protegen lo mismo por caminos distintos, y la diferencia import
 | Operador de un seed intenta cosechar passwords | Recibe un SHA-256 con el host de su propio seed dentro, así que lo que aprende no vale en ningún otro sitio, ni siquiera en otro seed suyo |
 | Disco robado de una máquina que hospeda en un seed cerrado | Entrega un token de refresco sellado, que caduca y que el operador revoca cambiando el password. **El password no está en el disco** |
 | **Otro usuario de la MISMA PC, en Windows** | **El password del seed NO lo cubre**, y hay que decirlo para que nadie lo suponga al revés. El canal local se le concede al usuario interactivo a propósito, para que la ventana hable sin elevar, así que ese usuario puede pedirle al daemon que abra una sala usando el token ya guardado. El password le cierra la puerta a desconocidos de internet, no a quien ya se sentó en esa máquina. En Linux no ocurre: el socket es 0600 de root |
-| Alguien captura el tráfico del túnel en el camino | Va cifrado con AES-128-GCM dentro del protocolo del motor, sin TLS por encima ni certificados en ninguna parte. La llave sale del secreto de red por un hash NO criptográfico, así que el respaldo de "32 bytes aleatorios" no llega hasta ella. Está leído del fuente que se compila, sin captura del cable todavía |
+| Alguien captura el tráfico del túnel en el camino | Va cifrado con AES-128-GCM dentro del protocolo del motor, sin TLS por encima ni certificados en ninguna parte. La llave sale del secreto de red por un hash NO criptográfico, así que el respaldo de "32 bytes aleatorios" no llega hasta ella. **Capturado**: el RPC va cifrado, el latido y el apretón de manos no, y en claro viajan los nombres de las dos redes. El nombre de la sala, el apodo, el código y las direcciones virtuales no aparecen |
 | Un miembro manda paquetes con la marca de cifrado apagada | El receptor los acepta tal cual, en las cuatro implementaciones de cifrado. Llegar a ser peer exige el digest del secreto de red y su prueba MAC, así que quien puede hacerlo ya está dentro de la sala: misma clase que mandar basura al canal de control |
