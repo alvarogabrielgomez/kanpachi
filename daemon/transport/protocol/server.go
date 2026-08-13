@@ -755,11 +755,27 @@ func (s *Server) autostart(params json.RawMessage) (json.RawMessage, *Error) {
 // normalizado, así que devolver lo que llegó enseñaría lo que se pidió en vez de
 // lo que quedó puesto.
 func (s *Server) ownSeed(params json.RawMessage) (json.RawMessage, *Error) {
-	p, e := decodeStrict[struct {
+	// Sin parámetros es LEER, y esa es la mitad más usada del método.
+	//
+	// Medido corriendo `kanpachi seed` a secas contra el daemon: el cliente
+	// manda `params` ausente cuando no hay host que fijar, y `decodeStrict`
+	// contestaba "faltan los parámetros". O sea que la forma que la ayuda
+	// documenta, `seed [host]` con el host opcional, no funcionaba.
+	//
+	// Se arregla acá y no aflojando [decodeStrict]: que un método acepte
+	// parámetros ausentes es una decisión de ESE método, y hacerla global
+	// dejaría pasar en silencio los que sí los necesitan.
+	var p struct {
 		Seed *string `json:"seed"`
-	}](params)
-	if e != nil {
-		return nil, e
+	}
+	if len(params) > 0 {
+		leído, e := decodeStrict[struct {
+			Seed *string `json:"seed"`
+		}](params)
+		if e != nil {
+			return nil, e
+		}
+		p.Seed = leído.Seed
 	}
 	if p.Seed != nil {
 		if _, err := s.api.SetOwnSeed(*p.Seed); err != nil {

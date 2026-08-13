@@ -265,6 +265,18 @@ enum FailureCode {
   /// pantallas distintas.
   noOwnSeed('no_own_seed'),
 
+  /// El código que pegaron no dice en qué servidor vive esa sala.
+  ///
+  /// El tercero de la familia, y hacen falta los tres. [noOwnSeed] es que esta
+  /// máquina no eligió dónde hospedar, [seedPassword] es que el servidor
+  /// elegido pide credencial, y este es que lo pegado no identifica una sala:
+  /// los mismos ocho caracteres existen en tantas salas como registros haya.
+  ///
+  /// **Antes llegaba como `internal`**, o sea con la copia que dice que
+  /// Kanpachi se rompió y que hay que reiniciar la app. Nada se rompió: falta
+  /// media línea en lo que pegaron. Medido corriendo el CLI contra el daemon.
+  seedMissing('seed_missing'),
+
   /// Ese registro pide password para HOSPEDAR y esta máquina no tiene con qué.
   ///
   /// Cubre los tres casos a la vez: nunca se escribió ninguno, el guardado

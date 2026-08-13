@@ -247,6 +247,25 @@ const (
 	// Entrar a una sala tampoco lo produce: ahí el registro viene dentro del
 	// código pegado.
 	CodeNoOwnSeed Code = "no_own_seed"
+
+	// CodeSeedMissing es un código PEGADO que no dice en qué servidor vive.
+	//
+	// Es el tercero de la familia y hace falta que sean tres. `no_own_seed` es
+	// que esta máquina no eligió dónde hospedar, `seed_password` es que el
+	// servidor elegido pide credencial, y este es que lo que alguien pegó no
+	// identifica una sala: ocho caracteres existen en tantas salas como
+	// registros haya.
+	//
+	// **Sin él caía en `internal`, y eso está medido corriendo el CLI contra el
+	// daemon.** `internal` es "lo que no encaja en ningún otro", y su copia le
+	// dice a la persona que Kanpachi se rompió y que reinicie la app. Nada se
+	// rompió y reiniciar no arregla nada: falta media línea en lo que pegó.
+	//
+	// No se mete en `bad_code`, que es "esto no tiene forma de código", porque
+	// desharía en el cable lo que el dominio separó: el centinela propio es lo
+	// que permite enseñar la forma completa en vez de un genérico.
+	CodeSeedMissing Code = "seed_missing"
+
 	CodeCanceled     Code = "canceled"     // el usuario canceló la operación
 	CodeBadNickname  Code = "bad_nickname" // el nombre no cumple la decisión 21
 	CodeBadCode      Code = "bad_code"     // el invite ID no tiene forma de código
@@ -344,6 +363,11 @@ func errorFor(err error) *Error {
 	case errors.Is(err, domain.ErrNicknameEmpty), errors.Is(err, domain.ErrNicknameTooLong),
 		errors.Is(err, domain.ErrNicknameSymbol):
 		code = CodeBadNickname
+	// Va ANTES que los de forma, y son dos códigos y no uno: al código le falta
+	// el servidor, contra el código no tiene forma de código. Lo que la persona
+	// hace después es distinto en cada caso, y ese es el criterio.
+	case errors.Is(err, domain.ErrSeedMissing):
+		code = CodeSeedMissing
 	case errors.Is(err, domain.ErrInputShape), errors.Is(err, domain.ErrInputTooLong),
 		errors.Is(err, domain.ErrSeedHost):
 		code = CodeBadCode

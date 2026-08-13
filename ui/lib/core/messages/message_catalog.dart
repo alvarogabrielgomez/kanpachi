@@ -357,6 +357,15 @@ abstract final class AppMessages {
           'Todavía no elegiste en qué servidor abres tus salas. Entrar a la '
           'sala de alguien no lo elige por ti.',
     ),
+    // Se arregla pidiendo el enlace otra vez, así que el texto enseña la forma
+    // completa: quien dictó el código por teléfono se quedó con la mitad.
+    FailureCode.seedMissing => const AppMessage(
+      severity: MessageSeverity.warn,
+      body:
+          'A ese código le falta el servidor. Los mismos ocho caracteres son '
+          'salas distintas en servidores distintos, así que hace falta el '
+          'enlace entero o la forma CÓDIGO@servidor.',
+    ),
     // El fallo de esta lista que se arregla escribiendo algo. El texto
     // no dice si el password nunca se puso, si caducó o si lo cambiaron,
     // porque el registro tampoco lo dice y lo que hay que hacer es lo mismo.
