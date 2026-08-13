@@ -8,7 +8,16 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
-Nothing yet.
+### Fixed
+
+- Ask for the password when a server wants one to host, which never happened: opening a room on a password-protected server answered "the meeting server does not answer, try again in a moment". It had answered, and what it said was that a password was missing, so retrying was advice that could not work and the password screen was unreachable ([e1bcfa6](https://github.com/alvarogabrielgomez/kanpachi/commit/e1bcfa6))
+- Say the real version in the file properties of every Kanpachi executable. v0.2.0 shipped a service that called itself v0.1.9-10-g3f1c599, a portable that called itself v0.1.9-9-gc1da1b5 and a window that called itself 0.1.2+3 ([e1bcfa6](https://github.com/alvarogabrielgomez/kanpachi/commit/e1bcfa6))
+- Rename the room from the confirmation dialog the way it is renamed inside the room: the name in plain text with a pencil beside it, instead of a text box competing with the server you are being asked to confirm ([4dbd64e](https://github.com/alvarogabrielgomez/kanpachi/commit/4dbd64e))
+- Grow the "what is a seed" explanation instead of making it appear in one frame, with its text fading in, and give the server address its own icon and the full width of the dialog ([4dbd64e](https://github.com/alvarogabrielgomez/kanpachi/commit/4dbd64e))
+
+### Changed
+
+- Open the window at 940x625 the first time, which is the width the design stops growing at ([4dbd64e](https://github.com/alvarogabrielgomez/kanpachi/commit/4dbd64e))
 
 ## [0.2.0] - 2026-08-13
 
