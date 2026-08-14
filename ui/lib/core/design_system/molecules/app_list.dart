@@ -160,8 +160,7 @@ class _AppTappableCardState extends State<AppTappableCard> {
 
     // Discontinua sólo en reposo: iluminarse la pasa a línea continua con el
     // acento, que es lo que hace el diseño.
-    final bool guiones =
-        widget.style == AppTappableCardStyle.dashed && !lit;
+    final bool guiones = widget.style == AppTappableCardStyle.dashed && !lit;
 
     final Widget caja = AnimatedContainer(
       duration: AppMotion.hover,

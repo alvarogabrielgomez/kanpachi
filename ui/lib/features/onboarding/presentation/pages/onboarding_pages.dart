@@ -149,9 +149,7 @@ class _NicknameScreenState extends State<NicknameScreen> {
       // el principio del camino y no hay a dónde volver; peor, volver sería
       // saltarse lo único que la app necesita para poder hacer algo. Cambiarlo
       // después se entra desde el menú de cuenta, y de ahí sí se vuelve.
-      onBack: widget.fromOnboarding
-          ? null
-          : context.read<ShellCubit>().back,
+      onBack: widget.fromOnboarding ? null : context.read<ShellCubit>().back,
     );
   }
 }
