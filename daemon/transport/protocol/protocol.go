@@ -279,12 +279,12 @@ const (
 	// que permite enseñar la forma completa en vez de un genérico.
 	CodeSeedMissing Code = "seed_missing"
 
-	CodeCanceled     Code = "canceled"     // el usuario canceló la operación
-	CodeBadNickname  Code = "bad_nickname" // el nombre no cumple la decisión 21
-	CodeBadCode      Code = "bad_code"     // el invite ID no tiene forma de código
-	CodeBadProfile   Code = "bad_profile"  // el perfil no pasa las invariantes
-	CodeUnavailable  Code = "unavailable"  // el adaptador de abajo falló
-	CodeInternal     Code = "internal"     // lo que no encaja en ninguno de arriba
+	CodeCanceled    Code = "canceled"     // el usuario canceló la operación
+	CodeBadNickname Code = "bad_nickname" // el nombre no cumple la decisión 21
+	CodeBadCode     Code = "bad_code"     // el invite ID no tiene forma de código
+	CodeBadProfile  Code = "bad_profile"  // el perfil no pasa las invariantes
+	CodeUnavailable Code = "unavailable"  // el adaptador de abajo falló
+	CodeInternal    Code = "internal"     // lo que no encaja en ninguno de arriba
 )
 
 // Request es lo que entra. Una línea de JSON.

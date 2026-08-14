@@ -88,10 +88,11 @@ class _Titular extends StatelessWidget {
       'Ojo: $_nick te invitó antes con otra llave. Puede que haya reinstalado '
           'Windows, y puede que no sea la misma persona. Compara las dos '
           'huellas con quien te pasó el código antes de entrar.',
-    HostVerdict.conocida => invite.knownRooms > 1
-        ? 'Ya jugaste con $_nick, en ${invite.knownRooms} salas. Es la misma '
-              'llave de siempre.'
-        : 'Ya jugaste con $_nick. Es la misma llave de la otra vez.',
+    HostVerdict.conocida =>
+      invite.knownRooms > 1
+          ? 'Ya jugaste con $_nick, en ${invite.knownRooms} salas. Es la misma '
+                'llave de siempre.'
+          : 'Ya jugaste con $_nick. Es la misma llave de la otra vez.',
     HostVerdict.renombrada =>
       'Es la llave de ${invite.knownNick}, con la que ya jugaste. Ahora se '
           'identifica como $_nick.',

@@ -272,11 +272,11 @@ func TestNadaQueLleveSecretosSeImprimeEntero(t *testing.T) {
 	invitado := GuestSpec{Credential: Credential{ID: "cred-1", Token: secreto}}
 
 	casos := map[string]any{
-		"HostedRoom": sala,
-		"HostSpec":            host,
-		"GuestSpec":           invitado,
-		"RendezvousSpec":      RendezvousSpec{Rendezvous: rdv},
-		"Credential":          invitado.Credential,
+		"HostedRoom":     sala,
+		"HostSpec":       host,
+		"GuestSpec":      invitado,
+		"RendezvousSpec": RendezvousSpec{Rendezvous: rdv},
+		"Credential":     invitado.Credential,
 	}
 	for nombre, v := range casos {
 		for _, verbo := range []string{"%v", "%+v"} {

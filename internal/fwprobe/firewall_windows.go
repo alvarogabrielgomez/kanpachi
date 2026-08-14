@@ -20,8 +20,8 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windows/wfp"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windows/netfw"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windows/wfp"
 )
 
 // abrir monta el firewall compuesto igual que lo montaría el daemon.
