@@ -7,6 +7,7 @@ import 'package:kanpachi_ui/core/design_system/atoms/app_kicker.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/core/platform/app_version.dart';
+import 'package:kanpachi_ui/core/platform/system_browser.dart';
 import 'package:kanpachi_ui/features/update/presentation/cubit/update_cubit.dart';
 
 /// Buscar versión nueva, a pedido.
@@ -59,10 +60,11 @@ class _UpdateCheckCardState extends State<UpdateCheckCard> {
     );
 
     return AppCard(
+      padding: AppSpacing.cardInset,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          const AppKicker('Versión'),
+          const AppKicker('Verificar actualizaciones'),
           const SizedBox(height: AppSpacing.x5l),
           Row(
             children: <Widget>[
@@ -70,17 +72,27 @@ class _UpdateCheckCardState extends State<UpdateCheckCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
+                    // La versión que corre, nombrada. «Tienes la 0.2.1» decía
+                    // lo mismo con una frase donde alcanza un rótulo, y encima
+                    // dejaba la línea de abajo repitiendo el verbo.
                     Text(
-                      'Tienes la $kAppVersion',
+                      'Kanpachi $kAppVersion',
                       style: context.type.body.copyWith(color: colors.text),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       switch ((nueva, _preguntado)) {
-                        (final String v?, _) => 'Hay una más nueva: $v',
-                        (null, true) => 'No hay ninguna más nueva.',
+                        // Lleva el número: «hay una nueva» es una afirmación
+                        // que nadie puede comprobar, y «la 0.2.2 está fuera»
+                        // se compara contra lo que diga la página.
+                        (final String v?, _) =>
+                          'Hay una actualización nueva, la $v. '
+                              'Pulsa para bajarla.',
+                        (null, true) =>
+                          'Tienes la versión más nueva hasta ahora. Nada que '
+                              'hacer por acá.',
                         (null, false) =>
-                          'Kanpachi no consulta solo. Pulsa para preguntar.',
+                          'Verifica si hay nuevas actualizaciones de Kanpachi.',
                       },
                       style: context.type.bodySm.copyWith(
                         color: nueva == null ? colors.textMuted : colors.accent,
@@ -90,9 +102,27 @@ class _UpdateCheckCardState extends State<UpdateCheckCard> {
                 ),
               ),
               const SizedBox(width: AppSpacing.xl),
+              // Sabiendo que hay una nueva, preguntar otra vez no contesta
+              // nada: la respuesta ya está y no cambia. El botón pasa a llevar
+              // a donde se baja, que es lo único que queda por hacer.
+              //
+              // **Lleva a la página, y no descarga ni instala nada.** Kanpachi
+              // no se actualiza solo, ver `docs/07-futuro.md`: lo que haría un
+              // botón de «Actualizar» es un servicio corriendo como SYSTEM
+              // reemplazando su binario por una descarga sin firmar.
               AppButton(
-                label: _buscando ? 'Buscando...' : 'Buscar',
-                onPressed: _buscando ? null : _buscar,
+                label: switch ((nueva, _buscando)) {
+                  (_, true) => 'Buscando...',
+                  (final String _?, _) => 'Descargar',
+                  _ => 'Buscar',
+                },
+                onPressed: switch ((nueva, _buscando)) {
+                  (_, true) => null,
+                  (final String _?, _) => () => SystemBrowser.open(
+                    Brand.releases,
+                  ),
+                  _ => _buscar,
+                },
               ),
             ],
           ),

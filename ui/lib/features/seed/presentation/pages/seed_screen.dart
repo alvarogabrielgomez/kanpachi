@@ -2,7 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:kanpachi_ui/core/brand.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_chip.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_doc_link.dart';
+import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
+import 'package:kanpachi_ui/core/platform/system_browser.dart';
 import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/features/session/domain/daemon_failure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/own_seed.dart';
@@ -158,11 +162,33 @@ class _SeedScreenState extends State<SeedScreen> {
                 'Cámbialo si no es el tuyo.'
           : 'El nombre del servidor, sin https:// y sin barras',
       error: _error,
-      explainer: const AppExplainer(
-        'Es el punto de encuentro de tus salas: ve tu IP pública y por él '
-        'pasa todo el que entre con tu código. Ponlo solo si confías en '
-        'quien lo administra.',
+      // El explicador dice QUÉ HACE esa máquina y hasta cuándo, que es lo que
+      // permite decidir. La versión anterior decía que «por él pasa todo el
+      // que entre con tu código», y eso describe el vestíbulo como si fuera la
+      // partida: levantado el túnel el seed se retira, y lo que sigue pasando
+      // por él es la conexión que no consiguió camino directo, cifrada.
+      explainer: AppExplainer(
+        '',
         textAlign: TextAlign.center,
+        rich: TextSpan(
+          children: <InlineSpan>[
+            const TextSpan(
+              text:
+                  'Presenta entre sí a los que entran con tu código, hasta que '
+                  'la sala se levanta. Desde ahí el juego va directo entre '
+                  'ustedes. Ponlo solo si confías en quien lo administra. ',
+            ),
+            WidgetSpan(
+              alignment: PlaceholderAlignment.baseline,
+              baseline: TextBaseline.alphabetic,
+              child: AppDocLink(
+                label: 'Más información',
+                style: context.type.body,
+                onTap: () => SystemBrowser.open(Brand.seedDoc),
+              ),
+            ),
+          ],
+        ),
       ),
       actionLabel: 'Guardar',
       enabled: _valido,

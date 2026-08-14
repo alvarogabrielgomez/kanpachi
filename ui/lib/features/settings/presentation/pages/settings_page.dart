@@ -162,6 +162,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // equipo» se quedaría con un título y nada debajo. Ver [_portable].
           if (!_portable) ...<Widget>[
             AppCard(
+              padding: AppSpacing.cardInset,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
@@ -195,21 +196,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const UpdateCheckCard(),
           const SizedBox(height: AppSpacing.x4l),
           AppCard(
+            padding: AppSpacing.cardInset,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 const AppKicker('Diagnóstico'),
                 const SizedBox(height: AppSpacing.x5l),
                 AppSwitchRow(
-                  title: 'Contar paso a paso lo que hace el servicio',
+                  title: 'Mostrar detalles del servicio Kanpachi',
                   note:
-                      'Enseña, mientras se abre una sala, cada paso con su '
-                      'reloj: el rango elegido, el código que dio el registro, '
-                      'el motor arrancando, el adaptador tomando su dirección. '
-                      'Si algo falla, esos pasos quedan dentro de «ver '
-                      'detalles» del error. Cuesta una consulta al servicio '
-                      'un par de veces por segundo mientras dura la espera, y '
-                      'nada el resto del tiempo.',
+                      'Enseña lo que pasa por detrás de escena cuando usas '
+                      'Kanpachi: cada paso de abrir una sala con su reloj, y '
+                      'esos mismos pasos dentro de «ver detalles» cuando algo '
+                      'falla. Cuesta una consulta al servicio mientras dura la '
+                      'espera, y nada el resto del tiempo.',
                   value: session.verbose,
                   onChanged: (bool v) =>
                       context.read<SessionCubit>().setVerbose(enabled: v),

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_cover.dart';
@@ -90,6 +89,19 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Lo que quedó es redibujar el botón. Interpretar lo pegado es de
   /// [InviteCode.parse], y decidir si vale, del daemon.
   void _onCodeChanged(String raw) => setState(() {});
+
+  /// Un código PELADO: los ocho caracteres puestos, y sin el servidor.
+  ///
+  /// Es el único «todavía no vale» que se puede explicar mientras alguien
+  /// escribe, y hace falta explicarlo: el botón apagado sobre un código que se
+  /// ve completo no dice qué le falta, y lo que le falta es la mitad que decide
+  /// a qué sala se entra. El daemon contesta lo mismo con
+  /// [FailureCode.seedMissing], y eso llega después de pulsar; esto llega antes.
+  bool get _faltaServidor {
+    final String t = _code.text.trim();
+    if (t.isEmpty || t.contains('@') || t.contains('/')) return false;
+    return InviteCode.normalize(t).length == InviteCode.length;
+  }
 
   /// Joins, and only navigates if it joined.
   ///
@@ -180,6 +192,7 @@ class _HomeScreenState extends State<HomeScreen> {
               roomName: _roomName,
               nameHint: _nameHint,
               canJoin: canJoin,
+              missingSeed: _faltaServidor,
               daemonDown: session.daemonDown,
               seedDown: session.health.seedDown,
               alerts: session.health.alerts,
@@ -207,6 +220,7 @@ class _JoinAndCreate extends StatelessWidget {
     required this.roomName,
     required this.nameHint,
     required this.canJoin,
+    required this.missingSeed,
     required this.daemonDown,
     required this.seedDown,
     required this.alerts,
@@ -220,6 +234,11 @@ class _JoinAndCreate extends StatelessWidget {
   final TextEditingController roomName;
   final String nameHint;
   final bool canJoin;
+
+  /// Lo escrito tiene forma de código y le falta el servidor. Se dice debajo
+  /// del campo: un botón apagado sobre ocho caracteres que se ven completos no
+  /// cuenta qué falta.
+  final bool missingSeed;
 
   /// No se pudo hablar con el servicio. Va PRIMERO, por delante de cualquier
   /// aviso: sin servicio los demás avisos son de una medición que no se hizo.
@@ -258,13 +277,24 @@ class _JoinAndCreate extends StatelessWidget {
           controller: code,
           shape: AppFieldShape.pill,
           mono: true,
-          hint: 'A7K2-M9QX',
-          maxLength: InviteCode.length + 1,
+          // La forma ENTERA en la pista, servidor incluido. Con `A7K2-M9QX`
+          // sola, la pista enseñaba justo la mitad que no sirve para entrar a
+          // ninguna parte.
+          hint: 'A7K2-M9QX@servidor',
+          // **Ni filtro de alfabeto ni tope de nueve, y eso era el fallo.** El
+          // campo aceptaba `[a-zA-Z0-9-]` y cortaba a nueve caracteres, así que
+          // de las seis formas que el daemon entiende no entraba ninguna: el
+          // `@`, los puntos, las barras y los dos puntos se caían al escribir y
+          // al PEGAR. `A7K2-M9QX@seed.ejemplo.com` quedaba en `A7K2-M9QX`
+          // — medido — y un código pelado no vale para entrar, así que el botón
+          // no se encendía nunca y no había forma de que se encendiera.
+          //
+          // El tope es el mismo que mira el daemon antes de tocar el contenido.
+          // Interpretar lo pegado es de [InviteCode.parse], y decidir si vale,
+          // del daemon.
+          maxLength: InviteCode.maxInput,
           onChanged: onCodeChanged,
           onSubmitted: (_) => onJoin(),
-          inputFormatters: <TextInputFormatter>[
-            FilteringTextInputFormatter.allow(RegExp('[a-zA-Z0-9-]')),
-          ],
           trailing: AppButton(
             label: 'Unirse',
             height: 42,
@@ -274,6 +304,15 @@ class _JoinAndCreate extends StatelessWidget {
             onPressed: canJoin ? onJoin : null,
           ),
         ),
+        if (missingSeed) ...<Widget>[
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            'A ese código le falta el servidor: los mismos ocho caracteres son '
+            'salas distintas en servidores distintos. Pega el enlace entero, o '
+            'la forma CÓDIGO@servidor.',
+            style: context.type.bodySm.copyWith(color: colors.textMuted),
+          ),
+        ],
         const SizedBox(height: AppSpacing.x3l),
         const AppLabeledDivider('o'),
         const SizedBox(height: AppSpacing.x3l),
@@ -284,6 +323,14 @@ class _JoinAndCreate extends StatelessWidget {
           shape: AppFieldShape.pill,
           hint: nameHint,
           maxLength: 24,
+          // **Sin esto el campo no era el borrador, era un campo suelto.** El
+          // parámetro estaba declarado, se pasaba desde la portada y no lo
+          // recibía nadie, así que lo escrito acá no salía de este widget: el
+          // diálogo de confianza leía un borrador siempre vacío y enseñaba la
+          // sugerencia, y quien acababa de escribir el nombre de su sala veía
+          // otro. El sentido contrario sí estaba cableado, que es lo que hacía
+          // el fallo difícil de ver: cambiarlo en el diálogo sí bajaba acá.
+          onChanged: onRoomNameChanged,
           onSubmitted: (_) => onCreate(),
           trailing: AppButton(
             label: 'Crear sala',

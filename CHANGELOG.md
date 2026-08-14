@@ -8,6 +8,28 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Added
+
+- Explain the meeting server whole, in `kanpachi-seed.md`: what it does, when your packets go through it and why it cannot read them, what its state file actually holds, what a modified one could do differently, and the lobby gap that is still open. The three "Más información" links in the app go there, instead of an anchor that existed on no page
+- Go to the server screen from the bottom-right corner of the window, which is the only place the server is written down at all times and led nowhere. Hovering it says in one line what that machine is
+
+### Fixed
+
+- Type or paste a whole invite code on the home screen. The field dropped every character that is not a letter, a digit or a dash and cut what was left to nine, so `A7K2-M9QX@seed.example.com` became `A7K2-M9QX` — measured — and since a bare code has not been enough to join since the server started travelling inside the code, **the join button could never light up at all**
+- Say what is missing under the field when what you typed is a bare code, instead of leaving a dead button next to eight characters that look complete
+- Carry the room name you typed on the home screen into the dialog that confirms the server, which showed the suggested one instead. The field was never writing it down, so everything downstream read an empty draft — and the other direction did work, which is what made it look connected
+- Open the room with the name you typed when the server asks for a password, and when you go through the game picker: both paths used a name of their own, so the room ended up called something else
+
+### Changed
+
+- Stop saying that everyone who comes in with your code passes through the meeting server, on the screen that asks for it and in the trust dialogs. It introduces people until the room is up and then steps out; what keeps going through it is the one connection that could not find a direct path, encrypted, and it has nothing to open it with
+- Cut the warning above the confirm button down to two lines that each decide something — a modified server can write down the public IP of everyone who comes in, and what is inside the room is unreadable to any of them — instead of four that also claimed a bad one may "try to capture information between participants", which it cannot. The whole account moved to `kanpachi-seed.md`, behind the link
+- Underline the "Más información" links when the mouse is on them, so the colour is not the only thing saying they can be pressed
+- Say what the meeting server is for in Settings, instead of what the app does with it: it introduces the people who come in with your code to each other until the room is up, and from there the game goes straight between you, bar the connection that cannot find a direct path
+- Say "Kanpachi 0.2.1" and, once asked, "tienes la versión más nueva hasta ahora", instead of "Tienes la 0.2.1" over a line that says the same again. With a newer one known the button stops offering to search, which cannot answer anything different any more, and offers to download
+- Call the diagnostic switch "Mostrar detalles del servicio Kanpachi", and say in two lines what it shows and what it costs, instead of six that listed the steps one by one
+- Give the Settings cards the same inside air as the ones in the room, which they had none of: the text and the button touched the border
+
 ## [0.2.1] - 2026-08-13
 
 ### Fixed

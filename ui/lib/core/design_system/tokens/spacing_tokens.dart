@@ -30,6 +30,19 @@ abstract final class AppSpacing {
   /// densidad: lo que se comprime es el aire vertical, no el ancho de lectura.
   static const double pageInline = 30;
 
+  /// El aire de dentro de una tarjeta que no lo pide a medida.
+  ///
+  /// [AppCard] no lo trae de fábrica porque hay tarjetas que a propósito no lo
+  /// quieren: una lista cuyos separadores llegan al borde, o una portada que
+  /// llena la caja entera. Lo que sí hace falta es que las que sí lo llevan
+  /// lleven el MISMO, y escrito a mano en cada sitio se desincroniza: las
+  /// tarjetas de Configuración se quedaron sin ninguno, con el texto y el botón
+  /// tocando el borde, mientras las de la sala tenían este número.
+  static const EdgeInsets cardInset = EdgeInsets.symmetric(
+    horizontal: x4l,
+    vertical: x3l,
+  );
+
   /// Hasta dónde crece el contenido antes de dejar de crecer y centrarse.
   ///
   /// Es el ancho de la ventana que dibuja el diseño, y arriba de eso no hay

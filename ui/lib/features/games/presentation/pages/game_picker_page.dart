@@ -114,7 +114,13 @@ class _GamePickerScreenState extends State<GamePickerScreen> {
               // out of it.
               onTap: () async {
                 final SessionCubit session = context.read<SessionCubit>();
-                if (await session.createRoom(name: 'Sala de Kanpachi')) {
+                // El nombre sale del borrador, que es lo que se escribió en la
+                // portada. Acá había un literal, así que pasar por el selector
+                // de juego renombraba la sala de quien ya la había bautizado.
+                final String draft = session.state.roomNameDraft.trim();
+                if (await session.createRoom(
+                  name: draft.isEmpty ? 'Sala de Kanpachi' : draft,
+                )) {
                   shell.go(AppScreen.room);
                 }
               },

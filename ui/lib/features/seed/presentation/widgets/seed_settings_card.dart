@@ -75,10 +75,11 @@ class _SeedSettingsCardState extends State<SeedSettingsCard> {
     final bool hay = seed.isNotEmpty;
 
     return AppCard(
+      padding: AppSpacing.cardInset,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          const AppKicker('Servidor'),
+          const AppKicker('Servidor de encuentro'),
           const SizedBox(height: AppSpacing.x5l),
           Row(
             children: <Widget>[
@@ -95,8 +96,10 @@ class _SeedSettingsCardState extends State<SeedSettingsCard> {
                     const SizedBox(height: 4),
                     Text(
                       hay
-                          ? 'Es donde se abren tus salas. Ve tu IP pública, y '
-                                'por él pasa todo el que entre con tu código.'
+                          ? 'Presenta entre sí a los que entran con tu código, '
+                                'hasta que la sala se levanta. Desde ahí el '
+                                'juego va directo entre ustedes, salvo la '
+                                'conexión que no pueda y tenga que pasar por él.'
                           : 'Hace falta solo para ABRIR salas. Entrar a la de '
                                 'otra persona no lo usa y no pide nada.',
                       style: context.type.bodySm.copyWith(
@@ -109,8 +112,7 @@ class _SeedSettingsCardState extends State<SeedSettingsCard> {
               const SizedBox(width: AppSpacing.xl),
               AppButton(
                 label: hay ? 'Cambiar' : 'Elegir',
-                onPressed: () =>
-                    context.read<ShellCubit>().go(AppScreen.seed),
+                onPressed: () => context.read<ShellCubit>().go(AppScreen.seed),
               ),
             ],
           ),

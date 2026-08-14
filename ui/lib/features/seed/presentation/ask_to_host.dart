@@ -33,11 +33,15 @@ Future<void> askToHost(
   // de volver de esa pantalla es la que la olvida.
   final OwnSeed propio = await session.ownSeed();
   if (!context.mounted) return;
+  // Lo que se escribió gana a lo que se sugiere, y acá importaba de verdad: la
+  // intención recordada es lo que abre la sala en el camino de la contraseña,
+  // que NO vuelve a pasar por el diálogo. Guardando la sugerencia, quien
+  // escribió el nombre de su sala y se topó con un servidor que pide
+  // contraseña acababa con una sala llamada de otra forma.
+  final String draft = session.state.roomNameDraft.trim();
+  final String nombre = draft.isEmpty ? suggestedName : draft;
   if (!propio.canHost) {
-    session.rememberHostIntent(
-      name: suggestedName,
-      game: session.state.pendingGame,
-    );
+    session.rememberHostIntent(name: nombre, game: session.state.pendingGame);
     shell.go(AppScreen.seed);
     return;
   }

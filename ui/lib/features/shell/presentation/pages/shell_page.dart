@@ -55,6 +55,12 @@ class ShellPage extends StatelessWidget {
     final bool daemonCaido = context.select<SessionCubit, bool>(
       (SessionCubit c) => c.state.daemonDown,
     );
+    // Sin sala, lo de la derecha ES el servidor, y por eso se puede pulsar. Va
+    // como `select` propio y no deducido del texto: mirar si la cadena lleva un
+    // punto sería adivinar desde el resultado lo que el estado ya sabe.
+    final bool sinSala = context.select<SessionCubit, bool>(
+      (SessionCubit c) => c.state.room == null,
+    );
 
     return Scaffold(
       backgroundColor: context.colors.surface,
@@ -62,7 +68,11 @@ class ShellPage extends StatelessWidget {
         children: <Widget>[
           const ShellTitleBar(),
           const Expanded(child: _WindowBody()),
-          ShellStatusBar(right: derecha, daemonDown: daemonCaido),
+          ShellStatusBar(
+            right: derecha,
+            rightIsSeed: sinSala,
+            daemonDown: daemonCaido,
+          ),
         ],
       ),
     );
@@ -499,4 +509,3 @@ class _DialogLayer extends StatelessWidget {
     };
   }
 }
-

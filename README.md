@@ -31,7 +31,8 @@ credential exchange and the tunnel are identical on both.
 
 If the room directory service is unavailable, the room can still work. What degrades is the invite card presentation.
 
-See the protection statement: [kanpachi-protection.md](kanpachi-protection.md).
+See the protection statement: [kanpachi-protection.md](kanpachi-protection.md), and what the
+meeting server does, sees and stores: [kanpachi-seed.md](kanpachi-seed.md).
 
 ## Screenshots
 
@@ -274,6 +275,7 @@ This section is intentionally short and points to auditable sources.
 
 - What changed in each release: [CHANGELOG.md](CHANGELOG.md)
 - Security promise and scope: [kanpachi-protection.md](kanpachi-protection.md)
+- What the meeting server does, sees and stores: [kanpachi-seed.md](kanpachi-seed.md)
 - Architecture and process boundaries: [docs/03-arquitectura.md](docs/03-arquitectura.md)
 - Engine behavior and non-listening model: [kanpachi-engine README](https://github.com/alvarogabrielgomez/kanpachi-engine)
 - EasyTier fork rationale and minimal diff record: [EasyTier/FORK.md](https://github.com/alvarogabrielgomez/EasyTier/blob/kanpachi/FORK.md)

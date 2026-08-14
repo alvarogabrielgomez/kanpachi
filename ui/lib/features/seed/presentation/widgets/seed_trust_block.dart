@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kanpachi_ui/core/brand.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_doc_link.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_glyphs.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
@@ -43,7 +44,11 @@ class _SeedTrustBlockState extends State<SeedTrustBlock> {
 
   /// Dónde se explica esto con calma. Sale de [Brand] y no escrito acá: es el
   /// repositorio de quien publicó esta copia, y un fork manda a la suya.
-  static String get _masInfo => '${Brand.docs}#seed';
+  ///
+  /// Apuntaba a `Brand.docs` con un ancla `#seed` que no existía: el enlace
+  /// abría el README y quien lo pulsaba se quedaba con la misma duda. Ahora hay
+  /// un documento entero, ver [Brand.seedDoc].
+  static String get _masInfo => Brand.seedDoc;
 
   /// Sin avisar si Windows no lo abrió. Es un enlace de ayuda, y una pantalla
   /// de error encima taparía la decisión que la persona está tomando justo
@@ -116,10 +121,12 @@ class _SeedTrustBlockState extends State<SeedTrustBlock> {
                           curve: Curves.easeOutCubic,
                           child: _Prosa(
                             texto:
-                                'El seed presenta a los invitados entre ellos. '
-                                'Cuando el túnel queda levantado se retira: los '
-                                'datos de la sala van directo entre ustedes y '
-                                'no deberían pasar por él.',
+                                'El seed presenta a los invitados entre ellos '
+                                'y reparte los códigos. Levantado el túnel se '
+                                'retira, y el juego va directo entre ustedes. '
+                                'Cuando una conexión no consigue camino '
+                                'directo, sus paquetes pasan por él cifrados: '
+                                'no tiene con qué abrirlos.',
                             onMasInfo: _abrirDoc,
                             color: colors.textMuted,
                           ),
@@ -159,12 +166,16 @@ class _SeedTrustBlockState extends State<SeedTrustBlock> {
                 const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: _Prosa(
+                    // **Dos frases, y las dos deciden algo.** La versión larga
+                    // decía además que el seed de este repositorio no guarda
+                    // direcciones, con qué llevarse cada IP y con quién se
+                    // junta: cuatro renglones encima del botón, que es donde
+                    // menos se lee. Eso vive en el documento, entero y con lo
+                    // medido. Acá queda el riesgo y su límite.
                     texto:
-                        'Revisa a dónde apunta la dirección antes de '
-                        '${widget.joining ? 'entrar' : 'seguir'}. Un seed '
-                        'malicioso puede registrar las IP públicas de quienes '
-                        'se presentan ante él, e incluso intentar capturar '
-                        'información entre los participantes.',
+                        'Un seed modificado puede anotar la IP pública de todo '
+                        'el que ${widget.joining ? 'entre' : 'entre a tu sala'}. '
+                        'Lo de dentro de la sala no lo lee ninguno.',
                     onMasInfo: _abrirDoc,
                     color: colors.textMuted,
                   ),
@@ -254,12 +265,10 @@ class _Prosa extends StatelessWidget {
           WidgetSpan(
             alignment: PlaceholderAlignment.baseline,
             baseline: TextBaseline.alphabetic,
-            child: InkWell(
+            child: AppDocLink(
+              label: 'Más información',
+              style: base,
               onTap: onMasInfo,
-              child: Text(
-                'Más información',
-                style: base.copyWith(color: context.colors.accent),
-              ),
             ),
           ),
         ],

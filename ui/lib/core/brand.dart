@@ -42,4 +42,17 @@ abstract final class Brand {
   /// El repositorio, y no un dominio: un dominio es de alguien que paga un DNS,
   /// y el repositorio es de donde salió esto.
   static const String docs = 'https://github.com/$repo';
+
+  /// Dónde se explica el servidor de encuentro, con calma y entero.
+  ///
+  /// Es el destino de los «Más información» de las tres pantallas que hablan de
+  /// un seed. Apuntaban a `docs` con un ancla `#seed` que no existía en ningún
+  /// sitio: el enlace abría el README y quien lo pulsaba se quedaba igual.
+  ///
+  /// **Un fichero del repositorio, y en inglés**, como
+  /// `kanpachi-protection.md`: se enlaza desde fuera, y lo que hay dentro son
+  /// afirmaciones sobre qué ve y qué guarda una máquina de un tercero. Los ocho
+  /// documentos de diseño siguen en castellano, en `docs/`.
+  static const String seedDoc =
+      'https://github.com/$repo/blob/main/kanpachi-seed.md';
 }

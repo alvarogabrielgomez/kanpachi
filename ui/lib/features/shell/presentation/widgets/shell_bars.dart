@@ -398,6 +398,7 @@ class _CloseGlyph extends StatelessWidget {
 class ShellStatusBar extends StatelessWidget {
   const ShellStatusBar({
     required this.right,
+    required this.rightIsSeed,
     required this.daemonDown,
     super.key,
   });
@@ -405,6 +406,14 @@ class ShellStatusBar extends StatelessWidget {
   /// El dato de la derecha: el adaptador y tu IP dentro de la sala, o el seed
   /// cuando no hay sala.
   final String right;
+
+  /// Si lo de la derecha es el SERVIDOR, y no el adaptador de una sala.
+  ///
+  /// Decide dos cosas: qué dice el globo, y si el sitio se puede pulsar. Con
+  /// sala abierta ahí no hay ningún servidor escrito —hay un adaptador y una
+  /// dirección—, así que llevar de ahí a la pantalla de cambiar el servidor
+  /// sería mandar a alguien a otra cosa que la que está mirando.
+  final bool rightIsSeed;
 
   /// No se pudo hablar con el servicio.
   final bool daemonDown;
@@ -414,7 +423,9 @@ class ShellStatusBar extends StatelessWidget {
     final colors = context.colors;
     return Container(
       height: AppSpacing.statusBarHeight,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x3l),
+      // El relleno de la derecha lo pone ahora [_RightSlot], que necesita
+      // llegar hasta el borde para que su realce no deje una franja muerta.
+      padding: const EdgeInsets.only(left: AppSpacing.x3l),
       decoration: BoxDecoration(
         color: colors.surfaceSunken,
         border: Border(
@@ -441,11 +452,83 @@ class ShellStatusBar extends StatelessWidget {
           // aparece una versión nueva. El aviso empuja hacia dentro, y cuando
           // no hay ninguno la barra queda exactamente como estaba.
           const UpdateNotice(),
-          Text(
-            right,
-            style: context.type.statusMono.copyWith(color: colors.textMuted),
-          ),
+          _RightSlot(text: right, isSeed: rightIsSeed),
         ],
+      ),
+    );
+  }
+}
+
+/// La esquina de la derecha: qué dice, qué explica, y a dónde lleva.
+///
+/// # Por qué se puede pulsar
+///
+/// Porque es el único sitio de la app donde el servidor está escrito siempre, y
+/// no llevaba a ninguna parte: para cambiarlo había que abrir el menú de
+/// cuenta, entrar en Configuración y encontrar la tarjeta. Un dato que se lee a
+/// diario y que se cambia tres pantallas más allá es un dato que invita a
+/// buscarlo por su cuenta.
+///
+/// # Por qué el globo, si el nombre ya está escrito
+///
+/// Porque el nombre no dice qué es esa máquina. `kanpachi.accentio.dev` ahí
+/// abajo se lee como «a dónde estás conectado», y lo que es de verdad es el
+/// punto de encuentro donde se abren TUS salas: quien lo mire con una sala de
+/// otro abierta se llevaría la idea contraria. Espera medio segundo antes de
+/// aparecer, que es lo que separa a quien lo está mirando de quien pasa el
+/// ratón camino de otro sitio.
+class _RightSlot extends StatefulWidget {
+  const _RightSlot({required this.text, required this.isSeed});
+
+  final String text;
+  final bool isSeed;
+
+  @override
+  State<_RightSlot> createState() => _RightSlotState();
+}
+
+class _RightSlotState extends State<_RightSlot> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final Widget texto = AnimatedContainer(
+      duration: AppMotion.hover,
+      height: AppSpacing.statusBarHeight,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x3l),
+      alignment: Alignment.center,
+      color: _hovered && widget.isSeed ? colors.surface : Colors.transparent,
+      child: Text(
+        widget.text,
+        style: context.type.statusMono.copyWith(
+          color: _hovered && widget.isSeed ? colors.text : colors.textMuted,
+        ),
+      ),
+    );
+
+    return Tooltip(
+      message: widget.isSeed
+          ? 'El servidor de encuentro donde abres tus salas. Pulsa para '
+                'cambiarlo.'
+          : 'Tu adaptador virtual y tu dirección dentro de esta sala.',
+      waitDuration: const Duration(milliseconds: 500),
+      child: MouseRegion(
+        cursor: widget.isSeed
+            ? SystemMouseCursors.click
+            : SystemMouseCursors.basic,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          // `opaque`, como el botón de cuenta: sin esto el objetivo son las
+          // letras y no la zona, y una franja de 38 px de alto se convierte en
+          // una de 12 que hay que apuntar.
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.isSeed
+              ? () => context.read<ShellCubit>().go(AppScreen.seed)
+              : null,
+          child: texto,
+        ),
       ),
     );
   }
