@@ -9,8 +9,6 @@ package main
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"flag"
 	"fmt"
 	"os"
@@ -19,28 +17,15 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/accentiostudios/kanpachi/core/port"
-	"github.com/accentiostudios/kanpachi/core/usecase"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/canary/opener"
-	catalogstore "github.com/accentiostudios/kanpachi/daemon/adapter/catalog/jsonfile"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/directory"
 	kanpachiengine "github.com/accentiostudios/kanpachi/daemon/adapter/engine/kanpachi"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/identity"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/inspector"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/library/steam"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/netcfg"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/probe"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/router/igd"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/routes"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/sinimplementar"
 	statestore "github.com/accentiostudios/kanpachi/daemon/adapter/state/jsonfile"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/sysevents"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/uihost"
 	"github.com/accentiostudios/kanpachi/daemon/service"
-	"github.com/accentiostudios/kanpachi/daemon/service/supervisor"
-	"github.com/accentiostudios/kanpachi/daemon/transport/control"
 	"github.com/accentiostudios/kanpachi/daemon/transport/pipe"
 	"github.com/accentiostudios/kanpachi/daemon/wiring"
 )
@@ -135,7 +120,7 @@ func limpiar(datos string, desinstalar bool) error {
 
 	// El auditor se descarta (`_`): limpiar no pregunta nada. Va el de verdad
 	// igual, para que en el cableado no quede ni un provisional.
-	fw, _, cerrarFirewall, err := realFirewall(datos, log, igd.New(log))
+	fw, _, cerrarFirewall, err := wiring.NewFirewall(datos, log, igd.New(log))
 	if err != nil {
 		return err
 	}
@@ -158,7 +143,7 @@ func limpiar(datos string, desinstalar bool) error {
 		Log:      log,
 		// Qué lista de puertos cierra la cuarentena. Lo dice el cableado del
 		// sistema, no un runtime.GOOS acá. Ver `wiring_linux.go`.
-		Quarantine: sistemaDeCuarentena,
+		Quarantine: wiring.Quarantine,
 	})
 
 	if !desinstalar {
@@ -233,37 +218,6 @@ const uiShowFlag = "--show"
 // ventana arranca como arrancaba. Al revés sería una ventana esperando por una
 // sala que nadie está abriendo.
 const uiResumeFlag = "--resume-hosted-room"
-
-// watchers son los cuatro adaptadores que MIRAN la máquina sin cambiarla: los
-// avisos del sistema, la biblioteca de Steam, la tabla de sockets y los mapeos
-// del router.
-//
-// Están juntos porque comparten la propiedad que importa: ninguno escribe nada,
-// así que ninguno puede romper una máquina si falla. Los que sí escriben
-// —firewall, netcfg, motor— se construyen aparte y con más ceremonia.
-//
-// Se eligen en un solo sitio porque de acá salen dos cosas: el cableado de la
-// sesión, y la comprobación de si alguno sigue siendo provisional.
-type watchers struct {
-	Events    port.SystemEvents
-	Library   port.GameLibrary
-	Inspector port.SocketInspector
-	Router    port.ExposureAudit
-}
-
-func chooseWatchers(log port.Logger) watchers {
-	return watchers{
-		Events:    sysevents.New(log),
-		Library:   steam.New(log),
-		Inspector: inspector.New(),
-		Router:    igd.New(log),
-	}
-}
-
-// provisionales pregunta cuáles de los elegidos todavía no existen de verdad.
-func (m watchers) stubbed() []string {
-	return sinimplementar.Names(m.Events, m.Library, m.Inspector, m.Router)
-}
 
 // booted es lo que un arranque deja vivo: cómo esperar a que se caiga, y cómo
 // apagarlo.
@@ -486,7 +440,7 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 
 	// Los watchers ANTES del guardián, porque el guardián les pregunta a ellos.
 	// Ninguno escribe nada, así que construirlos y descartarlos no deja rastro.
-	watch := chooseWatchers(log)
+	watch := wiring.NewWatchers(log)
 	cierres = append(cierres, func() { _ = watch.Events.Close() })
 
 	// **Un binario con provisionales NO se instala como servicio.** El riesgo
@@ -497,21 +451,12 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 	// [sinimplementar.Provisional]. Un provisional que vuelva se delata solo, y
 	// el error lo nombra en vez de decir que hay algo. Va ANTES del firewall,
 	// que es lo primero con efectos de verdad.
-	if missing := watch.stubbed(); len(missing) > 0 && !consola {
+	if missing := watch.Stubbed(); len(missing) > 0 && !consola {
 		return abortar(fmt.Errorf("este binario lleva adaptadores provisionales dentro (%s), "+
 			"así que solo arranca con --console.\n"+
 			"  Un provisional que devuelve éxito hace la cuarentena inverificable, y eso "+
 			"instalado es peor que no tener daemon", strings.Join(missing, ", ")))
 	}
-
-	// El firewall ANTES que el resto, y no por orden de lectura: construir la
-	// sesión purga las reglas de la ejecución anterior, así que si el firewall
-	// no se puede abrir hay que enterarse acá y no a mitad del arranque.
-	fw, audit, cerrarFirewall, err := realFirewall(datos, log, watch.Router)
-	if err != nil {
-		return abortar(err)
-	}
-	cierres = append(cierres, func() { _ = cerrarFirewall() })
 
 	// El host del proceso: lanzar la interfaz, apagar todo, y el arranque con
 	// Windows. Se construye acá porque el listener del pipe lo necesita, y su
@@ -551,6 +496,7 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 
 	var ui *uihost.Host
 	if !consola && hostsUI {
+		var err error
 		ui, err = uihost.New(uihost.Deps{
 			// Junto a este binario, y de `os.Executable()`. **Nunca del estado,
 			// de la configuración ni del pipe**: esto corre como SYSTEM, y una
@@ -586,232 +532,29 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 		host.ui = ui
 	}
 
-	eventos := watch.Events
-
-	// The key that seals what stays on disk, derived from this machine's
-	// identity.
-	//
-	// # Why it is loaded HERE and not left to whoever needs it
-	//
-	// Because the room file has to be openable before there is a room, at
-	// startup, to reopen the one from the previous run. Deriving it lazily would
-	// mean the first read happens with no key and falls back to reading plain,
-	// which is the failure that looks like it worked.
-	//
-	// This is also what makes `identity.key` exist from the first start instead
-	// of from the first room. It is the same key either way and it is this
-	// machine's name: creating it earlier only means the machine has a name
-	// before it has a room.
-	llaveDeIdentidad, err := identity.LoadOrCreate(datos, protegerFichero)
-	if err != nil {
-		return abortar(err)
-	}
-	claveDelEstado, err := identity.StateKey(llaveDeIdentidad)
-	if err != nil {
-		return abortar(err)
-	}
-
-	// The control channel is built AFTER the key, not before as it used to be:
-	// it is the host signing what it hands out at the lobby door, so without the
-	// key the channel would come up unable to sign and nobody would notice. The
-	// answers would go out unsigned, which is a valid case of the protocol.
-	//
-	// The key is passed as a signer, not whole. This package is the only one
-	// that holds it, and the channel only needs to be able to sign: handing over
-	// the private key would spread through the wiring the very thing `identity`
-	// exists to guard.
-	canal := control.New(control.Deps{
-		Clock: relojReal{},
-		Log:   log,
-		Identity: control.Identity{
-			Public: llaveDeIdentidad.Public().(ed25519.PublicKey),
-			Sign:   func(msg []byte) []byte { return ed25519.Sign(llaveDeIdentidad, msg) },
-		},
+	// Todo lo que un binario de adaptadores reales construye igual, construido
+	// UNA vez. El orden de dentro es el que importa: el firewall primero porque
+	// `NewSession` purga en su constructor, y `Attach` cierra la dependencia
+	// circular que ya estuvo escrita, probada y llamada por nadie. Ver
+	// [wiring.BuildSession]; lo que difiere entre binarios va en los parámetros,
+	// y el cero de cada opcional es lo que hace el producto.
+	built, err := wiring.BuildSession(ctx, wiring.SessionParams{
+		DataDir:           datos,
+		LogDir:            carpetaLog,
+		EngineExe:         filepath.Join(dirDelBinario(), engineExe),
+		BuiltinCatalogDir: builtinCatalogDir(),
+		Protect:           protegerFichero,
+		OnEngineFatal:     fatalDeMáquina(ui, host, log),
+		CheckMachine:      true,
+		Watchers:          watch,
+		Log:               log,
 	})
-
-	// El almacén se nombra en vez de construirse dentro de `usecase.Deps`, porque
-	// la fábrica de registros de abajo tiene que leer de él ANTES de que la
-	// sesión exista.
-	almacén := statestore.NewSealed(datos, claveDelEstado)
-
-	// Los registros del seed, en plural desde que dejó de haber uno por defecto.
-	//
-	// # Por qué una fábrica y no un cliente
-	//
-	// Porque el registro depende de la pregunta: al ENTRAR manda el que emitió el
-	// código pegado, y al CREAR el que esta máquina tiene configurado. Con un
-	// cliente fijo, entrar con un código ajeno se saltaba la comprobación entera
-	// y quien se autohospedaba no podía abrir una sala en su propio registro.
-	//
-	// El propio puede venir vacío, que es lo normal en una instalación que
-	// todavía no hospedó ni entró a ninguna sala. Sin él, crear falla con
-	// `port.ErrNoOwnSeed`, que lleva a configurarlo y no a reintentar.
-	// `Tokens` es el MISMO almacén sellado que guarda la sala, y le entra el
-	// protector además del sello: el refresh token de un seed cerrado va a un
-	// directorio que en Windows todos los usuarios pueden leer a propósito. Ver
-	// [jsonfile.Store.SaveSeedToken].
-	registros := directory.NewFactory(directory.Deps{
-		DataDir: datos,
-		Log:     log,
-		Protect: protegerFichero,
-		Tokens:  almacén.Protect(protegerFichero),
-	}, wiring.SeedFromDisk(almacén, log))
-
-	// El motor REAL. Vive al lado de este binario y no se busca en el PATH: un
-	// PATH que alguien pueda escribir es una forma de que este proceso, que
-	// corre como SYSTEM, ejecute otro ejecutable con ese nombre.
-	//
-	// No arranca acá. El proceso hijo se lanza con la primera orden que lo
-	// necesite, así que un daemon que nunca abre una sala nunca levanta un
-	// motor.
-	// Diary of long op. Made HERE and not inside the session because the
-	// ADAPTERS write to it too: only engine adapter knows engine process just
-	// started, or that virtual adapter took twelve seconds to get its address.
-	diary := usecase.NewJournal(relojReal{}, log)
-
-	motor, err := kanpachiengine.New(kanpachiengine.Deps{
-		Exe: filepath.Join(dirDelBinario(), engineExe),
-		Log: log,
-		// El motor escribe su propio log en la MISMA carpeta que este daemon,
-		// que en el bundle portable es la de quien lo ejecutó y no el temporal
-		// que se borra al salir. Ver `carpetaDelLog`.
-		LogDir:   carpetaLog,
-		Progress: diary,
-		OnFatal:  fatalDeMáquina(ui, host, log),
-	})
+	cierres = append(cierres, built.Closers...)
 	if err != nil {
 		return abortar(err)
 	}
-	// El cierre se apunta acá arriba y no al final por el orden en que se
-	// corren: al revés, así que este corre DESPUÉS del cierre del firewall.
-	// Es el orden que hace falta: primero se va el motor y con él la red
-	// virtual, y solo entonces se sueltan las reglas que la contenían.
-	cierres = append(cierres, func() { _ = motor.Close() })
-
-	// Acá se comprueba que esta máquina PUEDA construir un adaptador virtual, y
-	// se comprueba siempre.
-	//
-	// # Por qué al arrancar y no en la primera sala
-	//
-	// Porque es lo único que Kanpachi puede saber antes de que alguien invierta
-	// nada. Dejarlo para la primera sala significa que la persona abre la
-	// ventana, elige su juego, escribe un código de ocho caracteres y espera, y
-	// recién ahí se entera de que su máquina no podía desde el principio. El
-	// fallo no depende de qué sala sea: depende de esta máquina, y esta máquina
-	// ya está acá.
-	//
-	// # Por qué sin condición
-	//
-	// Una versión anterior lo ataba a `mostrarUI`, con el argumento de que
-	// arrancando con la máquina no hay nadie mirando. El argumento estaba mal:
-	// `--show` no dice si hay alguien, dice si la ventana se abre de una o si
-	// Kanpachi se queda en la bandeja, y la interfaz es hija del daemon en los
-	// dos casos. Lo que sí cambia es lo que cuesta, y cuesta poco: 678 ms
-	// medidos, una vez por arranque del daemon, y de paso deja el driver
-	// instalado antes de que haga falta.
-	//
-	// # Por qué no se mira el error
-	//
-	// A propósito: quien lo enseña y apaga es `OnFatal`, que ya está cableado y
-	// es el único sitio donde eso se decide. Mirarlo también acá daría dos
-	// avisos para un solo fallo. Y el arranque NO se aborta desde acá: abortar
-	// mataría el canal por el que `kanpachi doctor` y la ventana explican qué
-	// pasa, justo cuando hace falta explicarlo.
-	_ = motor.CheckMachine()
-
-	// NewSession PURGA el firewall antes de devolver, así que a partir de acá la
-	// máquina está en el estado que este arranque decidió y no en el que dejó el
-	// anterior. Que la purga esté dentro del constructor y no en una llamada
-	// aparte es lo que hace que no se pueda saltar.
-	sesion, err := usecase.NewSession(ctx, usecase.Deps{
-		Engine:   motor,
-		Firewall: fw,
-		// Qué lista de puertos cierra la cuarentena de base. Lo dice el cableado
-		// del sistema y no un runtime.GOOS acá, para que un sistema nuevo sin
-		// cableado propio no compile en vez de heredar la lista de otro.
-		Quarantine: sistemaDeCuarentena,
-		// Los ajustes del adaptador. MANTIENE en vez de aplicar: Windows revierte
-		// la métrica, la categoría y las rutas en cada evento de identificación
-		// de red, así que el supervisor lo reaplica entero, y además cada tantos
-		// latidos por si esa suscripción está muerta.
-		NetCfg: netcfg.New(datos, log),
-		// La tabla de rutas REAL. Se consulta al crear o al entrar a una sala,
-		// nunca al instalar: la LAN de una laptop cambia entre la casa y la
-		// oficina, y un rango elegido en la instalación sería correcto solo el
-		// primer día.
-		Routes:      routes.New(),
-		Store:       catalogstore.New(builtinCatalogDir(), datos, log),
-		State:       almacén,
-		Library:     watch.Library,
-		Directories: registros,
-		Control:     canal,
-		Audit:       audit,
-		Inspector:   watch.Inspector,
-		Prober:      probe.New(),
-		// El canario es real desde el primer día, y puede serlo porque es `net`
-		// puro: no toca Windows ni necesita privilegios para ligar en el
-		// adaptador virtual. Ver daemon/adapter/canary.
-		Canary:   opener.New(log),
-		Clock:    relojReal{},
-		Log:      log,
-		Rand:     rand.Reader,
-		Progress: diary,
-	})
-	if err != nil {
-		return abortar(err)
-	}
-
-	// El canal y la sesión se unen ACÁ, y hace falta: la dependencia es circular
-	// por naturaleza, porque la sesión recibe el canal en su `Deps` y el canal
-	// necesita a la sesión para contestar la puerta del vestíbulo. Se construye
-	// uno, después el otro, y se unen.
-	//
-	// Sin esto `Serve` devuelve [control.ErrNotAttached] y crear una sala falla
-	// entera al abrir el canal, con el motor ya levantado. Pasó con el daemon de
-	// verdad: `Attach` existía, estaba probado, y solo lo llamaban los tests.
-	canal.Attach(sesion)
-
-	// Y la pregunta que el lanzador de la ventana dejó pendiente. Se contesta
-	// con DOS hechos y no con uno: que haya sala guardada del arranque anterior,
-	// y que esta sesión todavía no esté dentro de ninguna.
-	//
-	// El segundo hace falta. El fichero de la sala **sigue en disco mientras la
-	// sala vive**, que es lo que la hace sobrevivir a un apagón, así que con el
-	// primero solo la ventana que se abre desde la bandeja media hora después
-	// arrancaría esperando por una sala que lleva media hora abierta.
-	salaReabriendo = func() bool {
-		if _, hay := sesion.PendingRoom(); !hay {
-			return false
-		}
-		return !sesion.Status().Conn.InRoom()
-	}
-
-	bucle, err := supervisor.New(supervisor.Deps{
-		Room:    sesion,
-		Engine:  motor,
-		Control: canal,
-		System:  eventos,
-		Log:     log,
-	})
-	if err != nil {
-		return abortar(err)
-	}
-
-	// El vigía de la malla, que hasta ahora solo tenía `roomprobe`.
-	//
-	// Le pregunta al MOTOR quién hay en la red de la sala, y anota cada cambio.
-	// Es el único dato que separa dos fallos que desde fuera se ven idénticos y
-	// se arreglan al revés: "el firewall no deja pasar" y "todavía no hay
-	// camino". Va por la tubería del motor, así que sigue vivo mientras la
-	// sesión tiene el candado tomado, que es justo cuando hace falta.
-	//
-	// Sin esto, el 2026-08-08 pasó lo siguiente: un host tuvo un invitado dentro
-	// veinte minutos, el invitado veía dos miembros, el host veía uno, y en
-	// ninguno de los dos logs quedó una sola línea que lo dijera. Se dedujo por
-	// omisión —ningún `entró a la sala`, las reglas quietas en dos— en vez de
-	// leerse.
-	vigía := &supervisor.VigiaDeMalla{Motor: motor, Log: log}
-	go vigía.Correr(ctx)
+	sesion, bucle := built.Session, built.Supervisor
+	log.Info("llave de identidad de esta máquina", "huella", built.Fingerprint)
 
 	// El token rota una vez por vida del proceso y se borra en TODO camino de
 	// salida: uno que sobreviva al proceso no abre nada y solo es un secreto
@@ -831,7 +574,7 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 		// métodos del proceso contestan que no están, que es la verdad.
 		Host:  host,
 		Token: token,
-		Clock: relojReal{},
+		Clock: wiring.RealClock{},
 		Log:   log,
 		Name:  nombre,
 	})
@@ -938,7 +681,3 @@ func dirDelBinario() string {
 	}
 	return filepath.Dir(exe)
 }
-
-type relojReal struct{}
-
-func (relojReal) Now() time.Time { return time.Now() }

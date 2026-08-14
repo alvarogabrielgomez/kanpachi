@@ -4,8 +4,6 @@ package main
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -15,24 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/usecase"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/canary/opener"
-	catalogstore "github.com/accentiostudios/kanpachi/daemon/adapter/catalog/jsonfile"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/directory"
-	kanpachiengine "github.com/accentiostudios/kanpachi/daemon/adapter/engine/kanpachi"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/identity"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/inspector"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/library/steam"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/netcfg"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/probe"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/router/igd"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/routes"
-	statestore "github.com/accentiostudios/kanpachi/daemon/adapter/state/jsonfile"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/sysevents"
-	"github.com/accentiostudios/kanpachi/daemon/service/supervisor"
-	"github.com/accentiostudios/kanpachi/daemon/transport/control"
 	"github.com/accentiostudios/kanpachi/daemon/wiring"
 )
 
@@ -42,11 +24,6 @@ import (
 // cerrar una sala es avisar a los miembros, escribir en el firewall por COM y
 // bajar dos redes virtuales, y ninguna de las tres es instantánea.
 const plazoDeApagado = 20 * time.Second
-
-// relojReal es el único [port.Clock] de esta herramienta.
-type relojReal struct{}
-
-func (relojReal) Now() time.Time { return time.Now() }
 
 // sinACL deja `identity.key` con los permisos que herede del directorio.
 //
@@ -102,108 +79,47 @@ func correr(op opciones) error {
 	var cierres []func()
 	apuntar := func(f func()) { cierres = append(cierres, f) }
 
-	eventos := sysevents.New(log)
-	apuntar(func() { _ = eventos.Close() })
+	// El MISMO cableado que el daemon, construido una vez en
+	// [wiring.BuildSession]. Las desviaciones de esta sonda van explícitas en
+	// los parámetros, y cada una tiene su porqué al lado; todo lo que no se
+	// nombra es lo que hace el producto, estado sellado y tokens del seed
+	// incluidos.
+	watch := wiring.NewWatchers(log)
+	apuntar(func() { _ = watch.Events.Close() })
 
-	// El firewall antes que nada más: construir la sesión purga, y para purgar
-	// hay que tener con qué.
-	fw, cerrarFw, err := firewall.NewWindows(op.datos, log)
-	if err != nil {
-		return fmt.Errorf("abriendo el firewall (¿consola elevada?): %w", err)
-	}
-	apuntar(func() { _ = cerrarFw() })
-
-	diario := usecase.NewJournal(relojReal{}, log)
-
-	motor, err := kanpachiengine.New(kanpachiengine.Deps{
-		Exe: motorExe, Log: log, LogDir: op.dirLog, Progress: diario,
-	})
-	if err != nil {
-		return fmt.Errorf("preparando el motor: %w", err)
-	}
-	apuntar(func() { _ = motor.Close() })
-
-	// Un motor huérfano de una corrida anterior tiene kanpachi0 tomado, y el
-	// síntoma sería un `CreateRoom` que falla por un adaptador que ya existe.
-	if n := motor.KillOrphans(); n > 0 {
-		log.Warn("se mataron motores huérfanos de una corrida anterior", "cantidad", n)
-	}
-
-	// La llave larga de ESTA instalación de la sonda, y el canal construido
-	// DESPUÉS de tenerla.
-	//
-	// Sin esto la sonda hospeda sin firmar, o sea que ningún cliente con
-	// decisión 25 puede entrar a su sala: una respuesta sin firma, habiendo
-	// llave fijada en el registro, se rechaza. Una herramienta de medición que
-	// no puede reproducir el camino que mide no mide nada. El firmador lo arma
-	// `wiring.ControlIdentity`, el mismo que usa el daemon.
-	llave, err := identity.LoadOrCreate(op.datos, sinACL)
-	if err != nil {
-		return fmt.Errorf("cargando la llave de identidad: %w", err)
-	}
-	propia := llave.Public().(ed25519.PublicKey)
-	log.Info("llave de identidad de esta máquina", "huella", domain.Fingerprint(propia),
-		"para-qué", "es lo que las otras máquinas recuerdan de esta; se compara con lo que ellas enseñan al entrar")
-	fmt.Println("Tu huella:", domain.Fingerprint(propia))
-
-	canal := control.New(control.Deps{
-		Clock: relojReal{}, Log: log, Identity: wiring.ControlIdentity(llave),
-	})
-
-	// El almacén se construye ACÁ y no dentro de las dependencias, porque de él
-	// sale el registro con el que nace la fábrica.
-	almacén := statestore.New(op.datos)
-
-	// **El registro propio sale del DISCO, y la bandera solo lo pisa.**
-	//
-	// Sale del MISMO `wiring.SeedFromDisk` que usa el daemon, y no estaba:
-	// la fábrica nacía solo con lo que trajera `-seed`, así que una corrida sin
-	// bandera arrancaba con `seed.txt` escrito, la cabecera enseñando ese
-	// registro —que lo lee del estado— y `CreateRoom` contestando "esta máquina
-	// no tiene registro configurado", que es lo que la fábrica sabía. Dos
-	// fuentes para el mismo dato, discrepando en pantalla.
-	propioAlArrancar := op.seed
-	if propioAlArrancar == "" {
-		propioAlArrancar = wiring.SeedFromDisk(almacén, log)
-	}
-	op.seed = propioAlArrancar
-
-	// La fábrica, igual que el producto: al entrar manda el registro del código
-	// pegado, y el propio solo dice dónde ABRE salas esta sonda.
-	registros := directory.NewFactory(directory.Deps{
-		DataDir: op.datos, Log: log, Protect: sinACL,
-	}, propioAlArrancar)
-
-	sesion, err := usecase.NewSession(ctxRaiz, usecase.Deps{
-		// Esta sonda es de Windows, así que la cuarentena es la de Windows. El
-		// fichero lleva etiqueta `_windows`, o sea que la constante no puede
-		// desalinearse con el sistema en el que corre.
-		Quarantine:  domain.QuarantineWindows,
-		Engine:      motor,
-		Firewall:    fw,
-		NetCfg:      netcfg.New(op.datos, log),
-		Routes:      routes.New(),
-		Store:       catalogstore.New(op.dirExe, op.datos, log),
-		State:       almacén,
-		Library:     steam.New(log),
-		Directories: registros,
-		Control:     canal,
-		Audit:       wiring.Exposure{FW: fw, Router: igd.New(log)},
-		Inspector:   inspector.New(),
-		Prober:      probe.New(),
-		Canary:      opener.New(log),
-		Clock:       relojReal{},
-		Rand:        rand.Reader,
+	built, err := wiring.BuildSession(ctxRaiz, wiring.SessionParams{
+		DataDir:   op.datos,
+		LogDir:    op.dirLog,
+		EngineExe: motorExe,
+		// El catálogo de fábrica viaja junto al ejecutable, igual que en
+		// Windows lo hace el del producto.
+		BuiltinCatalogDir: op.dirExe,
+		// Sin ACL, y es la única desviación de seguridad: el `data` de esta
+		// herramienta no vive en ProgramData y no hay ACL de la que heredar.
+		// Aceptable en una sonda y NO en el producto; ver [sinACL].
+		Protect: sinACL,
+		// La bandera pisa el disco; vacía, manda lo guardado.
+		SeedOverride: op.seed,
+		// Esta herramienta muere sucio con frecuencia, y un motor huérfano
+		// tiene kanpachi0 tomado: el síntoma sería un CreateRoom que falla por
+		// un adaptador que ya existe.
+		KillOrphans: true,
+		Watchers:    watch,
 		Log:         log,
-		Progress:    diario,
 	})
-	if err != nil {
-		return fmt.Errorf("construyendo la sesión: %w", err)
+	for _, c := range built.Closers {
+		apuntar(c)
 	}
-	// Sin esto, `Serve` da ErrNotAttached y crear sala falla con el motor ya
-	// levantado. La dependencia es circular y se resuelve a mano, igual que en
-	// el daemon.
-	canal.Attach(sesion)
+	if err != nil {
+		return err
+	}
+	sesion, canal, bucle := built.Session, built.Control, built.Supervisor
+	op.seed = built.OwnSeed
+
+	log.Info("llave de identidad de esta máquina", "huella", built.Fingerprint,
+		"para-qué", "es lo que las otras máquinas recuerdan de esta; se compara con lo que ellas enseñan al entrar")
+	fmt.Println("Tu huella:", built.Fingerprint)
+
 	apuntar(func() { _ = canal.Close() })
 
 	// Los pasos de cada operación NO se copian acá: los escribe el propio
@@ -211,19 +127,6 @@ func correr(op opciones) error {
 	// del portable. Antes vivían en esta herramienta, y eso obligaba a correr
 	// roomprobe para conseguir lo que el binario de producción ya debería estar
 	// anotando.
-
-	// El vigía de la malla vive en `daemon/service/supervisor`, no acá: es el
-	// dato que contesta "¿los dos motores llegaron a verse?", y pedirle a
-	// alguien que corra otra herramienta para conseguirlo era el problema.
-	vigia := &supervisor.VigiaDeMalla{Motor: motor, Log: log}
-	go vigia.Correr(ctxRaiz)
-
-	bucle, err := supervisor.New(supervisor.Deps{
-		Room: sesion, Engine: motor, Control: canal, System: eventos, Log: log,
-	})
-	if err != nil {
-		return fmt.Errorf("armando el supervisor: %w", err)
-	}
 
 	// El menú no se abre hasta que el supervisor está drenando.
 	//
@@ -282,16 +185,12 @@ func correr(op opciones) error {
 	}
 	defer apagar()
 
-	e := entorno{s: sesion, log: log, c: c, op: &op, registros: registros,
+	e := entorno{s: sesion, log: log, c: c, op: &op, registros: built.Directories,
 		apagar: apagar, fallos: &fallos}
 
-	// La bandera `-seed` SIEMBRA el estado, no lo sustituye.
-	//
-	// Antes solo llenaba `own` de la fábrica, así que la sesión seguía sin
-	// registro guardado y crear sala moría en "esta máquina no tiene registro
-	// configurado" con el nombre delante, en la cabecera. Guardarlo por el
-	// mismo camino que la ventana deja las dos cosas de acuerdo, y de paso
-	// comprueba que ese registro conteste antes de que nadie intente nada.
+	// La bandera `-seed` SIEMBRA el estado, no lo sustituye: si lo que vino por
+	// bandera no es lo que hay guardado, se guarda por el mismo camino que la
+	// ventana, que valida, sondea y solo entonces escribe.
 	if op.seed != "" && sesion.OwnSeed() != op.seed {
 		if _, err := guardarRegistro(ctxRaiz, e, op.seed); err != nil {
 			return err

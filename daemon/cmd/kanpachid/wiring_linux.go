@@ -13,25 +13,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/linux/nftpermits"
 	"github.com/accentiostudios/kanpachi/daemon/paths"
-	"github.com/accentiostudios/kanpachi/daemon/wiring"
 )
-
-// sistemaDeCuarentena es qué lista de puertos cierra la cuarentena de base.
-//
-// Se declara acá, en el fichero del sistema, y no se deduce en `main.go` con un
-// `runtime.GOOS`. La diferencia importa: así el día que haya un tercer sistema,
-// no compilar su `wiring_*.go` es un error de enlazado en vez de un `default`
-// que aplica la lista de otro.
-//
-// Y la lista de Linux no es la de Windows por una razón cara: allá el 22 es un
-// servicio opcional, acá es el canal por el que el operador administra su
-// servidor. Ver [domain.QuarantineSystem].
-const sistemaDeCuarentena = domain.QuarantineLinux
 
 // defaultDataDir sale de [paths.Data], que es el paquete que los DOS binarios
 // importan.
@@ -70,23 +55,6 @@ func builtinCatalogDir() string { return CatalogDir }
 // distinción que dpkg hace y que el usuario espera; romperla convierte quitar y
 // reinstalar en cambiar de máquina para todos los que ya jugaron con esta.
 const packageRemovesData = true
-
-// realFirewall compone las dos capas de Linux.
-func realFirewall(_ string, log port.Logger, router port.ExposureAudit) (
-	port.FirewallPort, port.ExposureAudit, func() error, error) {
-
-	// La cuarentena va a su ruta de siempre y no al directorio de datos: la
-	// unidad de systemd que la carga al arrancar apunta ahí, y las dos tienen que
-	// decir lo mismo o la cuarentena se pierde en el próximo reinicio sin que
-	// nada lo diga.
-	fw, close, err := firewall.NewLinux(nftpermits.QuarantineFile, log)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%w.\n"+
-			"  Escribir en nftables exige CAP_NET_ADMIN, así que corriendo a mano hay que "+
-			"usar sudo. El servicio lo trae en su unidad", err)
-	}
-	return fw, wiring.Exposure{FW: fw, Router: router}, close, nil
-}
 
 // quitarCuarentenaDeBase es el único camino del repositorio que la borra.
 //

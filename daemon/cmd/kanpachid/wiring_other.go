@@ -16,15 +16,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
 	"github.com/accentiostudios/kanpachi/daemon/paths"
 )
-
-// sistemaDeCuarentena queda en cero, que es lo que `validate` rechaza con su
-// propio mensaje. Es lo correcto: acá no hay cuarentena que escribir, y elegir
-// una de las dos listas sería fingir que sí.
-const sistemaDeCuarentena domain.QuarantineSystem = 0
 
 // defaultDataDir sale de [paths.Data], que contesta la ruta de Unix aunque acá
 // no arranque nada. El porqué vive allá; quien de verdad se niega es
@@ -41,13 +35,6 @@ func builtinCatalogDir() string { return "/usr/share/kanpachi" }
 
 // packageRemovesData no lo alcanza nadie acá: [realFirewall] falla antes.
 const packageRemovesData = false
-
-func realFirewall(string, port.Logger, port.ExposureAudit) (
-	port.FirewallPort, port.ExposureAudit, func() error, error) {
-
-	return nil, nil, nil, fmt.Errorf("el firewall de Kanpachi son las reglas del Firewall " +
-		"de Windows y una sesión de WFP, así que este binario solo sirve en Windows y en Linux")
-}
 
 // Fuera de Windows no hay cuarentena que quitar, porque no hay firewall donde
 // ponerla. Ver la cabecera.

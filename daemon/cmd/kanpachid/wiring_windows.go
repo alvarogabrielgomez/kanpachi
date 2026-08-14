@@ -14,20 +14,10 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
-	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windows/netfw"
 	"github.com/accentiostudios/kanpachi/daemon/paths"
-	"github.com/accentiostudios/kanpachi/daemon/wiring"
 )
-
-// sistemaDeCuarentena es qué lista de puertos cierra la cuarentena de base.
-//
-// Ver el gemelo en `wiring_linux.go`: se declara en el fichero del sistema para
-// que el día que haya un tercero, no compilar su cableado sea un error de
-// enlazado en vez de un `default` que aplique la lista de otro.
-const sistemaDeCuarentena = domain.QuarantineWindows
 
 // engineExe es cómo se llama el motor al lado de este binario.
 const engineExe = "kanpachi-engine.exe"
@@ -114,33 +104,6 @@ func protegerFichero(ruta string) error {
 		return fmt.Errorf("aplicando los permisos de %s: %w", ruta, err)
 	}
 	return nil
-}
-
-// realFirewall abre las dos capas de contención y devuelve las tres caras que
-// el cableado necesita: el puerto que escribe, el que mide, y el cierre.
-//
-// # Por qué la auditoría se compone acá
-//
-// [port.ExposureAudit] tiene tres preguntas y el firewall solo puede contestar
-// dos. `RouterMappings` le habla al ROUTER del usuario por IGD, que es otro
-// protocolo sobre otra red, y es el único punto de todo el producto donde se
-// mira hacia afuera de la máquina.
-//
-// El adaptador del firewall se niega a implementar el puerto entero, y esa
-// negativa es deliberada: contestar `nil, nil` a la pregunta del router haría
-// que "no hay mapeos" y "nadie miró" fueran indistinguibles, en la única
-// pantalla cuyo trabajo es distinguir esas dos cosas. Así que se compone acá,
-// que es donde este binario decide con qué.
-func realFirewall(dataDir string, log port.Logger, router port.ExposureAudit) (
-	port.FirewallPort, port.ExposureAudit, func() error, error) {
-
-	fw, close, err := firewall.NewWindows(dataDir, log)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%w.\n"+
-			"  Escribir en el firewall exige administrador, así que en modo consola hay "+
-			"que abrir la terminal elevada", err)
-	}
-	return fw, wiring.Exposure{FW: fw, Router: router}, close, nil
 }
 
 // quitarCuarentenaDeBase es el único camino del repositorio que la borra.
