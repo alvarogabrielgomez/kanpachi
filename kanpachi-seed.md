@@ -121,12 +121,13 @@ and a modified one is still a working seed. Assume that one built to spy could:
 - **Keep the graph:** who met whom, how often, for how long, and how much traffic went through it
   while relaying.
 - **Keep every room card it was ever handed** — still encrypted, still unreadable to it, but stored.
-- **Serve a room card the host never wrote.** The card is signed, and today **nobody checks that
-  signature on the way out**: the registry verifies it when the card is published and the clients do
-  not verify it when they read one. So a seed that has been taken over can change the room name and
-  the nickname the invitation page shows. It cannot read what was in the real card, and it can put
-  something else in its place. Closing this is the verification half of decision 25, and it is
-  cheap, because the registry already serves the key it pinned.
+- **Try to serve a room card the host never wrote, and be caught at it.** The card is signed by the
+  host's long-term key, and both readers now check that signature against the key the registry
+  itself pinned for that code: the app refuses to open a card that does not match, and the
+  invitation page says it could not verify the invitation instead of printing the name and nickname
+  it was handed. A seed that has been taken over is left with the two moves it cannot be caught at
+  from a browser with no memory — serving a different key, or serving no signature at all. Telling
+  *those* apart needs somebody who remembers the key from last time, which is the app.
 - **Lie about what it is doing.** Nothing you can check from the outside distinguishes a seed that
   discards addresses from one that files them.
 
@@ -141,31 +142,36 @@ What even a hostile seed **cannot** do:
 - **Stay in the middle of a direct tunnel.** Once the peers are connected directly, there is nothing
   for the seed to be in the middle of.
 
-### The gap that is still open, stated plainly
+### The lobby, and what closed there
 
 The lobby — the small throwaway network where a guest asks the host for a credential — derives from
 the invite ID, so **anyone holding the code can be in it**, and addresses there are self-assigned.
-Messages are sealed to the recipient's session key, which buys confidentiality against whoever
-carries the bytes, and **not** authentication of the host. Somebody with the code can therefore try
-to answer a credential request before the real host does.
+Until recently that was the whole story, and it was a real hole: messages are sealed to the
+recipient's session key, which buys confidentiality against whoever carries the bytes and **not**
+authentication of the host, so somebody with the code could answer a credential request before the
+real host did, and the victim would join *their* network with the game's ports opened towards it.
 
-What limits it today:
+That is now shut. **The host signs its answer** with the long-term key of its installation, over a
+transcript that binds it to that room's rendezvous network and to the guest's own key for that one
+request — so a good answer cannot be replayed from another room or at another guest. The guest
+checks it against the key **the registry pinned for that code**, which is the part that matters: the
+key arrives by a different road than the answer does. An unsigned answer, where a pinned key exists,
+is refused rather than accepted as "unverified" — that leniency was the whole attack, spelled out.
 
-- Only somebody who already has the invite code can try — that is, somebody who was already invited.
-- What it gets them is that the victim joins *their* network instead of the host's. It does not read
-  the real room, does not obtain the host's network identity, and cannot kick anyone.
-- **Renewing the invite code disarms it**, because the lobby derives from the invite ID: a new ID is
-  a new lobby, and the squatter is left alone in the old one.
+### The gap that is still open, stated plainly
 
-The fix — key continuity, the mechanism SSH and Signal use — is designed and half built. It is
-decision 25 in [`docs/02-decisiones-de-diseno.md`](docs/02-decisiones-de-diseno.md), with the
-trigger for finishing it written down next to it.
+**Nothing remembers a key between rooms yet.** Every check above is against a key learned on the
+spot: the registry pins the first key it sees for an invite code, and the client trusts what the
+registry pins. That catches a registry serving a card its own pinned key does not back, and a
+stranger squatting on a lobby. It does not tell you *whose* key it is the first time you see it, and
+it cannot say "this is the same host you have played with five times" instead of taking a nickname
+at its word.
 
-What exists today is the bottom half: every install has a long-term key, the room card is signed
-with it, and the registry pins the first key it ever sees for an invite ID and refuses any update
-signed by another. What is missing is the half you would notice — **nobody verifies that signature
-when reading**, and nothing remembers a key between rooms, which is what would let the app say "this
-is the same host you have played with five times" instead of taking a nickname at its word.
+The remaining piece — key continuity, the mechanism SSH and Signal use — is decision 25 in
+[`docs/02-decisiones-de-diseno.md`](docs/02-decisiones-de-diseno.md), and what it adds is a book of
+fingerprints on your own machine, plus a warning when one changes. A warning, not a locked door:
+Signal started by blocking on a key change and moved to advising, because people do reinstall their
+phones, and a block in a game is a button that gets clicked without reading.
 
 One more thing worth stating precisely, because the comparison to Signal invites the wrong
 conclusion. Signal's own anonymous envelope — sealed sender — hides the sender **from the server**

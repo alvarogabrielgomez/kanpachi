@@ -1089,6 +1089,54 @@
       $("mark").classList.add("live");
     }
     if (!data || !data.card || !cardKey) return;
+    return verificarTarjeta(data).then(function (veredicto) {
+      if (veredicto === "falsa") {
+        // El registro sirvió una tarjeta que la llave que él mismo publica no
+        // respalda. No se abre: pintar el nombre de una sala que nadie firmó es
+        // exactamente lo que la firma existe para evitar.
+        text(eyebrowID, "No se pudo verificar esta invitación");
+        return;
+      }
+      return pintarTarjeta(data, eyebrowID, nameID);
+    });
+  }
+
+  // Verifica la firma Ed25519 de la tarjeta contra la llave que el registro
+  // publica. Cuatro veredictos: `verificada`, `falsa`, `sin-firma` (registro
+  // viejo, o sala publicada antes de que se guardara la firma) y `sin-soporte`
+  // (el navegador no trae Ed25519 en WebCrypto).
+  //
+  // Lo que esto atrapa y lo que no, dicho entero: la página no tiene memoria,
+  // así que compara la tarjeta contra la llave del MISMO servidor. Eso pilla a
+  // un registro que sirve una tarjeta forjada mientras conserva la llave que
+  // fijó, y no pilla a uno que además cambie la llave o quite la firma. Esa
+  // otra mitad la hace la app, que sí recuerda huellas. Decisión 25.
+  //
+  // Sin soporte se sigue como `sin-firma`: la tarjeta se pinta con el texto de
+  // siempre —«se identifica como»— que no afirma haber verificado nada. Jamás
+  // se aparenta que sí.
+  function verificarTarjeta(data) {
+    var sello = b64uToBytes(data.card);
+    var firma = b64uToBytes(data.sig);
+    var llave = b64uToBytes(data.host_key);
+    if (!sello || !firma || firma.length !== 64 || !llave || llave.length !== 32) {
+      return Promise.resolve("sin-firma");
+    }
+    if (!crypto.subtle || !crypto.subtle.importKey) return Promise.resolve("sin-soporte");
+    return crypto.subtle.importKey("raw", llave, { name: "Ed25519" }, false, ["verify"])
+      .then(function (k) {
+        return crypto.subtle.verify({ name: "Ed25519" }, k, firma, sello);
+      })
+      .then(function (ok) { return ok ? "verificada" : "falsa"; },
+        function () {
+          // Ed25519 en WebCrypto es Chrome 137+, Firefox 129+, Safari 17+. En
+          // lo que no lo trae, importKey rechaza con NotSupportedError y acá no
+          // hay librería embebida a la que caerse: la página es un fichero.
+          return "sin-soporte";
+        });
+  }
+
+  function pintarTarjeta(data, eyebrowID, nameID) {
     return decryptCard(data.card, cardKey).then(function (card) {
       var nick = clean(card.host, 12);
       var name = clean(card.room, MAX_NAME);

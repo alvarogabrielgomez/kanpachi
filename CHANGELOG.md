@@ -11,6 +11,7 @@ This file is in English, like commit messages and release notes, because a relea
 ### Security
 
 - Refuse a credential in the lobby that is not signed by the host of that room. Anybody holding the invite code could sit on the host's lobby address and answer the request first, and what that got them is your machine joining THEIR network while it believes it is in your friends' one — with the game's ports opened towards it. The host now signs its answer with the long-term key of its installation, bound to the room and to that one request, and the guest checks it against the key the meeting server pinned for that code
+- Check the same signature on the invitation web page, which claimed to check it and never did: a page that is handed a card the room's own key does not back now says it could not verify the invitation, instead of printing whatever name and nickname it was given. Browsers without Ed25519 in WebCrypto say nothing was verified — they never pretend it was
 - Check the room card against the key the meeting server itself pinned for that code, instead of taking the card and the server's word for it. A server that has been taken over can no longer change the room name or the nickname on the invitation screen without the change showing: the card no longer opens, and the screen says so rather than painting what that server wanted read
 
 ### Added
