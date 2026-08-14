@@ -17,6 +17,7 @@ import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
 import 'package:kanpachi_ui/core/messages/message_catalog.dart';
 import 'package:kanpachi_ui/core/messages/message_keys.dart';
+import 'package:kanpachi_ui/features/games/domain/steam_art.dart';
 import 'package:kanpachi_ui/features/room/presentation/widgets/canary_alarm.dart';
 import 'package:kanpachi_ui/features/room/presentation/widgets/copy_button.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
@@ -484,7 +485,9 @@ class _GameCard extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: <Widget>[
-                    const AppCover.room(),
+                    AppCover.room(
+                      imageUrl: SteamArt.portrait(room.game?.steamAppId),
+                    ),
                     const SizedBox(width: AppSpacing.xl),
                     Expanded(
                       child: Column(

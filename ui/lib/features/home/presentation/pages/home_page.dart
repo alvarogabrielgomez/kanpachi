@@ -14,6 +14,7 @@ import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
 import 'package:kanpachi_ui/core/messages/message_catalog.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
+import 'package:kanpachi_ui/features/games/domain/steam_art.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/invite_code.dart';
@@ -492,7 +493,7 @@ class _GameRow extends StatelessWidget {
     return Row(
       children: <Widget>[
         if (showCover) ...<Widget>[
-          const AppCover.thumb(),
+          AppCover.thumb(imageUrl: SteamArt.portrait(game.steamAppId)),
           const SizedBox(width: AppSpacing.xl),
         ],
         Expanded(

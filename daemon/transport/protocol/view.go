@@ -554,6 +554,18 @@ type GameView struct {
 	ClientPorts []RangeView `json:"client_ports"`
 	HintKind    string      `json:"hint_kind,omitempty"`
 	HintText    string      `json:"hint_text,omitempty"`
+
+	// SteamAppID viaja para que la ventana pueda pedirle la portada a Steam.
+	//
+	// Es el MISMO campo que ya usa la detección, y no uno nuevo al lado: la
+	// alternativa era una URL dentro de cada perfil, o sea un enlace que
+	// caduca guardado en un fichero que nadie revisa, repetido por juego.
+	// Con el número, la dirección la arma quien la va a pedir.
+	//
+	// Cero significa que ese juego no está en Steam, que es un caso normal
+	// —Minecraft y Age of Empires II del catálogo de fábrica son dos— y la
+	// ventana enseña el hueco.
+	SteamAppID int `json:"steam_appid,omitempty"`
 }
 
 type RangeView struct {
@@ -571,6 +583,8 @@ func gameView(p domain.GameProfile, instalado bool) GameView {
 		Installed: instalado,
 		HintKind:  p.Connect.Kind.String(),
 		HintText:  p.Connect.TextES,
+
+		SteamAppID: p.Detect.SteamAppID,
 	}
 	v.HostPorts = rangeViews(p.HostPorts)
 	v.ClientPorts = rangeViews(p.ClientPorts)

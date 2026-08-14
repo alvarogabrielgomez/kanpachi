@@ -9,6 +9,7 @@ import 'package:kanpachi_ui/core/design_system/atoms/app_kicker.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_segmented.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/features/games/domain/steam_art.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
@@ -45,6 +46,19 @@ class _ManualGameScreenState extends State<ManualGameScreen> {
     super.dispose();
   }
 
+  /// El identificador de Steam escrito, o null.
+  ///
+  /// Acepta el número pelado Y la dirección entera pegada, porque las dos cosas
+  /// se hacen: quien lo tiene a mano escribe el número, y quien lo va a buscar
+  /// copia la barra del navegador. Se saca el primer grupo de dígitos, que en
+  /// `store.steampowered.com/app/892970/Valheim/` es el que identifica al
+  /// juego.
+  int? get _steamAppId {
+    final RegExpMatch? m = RegExp(r'\d+').firstMatch(_cover.text);
+    if (m == null) return null;
+    return int.tryParse(m.group(0)!);
+  }
+
   List<PortRule> get _portRules => _rules
       .where((_RuleDraft r) => r.controller.text.trim().isNotEmpty)
       .map(
@@ -75,7 +89,7 @@ class _ManualGameScreenState extends State<ManualGameScreen> {
         name: nombre,
         rules: _portRules,
         origin: GameOrigin.mine,
-        coverUrl: _cover.text.trim().isEmpty ? null : _cover.text.trim(),
+        steamAppId: _steamAppId,
       ),
     );
     if (saved == null) return;
@@ -124,6 +138,7 @@ class _ManualGameScreenState extends State<ManualGameScreen> {
                   final Widget preview = _Preview(
                     name: _name.text.trim(),
                     rules: _portRules,
+                    steamAppId: _steamAppId,
                   );
                   if (constraints.maxWidth < 620) {
                     return Column(
@@ -240,16 +255,20 @@ class _Form extends StatelessWidget {
           style: context.type.bodySm.copyWith(color: colors.textMuted),
         ),
         const SizedBox(height: AppSpacing.x5l),
-        const AppKicker('Portada (SteamDB)', small: true),
+        const AppKicker('Identificador de Steam', small: true),
         const SizedBox(height: AppSpacing.md),
         AppField(
           controller: cover,
-          hint: 'https://steamdb.info/app/892970/',
+          mono: true,
+          hint: '892970',
           onChanged: (_) => onChanged(),
         ),
         const SizedBox(height: 7),
         Text(
-          'Opcional. Pega el enlace de SteamDB y se toma la portada.',
+          'Opcional, y de ahí sale la portada. Es el número de la dirección '
+          'del juego en Steam: en '
+          'store.steampowered.com/app/892970/Valheim es 892970. Pega el enlace '
+          'entero si prefieres, que el número se saca solo.',
           style: context.type.bodySm.copyWith(color: colors.textMuted),
         ),
         const SizedBox(height: AppSpacing.x7l),
@@ -350,10 +369,18 @@ class _RuleRow extends StatelessWidget {
 /// biblioteca, para que no haya sorpresa entre lo que se escribe y lo que
 /// queda guardado.
 class _Preview extends StatelessWidget {
-  const _Preview({required this.name, required this.rules});
+  const _Preview({
+    required this.name,
+    required this.rules,
+    required this.steamAppId,
+  });
 
   final String name;
   final List<PortRule> rules;
+
+  /// El identificador escrito, para enseñar la portada mientras se escribe. La
+  /// vista previa existe para eso: ver lo que va a quedar antes de guardarlo.
+  final int? steamAppId;
 
   @override
   Widget build(BuildContext context) {
@@ -372,7 +399,7 @@ class _Preview extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                const AppCover.preview(),
+                AppCover.preview(imageUrl: SteamArt.landscape(steamAppId)),
                 const SizedBox(height: AppSpacing.xl),
                 Text(
                   name.isEmpty ? 'Nombre del juego' : name,

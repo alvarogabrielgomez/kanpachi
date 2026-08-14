@@ -4,6 +4,7 @@ import 'package:kanpachi_ui/core/design_system/atoms/app_segmented.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_list.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/features/games/domain/steam_art.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 
@@ -159,7 +160,10 @@ class _GameTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          // Apaisada: el hueco de la rejilla es ancho, y la portada vertical
+          // metida ahí se ve como una banda del cartel. Ver [SteamArt].
           AppCover.grid(
+            imageUrl: SteamArt.landscape(game.steamAppId),
             badge: showInstalledBadge && game.installed
                 ? const AppInstalledBadge()
                 : null,

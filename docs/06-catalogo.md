@@ -90,7 +90,7 @@ Qué alimenta cada campo:
 
 | Campo | Para qué se usa |
 |---|---|
-| `detect.steam_appid` | Ordenar la lista, poniendo arriba lo que parece instalado. Nunca oculta ni bloquea nada |
+| `detect.steam_appid` | Ordenar la lista, poniendo arriba lo que parece instalado, **y traer la portada**. Nunca oculta ni bloquea nada |
 | `detect.executables` | Auditoría de reglas de firewall ajenas, y el modo observación del creador |
 | `host_ports` | Reglas de firewall en la máquina que hospeda |
 | `client_ports` | Reglas en quien se une. **Vacío en la enorme mayoría**, ver abajo |
@@ -98,6 +98,23 @@ Qué alimenta cada campo:
 | `system_tweaks` | Ajustes de Windows que ese juego necesita, aplicados por `netcfg` y revertidos al salir de la sala |
 | `connect_hint` | El texto exacto de la pantalla en sala |
 | `bind_hint` | Información para el usuario avanzado. Kanpachi jamás edita ese archivo |
+
+### La portada sale del identificador, y no de una URL
+
+**El perfil no lleva ninguna dirección de imagen, y no va a llevarla.** Una URL dentro de un perfil es un enlace que caduca guardado en un fichero que nadie revisa, repetido en cada juego y copiado en cada perfil que alguien comparta. El número de Steam no cambia nunca, ya está ahí para la detección, y la dirección la arma quien la va a pedir.
+
+Las dos formas, medidas el 2026-08-14 contra los nueve perfiles de fábrica que tienen identificador — las dos contestan 200 con imagen en los nueve:
+
+```
+https://cdn.cloudflare.steamstatic.com/steam/apps/<appid>/library_600x900.jpg   vertical
+https://cdn.cloudflare.steamstatic.com/steam/apps/<appid>/header.jpg            apaisada
+```
+
+Son dos porque los huecos del diseño son de dos formas: vertical para la miniatura, la sala y el diálogo; apaisada para la rejilla del catálogo y la vista previa del alta manual. Estirar una en la otra deja una banda del cartel o dos franjas vacías.
+
+**Un juego sin identificador se queda en el hueco, y eso es normal, no un fallo.** Dos de los once perfiles de fábrica no están en Steam. El hueco va con borde discontinuo: dice «falta», no «no hay».
+
+**Se le piden ficheros estáticos a su CDN, y nada más.** Sin clave, sin cuenta, sin API y sin mandar a ningún sitio el identificador de nadie. Lo que ese CDN ve es una IP pidiendo una imagen.
 | `verified` | Confianza mostrada en la UI, y disparador de revalidación |
 
 `connect_hint.kind` acepta: `direct_ip`, `lan_browser`, `steam_friends`.
@@ -197,6 +214,8 @@ Y una que vive en el otro lado de la frontera: los puertos prohibidos se vuelven
 ## El creador de perfiles
 
 Lo abre "Agregar juego" al final de la lista. La idea: **el usuario no adivina puertos, Kanpachi los observa**.
+
+**Lo que el formulario pide HOY**, que es menos que lo de abajo: el nombre, una fila por cada puerto o rango con su protocolo, y el **identificador de Steam**, opcional. Ese último campo pedía antes un enlace de SteamDB para «tomar la portada», y no tomaba ninguna: lo que se escribía ahí no salía de la pantalla. Ahora es el número, va dentro de `detect.steam_appid` como el de cualquier perfil de fábrica, y la vista previa enseña la portada de verdad mientras se escribe. Se acepta también la dirección entera pegada, porque quien va a buscarlo copia la barra del navegador: se toma el primer grupo de dígitos, que en `store.steampowered.com/app/892970/Valheim/` es el que identifica al juego.
 
 ### Paso 1, elegir el juego
 

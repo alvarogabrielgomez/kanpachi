@@ -126,7 +126,7 @@ class Game {
     this.verified = false,
     this.hintKind,
     this.hintText,
-    this.coverUrl,
+    this.steamAppId,
   });
 
   factory Game.fromJson(Map<String, Object?> json) => Game(
@@ -139,6 +139,7 @@ class Game {
     verified: json['verified'] as bool? ?? false,
     hintKind: ConnectHintKind.fromWire(json['hint_kind'] as String?),
     hintText: json['hint_text'] as String?,
+    steamAppId: json['steam_appid'] as int?,
   );
 
   static List<PortRule> _reglas(Object? crudo) {
@@ -188,8 +189,14 @@ class Game {
   /// sala muestra debajo de la dirección.
   final String? hintText;
 
-  /// No viaja por el cable. Es local, y decirlo evita que alguien lo busque.
-  final String? coverUrl;
+  /// El identificador de este juego en Steam, o null si no está en Steam.
+  ///
+  /// Es de donde sale la portada: la dirección se arma con él, ver [SteamArt].
+  /// Acá había un `coverUrl` que decía «no viaja por el cable, es local», y por
+  /// eso mismo estaba SIEMPRE vacío: nadie lo rellenaba desde ningún sitio, así
+  /// que en la app no se veía una sola portada. Es además el mismo número que
+  /// ya usa la detección del daemon, así que el perfil no crece ni un campo.
+  final int? steamAppId;
 
   bool get isMesh => clientRules.isNotEmpty;
 
@@ -217,7 +224,13 @@ class Game {
     'id': id,
     'schema': 2,
     'name': name,
-    'detect': <String, Object?>{},
+    // El identificador de Steam, cuando quien da de alta el juego lo sabe. Es
+    // el único campo de `detect` que la ventana rellena: los ejecutables los
+    // busca el daemon, y pedirlos en un formulario sería pedir que alguien
+    // adivine el nombre de un fichero.
+    'detect': <String, Object?>{
+      if (steamAppId != null) 'steam_appid': steamAppId,
+    },
     'host_ports': <Object?>[for (final PortRule r in rules) r.toProfileJson()],
     'client_ports': <Object?>[
       for (final PortRule r in clientRules) r.toProfileJson(),
@@ -250,7 +263,7 @@ class Game {
     verified: verified,
     hintKind: hintKind,
     hintText: hintText,
-    coverUrl: coverUrl,
+    steamAppId: steamAppId,
   );
 
   /// Identity is the id and not the name, and that is not a detail: two

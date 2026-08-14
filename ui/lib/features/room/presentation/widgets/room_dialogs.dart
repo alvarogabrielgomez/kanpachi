@@ -7,6 +7,7 @@ import 'package:kanpachi_ui/core/design_system/molecules/app_dialog.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/seed/presentation/ask_to_host.dart';
+import 'package:kanpachi_ui/features/games/domain/steam_art.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
@@ -59,7 +60,7 @@ class ConfirmGameDialog extends StatelessWidget {
                     (ShellCubit c) => c.state.artMode,
                   ) ==
                   GameArtMode.cover) ...<Widget>[
-                const AppCover.dialog(),
+                AppCover.dialog(imageUrl: SteamArt.portrait(game.steamAppId)),
                 const SizedBox(width: AppSpacing.xxl),
               ],
               Expanded(
