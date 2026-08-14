@@ -68,7 +68,7 @@ func correr(op opciones) error {
 	// este proceso, que corre elevado, ejecute otro ejecutable con ese nombre.
 	motorExe := filepath.Join(op.dirExe, "kanpachi-engine.exe")
 	if err := preflight.EngineAt(motorExe); err != nil {
-		return fmt.Errorf("%w. Lo copia scripts/build_test_tools.ps1", err)
+		return fmt.Errorf("%w. Lo copia scripts/build-test-tools.ps1", err)
 	}
 
 	ctxRaiz, pararSeñales := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

@@ -240,7 +240,7 @@ La carpeta la arma `scripts\kanpachi-portable.ps1`, que compila las dos mitades,
 
 Una carpeta portable funciona y **no se puede mandar por chat**. Son quince archivos que hay que mantener juntos: el daemon, la interfaz con todo su bundle de Flutter —su DLL, sus plugins y su `data\`—, el motor, las DLL y el marcador. Un ZIP descomprimido a medias, o alguien que arrastra solo el `.exe` que reconoce, es una carpeta que no arranca y un "no me anda" sin ninguna pista.
 
-`kanpachi-portable.exe` empotra esa carpeta entera con `go:embed`, la suelta en un directorio temporal, corre `kanpachid --daemon --show` y borra el temporal al salir. Unos 78 MB. Lo arma `scripts\build_portable_bundle.ps1`, y lo que empotra es la salida de `kanpachi-portable.ps1`, o sea la MISMA receta que se usa a mano: no hay dos listas de archivos que se puedan desincronizar, por lo mismo que el instalador copia `{#Carga}\*` en vez de enumerar.
+`kanpachi-portable.exe` empotra esa carpeta entera con `go:embed`, la suelta en un directorio temporal, corre `kanpachid --daemon --show` y borra el temporal al salir. Unos 78 MB. Lo arma `scripts\build-portable-bundle.ps1`, y lo que empotra es la salida de `kanpachi-portable.ps1`, o sea la MISMA receta que se usa a mano: no hay dos listas de archivos que se puedan desincronizar, por lo mismo que el instalador copia `{#Carga}\*` en vez de enumerar.
 
 Lo que lo hace funcionar, y qué pasa si falta:
 
@@ -2142,7 +2142,7 @@ La regla que centraliza: **toda mutación persistente de Kanpachi o lleva etique
 
 **El desinstalador es otra bandera**, `--uninstall-cleanup`, que hace lo mismo y además quita la cuarentena. Esa capacidad vive en **una sola función**, `windowscom.RemoveBaseQuarantineForUninstall`, con el nombre largo a propósito para que aparezca entero en cualquier búsqueda. Está cerrada por tres vías: `port.FirewallPort` no declara nada que pueda quitarla, así que ningún caso de uso puede pedirlo; un guardián exige que sea la única función del daemon que a la vez nombre el grupo base y llame a algo que borra; y otro exige que solo la llame el cableado de `cmd/kanpachid`. El primero de esos guardianes se escribió porque el que ya existía **no mordía**: buscaba llamadas con nombre de verbo destructivo y el grupo entre los argumentos, y el borrado real pasa por un helper propio con el grupo comparado contra el campo de una regla enumerada. Se comprobó escribiendo la función y viendo al guardián viejo callar.
 
-Medido el 2026-08-05 con una sala real y el daemon muerto a lo bruto: quedaban una regla del grupo `Kanpachi`, seis filtros de compuerta y un `hosted-room.json`; tras el reset, cero y cero, la cuarentena entera en sus 48 reglas, sin motor huérfano, sin `hosted-room.json`, y una sala nueva se creó a continuación. Lo corre `scripts/medir-reset.ps1`.
+Medido el 2026-08-05 con una sala real y el daemon muerto a lo bruto: quedaban una regla del grupo `Kanpachi`, seis filtros de compuerta y un `hosted-room.json`; tras el reset, cero y cero, la cuarentena entera en sus 48 reglas, sin motor huérfano, sin `hosted-room.json`, y una sala nueva se creó a continuación. Lo corre `scripts/measure-reset.ps1`.
 
 **Y la otra mitad, medida en Linux el 2026-08-13.** La pregunta abierta era si hace falta código para limpiar lo que un `kill -9` deja. La respuesta es que no, y el arranque siguiente ya lo hace:
 

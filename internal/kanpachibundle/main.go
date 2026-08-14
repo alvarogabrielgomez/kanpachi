@@ -49,9 +49,9 @@
 // niega a correr diciendo por qué, en vez de producir un bundle vacío que falla
 // en la máquina de otra persona.
 //
-//	scripts\build_portable_bundle.ps1
+//	scripts\build-portable-bundle.ps1
 //
-// El script arma la carpeta portable con `kanpachi-portable.ps1 -NoArrancar`,
+// El script arma la carpeta portable con `kanpachi-portable.ps1 -NoLaunch`,
 // la copia a `internal/kanpachibundle/carga/` y compila con `-tags bundle`.
 //
 // # Lo que hay que saber antes de mandarlo

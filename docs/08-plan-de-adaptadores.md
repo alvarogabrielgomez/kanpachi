@@ -707,7 +707,7 @@ agujereando NAT por UDP, que necesita la otra punta y llega con el directorio.
 
 Quedan 17 reglas menos en la máquina, y ninguna es de Kanpachi: eran del motor
 viejo y de los avisos de Windows durante el desarrollo. Las quita
-`scripts/limpiar-reglas-del-motor.ps1`, que va en seco salvo con `-Aplicar`.
+`scripts/clean-engine-rules.ps1`, que va en seco salvo con `-Apply`.
 
 **2. La compuerta de WFP no la encendía nadie.** `firewall.SetScope` solo lo
 llamaba `internal/fwprobe`. En el daemon real `specsFor` devolvía nil y `Apply`
@@ -806,7 +806,7 @@ tres fallos que ningún test de paquete alcanza:
    con el prefijo, `10.99.61.1/24`, y el daemon la parsea estricto. Estaba
    escrito en el log de la sala que se había dado por verde: el script miraba
    adaptador, métrica y rutas, y nadie miraba el log. **Un aviso que nadie lee
-   es un fallo que nadie ve**, y por eso `medir-netcfg.ps1` ahora lo lee siempre.
+   es un fallo que nadie ve**, y por eso `measure-netcfg.ps1` ahora lo lee siempre.
 3. **El seed aparecía como miembro de la sala.** Releva sin vivir en el espacio
    de direcciones de la sala, así que volvía sin IP virtual, y el daemon
    aceptaba la dirección vacía como una dirección cero: en pantalla salía un
@@ -825,7 +825,7 @@ con la sala ya creada.
 
 ## Los cuatro fallos del motor, de punta a punta, y los dos que salieron de ahí
 
-Medido el 2026-08-05 con `scripts/medir-motor-punta-a-punta.ps1`, contra
+Medido el 2026-08-05 con `scripts/measure-engine-end-to-end.ps1`, contra
 `kanpachi.accentio.dev`, con el producto entero corriendo:
 
 | Fallo | Cómo se ejercita | Resultado |
@@ -866,7 +866,7 @@ esperados.
 
 ## El cambio de red, y el décimo fallo
 
-Medido el 2026-08-05 con `scripts/medir-cambio-de-red.ps1`, elevado, contra
+Medido el 2026-08-05 con `scripts/measure-network-change.ps1`, elevado, contra
 `kanpachi.accentio.dev`. Esta máquina no tiene cable, y al buscar un sustituto
 apareció que **el cable nunca fue el punto**: "cambiar de WiFi a cable" mezcla
 dos preguntas y solo una necesita que la red cambie.
@@ -929,7 +929,7 @@ defecto, y el script lo comprueba aparte porque a `kanpachi1` no lo mira nadie.
 
 ## El directorio, medido contra el droplet
 
-Medido el 2026-08-05 con `scripts/medir-directorio.ps1`, elevado, contra
+Medido el 2026-08-05 con `scripts/measure-directory.ps1`, elevado, contra
 `kanpachi.accentio.dev` de verdad. El test de contrato ya habla el protocolo
 entero con las dos puntas en proceso; lo que esto agrega es el servidor del
 droplet, con su TLS, su proxy inverso y su límite de tasa, y el daemon
@@ -982,7 +982,7 @@ repositorio:
    `pipeprobe` recibía un JSON truncado y contestaba `unexpected end of JSON
    input`. Envolver en comillas, no escapar, y escapar con acento grave fallan
    las tres. Lo único que aguanta es construir la línea de comandos entera con
-   `ProcessStartInfo`, que nadie vuelve a interpretar. **`medir-motor-punta-a-punta.ps1`
+   `ProcessStartInfo`, que nadie vuelve a interpretar. **`measure-engine-end-to-end.ps1`
    se salva por casualidad**: su sala se llama `Prueba`, sin espacios.
 3. **Los nombres de cuenta de Windows están traducidos.** En esta máquina SYSTEM
    es `AUTORIDADE NT\SISTEMA`, así que comprobar la ACL buscando la palabra
@@ -1057,7 +1057,7 @@ trabajo hoy.
 lo seguía recomendando. El motor y el catálogo se resuelven al lado del propio
 ejecutable, y bajo `go run` ese sitio es un directorio temporal. El stage era la
 única vía que funcionaba, y era la única que nada en el repositorio construía:
-ahora la construye `scripts/preparar-stage.ps1`.
+ahora la construye `scripts/prepare-stage.ps1`.
 
 ---
 

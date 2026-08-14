@@ -1,4 +1,4 @@
-# Aquí es donde `scripts/build_portable_bundle.ps1` deja la carpeta portable
+# Aquí es donde `scripts/build-portable-bundle.ps1` deja la carpeta portable
 # entera justo antes de compilar con `-tags bundle`, porque `go:embed` solo
 # puede empotrar cosas que estén DENTRO del directorio de su paquete: no acepta
 # `../`.

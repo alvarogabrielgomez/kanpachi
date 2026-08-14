@@ -11,9 +11,9 @@
     Five steps, and three of them carry a reason worth keeping:
 
       1. Stamp the version into the Windows resources.
-      2. preparar-carga.ps1: daemon, interface, catalog, DLLs and engine.
+      2. prepare-payload.ps1: daemon, interface, catalog, DLLs and engine.
       3. Inno Setup over installer\kanpachi.iss.
-      4. build_portable_bundle.ps1: the same product in one file.
+      4. build-portable-bundle.ps1: the same product in one file.
       5. SHA256SUMS-windows, with BOTH executables in it.
 
     # Why the .syso files are regenerated here
@@ -123,12 +123,12 @@ try {
     $payload = Join-Path $Output 'carga'
     # LASTEXITCODE is reset by hand before calling a .ps1, and it is not
     # paranoia: a script that ends WITHOUT `exit` leaves the previous command's
-    # code in place. preparar-carga.ps1 exits 1 when the payload is incomplete
+    # code in place. prepare-payload.ps1 exits 1 when the payload is incomplete
     # and just ends when it is fine, so without this a failure would be read as
     # whatever go-winres left behind.
     $global:LASTEXITCODE = 0
-    & (Join-Path $PSScriptRoot 'preparar-carga.ps1') -Salida $payload -Motor $Engine -Version $Version
-    if ($LASTEXITCODE -ne 0) { throw "preparar-carga.ps1 exited with $LASTEXITCODE" }
+    & (Join-Path $PSScriptRoot 'prepare-payload.ps1') -Output $payload -Engine $Engine -Version $Version
+    if ($LASTEXITCODE -ne 0) { throw "prepare-payload.ps1 exited with $LASTEXITCODE" }
     Ok $payload
 
     Step "the installer"
@@ -144,10 +144,10 @@ try {
 
     Step "the portable"
     $global:LASTEXITCODE = 0
-    & (Join-Path $PSScriptRoot 'build_portable_bundle.ps1') `
-        -Salida (Join-Path $Output 'kanpachi-portable.exe') `
-        -Motor $Engine
-    if ($LASTEXITCODE -ne 0) { throw "build_portable_bundle.ps1 exited with $LASTEXITCODE" }
+    & (Join-Path $PSScriptRoot 'build-portable-bundle.ps1') `
+        -Output (Join-Path $Output 'kanpachi-portable.exe') `
+        -Engine $Engine
+    if ($LASTEXITCODE -ne 0) { throw "build-portable-bundle.ps1 exited with $LASTEXITCODE" }
     Ok "kanpachi-portable.exe"
 
     Step "sums"

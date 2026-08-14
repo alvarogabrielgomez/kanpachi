@@ -6,8 +6,8 @@
     /third_party/ is in .gitignore because it weighs around 80 MB, so a fresh
     clone arrives WITHOUT Packet.dll, wintun.dll and WinDivert64.sys. On the
     development machine they are there from before and nobody notices; on a
-    clean runner there is nowhere to get them from, and preparar-carga.ps1 cuts
-    with "falta third_party\easytier\Packet.dll".
+    clean runner there is nowhere to get them from, and prepare-payload.ps1 cuts
+    with "missing third_party\easytier\Packet.dll".
 
     This used to live inline in release.yml. It lives here so the release runner
     and a fresh clone populate that directory the same way.

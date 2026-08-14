@@ -39,7 +39,7 @@
     says so when it finishes instead of letting you believe otherwise.
 
     It also starts nothing: no rooms, no firewall, no elevated console. That is
-    what the medir-*.ps1 scripts are for, and each one states its own terms.
+    what the measure-*.ps1 scripts are for, and each one states its own terms.
 
 .PARAMETER Surface
     Which job's checks to run. Named -Surface and not -Profile because $Profile

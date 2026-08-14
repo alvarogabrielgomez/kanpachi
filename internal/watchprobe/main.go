@@ -15,7 +15,7 @@
 //
 // El cuarto adaptador, el de eventos del sistema, no entra: no se puede sondear
 // sin provocar de verdad un cambio de red o una suspensión. Eso lo mide
-// `scripts/medir-cambio-de-red.ps1`, que ya existe.
+// `scripts/measure-network-change.ps1`, que ya existe.
 package main
 
 import (

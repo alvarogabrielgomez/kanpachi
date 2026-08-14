@@ -36,7 +36,7 @@ const elQueSeCorre = "roomprobe.exe"
 func correr() error {
 	if !hayCarga {
 		return errors.New("este roombundle se compiló SIN carga, así que no lleva nada dentro.\n" +
-			"  Se construye con scripts\\build_test_tools.ps1, que copia los cinco\n" +
+			"  Se construye con scripts\\build-test-tools.ps1, que copia los cinco\n" +
 			"  ficheros a internal/roombundle/carga/ y compila con -tags bundle")
 	}
 

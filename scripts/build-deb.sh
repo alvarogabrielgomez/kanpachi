@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 #
-# Arma `kanpachi-amd64.deb` con lo que ya está compilado.
+# Builds `kanpachi-amd64.deb` out of what is already compiled.
 #
-# # Qué NO hace, y por qué
+# # What it does NOT do, and why
 #
-# No compila el motor. Ese binario sale de `scripts/build-linux.sh` del
-# repositorio del motor, corriendo EN Linux, y este script lo recibe por
-# `--engine`. Meter las dos cosas en un script haría que armar el paquete
-# dependiera de tener el toolchain de Rust, que en el runner que publica son dos
-# pasos distintos y en una máquina de pruebas es media hora de diferencia.
+# It does not build the engine. That binary comes out of `scripts/build-linux.sh`
+# in the engine's repository, running ON Linux, and this script receives it via
+# `--engine`. Putting both things in one script would make building the package
+# depend on having the Rust toolchain, which on the publishing runner is two
+# separate steps and on a test machine is half an hour of difference.
 #
-# # La versión va DENTRO del paquete y no en su nombre
+# # The version goes INSIDE the package and not in its name
 #
-# El fichero se llama `kanpachi-amd64.deb`, sin versión, porque la página apunta
-# a `releases/latest/download/<fichero>`, que es una URL permanente. La versión
-# viaja en el campo `Version` del control, que es de donde la lee `dpkg`. La
-# razón está escrita en `release.yml`: una constante de versión a mano quedó
-# vacía para siempre y la pantalla dijo "todavía no hay instalador" durante toda
-# la vida del producto.
+# The file is called `kanpachi-amd64.deb`, with no version, because the page
+# points at `releases/latest/download/<file>`, which is a permanent URL. The
+# version travels in the control file's `Version` field, which is where `dpkg`
+# reads it from. The reason is written in `release.yml`: a hand-written version
+# constant stayed empty forever and the screen said "there is no installer yet"
+# for the whole life of the product.
 #
 # # --strict: the same check, with teeth
 #
@@ -29,15 +29,15 @@
 # It also writes SHA256SUMS-linux there: whoever produces the artifact produces
 # its manifest.
 #
-# Uso:
-#   scripts/build-deb.sh --version 0.2.0 --engine /ruta/kanpachi-engine [--out dist] [--strict]
+# Usage:
+#   scripts/build-deb.sh --version 0.2.0 --engine /path/kanpachi-engine [--out dist] [--strict]
 
 set -euo pipefail
 
-raiz="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 version=""
 engine=""
-out="$raiz/dist"
+out="$root/dist"
 strict=0
 
 while [ $# -gt 0 ]; do
@@ -46,152 +46,155 @@ while [ $# -gt 0 ]; do
 	--engine) shift; engine="${1:-}" ;;
 	--out) shift; out="${1:-}" ;;
 	--strict) strict=1 ;;
-	*) echo "opción desconocida: $1" >&2; exit 2 ;;
+	*) echo "unknown option: $1" >&2; exit 2 ;;
 	esac
 	shift
 done
 
-paso() { printf '\n=== %s ===\n' "$1"; }
-bien() { printf '  OK  %s\n' "$1"; }
+step() { printf '\n=== %s ===\n' "$1"; }
+ok() { printf '  OK  %s\n' "$1"; }
 
-[ -n "$version" ] || { echo "hace falta --version" >&2; exit 2; }
-[ -n "$engine" ] || { echo "hace falta --engine, con la ruta del motor ya compilado" >&2; exit 2; }
-[ -x "$engine" ] || { echo "no está o no es ejecutable: $engine" >&2; exit 1; }
-command -v dpkg-deb >/dev/null || { echo "falta dpkg-deb. Instalalo con: sudo apt install dpkg-dev" >&2; exit 1; }
+[ -n "$version" ] || { echo "--version is required" >&2; exit 2; }
+[ -n "$engine" ] || { echo "--engine is required, with the path of the already built engine" >&2; exit 2; }
+[ -x "$engine" ] || { echo "not there or not executable: $engine" >&2; exit 1; }
+command -v dpkg-deb >/dev/null || { echo "dpkg-deb is missing. Install it with: sudo apt install dpkg-dev" >&2; exit 1; }
 
-# Sin la `v` inicial: dpkg ordena versiones y `v0.2.0` no es un número para él.
+# Without the leading `v`: dpkg sorts versions and `v0.2.0` is not a number to
+# it.
 version="${version#v}"
 
-# La VARIANTE del producto, que es un eje distinto del sistema operativo.
+# The product VARIANT, which is a different axis from the operating system.
 #
-# Hoy `headless` es lo que sale por omisión fuera de Windows, así que pasarlo es
-# lo mismo que no pasarlo. Se pasa igual, y esa es la cuestión: el día que Linux
-# tenga interfaz de escritorio, el valor por omisión de ese sistema puede cambiar
-# y este paquete, que es el del SERVIDOR, tiene que seguir siendo el del
-# servidor. Un `.deb` que se volviera de escritorio por heredar un default es la
-# clase de cambio que nadie ve hasta que un servidor intenta abrir una ventana.
+# Today `headless` is what comes out by default outside Windows, so passing it is
+# the same as not passing it. It is passed anyway, and that is the point: the day
+# Linux has a desktop interface, that system's default may change and this
+# package, which is the SERVER one, has to stay the server one. A `.deb` that
+# turned into a desktop one by inheriting a default is the kind of change nobody
+# sees until a server tries to open a window.
 #
-# Ver `daemon/cmd/kanpachid/variant.go` para la tabla entera.
-VARIANTE=headless
+# See `daemon/cmd/kanpachid/variant.go` for the whole table.
+VARIANT=headless
 
-paso "compilando el daemon y el CLI ($VARIANTE)"
-# CGO apagado: sin él el binario no arrastra el enlazador dinámico de glibc para
-# NSS, que es lo que hace que un binario compilado en una distribución no arranque
-# en otra. El daemon no usa nada que lo necesite.
+step "building the daemon and the CLI ($VARIANT)"
+# CGO off: without it the binary does not drag in glibc's dynamic linker for NSS,
+# which is what makes a binary built on one distribution fail to start on
+# another. The daemon uses nothing that needs it.
 export CGO_ENABLED=0
 mkdir -p "$out"
-# compilar, con el respaldo para el caso del checkout ajeno.
+# build, with the fallback for the foreign checkout case.
 #
-# `go build` sella el binario con el estado del repositorio, y para eso le
-# pregunta a git. Corriendo desde WSL sobre un checkout de Windows, git se niega
-# con `detected dubious ownership` porque los ficheros son de otro usuario, y lo
-# que llega es `error obtaining VCS status: exit status 128`, que no nombra ni a
-# git ni al dueño.
+# `go build` stamps the binary with the repository's state, and to do that it
+# asks git. Running from WSL over a Windows checkout, git refuses with `detected
+# dubious ownership` because the files belong to another user, and what comes out
+# is `error obtaining VCS status: exit status 128`, which names neither git nor
+# the owner.
 #
-# Se reintenta sin el sellado y se DICE. Perderlo en el artefacto que se publica
-# sería una pérdida de verdad, y ahí no pasa: el runner compila su propio
-# checkout. Acá pasa siempre, y no es motivo para no poder armar un paquete de
-# prueba.
-compilar() {
-	local destino=$1 paquete=$2 ldflags=${3:-}
-	if go build -trimpath -tags "$VARIANTE" -ldflags "$ldflags" -o "$destino" "$paquete" 2>/dev/null; then
+# It retries without the stamping and SAYS SO. Losing it in the artifact being
+# published would be a real loss, and there it does not happen: the runner builds
+# its own checkout. Here it happens always, and that is no reason to be unable to
+# build a test package.
+build() {
+	local target=$1 package=$2 ldflags=${3:-}
+	if go build -trimpath -tags "$VARIANT" -ldflags "$ldflags" -o "$target" "$package" 2>/dev/null; then
 		return 0
 	fi
-	if go build -trimpath -tags "$VARIANTE" -ldflags "$ldflags" -buildvcs=false -o "$destino" "$paquete"; then
-		echo "  --  sin sellado de git: este checkout es de otro usuario." >&2
+	if go build -trimpath -tags "$VARIANT" -ldflags "$ldflags" -buildvcs=false -o "$target" "$package"; then
+		echo "  --  without git stamping: this checkout belongs to another user." >&2
 		return 0
 	fi
 	return 1
 }
 
-compilar "$out/kanpachid" "$raiz/daemon/cmd/kanpachid"
-bien "kanpachid"
+build "$out/kanpachid" "$root/daemon/cmd/kanpachid"
+ok "kanpachid"
 
-# La versión se le sella al CLI, que es el único de los tres que la dice en voz
-# alta. El mecanismo es el mismo que ya usa el seed. Sin esto el binario contesta
-# `dev`, que es la verdad para uno compilado a mano y una mentira dentro de un
-# paquete: el informe de un fallo apuntaría a una versión publicada que no es la
-# que falló.
-compilar "$out/kanpachi" "$raiz/daemon/cmd/kanpachi" "-X main.Version=$version"
-bien "kanpachi"
+# The version is stamped into the CLI, which is the only one of the three that
+# says it out loud. The mechanism is the same the seed already uses. Without this
+# the binary answers `dev`, which is the truth for one built by hand and a lie
+# inside a package: a bug report would point at a published version that is not
+# the one that failed.
+build "$out/kanpachi" "$root/daemon/cmd/kanpachi" "-X main.Version=$version"
+ok "kanpachi"
 
-paso "armando el árbol del paquete"
-arbol="$out/kanpachi-deb"
-rm -rf "$arbol"
+step "building the package tree"
+tree="$out/kanpachi-deb"
+rm -rf "$tree"
 mkdir -p \
-	"$arbol/DEBIAN" \
-	"$arbol/usr/bin" \
-	"$arbol/usr/libexec/kanpachi" \
-	"$arbol/usr/share/kanpachi" \
-	"$arbol/lib/systemd/system"
+	"$tree/DEBIAN" \
+	"$tree/usr/bin" \
+	"$tree/usr/libexec/kanpachi" \
+	"$tree/usr/share/kanpachi" \
+	"$tree/lib/systemd/system"
 
-install -m 0755 "$out/kanpachi" "$arbol/usr/bin/kanpachi"
-install -m 0755 "$out/kanpachid" "$arbol/usr/libexec/kanpachi/kanpachid"
-install -m 0755 "$engine" "$arbol/usr/libexec/kanpachi/kanpachi-engine"
+install -m 0755 "$out/kanpachi" "$tree/usr/bin/kanpachi"
+install -m 0755 "$out/kanpachid" "$tree/usr/libexec/kanpachi/kanpachid"
+install -m 0755 "$engine" "$tree/usr/libexec/kanpachi/kanpachi-engine"
 
-# El catálogo que viene con el paquete. Es de SOLO LECTURA para el daemon: lo
-# actualiza el paquete, y lo propio del usuario vive aparte en /var/lib.
+# The catalog that ships with the package. It is READ ONLY for the daemon: the
+# package updates it, and the user's own lives separately in /var/lib.
 #
-# # Falta el catálogo, falla el paquete
+# # No catalog, no package
 #
-# Esto era un aviso y tenía que ser un corte. La primera versión miraba
-# `catalog/builtin.json`, que no existe en este repositorio —el fichero vive
-# junto a su parser, que es donde lo buscan los cuatro scripts de Windows— así
-# que la rama del aviso se tomaba SIEMPRE y el paquete salía sin un solo juego.
-# Medido el 2026-08-10 con `kanpachi games`, que contestó que el catálogo estaba
-# vacío. Con `dpkg-deb --contents` no se ve: lo que hay que mirar es lo que NO
-# está.
-catalogo="$raiz/daemon/adapter/catalog/jsonfile/builtin.json"
-[ -f "$catalogo" ] || {
-	echo "no está el catálogo: $catalogo" >&2
-	echo "  Sin él la sala se abre y no hay ni un juego que activar." >&2
+# This was a warning and had to be a stop. The first version looked at
+# `catalog/builtin.json`, which does not exist in this repository -- the file
+# lives beside its parser, which is where the four Windows scripts look for it --
+# so the warning branch was taken ALWAYS and the package went out without a
+# single game. Measured on 2026-08-10 with `kanpachi games`, which answered that
+# the catalog was empty. `dpkg-deb --contents` does not show it: what has to be
+# looked at is what is NOT there.
+catalog="$root/daemon/adapter/catalog/jsonfile/builtin.json"
+[ -f "$catalog" ] || {
+	echo "the catalog is not there: $catalog" >&2
+	echo "  Without it the room opens and there is not a single game to activate." >&2
 	exit 1
 }
-install -m 0644 "$catalogo" "$arbol/usr/share/kanpachi/builtin.json"
-bien "builtin.json ($(grep -c '"id"' "$catalogo") perfiles)"
+install -m 0644 "$catalog" "$tree/usr/share/kanpachi/builtin.json"
+ok "builtin.json ($(grep -c '"id"' "$catalog") profiles)"
 
-install -m 0644 "$raiz/packaging/systemd/kanpachid.service" "$arbol/lib/systemd/system/"
-install -m 0644 "$raiz/packaging/systemd/kanpachi-quarantine.service" "$arbol/lib/systemd/system/"
+install -m 0644 "$root/packaging/systemd/kanpachid.service" "$tree/lib/systemd/system/"
+install -m 0644 "$root/packaging/systemd/kanpachi-quarantine.service" "$tree/lib/systemd/system/"
 
-sed "s/@VERSION@/$version/" "$raiz/packaging/debian/control" >"$arbol/DEBIAN/control"
+sed "s/@VERSION@/$version/" "$root/packaging/debian/control" >"$tree/DEBIAN/control"
 for s in postinst prerm postrm; do
-	install -m 0755 "$raiz/packaging/debian/$s" "$arbol/DEBIAN/$s"
+	install -m 0755 "$root/packaging/debian/$s" "$tree/DEBIAN/$s"
 done
-bien "árbol en $arbol"
+ok "tree at $tree"
 
-paso "comprobando antes de empaquetar"
-# El piso de glibc del MOTOR decide en qué Ubuntu corre el paquete, y es el
-# único de los tres binarios que lo tiene: los de Go van sin cgo. Compilado en
-# 24.04 pide 2.39 y NO arranca en 22.04, que es la que más se ve en un VPS.
-glibc="$(objdump -T "$arbol/usr/libexec/kanpachi/kanpachi-engine" 2>/dev/null |
+step "checking before packaging"
+# The ENGINE's glibc floor decides which Ubuntu the package runs on, and it is
+# the only one of the three binaries that has one: the Go ones go without cgo.
+# Built on 24.04 it demands 2.39 and does NOT start on 22.04, which is the one
+# most often seen on a VPS.
+glibc="$(objdump -T "$tree/usr/libexec/kanpachi/kanpachi-engine" 2>/dev/null |
 	grep -o 'GLIBC_[0-9.]*' | sort -V | tail -1 || true)"
 if [ -n "$glibc" ]; then
-	printf '  el motor exige %s\n' "$glibc"
+	printf '  the engine demands %s\n' "$glibc"
 	case "$glibc" in
 	GLIBC_2.3[6-9] | GLIBC_2.4*)
-		echo "  --  por encima del 2.35 de Ubuntu 22.04: este paquete NO va a arrancar ahí." >&2
-		echo "      El artefacto que se publica se compila en un runner 22.04." >&2
+		echo "  --  above the 2.35 of Ubuntu 22.04: this package will NOT start there." >&2
+		echo "      The artifact that gets published is built on a 22.04 runner." >&2
 		[ "$strict" -eq 0 ] || exit 1
 		;;
 	esac
 fi
 
-paso "empaquetando"
+step "packaging"
 deb="$out/kanpachi-amd64.deb"
-# `--root-owner-group` para que todo salga de root:root sin necesitar fakeroot.
-dpkg-deb --build --root-owner-group "$arbol" "$deb" >/dev/null
-bien "$deb ($(( $(stat -c %s "$deb") / 1024 )) KiB)"
+# `--root-owner-group` so everything comes out as root:root without needing
+# fakeroot.
+dpkg-deb --build --root-owner-group "$tree" "$deb" >/dev/null
+ok "$deb ($(( $(stat -c %s "$deb") / 1024 )) KiB)"
 
-paso "lo que quedó dentro"
+step "what ended up inside"
 dpkg-deb --contents "$deb" | awk '{print "  " $1, $6}'
 
-# El manifiesto solo con --strict, o sea solo cuando esto publica. En una
-# máquina de desarrollo un SHA256SUMS-linux suelto en dist/ no lo verifica
-# nadie, y el nombre lleva `-linux` porque tres workflows escriben en la misma
-# publicación: con un nombre compartido, el último en subir pisa a los otros.
+# The manifest only with --strict, which is to say only when this publishes. On a
+# development machine a loose SHA256SUMS-linux in dist/ is verified by nobody,
+# and the name carries `-linux` because three workflows write into the same
+# release: with a shared name, the last one to upload overwrites the others.
 if [ "$strict" -eq 1 ]; then
-	paso "sumas"
+	step "sums"
 	(cd "$out" && sha256sum kanpachi-amd64.deb >SHA256SUMS-linux && cat SHA256SUMS-linux)
 fi
 
-paso "listo"
+step "done"

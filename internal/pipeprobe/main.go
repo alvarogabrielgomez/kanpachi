@@ -12,7 +12,7 @@
 // probar la frontera, no para dárselo a nadie.
 //
 // Se llamó `kanpctl` hasta el 2026-08-14, y el nombre hacía el daño solo: se leía
-// como hermano de `kanpachi`, o sea como un binario del producto. `preparar-stage.ps1`
+// como hermano de `kanpachi`, o sea como un binario del producto. `prepare-stage.ps1`
 // llegó a describirlo como "el cliente de linea de comandos". Ahora se llama como
 // el resto del instrumental, `<lo que mide>probe`, y lo que mide es el pipe.
 //

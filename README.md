@@ -280,9 +280,9 @@ This section is intentionally short and points to auditable sources.
 - Engine behavior and non-listening model: [kanpachi-engine README](https://github.com/alvarogabrielgomez/kanpachi-engine)
 - EasyTier fork rationale and minimal diff record: [EasyTier/FORK.md](https://github.com/alvarogabrielgomez/EasyTier/blob/kanpachi/FORK.md)
 - Evidence scripts used during verification:
-  - [scripts/medir-motor-punta-a-punta.ps1](scripts/medir-motor-punta-a-punta.ps1)
-  - [scripts/medir-directorio.ps1](scripts/medir-directorio.ps1)
-  - [scripts/medir-reset.ps1](scripts/medir-reset.ps1)
+  - [scripts/measure-engine-end-to-end.ps1](scripts/measure-engine-end-to-end.ps1)
+  - [scripts/measure-directory.ps1](scripts/measure-directory.ps1)
+  - [scripts/measure-reset.ps1](scripts/measure-reset.ps1)
 
 There is no private source code in this project: all code and documentation are public.
 

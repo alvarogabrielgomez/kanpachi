@@ -62,7 +62,7 @@ const nombreDeDatos = "kanpachi-data"
 func correr() error {
 	if !hayCarga {
 		return errors.New("este kanpachibundle se compiló SIN carga, así que no lleva nada dentro.\n" +
-			"  Se construye con scripts\\build_portable_bundle.ps1, que arma la carpeta\n" +
+			"  Se construye con scripts\\build-portable-bundle.ps1, que arma la carpeta\n" +
 			"  portable, la copia a internal/kanpachibundle/carga/ y compila con -tags bundle")
 	}
 
@@ -235,7 +235,7 @@ func extraer(dir string) error {
 	for _, nombre := range imprescindibles {
 		if _, err := os.Stat(filepath.Join(dir, nombre)); err != nil {
 			return fmt.Errorf("a este bundle le falta %s por dentro, así que no va a arrancar.\n"+
-				"  Se arma con scripts\\build_portable_bundle.ps1", nombre)
+				"  Se arma con scripts\\build-portable-bundle.ps1", nombre)
 		}
 	}
 	return nil

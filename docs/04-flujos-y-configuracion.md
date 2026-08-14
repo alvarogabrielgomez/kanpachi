@@ -86,7 +86,7 @@ Aceptado el diálogo, sigue lo de siempre: `sc stop` y hasta 120 segundos espera
 
 Son dos piezas y su estado es distinto:
 
-- **La carga**, `scripts/preparar-carga.ps1`. Compila el daemon con `-trimpath` y `-H windowsgui`, la interfaz en release con su bundle entero, copia `builtin.json`, `Packet.dll`, `wintun.dll` y `WinDivert64.sys`, trae el motor del otro repositorio, y deja un `SHA256SUMS`. **Medido**: 21 ficheros, 72 MB, antes de que entrara el `.sys`. Ojo con de dónde salen esos tres ficheros de `third_party\easytier`: están en `.gitignore` por tamaño, así que en un runner limpio no existen y el workflow los baja del release oficial de EasyTier antes de llamar a este script.
+- **La carga**, `scripts/prepare-payload.ps1`. Compila el daemon con `-trimpath` y `-H windowsgui`, la interfaz en release con su bundle entero, copia `builtin.json`, `Packet.dll`, `wintun.dll` y `WinDivert64.sys`, trae el motor del otro repositorio, y deja un `SHA256SUMS`. **Medido**: 21 ficheros, 72 MB, antes de que entrara el `.sys`. Ojo con de dónde salen esos tres ficheros de `third_party\easytier`: están en `.gitignore` por tamaño, así que en un runner limpio no existen y el workflow los baja del release oficial de EasyTier antes de llamar a este script.
 - **El instalador**, `installer/kanpachi.iss`, para Inno Setup 6. **Compilado y ejecutado de verdad.** La primera instalación pública, `v0.1.1`, encontró un servicio previo que apuntaba a `C:\kt\carga`: `sc create` devolvió que ya existía y el script ignoró el código, así que conservó la ruta y el arranque manual. Ahora `sc config` impone ruta, cuenta y tipo en cada instalación y cada comando obligatorio corta el setup si falla. El criterio completo sigue siendo instalar y desinstalar veinte veces en una VM sin dejar rastro.
 - **La publicación**, `.github/workflows/release.yml`. Es quien corre las dos piezas de arriba de verdad, en un runner de Windows, con Inno Setup instalado ahí mismo.
 
@@ -139,7 +139,7 @@ El pin de EasyTier viaja dentro del binario nuevo, así que subirlo en un releas
 
 **El nombre del instalador no lleva la versión.** `kanpachi-setup.exe`, a secas, y eso es lo que hace que `releases/latest/download/kanpachi-setup.exe` sea una URL permanente: GitHub la redirige a la publicación más nueva, así que la página de descarga se actualiza sola al publicar un tag. Con el nombre versionado habría que editar la página en cada publicación, y la página que se edita a mano es la que se queda vieja. La versión viaja dentro del ejecutable, en su `VersionInfo`, y en el título de la publicación. Vale igual para `kanpachi-portable.exe`.
 
-**El portable sale del MISMO tag y del mismo trabajo que el instalador**, con `scripts\build_portable_bundle.ps1` y el motor que se acaba de compilar unos pasos antes, pasado explícito. Son dos formas de repartir el mismo producto: publicarlas por separado dejaría a un amigo con el portable y a otro con el instalado en versiones distintas sin nada que lo diga, y el protocolo entre el daemon y el motor decodifica estricto, así que esa diferencia no es cosmética.
+**El portable sale del MISMO tag y del mismo trabajo que el instalador**, con `scripts\build-portable-bundle.ps1` y el motor que se acaba de compilar unos pasos antes, pasado explícito. Son dos formas de repartir el mismo producto: publicarlas por separado dejaría a un amigo con el portable y a otro con el instalado en versiones distintas sin nada que lo diga, y el protocolo entre el daemon y el motor decodifica estricto, así que esa diferencia no es cosmética.
 
 Lo que cuesta y se dice: la interfaz de Flutter se compila **dos veces en release** dentro del mismo trabajo, una para la carga del instalador y otra para el bundle. Son un par de minutos, y a cambio las dos salidas usan la misma receta que se usa a mano, sin una tercera lista de ficheros que mantener sincronizada. La comprobación de "el motor no es más viejo que su código" no corre en el runner, porque busca el repositorio del motor como hermano de este y ahí está en `motor\`; no hace falta, porque se compiló en ese mismo trabajo.
 
@@ -158,7 +158,7 @@ Hay una segunda forma de repartir Kanpachi además del instalador: una carpeta q
 ```
 .\scripts\kanpachi-portable.ps1                     arma .\Kanpachi y lo arranca
 .\scripts\kanpachi-portable.ps1 debug               daemon de consola a la vista, interfaz en debug
-.\scripts\kanpachi-portable.ps1 -Salida D:\x -NoArrancar   solo armar, para comprimir
+.\scripts\kanpachi-portable.ps1 -Output D:\x -NoLaunch     solo armar, para comprimir
 ```
 
 Una sola orden hace lo que antes eran seis pasos a mano: compilar el daemon, compilar la interfaz, copiar el catálogo y las DLL, traer el motor del otro repositorio, escribir el marcador y arrancarlo todo con los permisos que necesita. El modo por omisión es producción.
@@ -175,26 +175,26 @@ Una sola orden hace lo que antes eran seis pasos a mano: compilar el daemon, com
 
 Lo que el script hace antes de compilar y conviene saber: **detiene lo que estuviera corriendo de ESA carpeta**, filtrando por ruta y no por nombre, para no tumbar un Kanpachi instalado que no tiene nada que ver. Sin eso, Windows tiene el `.exe` bloqueado y `go build` falla con un acceso denegado que no menciona nada de esto. Un daemon portable corre elevado, así que detenerlo desde una terminal sin elevar no se puede: el script lo dice con esas palabras en vez de dejar el fallo de compilación a secas.
 
-Y **conserva `kanpachi-data\`** entre compilaciones, salvo con `-Limpio`. Ahí dentro está la llave de esta instalación, y tirarla en cada build convertiría cada compilación en un equipo nuevo para quien ya jugó contigo.
+Y **conserva `kanpachi-data\`** entre compilaciones, salvo con `-Clean`. Ahí dentro está la llave de esta instalación, y tirarla en cada build convertiría cada compilación en un equipo nuevo para quien ya jugó contigo.
 
 ## Modo desarrollo
 
 El daemon corre como aplicación de consola, sin reinstalar el servicio. **Exige una consola elevada**, por dos motivos que se comprobaron a mano y no se dedujeron: el nombre del pipe vive bajo `ProtectedPrefix\Administrators`, que Windows no deja crear a un proceso sin elevar, y aceptar una conexión exige crear la instancia siguiente del pipe, cosa que el descriptor solo permite a SYSTEM y a los administradores.
 
 ```
-.\scripts\preparar-stage.ps1
+.\scripts\prepare-stage.ps1
 C:\kt\stage\kanpachid.exe --console -data C:\ruta\a\datos
 C:\kt\stage\pipeprobe.exe -data C:\ruta\a\datos status
 C:\kt\stage\pipeprobe.exe -data C:\ruta\a\datos -no-token status
 ```
 
-`preparar-stage.ps1` sigue siendo el banco de pruebas con las sondas dentro, y `kanpachi-portable.ps1 debug` es lo otro: la carpeta que se reparte, compilada en depuración. Para medir un adaptador suelto sirve el stage; para ver el producto entero funcionando, la carpeta portable.
+`prepare-stage.ps1` sigue siendo el banco de pruebas con las sondas dentro, y `kanpachi-portable.ps1 debug` es lo otro: la carpeta que se reparte, compilada en depuración. Para medir un adaptador suelto sirve el stage; para ver el producto entero funcionando, la carpeta portable.
 
 **`go run` no alcanza para nada que abra una sala**, y conviene saberlo antes de
 perder una tarde: el daemon busca el motor y el catálogo al lado de su propio
 ejecutable, y bajo `go run` ese sitio es un directorio temporal de compilación.
 Arranca igual, avisa de que no hay catálogo, y al levantar la red falla sin
-decir que el motor no estaba donde miró. `preparar-stage.ps1` deja los binarios,
+decir que el motor no estaba donde miró. `prepare-stage.ps1` deja los binarios,
 `builtin.json` y las DLL juntos, que es la única forma de correr en desarrollo
 lo mismo que se instala. El motor viene del otro repositorio y se copia a mano;
 el script avisa cuando falta y no falla por eso.
@@ -345,7 +345,7 @@ Checklist del droplet:
 
 Viven en `internal/`, no se distribuyen con el instalador y el producto no las puede importar. Son seis sondas de un solo asunto (`fwprobe`, `engineprobe`, `netcfgprobe`, `dirprobe`, `watchprobe`, `pipeprobe`) más dos que se usan juntas y conviene leer como una sola cosa.
 
-**Todas se llaman `<lo que mide>probe`, y eso es una regla y no una casualidad.** `pipeprobe` se llamó `kanpctl` hasta el 2026-08-14, y el nombre hizo el daño solo: se leía como hermano de `kanpachi`, o sea como un binario del producto, hasta el punto de que `preparar-stage.ps1` lo describía como "el cliente de linea de comandos". Una sonda con nombre de producto invita a que alguien la instale, la distribuya, o escriba contra ella lo que tenía que escribir contra el cliente.
+**Todas se llaman `<lo que mide>probe`, y eso es una regla y no una casualidad.** `pipeprobe` se llamó `kanpctl` hasta el 2026-08-14, y el nombre hizo el daño solo: se leía como hermano de `kanpachi`, o sea como un binario del producto, hasta el punto de que `prepare-stage.ps1` lo describía como "el cliente de linea de comandos". Una sonda con nombre de producto invita a que alguien la instale, la distribuya, o escriba contra ella lo que tenía que escribir contra el cliente.
 
 ### `pipeprobe`: la frontera del pipe, incluido lo que hay que rechazar
 
@@ -361,7 +361,7 @@ go run ./internal/pipeprobe -data C:\ruta\a\datos -no-token status      (debe fa
 
 **Lo que la sostiene es lo que el cliente NO puede expresar.** Un método que no existe, un JSON malformado, un token que no vale, y los cuatro métodos del protocolo que la tabla de comandos deja fuera a propósito (`show_ui`, `pending_invite`, `progress`, `cancel`). Los tests de `daemon/transport/protocol` cubren esas mismas puertas, con el `Server` en memoria y sin pipe: el canal real, el token en disco y el descriptor de seguridad solo se tocan por acá.
 
-Es la que usan los scripts de medición para operar el daemon desde PowerShell: `medir-netcfg.ps1`, `medir-reset.ps1`, `medir-directorio.ps1`, `medir-cambio-de-red.ps1` y `medir-motor-punta-a-punta.ps1`. **Siguen con ella y no con el cliente**, porque `kanpachi host` antes de llamar al método abre otra conexión para leer el registro, exige uno configurado y exige `--yes` para no preguntar: maquinaria entre el script y justo lo que mide. Tres cosas que muerden a cualquier script que la invoque, las tres medidas:
+Es la que usan los scripts de medición para operar el daemon desde PowerShell: `measure-netcfg.ps1`, `measure-reset.ps1`, `measure-directory.ps1`, `measure-network-change.ps1` y `measure-engine-end-to-end.ps1`. **Siguen con ella y no con el cliente**, porque `kanpachi host` antes de llamar al método abre otra conexión para leer el registro, exige uno configurado y exige `--yes` para no preguntar: maquinaria entre el script y justo lo que mide. Tres cosas que muerden a cualquier script que la invoque, las tres medidas:
 
 1. **Saluda antes de cada llamada, y el saludo trae `"result"`.** Buscar `"result"` en la salida entera da verde sobre cualquier error. Se busca la línea del método concreto y se mira si trae `"error"`.
 2. **El `-params` con espacios hay que armarlo con `ProcessStartInfo`.** El operador de llamada de PowerShell parte el JSON por los espacios y la sonda recibe un fragmento truncado, con el que contesta `unexpected end of JSON input`. Comillas, escapes y acento grave fallan los tres.
@@ -405,7 +405,7 @@ Cuatro decisiones que sostienen que funcione:
 
 Lo mismo que `roombundle`, con el producto entero en vez de la sonda: el daemon, la interfaz con todo su bundle de Flutter, el motor, las DLL y el marcador. Unos 78 MB. Del otro lado es doble clic, un UAC, y Kanpachi abierto — **sin instalar nada**: ni servicio, ni arranque con Windows, ni accesos directos, ni ProgramData.
 
-Lo que empotra es la salida de `kanpachi-portable.ps1 -NoArrancar`, o sea la carpeta portable de verdad. Una sola receta, no dos que se desincronizan, por el mismo motivo por el que el instalador copia `{#Carga}\*` en vez de enumerar los veintitantos ficheros de Flutter.
+Lo que empotra es la salida de `kanpachi-portable.ps1 -NoLaunch`, o sea la carpeta portable de verdad. Una sola receta, no dos que se desincronizan, por el mismo motivo por el que el instalador copia `{#Carga}\*` en vez de enumerar los veintitantos ficheros de Flutter.
 
 Cinco diferencias con `roombundle`, todas medidas:
 
@@ -420,11 +420,11 @@ Cinco diferencias con `roombundle`, todas medidas:
 ### Cómo se arman
 
 ```powershell
-scripts\build_test_tools.ps1 -SinPreguntar     # roomprobe.exe y roombundle.exe en testTools\
-scripts\build_portable_bundle.ps1              # dist\kanpachi-portable.exe
+scripts\build-test-tools.ps1 -Yes              # roomprobe.exe y roombundle.exe en testTools\
+scripts\build-portable-bundle.ps1              # dist\kanpachi-portable.exe
 ```
 
-El segundo acepta `-RecompilarMotor` para compilar el motor desde su repositorio antes de empaquetar, y `-Motor` para forzar una ruta. Las dos pasan igual por la comprobación de antigüedad.
+El segundo acepta `-RebuildEngine` para compilar el motor desde su repositorio antes de empaquetar, y `-Engine` para forzar una ruta. Las dos pasan igual por la comprobación de antigüedad.
 
 No hace falta consola elevada: solo compila y copia. Deja todo en `testTools\`, que está en `.gitignore`. El script corre además `GOOS=linux go vet ./internal/...` antes de nada, que es la puerta del CI: `roomprobe` la rompió una vez importando `x/sys/windows` sin etiqueta de compilación, y descubrirlo acá cuesta cuatro segundos en vez de un push.
 
@@ -451,7 +451,7 @@ La receta vivía solo dentro de los workflows, así que comprobar algo antes de 
 
 **Cada superficie corre exactamente lo que su job corre hoy.** Dos diferencias parecen descuidos y no lo son: `dart format` va en `ci-ui` y no en `release-windows`, porque un fichero mal formateado no puede bloquear una publicación; y las dos superficies de publicación corren `core` más `internal/arch` y nada más, porque lo que se publica pasa por los tests que lo gobiernan y el barrido entero es de `ci.yml`.
 
-No pide consola elevada, no crea salas y no toca el firewall. Eso son los `medir-*.ps1`.
+No pide consola elevada, no crea salas y no toca el firewall. Eso son los `measure-*.ps1`.
 
 Dos cosas que hace y no se ven:
 
@@ -476,18 +476,20 @@ El YAML de los tres workflows quedó de pegamento: eventos, checkouts, toolchain
 
 ### Los scripts que operan las mediciones
 
-Las sondas son binarios; quien las orquesta contra un daemon de verdad son estos, todos en `scripts\` y todos con consola elevada:
+Las sondas son binarios; quien las orquesta contra un daemon de verdad son estos, todos en `scripts\` y todos con consola elevada.
+
+**La carpeta entera está en inglés desde el 2026-08-14**, nombre de fichero, parámetros, cabecera y salida por pantalla, y el verbo dice de qué clase es cada uno: `measure-*` mide, `build-*` construye, `prepare-*` deja algo listo para otro, `verify.ps1` comprueba. Lo único que sigue en castellano dentro de un script son los patrones que casan contra el LOG del daemon, que es castellano de verdad, y el texto del marcador `kanpachi.portable`, que lo lee una persona que abre la carpeta.
 
 | Script | Qué corre |
 |---|---|
-| `preparar-stage.ps1` | puebla `C:\kt\stage` con los binarios, las DLL y el catálogo. Lo dan por hecho todos los de abajo |
-| `medir-netcfg.ps1` | los caminos del adaptador que una sala normal no toca: rutas de broadcast y multicast, política de prefijo, borrado de ruta por defecto |
-| `medir-reset.ps1` | que `--reset` limpie lo de la sala y REPONGA la cuarentena de base |
-| `medir-directorio.ps1` | el registro del seed contra un daemon vivo |
-| `medir-cambio-de-red.ps1` | qué sobrevive a que Windows reidentifique la red |
-| `medir-motor-punta-a-punta.ps1` | el motor entero contra `kanpachi.accentio.dev` |
-| `canario-dos-maquinas.ps1` | **la Protección Kanpachi con dos máquinas, en tres fases.** Su encabezado ES el runbook, con por qué la fase 2 no es opcional |
-| `limpiar-reglas-del-motor.ps1` | quita las reglas que el motor VIEJO dejó puestas. En una máquina limpia no hay nada que quitar |
+| `prepare-stage.ps1` | puebla `C:\kt\stage` con los binarios, las DLL y el catálogo. Lo dan por hecho todos los de abajo |
+| `measure-netcfg.ps1` | los caminos del adaptador que una sala normal no toca: rutas de broadcast y multicast, política de prefijo, borrado de ruta por defecto |
+| `measure-reset.ps1` | que `--reset` limpie lo de la sala y REPONGA la cuarentena de base |
+| `measure-directory.ps1` | el registro del seed contra un daemon vivo |
+| `measure-network-change.ps1` | qué sobrevive a que Windows reidentifique la red |
+| `measure-engine-end-to-end.ps1` | el motor entero contra `kanpachi.accentio.dev` |
+| `canary-two-machines.ps1` | **la Protección Kanpachi con dos máquinas, en tres fases.** Su encabezado ES el runbook, con por qué la fase 2 no es opcional |
+| `clean-engine-rules.ps1` | quita las reglas que el motor VIEJO dejó puestas. En una máquina limpia no hay nada que quitar |
 
 Ninguno se distribuye ni lo llama el producto. **Y la carpeta se barre cada tanto:** un script que midió algo que ya está escrito y que nadie va a volver a correr se borra, porque una carpeta con restos hace que nadie sepa cuál es el que se corre de verdad.
 

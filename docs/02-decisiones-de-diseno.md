@@ -1506,7 +1506,7 @@ La cadena entera, de la causa al síntoma:
 
 ### Por qué esto sobrevivió a toda la batería de pruebas
 
-Porque **nada en el repositorio ejercitaba el camino del invitado**. `medir-motor-punta-a-punta.ps1` y `engineprobe` crean salas, que es la mitad que funciona; el `join` con credencial no lo corría nadie. El primer intento real fue el de una persona instalando el instalador, y es el que lo encontró.
+Porque **nada en el repositorio ejercitaba el camino del invitado**. `measure-engine-end-to-end.ps1` y `engineprobe` crean salas, que es la mitad que funciona; el `join` con credencial no lo corría nadie. El primer intento real fue el de una persona instalando el instalador, y es el que lo encontró.
 
 Y costó encontrarlo más de lo debido por una segunda razón: **el motor del cliente no deja rastro**. No instala ningún `subscriber` de `tracing`, y su `stderr` va al del daemon, que como servicio con `-H windowsgui` no existe. Todo lo que EasyTier dijo del fallo se tiró. En el droplet, la misma causa estaba escrita en una línea.
 

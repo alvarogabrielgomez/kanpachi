@@ -41,7 +41,7 @@
 // produjera un bundle vacío que falla en la máquina de otro, que es el peor
 // sitio para descubrirlo.
 //
-//	scripts\build_test_tools.ps1        # deja roombundle.exe en testTools\
+//	scripts\build-test-tools.ps1        # deja roombundle.exe en testTools\
 //
 // El script copia los cinco ficheros a `internal/roombundle/carga/` y compila
 // con `-tags bundle`. Si falta alguno, la compilación falla y lo dice.

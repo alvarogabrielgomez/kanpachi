@@ -1,202 +1,203 @@
 <#
 .SYNOPSIS
-    Arma una carpeta de Kanpachi que funciona sola, y la arranca.
+    Builds a Kanpachi folder that works on its own, and starts it.
 
 .DESCRIPTION
-    Una sola orden que compila todo lo que hace falta, lo deja en una carpeta, y
-    levanta el daemon con los permisos que necesita. Sustituye a la secuencia
-    manual de compilar el daemon, compilar la interfaz, copiar el catalogo y las
-    DLL, abrir una terminal elevada y arrancar cada cosa por su lado.
+    One command that builds everything needed, leaves it in a folder, and starts
+    the daemon with the permissions it needs. It replaces the manual sequence of
+    building the daemon, building the interface, copying the catalog and the
+    DLLs, opening an elevated terminal and starting each piece separately.
 
-    QUE DEJA, y por que la carpeta es portable
+    WHAT IT LEAVES, and why the folder is portable
 
-    Dentro va el producto entero: el daemon, la interfaz con su bundle de
-    Flutter, el catalogo de fabrica, el motor y sus DLL. Ademas un fichero
-    kanpachi.portable, que es lo que convierte a la carpeta en portable: con el
-    presente, el daemon guarda sus datos en kanpachi-data\ ahi mismo en vez de
-    en ProgramData, y arranca en su propio proceso en vez de como servicio. La
-    interfaz lee el mismo marcador y llega a la misma conclusion, sin que nadie
-    se lo diga.
+    The whole product goes inside: the daemon, the interface with its Flutter
+    bundle, the factory catalog, the engine and its DLLs. Plus a
+    kanpachi.portable file, which is what turns the folder portable: with it
+    present, the daemon keeps its data in kanpachi-data\ right there instead of
+    in ProgramData, and starts in its own process instead of as a service. The
+    interface reads the same marker and reaches the same conclusion, without
+    anybody telling it.
 
-    Asi que la carpeta se copia a un USB, se manda en un ZIP, y del otro lado se
-    hace doble clic en kanpachid.exe. No hay nada que instalar y no hay nada que
-    desinstalar: se borra la carpeta y no queda rastro.
+    So the folder gets copied to a USB stick, sent in a ZIP, and on the other
+    side you double click kanpachid.exe. There is nothing to install and nothing
+    to uninstall: delete the folder and no trace is left.
 
-    LO QUE CUESTA, dicho claro
+    WHAT IT COSTS, said plainly
 
-      - Un UAC por arranque. La version instalada pide uno solo, al instalar, y
-        a cambio el instalador le concede al usuario permiso para arrancar el
-        servicio. Una carpeta que se copio no concedio nada, asi que eleva cada
-        vez.
-      - Los datos heredan los permisos de donde este la carpeta. La version
-        instalada pone una ACL propia en ProgramData; aca no hay instalador que
-        la ponga.
-      - No arranca con Windows. No hay servicio registrado que Windows pueda
-        levantar.
+      - One UAC per start. The installed version asks for one only, at install
+        time, and in exchange the installer grants the user permission to start
+        the service. A folder that was copied granted nothing, so it elevates
+        every time.
+      - The data inherits the permissions of wherever the folder is. The
+        installed version puts its own ACL in ProgramData; here there is no
+        installer to put one.
+      - It does not start with Windows. There is no registered service for
+        Windows to bring up.
 
-    LOS DOS MODOS
+    THE TWO MODES
 
-      prod   (por defecto)  interfaz en release, daemon como daemon portable.
-                            Es lo que se le manda a una persona.
-      debug                 interfaz en debug hablando por el pipe de consola,
-                            daemon con --console en una terminal elevada donde
-                            se le ve el log.
+      prod   (default)  interface in release, daemon as a portable daemon.
+                        It is what gets sent to a person.
+      debug             interface in debug talking over the console pipe, daemon
+                        with --console in an elevated terminal where its log is
+                        visible.
 
 .EXAMPLE
     .\scripts\kanpachi-portable.ps1
-    Arma .\Kanpachi y lo arranca en modo produccion.
+    Builds .\Kanpachi and starts it in production mode.
 
 .EXAMPLE
     .\scripts\kanpachi-portable.ps1 debug
-    Lo mismo en modo desarrollo: daemon de consola a la vista, interfaz en debug.
+    The same in development mode: console daemon in sight, interface in debug.
 
 .EXAMPLE
-    .\scripts\kanpachi-portable.ps1 -Salida D:\reparto\Kanpachi -NoArrancar
-    Solo arma la carpeta, para comprimirla y mandarla.
+    .\scripts\kanpachi-portable.ps1 -Output D:\share\Kanpachi -NoLaunch
+    Only builds the folder, to zip it up and send it.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
     [ValidateSet('prod', 'debug')]
-    [string]$Modo = 'prod',
+    [string]$Mode = 'prod',
 
-    # Donde se arma. Por defecto una subcarpeta del directorio actual, y no el
-    # directorio actual a secas: la carpeta ES la unidad que se copia, y
-    # mezclada con lo que ya hubiera al lado no se puede ni comprimir.
-    [string]$Salida = (Join-Path (Get-Location).Path 'Kanpachi'),
+    # Where it gets built. By default a subfolder of the current directory, and
+    # not the current directory itself: the folder IS the unit that gets copied,
+    # and mixed with whatever else was beside it, it cannot even be zipped.
+    [string]$Output = (Join-Path (Get-Location).Path 'Kanpachi'),
 
-    # El motor viene de otro repositorio. Por defecto se busca en el stage.
-    [string]$Motor = 'C:\kt\stage\kanpachi-engine.exe',
+    # The engine comes from another repository. By default it is looked for in
+    # the stage.
+    [string]$Engine = 'C:\kt\stage\kanpachi-engine.exe',
 
-    # Armar y no arrancar. Es lo que se quiere antes de comprimir.
-    [switch]$NoArrancar,
+    # Build and do not start. It is what you want before zipping.
+    [switch]$NoLaunch,
 
-    # Borrar tambien data\. Se lleva por delante la llave de esta instalacion y
-    # la ultima sala, asi que no es el default.
-    [switch]$Limpio
+    # Also delete data\. It takes this installation's key and the last room with
+    # it, so it is not the default.
+    [switch]$Clean
 )
 
 $ErrorActionPreference = 'Stop'
 
-function Paso($t) { Write-Host ''; Write-Host "=== $t ===" -ForegroundColor Cyan }
-function Bien($t) { Write-Host "  OK  $t" -ForegroundColor Green }
-function Mal($t) { Write-Host "  MAL $t" -ForegroundColor Red }
-function Nota($t) { Write-Host "  --  $t" -ForegroundColor DarkGray }
+function Step($t) { Write-Host ''; Write-Host "=== $t ===" -ForegroundColor Cyan }
+function Ok($t) { Write-Host "  OK   $t" -ForegroundColor Green }
+function Fail($t) { Write-Host "  FAIL $t" -ForegroundColor Red }
+function Note($t) { Write-Host "  --   $t" -ForegroundColor DarkGray }
 
-# El repositorio sale de la ubicacion del script y jamas del directorio actual:
-# una consola elevada arranca en system32.
+# The repository comes from where the script lives and never from the current
+# directory: an elevated console starts in system32.
 $repo = Split-Path -Parent $PSScriptRoot
-$fallos = 0
+$failures = 0
 
-$daemonExe = Join-Path $Salida 'kanpachid.exe'
-$uiExe = Join-Path $Salida 'kanpachiui.exe'
-$marcador = Join-Path $Salida 'kanpachi.portable'
-# kanpachi-data y NO data: el bundle de Windows de Flutter trae su propio data\
-# con icudtl.dat, app.so y flutter_assets\, y aca los dos ejecutables comparten
-# directorio. Se midio en la primera corrida de este script: se mezclaron. El
-# nombre esta escrito igual en portable.go y en pipe_names.dart.
-$datos = Join-Path $Salida 'kanpachi-data'
+$daemonExe = Join-Path $Output 'kanpachid.exe'
+$uiExe = Join-Path $Output 'kanpachiui.exe'
+$marker = Join-Path $Output 'kanpachi.portable'
+# kanpachi-data and NOT data: the Flutter Windows bundle brings its own data\
+# with icudtl.dat, app.so and flutter_assets\, and here the two executables
+# share a directory. It was measured on this script's first run: they mixed. The
+# name is written the same way in portable.go and in pipe_names.dart.
+$data = Join-Path $Output 'kanpachi-data'
 
 Write-Host ''
-Write-Host "Kanpachi portable, modo $Modo" -ForegroundColor White
-Nota "salida: $Salida"
+Write-Host "Kanpachi portable, mode $Mode" -ForegroundColor White
+Note "output: $Output"
 
 # ---------------------------------------------------------------------------
-Paso 'apagando lo que hubiera corriendo de esta carpeta'
+Step 'shutting down whatever was running from this folder'
 
-# Hay que hacerlo ANTES de compilar: Windows bloquea el .exe de un proceso vivo,
-# y go build fallaria con un mensaje de acceso denegado que no dice nada de
-# esto. Se filtra por RUTA y no por nombre, para no tumbar un Kanpachi
-# instalado que no tiene nada que ver con esta carpeta.
-$vivos = @()
-foreach ($nombre in @('kanpachid', 'kanpachiui', 'kanpachi-engine')) {
+# It has to happen BEFORE building: Windows locks the .exe of a live process,
+# and go build would fail with an access denied message that says nothing about
+# this. It filters by PATH and not by name, so as not to take down an installed
+# Kanpachi that has nothing to do with this folder.
+$alive = @()
+foreach ($name in @('kanpachid', 'kanpachiui', 'kanpachi-engine')) {
     try {
-        $vivos += Get-Process -Name $nombre -ErrorAction Stop |
-            Where-Object { $_.Path -and $_.Path.StartsWith($Salida, [System.StringComparison]::OrdinalIgnoreCase) }
+        $alive += Get-Process -Name $name -ErrorAction Stop |
+            Where-Object { $_.Path -and $_.Path.StartsWith($Output, [System.StringComparison]::OrdinalIgnoreCase) }
     }
     catch {
-        # No hay ninguno con ese nombre. Es el caso normal.
-        Write-Verbose "sin procesos $nombre : $($_.Exception.Message)"
+        # There is none with that name. That is the normal case.
+        Write-Verbose "no $name processes: $($_.Exception.Message)"
     }
 }
 
-if ($vivos.Count -eq 0) {
-    Nota 'no habia nada corriendo'
+if ($alive.Count -eq 0) {
+    Note 'there was nothing running'
 }
 else {
-    foreach ($p in $vivos) {
+    foreach ($p in $alive) {
         try {
             Stop-Process -Id $p.Id -Force -ErrorAction Stop
-            Bien ("detenido {0} (pid {1})" -f $p.ProcessName, $p.Id)
+            Ok ("stopped {0} (pid {1})" -f $p.ProcessName, $p.Id)
         }
         catch {
-            # El daemon corre elevado. Desde una terminal sin elevar no se le
-            # puede tocar, y el sintoma sin esta explicacion seria un go build
-            # que falla por acceso denegado.
-            Mal ("no se pudo detener {0} (pid {1}): {2}" -f $p.ProcessName, $p.Id, $_.Exception.Message)
-            Nota 'cierralo desde el icono de la bandeja, o corre esto en una terminal elevada'
-            $fallos++
+            # The daemon runs elevated. From an unelevated terminal it cannot be
+            # touched, and the symptom without this explanation would be a go
+            # build failing with access denied.
+            Fail ("could not stop {0} (pid {1}): {2}" -f $p.ProcessName, $p.Id, $_.Exception.Message)
+            Note 'close it from the tray icon, or run this in an elevated terminal'
+            $failures++
         }
     }
-    # El job del daemon se lleva la interfaz por delante, y eso tarda un
-    # instante en verse en el sistema de ficheros.
+    # The daemon's job takes the interface down with it, and that takes a moment
+    # to show up in the file system.
     Start-Sleep -Milliseconds 700
 }
 
-if ($fallos -gt 0) { exit 1 }
+if ($failures -gt 0) { exit 1 }
 
 # ---------------------------------------------------------------------------
-Paso 'preparando la carpeta'
+Step 'preparing the folder'
 
-if (Test-Path $Salida) {
-    # Se borra el contenido y NO la carpeta: kanpachi-data\ sobrevive salvo que
-    # se pida lo contrario. Ahi dentro esta la llave de esta instalacion, que es
-    # lo que impide que otro se haga pasar por este equipo ante quien ya jugo con
-    # el, y tirarla en cada compilacion convertiria a cada build en un equipo
-    # nuevo.
-    Get-ChildItem -Path $Salida -Force | Where-Object {
-        $Limpio -or $_.Name -ne 'kanpachi-data'
+if (Test-Path $Output) {
+    # The contents get deleted and NOT the folder: kanpachi-data\ survives
+    # unless asked otherwise. Inside it is this installation's key, which is
+    # what stops somebody else from passing for this machine to whoever has
+    # already played with it, and throwing it away on every build would turn
+    # every build into a new machine.
+    Get-ChildItem -Path $Output -Force | Where-Object {
+        $Clean -or $_.Name -ne 'kanpachi-data'
     } | Remove-Item -Recurse -Force
-    if ($Limpio) { Nota 'borrada tambien kanpachi-data\' }
-    else { Nota 'conservada kanpachi-data\' }
+    if ($Clean) { Note 'kanpachi-data\ deleted too' }
+    else { Note 'kanpachi-data\ kept' }
 }
 else {
-    New-Item -ItemType Directory -Force -Path $Salida | Out-Null
+    New-Item -ItemType Directory -Force -Path $Output | Out-Null
 }
 
 # ---------------------------------------------------------------------------
-Paso 'el daemon'
+Step 'the daemon'
 
 Push-Location $repo
 try {
-    # -H windowsgui: se hace doble clic en este binario, asi que uno de
-    # subsistema consola abriria una ventana negra. La salida de --console no se
-    # pierde: se reengancha a la consola del padre cuando la hay, que es
-    # exactamente lo que hace el modo debug de aca abajo.
+    # -H windowsgui: this binary is what gets double clicked, so a console
+    # subsystem one would open a black window. The output of --console is not
+    # lost: it reattaches to the parent console when there is one, which is
+    # exactly what the debug mode below does.
     #
-    # Sin -ldflags "-s -w": quitar los simbolos dispara falsos positivos de
-    # Defender sobre binarios de Go, y el binario que se manda tiene que ser el
-    # que se probo.
+    # No -ldflags "-s -w": stripping symbols sets off Defender false positives
+    # over Go binaries, and the binary being sent has to be the one that was
+    # tested.
     & go build -trimpath -ldflags '-H windowsgui' -o $daemonExe ./daemon/cmd/kanpachid
     if ($LASTEXITCODE -ne 0) {
-        Mal 'no compilo el daemon'
-        $fallos++
+        Fail 'the daemon did not build'
+        $failures++
     }
     else {
         $kb = [math]::Round((Get-Item $daemonExe).Length / 1KB)
-        Bien ("kanpachid.exe        {0} KB" -f $kb)
+        Ok ("kanpachid.exe        {0} KB" -f $kb)
     }
 }
 finally { Pop-Location }
 
 # ---------------------------------------------------------------------------
-Paso 'la interfaz'
+Step 'the interface'
 
-# En debug se compila apuntando al pipe de consola. Es una definicion de
-# COMPILACION y no una opcion en disco a proposito: un binario publicado tiene
-# esa rama podada, asi que ningun fichero en la maquina de nadie puede apuntar
-# la app a un pipe que cualquier proceso puede crear.
-if ($Modo -eq 'debug') {
+# In debug it is built pointing at the console pipe. It is a BUILD-time define
+# and not an option on disk on purpose: a published binary has that branch
+# pruned, so no file on anybody's machine can point the app at a pipe any
+# process can create.
+if ($Mode -eq 'debug') {
     $flutterArgs = @('build', 'windows', '--debug', '--dart-define=KANPACHI_CONSOLE_PIPE=true')
     $bundle = Join-Path $repo 'ui\build\windows\x64\runner\Debug'
 }
@@ -207,140 +208,140 @@ else {
 
 Push-Location (Join-Path $repo 'ui')
 try {
-    & flutter @flutterArgs 2>&1 | Select-Object -Last 3 | ForEach-Object { Nota $_ }
+    & flutter @flutterArgs 2>&1 | Select-Object -Last 3 | ForEach-Object { Note $_ }
     if ($LASTEXITCODE -ne 0) {
-        Mal 'no compilo la interfaz'
-        $fallos++
+        Fail 'the interface did not build'
+        $failures++
     }
     elseif (-not (Test-Path (Join-Path $bundle 'kanpachiui.exe'))) {
-        Mal "el build no dejo kanpachiui.exe en $bundle"
-        $fallos++
+        Fail "the build did not leave kanpachiui.exe in $bundle"
+        $failures++
     }
     else {
-        # El bundle ENTERO. El ejecutable no arranca sin flutter_windows.dll, sin
-        # data\ y sin los plugins: copiar solo el .exe da un binario que muere en
-        # el arranque sin decir por que.
-        Copy-Item -Path (Join-Path $bundle '*') -Destination $Salida -Recurse -Force
+        # The WHOLE bundle. The executable does not start without
+        # flutter_windows.dll, without data\ and without the plugins: copying
+        # only the .exe gives a binary that dies at startup without saying why.
+        Copy-Item -Path (Join-Path $bundle '*') -Destination $Output -Recurse -Force
         $kb = [math]::Round((Get-Item $uiExe).Length / 1KB)
-        Bien ("kanpachiui.exe       {0} KB, con su bundle" -f $kb)
+        Ok ("kanpachiui.exe       {0} KB, with its bundle" -f $kb)
     }
 }
 finally { Pop-Location }
 
 # ---------------------------------------------------------------------------
-Paso 'lo que no se compila'
+Step 'what is not built'
 
-$copias = @(
-    @{ origen = 'daemon\adapter\catalog\jsonfile\builtin.json'; nombre = 'builtin.json'; obligatorio = $true },
-    @{ origen = 'third_party\easytier\Packet.dll'; nombre = 'Packet.dll'; obligatorio = $true },
-    @{ origen = 'third_party\easytier\wintun.dll'; nombre = 'wintun.dll'; obligatorio = $true },
-    @{ origen = 'third_party\easytier\WinDivert64.sys'; nombre = 'WinDivert64.sys'; obligatorio = $false }
+$copies = @(
+    @{ source = 'daemon\adapter\catalog\jsonfile\builtin.json'; name = 'builtin.json'; required = $true },
+    @{ source = 'third_party\easytier\Packet.dll'; name = 'Packet.dll'; required = $true },
+    @{ source = 'third_party\easytier\wintun.dll'; name = 'wintun.dll'; required = $true },
+    @{ source = 'third_party\easytier\WinDivert64.sys'; name = 'WinDivert64.sys'; required = $false }
 )
-foreach ($c in $copias) {
-    $src = Join-Path $repo $c.origen
+foreach ($c in $copies) {
+    $src = Join-Path $repo $c.source
     if (-not (Test-Path $src)) {
-        if ($c.obligatorio) {
-            Mal ('falta en el repositorio: ' + $c.origen)
-            $fallos++
+        if ($c.required) {
+            Fail ('missing from the repository: ' + $c.source)
+            $failures++
         }
         else {
-            Nota ('no esta y no es obligatorio: ' + $c.origen)
+            Note ('not there and not required: ' + $c.source)
         }
         continue
     }
-    Copy-Item -Path $src -Destination (Join-Path $Salida $c.nombre) -Force
-    Bien $c.nombre
+    Copy-Item -Path $src -Destination (Join-Path $Output $c.name) -Force
+    Ok $c.name
 }
 
 # ---------------------------------------------------------------------------
-Paso 'el motor, que viene de otro repositorio'
+Step 'the engine, which comes from another repository'
 
-if (Test-Path $Motor) {
-    Copy-Item -Path $Motor -Destination (Join-Path $Salida 'kanpachi-engine.exe') -Force
-    $mb = [math]::Round((Get-Item $Motor).Length / 1MB, 1)
-    Bien ('kanpachi-engine.exe  {0} MB' -f $mb)
+if (Test-Path $Engine) {
+    Copy-Item -Path $Engine -Destination (Join-Path $Output 'kanpachi-engine.exe') -Force
+    $mb = [math]::Round((Get-Item $Engine).Length / 1MB, 1)
+    Ok ('kanpachi-engine.exe  {0} MB' -f $mb)
 }
 else {
-    Mal "no esta el motor en $Motor"
-    Nota 'compilalo en el repositorio kanpachi-engine y pasa su ruta con -Motor'
-    Nota 'sin el se puede hablar con el daemon, no se puede abrir una sala'
-    $fallos++
+    Fail "the engine is not at $Engine"
+    Note 'build it in the kanpachi-engine repository and pass its path with -Engine'
+    Note 'without it you can talk to the daemon, you cannot open a room'
+    $failures++
 }
 
 # ---------------------------------------------------------------------------
-Paso 'el marcador'
+Step 'the marker'
 
-# ASCII y una sola linea. Lo lee un os.Stat en Go y un existsSync en Dart:
-# ninguno de los dos mira el contenido, que esta ahi para quien abra la carpeta
-# y se pregunte que hace este fichero.
+# ASCII and a single line. It is read by an os.Stat in Go and an existsSync in
+# Dart: neither of them looks at the content, which is there for whoever opens
+# the folder and wonders what this file is doing.
 'Kanpachi portable. Con este fichero presente, el daemon guarda sus datos en kanpachi-data\ y corre sin servicio. Borralo para volver a ProgramData.' |
-    Out-File -FilePath $marcador -Encoding ascii
-Bien 'kanpachi.portable'
+    Out-File -FilePath $marker -Encoding ascii
+Ok 'kanpachi.portable'
 
-if (-not (Test-Path $datos)) {
-    # El daemon lo crearia solo en su primer arranque. Se hace aca para que la
-    # carpeta que se comprime ya tenga su sitio y no dependa de haberla
-    # arrancado una vez.
-    New-Item -ItemType Directory -Force -Path $datos | Out-Null
-    Bien 'kanpachi-data\'
+if (-not (Test-Path $data)) {
+    # The daemon would create it on its own first start. It is done here so the
+    # folder being zipped already has its place and does not depend on having
+    # been started once.
+    New-Item -ItemType Directory -Force -Path $data | Out-Null
+    Ok 'kanpachi-data\'
 }
 
 # ---------------------------------------------------------------------------
-Paso 'resultado'
+Step 'result'
 
-if ($fallos -gt 0) {
-    Mal "$fallos problema(s): la carpeta NO esta lista"
+if ($failures -gt 0) {
+    Fail "$failures problem(s): the folder is NOT ready"
     exit 1
 }
 
-$total = [math]::Round(((Get-ChildItem -Path $Salida -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1)
-Bien "la carpeta esta en $Salida, $total MB"
+$total = [math]::Round(((Get-ChildItem -Path $Output -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1)
+Ok "the folder is at $Output, $total MB"
 
-if ($NoArrancar) {
-    Nota 'no se arranca nada: -NoArrancar'
-    Nota 'comprimela entera y del otro lado doble clic en kanpachid.exe'
+if ($NoLaunch) {
+    Note 'nothing gets started: -NoLaunch'
+    Note 'zip it whole and on the other side double click kanpachid.exe'
     exit 0
 }
 
 # ---------------------------------------------------------------------------
-Paso 'arrancando'
+Step 'starting'
 
-if ($Modo -eq 'debug') {
-    # El daemon de consola, elevado y CON consola a la vista.
+if ($Mode -eq 'debug') {
+    # The console daemon, elevated and WITH its console in sight.
     #
-    # Va por cmd.exe /k y no directo, y hace falta: kanpachid.exe esta enlazado
-    # con -H windowsgui, asi que no crea consola propia; lo que hace es
-    # engancharse a la del padre. Arrancado con -Verb RunAs no hay padre con
-    # consola, y todo el log del daemon iria a ningun sitio, que es justo lo que
-    # el modo debug existe para evitar.
+    # It goes through cmd.exe /k and not directly, and that is needed:
+    # kanpachid.exe is linked with -H windowsgui, so it creates no console of
+    # its own; what it does is attach to the parent's. Started with -Verb RunAs
+    # there is no parent with a console, and the daemon's whole log would go
+    # nowhere, which is exactly what debug mode exists to avoid.
     #
-    # Elevado porque el pipe vive bajo ProtectedPrefix\Administrators y escribir
-    # en el firewall exige administrador.
-    Nota 'el daemon abre su propia terminal elevada. Windows va a pedir permiso'
+    # Elevated because the pipe lives under ProtectedPrefix\Administrators and
+    # writing to the firewall demands administrator.
+    Note 'the daemon opens its own elevated terminal. Windows will ask for permission'
     Start-Process -FilePath 'cmd.exe' -Verb RunAs -ArgumentList @('/k', ('"' + $daemonExe + '" --console'))
-    Bien 'daemon en modo consola'
+    Ok 'daemon in console mode'
 
-    # La interfaz aparte: el daemon de consola NO hospeda la interfaz, a
-    # proposito. Quien usa --console tiene una terminal delante y la arranca
-    # cuando quiere; levantarle una ventana en cada arranque taparia el caso que
-    # el producto de verdad tiene que resolver, que es el daemon lanzandola el.
+    # The interface separately: the console daemon does NOT host the interface,
+    # on purpose. Whoever uses --console has a terminal in front of them and
+    # starts it when they want; opening a window on every start would cover up
+    # the case the real product has to solve, which is the daemon launching it.
     #
-    # Se le da un respiro al daemon antes: la interfaz pregunta por el catalogo
-    # al abrirse, y contra un pipe que todavia no escucha enseniaria el cartel
-    # de que no hay servicio nada mas arrancar.
+    # The daemon gets a moment first: the interface asks for the catalog when it
+    # opens, and against a pipe that is not listening yet it would show the no
+    # service banner right at startup.
     Start-Sleep -Seconds 3
     Start-Process -FilePath $uiExe -ArgumentList '--show'
-    Bien 'interfaz en modo debug'
-    Nota 'la interfaz habla por el pipe de consola, que es el que abrio ese daemon'
+    Ok 'interface in debug mode'
+    Note 'the interface talks over the console pipe, which is the one that daemon opened'
 }
 else {
-    # El camino de verdad, el mismo que hace un doble clic: esto arranca el
-    # LANZADOR. El sondea el pipe, ve que no hay nadie, y se relanza a si mismo
-    # elevado como daemon portable. El daemon abre la interfaz.
+    # The real path, the same one a double click takes: this starts the
+    # LAUNCHER. It probes the pipe, sees nobody there, and relaunches itself
+    # elevated as a portable daemon. The daemon opens the interface.
     #
-    # --show porque quien acaba de correr esto esta mirando.
-    Nota 'Windows va a pedir permiso de administrador: lo pide el daemon portable'
+    # --show because whoever just ran this is watching.
+    Note 'Windows will ask for administrator: the portable daemon is asking'
     Start-Process -FilePath $daemonExe -ArgumentList '--show'
-    Bien 'Kanpachi arrancando'
-    Nota "el log del daemon queda en $datos\logs\kanpachi.log"
+    Ok 'Kanpachi starting'
+    Note "the daemon log ends up at $data\logs\kanpachi.log"
 }
