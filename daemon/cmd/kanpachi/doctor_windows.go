@@ -33,14 +33,35 @@ import (
 	"golang.org/x/sys/windows"
 
 	kanpachiengine "github.com/accentiostudios/kanpachi/daemon/adapter/engine/kanpachi"
+	"github.com/accentiostudios/kanpachi/daemon/preflight"
 )
 
 func chequeosDelSistema() []chequeo {
 	return []chequeo{
+		chequeoDelServicio(),
 		chequeoDelDirectorioDeDatos(),
 		chequeoDelCanal(),
 		chequeoDelMotor(motorAlLadoDelDaemon()),
 		chequeoDelAdaptadorVirtual(),
+	}
+}
+
+// chequeoDelServicio asks the same question roomprobe asks before running, from
+// the same code, so the two can never disagree about what "running" means.
+func chequeoDelServicio() chequeo {
+	return chequeo{
+		nombre: "the service",
+		mirar: func(context.Context, opciones) veredicto {
+			corriendo, err := preflight.DaemonServiceRunning()
+			if err != nil {
+				return noSeSabe("could not ask the service manager: %v", err)
+			}
+			if !corriendo {
+				return fallar("%s is not running", preflight.DaemonService).
+					con("Start-Service " + preflight.DaemonService)
+			}
+			return ok("%s is running", preflight.DaemonService)
+		},
 	}
 }
 

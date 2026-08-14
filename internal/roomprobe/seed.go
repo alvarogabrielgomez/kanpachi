@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/http"
 	"net/netip"
 	"time"
 
@@ -98,49 +97,4 @@ func alguienContesto(rs []resultadoSeed) bool {
 		}
 	}
 	return false
-}
-
-// desfaseDeReloj compara el reloj de esta máquina con el del registro.
-//
-// # Por qué hace falta
-//
-// Los dos logs de una prueba se leen JUNTOS, y sin un patrón común el orden
-// entre máquinas es adivinanza. El 2026-08-08 los relojes iban 52 segundos
-// separados: el log del host anotaba "credencial emitida" casi un minuto
-// DESPUÉS de que el log del invitado dijera "credencial recibida", que es
-// imposible. Con este renglón al principio de cada fichero, las dos líneas de
-// tiempo se alinean restando.
-//
-// El registro sirve de patrón porque es el único reloj que las dos máquinas
-// ven. La cabecera `Date` de HTTP tiene resolución de un segundo y basta de
-// sobra: lo que hay que descartar son desfases de decenas de segundos.
-//
-// Devuelve cuánto va ADELANTADO el reloj local. Falla sin consecuencias: es una
-// ayuda para leer, no una comprobación.
-func desfaseDeReloj(ctx context.Context, seed string) (time.Duration, error) {
-	if seed == "" {
-		return 0, errors.New("no hay registro con el que comparar")
-	}
-	plazo, fin := context.WithTimeout(ctx, plazoSeed)
-	defer fin()
-	req, err := http.NewRequestWithContext(plazo, http.MethodHead, "https://"+seed+"/", nil)
-	if err != nil {
-		return 0, err
-	}
-	antes := time.Now()
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	_ = resp.Body.Close()
-	// El punto medio de la ida y vuelta es la mejor estimación de cuándo el
-	// registro escribió la cabecera. Sin esto, el desfase se lleva la latencia
-	// entera sumada, que acá son unos 150 ms y no cambia nada, pero sí
-	// cambiaría desde una conexión mala.
-	medio := antes.Add(time.Since(antes) / 2)
-	suyo, err := http.ParseTime(resp.Header.Get("Date"))
-	if err != nil {
-		return 0, fmt.Errorf("el registro no mandó una cabecera Date legible: %w", err)
-	}
-	return medio.Sub(suyo), nil
 }

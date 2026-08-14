@@ -6,11 +6,15 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/accentiostudios/kanpachi/daemon/preflight"
 	"golang.org/x/sys/windows/svc"
 )
 
 // ServiceName es como se registra en Windows.
-const ServiceName = "kanpachi-daemon"
+// ServiceName sale de [preflight.DaemonService]: es la MISMA cadena que las
+// herramientas usan para preguntar si este servicio está vivo, y dos copias de
+// un nombre de servicio son dos servicios el día que una cambie.
+const ServiceName = preflight.DaemonService
 
 // EnServicio dice si este proceso lo arrancó el Administrador de servicios.
 //

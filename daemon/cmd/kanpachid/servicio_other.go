@@ -2,6 +2,8 @@
 
 package main
 
+import "github.com/accentiostudios/kanpachi/daemon/preflight"
+
 import (
 	"context"
 	"fmt"
@@ -9,7 +11,8 @@ import (
 
 // ServiceName existe fuera de Windows solo para que el nombre sea único en el
 // programa. Acá no hay Administrador de servicios que lo registre.
-const ServiceName = "kanpachi-daemon"
+// ServiceName sale de [preflight.DaemonService], como en los otros dos.
+const ServiceName = preflight.DaemonService
 
 // EnServicio siempre dice que no.
 //

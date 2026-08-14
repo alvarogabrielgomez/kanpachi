@@ -15,6 +15,7 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/usecase"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/directory"
+	"github.com/accentiostudios/kanpachi/daemon/preflight"
 	"github.com/accentiostudios/kanpachi/daemon/wiring"
 )
 
@@ -47,7 +48,7 @@ func correr(op opciones) error {
 	// El desfase de reloj se anota ANTES que nada más, porque es lo que hace
 	// legible todo lo que viene después cuando este fichero se lee junto al de
 	// la otra máquina. Ver [desfaseDeReloj]. No poder medirlo no detiene nada.
-	if d, err := desfaseDeReloj(context.Background(), op.seed); err != nil {
+	if d, err := preflight.ClockSkew(context.Background(), op.seed); err != nil {
 		log.Warn("no se pudo comparar el reloj de esta máquina con el del registro",
 			"error", err, "consecuencia", "los tiempos de este log no se pueden alinear con los de otra máquina")
 	} else {
@@ -66,9 +67,8 @@ func correr(op opciones) error {
 	// que el daemon: un PATH que alguien pueda escribir es una forma de que
 	// este proceso, que corre elevado, ejecute otro ejecutable con ese nombre.
 	motorExe := filepath.Join(op.dirExe, "kanpachi-engine.exe")
-	if _, err := os.Stat(motorExe); err != nil {
-		return fmt.Errorf("no está kanpachi-engine.exe junto a roomprobe.exe (%s). "+
-			"Lo copia scripts/build_test_tools.ps1", op.dirExe)
+	if err := preflight.EngineAt(motorExe); err != nil {
+		return fmt.Errorf("%w. Lo copia scripts/build_test_tools.ps1", err)
 	}
 
 	ctxRaiz, pararSeñales := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

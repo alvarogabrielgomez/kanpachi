@@ -27,6 +27,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/accentiostudios/kanpachi/daemon/preflight"
 	"net"
 	"os"
 	"os/exec"
@@ -40,7 +41,8 @@ import (
 // El mismo que en Windows tiene el servicio registrado, y por lo mismo: es el
 // nombre que el usuario escribe cuando algo va mal. Tiene que coincidir con el
 // del fichero que instala el paquete.
-const ServiceName = "kanpachid"
+// ServiceName sale de [preflight.DaemonService], por lo mismo que en Windows.
+const ServiceName = preflight.DaemonService
 
 // ArgShow existe para que el nombre sea único en el programa.
 //

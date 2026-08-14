@@ -3,19 +3,11 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/accentiostudios/kanpachi/core/port"
-	"golang.org/x/sys/windows"
+	"github.com/accentiostudios/kanpachi/daemon/preflight"
 )
-
-// ServicioDelDaemon es como el instalador registra el daemon.
-//
-// Está escrito otra vez acá y no importado porque la constante vive en
-// `daemon/cmd/kanpachid`, que es `package main`. La fuente de verdad es
-// `servicio_windows.go` de ese paquete: si cambia allá, cambia acá.
-const ServicioDelDaemon = "kanpachi-daemon"
 
 // comprobarServicio se niega a arrancar si el daemon instalado está vivo.
 //
@@ -31,7 +23,7 @@ const ServicioDelDaemon = "kanpachi-daemon"
 // Con `-force` se sigue igualmente, porque a veces es justo lo que se quiere
 // medir. Se avisa, se anota y cuenta como fallo.
 func comprobarServicio(log port.Logger, force bool) error {
-	corriendo, err := servicioCorriendo()
+	corriendo, err := preflight.DaemonServiceRunning()
 	if err != nil {
 		// No saberlo no impide medir: la mayoría de las máquinas donde corre
 		// esta herramienta no tienen Kanpachi instalado.
@@ -39,16 +31,16 @@ func comprobarServicio(log port.Logger, force bool) error {
 		return nil
 	}
 	if !corriendo {
-		log.Info("el servicio " + ServicioDelDaemon + " no está corriendo, vía libre")
+		log.Info("el servicio " + preflight.DaemonService + " no está corriendo, vía libre")
 		return nil
 	}
 
-	const aviso = "el servicio " + ServicioDelDaemon + " está CORRIENDO.\n\n" +
+	const aviso = "el servicio " + preflight.DaemonService + " está CORRIENDO.\n\n" +
 		"  Los dos procesos se pelean por el motor, por el adaptador virtual y por la\n" +
 		"  sesión de WFP. Y peor: arrancar roomprobe purga las reglas de firewall que\n" +
 		"  ese daemon tiene puestas AHORA, con la sala de alguien abierta detrás.\n\n" +
-		"    Páralo antes:  Stop-Service " + ServicioDelDaemon + "\n" +
-		"    Y al terminar: Start-Service " + ServicioDelDaemon
+		"    Páralo antes:  Stop-Service " + preflight.DaemonService + "\n" +
+		"    Y al terminar: Start-Service " + preflight.DaemonService
 
 	if !force {
 		log.Error("no se arranca: el servicio del daemon está corriendo")
@@ -58,40 +50,4 @@ func comprobarServicio(log port.Logger, force bool) error {
 	fmt.Println("\n  AVISO:", aviso)
 	fmt.Println("\n  Se sigue porque pasaste -force.")
 	return nil
-}
-
-// servicioCorriendo pregunta al gestor de servicios.
-//
-// Se abre con los permisos MÍNIMOS —`SC_MANAGER_CONNECT` y
-// `SERVICE_QUERY_STATUS`— y no con `mgr.Connect`, que pide
-// `SC_MANAGER_ALL_ACCESS`. Mismo camino que
-// `daemon/cmd/kanpachid/lanzador_windows.go`.
-//
-// Que el servicio NO exista no es un error: es una máquina sin Kanpachi
-// instalado, que es el caso normal de esta herramienta.
-func servicioCorriendo() (bool, error) {
-	gestor, err := windows.OpenSCManager(nil, nil, windows.SC_MANAGER_CONNECT)
-	if err != nil {
-		return false, fmt.Errorf("abriendo el gestor de servicios: %w", err)
-	}
-	defer func() { _ = windows.CloseServiceHandle(gestor) }()
-
-	nombre, err := windows.UTF16PtrFromString(ServicioDelDaemon)
-	if err != nil {
-		return false, err
-	}
-	h, err := windows.OpenService(gestor, nombre, windows.SERVICE_QUERY_STATUS)
-	if err != nil {
-		if errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
-			return false, nil
-		}
-		return false, fmt.Errorf("abriendo el servicio %s: %w", ServicioDelDaemon, err)
-	}
-	defer func() { _ = windows.CloseServiceHandle(h) }()
-
-	var estado windows.SERVICE_STATUS
-	if err := windows.QueryServiceStatus(h, &estado); err != nil {
-		return false, fmt.Errorf("consultando el estado de %s: %w", ServicioDelDaemon, err)
-	}
-	return estado.CurrentState != windows.SERVICE_STOPPED, nil
 }
