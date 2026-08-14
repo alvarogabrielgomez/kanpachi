@@ -213,10 +213,10 @@ func (s *Server) vista(sala Room) map[string]any {
 		"card":     aB64(sala.Card),
 		"host_key": aB64(sala.HostKey),
 	}
-	// La firma va SOLO si la hay. Una sala escrita antes de que el registro la
-	// guardara vuelve de disco sin ella, y omitirla dice la verdad —«no la
-	// tengo»— mientras que una cadena vacía diría «está sin firmar», que es otra
-	// cosa y además falsa.
+	// The signature goes out ONLY when there is one. A room written before the
+	// registry started keeping it comes back from disk without one, and omitting
+	// it tells the truth, "I do not have it", while an empty string would say
+	// "it is unsigned", which is a different claim and a false one.
 	if len(sala.Sig) > 0 {
 		v["sig"] = aB64(sala.Sig)
 	}

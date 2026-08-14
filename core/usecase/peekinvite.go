@@ -41,11 +41,11 @@ type InvitePreview struct {
 	// esto queda en false.
 	Unknown bool
 
-	// Trust es qué se sabe de quién escribió la tarjeta. Ver [domain.CardTrust].
+	// Trust is what is known about who wrote the card. See [domain.CardTrust].
 	//
-	// Su cero es [domain.CardUnverified], que es lo correcto para todos los
-	// caminos que vuelven antes de preguntarle al registro: no haber podido
-	// comprobar es exactamente lo que pasó.
+	// Its zero is [domain.CardUnverified], which is the right answer for every
+	// path that returns before asking the registry: not having been able to
+	// check is exactly what happened.
 	Trust domain.CardTrust
 }
 
@@ -111,15 +111,15 @@ func (s *Session) PeekInvite(ctx context.Context, link string) (InvitePreview, e
 		return out, nil
 	}
 
-	// El veredicto viaja SIEMPRE, haya tarjeta o no: «no se pudo comprobar» es
-	// tan informativo como «la firma valida», y las dos cosas se deciden acá
-	// antes de mirar el fragmento.
+	// The verdict travels ALWAYS, card or no card: "could not be checked" is as
+	// informative as "the signature validates", and both are decided here,
+	// before the fragment is looked at.
 	out.Trust = vista.Trust()
 	if out.Trust == domain.CardForged {
-		// No se abre. Enseñar el nombre de una sala que la llave fijada por ese
-		// registro no respalda es pintar en pantalla lo que un registro
-		// comprometido quiso que se leyera, y esta pantalla existe justo para
-		// decidir con lo que se lee.
+		// It is not opened. Showing the name of a room that the key that
+		// registry pinned does not back means painting on screen whatever a
+		// compromised registry wanted read, and this screen exists precisely so
+		// that somebody can decide from what they read.
 		s.deps.Log.Error("la tarjeta no valida contra la llave que el registro fijó",
 			"código", room.InviteID.String(), "seed", room.Seed)
 		return out, nil

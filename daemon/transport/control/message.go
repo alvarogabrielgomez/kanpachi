@@ -91,14 +91,14 @@ type credentialRequestMsg struct {
 	Name      string `json:"name"`
 	PublicKey []byte `json:"public_key"`
 
-	// Rendezvous es la red de encuentro que el invitado derivó del código que le
-	// pegaron, y viaja para que él pueda comprobar la firma contra el mismo
-	// transcript que el host firmó.
+	// Rendezvous is the rendezvous network the guest derived from the code that
+	// was pasted into it, and it travels so that the guest can check the
+	// signature against the same transcript the host signed.
 	//
-	// **El host NO firma esta cadena: firma la suya.** Un pedido que nombre otra
-	// sala produce una firma que no valida del otro lado, que es justo lo que
-	// tiene que pasar. Vacía en un invitado viejo, y entonces no hay nada que
-	// comprobar. Ver [credentialTranscript].
+	// **The host does NOT sign this string: it signs its own.** A request naming
+	// another room produces a signature that does not validate on the other
+	// side, which is exactly what should happen. Empty on an older guest, and
+	// then there is nothing to check. See [credentialTranscript].
 	Rendezvous string `json:"rendezvous,omitempty"`
 }
 
@@ -111,18 +111,17 @@ type credentialResponseMsg struct {
 	Sealed []byte `json:"sealed,omitempty"`
 	Error  string `json:"error,omitempty"`
 
-	// HostKey y Sig son la llave larga del host y su firma sobre el transcript
-	// de ESTE canje. Ver [credentialTranscript].
+	// HostKey and Sig are the host's long-term key and its signature over the
+	// transcript of THIS exchange. See [credentialTranscript].
 	//
-	// **Que la llave venga acá no prueba nada por sí sola**, y eso es lo que
-	// hacía falta decir en voz alta: una llave que llega en el mismo mensaje que
-	// firma es un sello que se autofirma. Sirve porque el invitado la compara
-	// con la que el REGISTRO fijó para ese invite ID, que llegó por otro camino
-	// y antes. Sin esa comparación, esto es decoración.
+	// **The key arriving here proves nothing on its own**, and that is the part
+	// worth saying out loud: a key that arrives in the same message it signs is
+	// a seal that signs itself. It is worth something because the guest compares
+	// it against the one the REGISTRY pinned for that invite ID, which arrived
+	// by another road and earlier. Without that comparison, this is decoration.
 	//
-	// Vacíos cuando el host todavía no firma. El invitado lo trata como "sin
-	// verificar", jamás como falso: un host viejo y un invitado nuevo tienen que
-	// poder jugar mientras esto se despliega.
+	// Empty when the host does not sign yet. The guest treats that as
+	// unverified, never as false.
 	HostKey []byte `json:"host_key,omitempty"`
 	Sig     []byte `json:"sig,omitempty"`
 }
@@ -410,29 +409,31 @@ func jsonBytes(v any) ([]byte, error) {
 	return raw, nil
 }
 
-// credentialTranscript arma lo que el host firma y el invitado verifica.
+// credentialTranscript builds what the host signs and the guest verifies.
 //
-// # Qué hay dentro y por qué está cada cosa
+// # What is inside, and why each piece is there
 //
-//		"kanpachi-cred-v1" 0x00 <red de encuentro> 0x00 <llave efímera> 0x00 <sobre>
+//		"kanpachi-cred-v1" 0x00 <rendezvous network> 0x00 <ephemeral key> 0x00 <envelope>
 //
-//	  - **El prefijo** separa dominios: una firma de este canje no puede valer
-//	    como firma de una tarjeta, que es lo otro que la misma llave firma.
-//	  - **La red de encuentro** ata la respuesta a ESTA sala. Es lo único de acá
-//	    que el invitado conoce antes de recibir nada, porque lo derivó del código
-//	    que le pegaron, y es lo que impide reusar una respuesta buena de otra
-//	    sala: la llave efímera dura toda la sesión, así que sin este campo una
-//	    respuesta grabada en la sala A verificaría igual al entrar a la B.
-//	  - **La llave efímera** ata la respuesta a ESTE pedido.
-//	  - **El sobre** es lo que se está autenticando.
+//	  - **The prefix** separates domains: a signature from this exchange cannot
+//	    pass as the signature of a room card, which is the other thing the same
+//	    key signs.
+//	  - **The rendezvous network** binds the answer to THIS room. It is the only
+//	    thing in here the guest knows before receiving anything, because it
+//	    derived it from the pasted code, and it is what stops a good answer from
+//	    another room being reused: the ephemeral key lasts the whole session, so
+//	    without this field an answer recorded in room A would verify just fine
+//	    when entering room B.
+//	  - **The ephemeral key** binds the answer to THIS request.
+//	  - **The envelope** is what is being authenticated.
 //
-// Los separadores son 0x00 y alcanzan: el nombre de la red es hexadecimal con
-// un prefijo fijo, la llave mide 32 bytes siempre, y el sobre va al final. No
-// hay dos repartos distintos de los mismos bytes.
+// The separators are 0x00 and they are enough: the network name is hexadecimal
+// with a fixed prefix, the key is always 32 bytes, and the envelope goes last.
+// There is no second way to split the same bytes.
 //
-// La versión va DENTRO del prefijo a propósito. El día que el transcript cambie,
-// una firma vieja deja de validar contra el transcript nuevo, que es lo correcto:
-// se cae a "sin verificar" en vez de a "verificado" por accidente.
+// The version lives INSIDE the prefix on purpose. The day the transcript
+// changes, an old signature stops validating against the new one, which is the
+// right outcome: it falls to unverified instead of to verified by accident.
 func credentialTranscript(rendezvous string, guestKey, sealed []byte) []byte {
 	out := make([]byte, 0, len(rendezvous)+len(guestKey)+len(sealed)+32)
 	out = append(out, "kanpachi-cred-v1"...)

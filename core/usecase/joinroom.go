@@ -86,10 +86,11 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 	// para llegar a "no se pudo", cuando la respuesta se sabía en el primer
 	// segundo. Y no es gratis: durante ese minuto hay una red virtual arriba y
 	// reglas escritas por una sala que no existe.
-	// La llave que el registro tiene FIJADA para este código baja desde acá
-	// hasta el canje del vestíbulo: es contra lo único que se puede comprobar
-	// que quien contesta ahí es el host y no cualquiera con el código. Vacía
-	// cuando el registro no la dio, y entonces se entra sin verificar.
+	// The key the registry has PINNED for this code travels from here down to
+	// the lobby exchange: it is the only thing against which whoever answers
+	// there can be checked to be the host and not anybody holding the code.
+	// Empty when the registry did not hand it over, and then the room is entered
+	// unverified.
 	llaveDelHost, err := s.checkRoomExists(ctx, room)
 	if err != nil {
 		return domain.RoomState{}, err
@@ -311,17 +312,17 @@ func (s *Session) checkRoomExists(ctx context.Context, room domain.Room) ([]byte
 	vista, err := dir.Lookup(ctx, room.InviteID)
 	switch {
 	case err == nil:
-		// **Una tarjeta falsificada NO detiene la entrada, y se dice por qué.**
-		// La tarjeta es presentación: el nombre de la sala y el nick de quien
-		// invita. A qué sala se entra lo deciden el invite ID y el vestíbulo, y
-		// ninguno de los dos sale de acá. Pararse en este punto sería bloquear
-		// una entrada por un dato decorativo, que es justo el reflejo que la
-		// decisión 25 rechaza para la huella cambiada.
+		// **A forged card does NOT stop the join, and the reason is written
+		// down.** The card is presentation: the room's name and the nickname of
+		// whoever invites. Which room is entered is decided by the invite ID and
+		// the lobby, and neither of those comes from here. Stopping at this
+		// point would block an entry over a decorative field, which is exactly
+		// the reflex decision 25 rejects for a changed fingerprint.
 		//
-		// Lo que sí significa es que ESE registro está sirviendo algo que la
-		// llave que él mismo fijó no respalda, o sea que está comprometido. Queda
-		// en el log con esas palabras, y quien lo enseña en pantalla es la
-		// pantalla del enlace, que es donde alguien todavía puede decidir.
+		// What it does mean is that THAT registry is serving something the key
+		// it pinned itself does not back, so it is compromised. It goes to the
+		// log in those words, and the screen that shows it is the link screen,
+		// which is where somebody can still decide.
 		if vista.Trust() == domain.CardForged {
 			s.deps.Log.Error("el registro sirve una tarjeta que su propia llave fijada no respalda",
 				"código", room.InviteID.String(), "seed", room.Seed)
@@ -374,9 +375,10 @@ func (s *Session) exchangeForCredential(
 	}
 	cred, err := s.deps.Control.RequestCredential(ctx, domain.CredentialRequest{
 		Name: nick,
-		// Los dos campos que hacen verificable la respuesta: contra qué sala se
-		// firma, y con qué llave se comprueba. La llave la fijó el registro; el
-		// nombre de la red lo derivó esta máquina del código que le pegaron.
+		// The two fields that make the answer verifiable: which room it is
+		// signed against, and which key it is checked with. The key was pinned
+		// by the registry; the network name was derived by this machine from the
+		// code that was pasted into it.
 		Rendezvous:    rdv.NetworkName(),
 		ExpectHostKey: hostKey,
 	})
@@ -569,13 +571,13 @@ func markRoles(peers []domain.Peer, local netip.Addr, role domain.Role, subnet n
 	return out
 }
 
-// pinnedHostKey pregunta por la llave que el registro fijó, y nunca falla.
+// pinnedHostKey asks for the key the registry pinned, and never fails.
 //
-// Devuelve nil ante cualquier problema, y nil significa "no se pudo comprobar",
-// que es exactamente lo que pasó. Lo usa el reingreso, donde parar por un
-// registro caído sacaría de una sala viva a quien solo necesitaba renovar su
-// credencial. El camino de entrar por primera vez NO usa esto: ahí el registro
-// tiene que contestar igualmente, para saber si la sala existe.
+// It returns nil on any problem, and nil means "could not be checked", which is
+// exactly what happened. The rejoin path uses it, where stopping over a downed
+// registry would throw somebody out of a live room when all they needed was a
+// fresh credential. The first-time join does NOT use this: there the registry
+// has to answer anyway, to know whether the room exists.
 func (s *Session) pinnedHostKey(ctx context.Context, room domain.Room) []byte {
 	dir, err := s.deps.Directories.For(room.Seed)
 	if err != nil {

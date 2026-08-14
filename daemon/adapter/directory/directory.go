@@ -197,9 +197,9 @@ func (d *Directory) Lookup(ctx context.Context, id domain.InviteID) (domain.Invi
 	if out.Members != nil {
 		miembros = *out.Members
 	}
-	// Los dos se descartan en silencio si no decodifican, y el aviso queda en el
-	// veredicto: sin ellos la tarjeta es `CardUnverified`, que es exactamente lo
-	// que se sabe de ella.
+	// Both are dropped silently when they do not decode, and the warning lives
+	// in the verdict: without them the card is `CardUnverified`, which is
+	// exactly what is known about it.
 	llave, _ := deB64(out.HostKey)
 	firma, _ := deB64(out.Sig)
 	return domain.InviteLookup{

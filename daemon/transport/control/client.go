@@ -195,7 +195,7 @@ func (c *Channel) RequestCredential(ctx context.Context, req domain.CredentialRe
 
 	select {
 	case resp := <-cli.creds:
-		return abrirCredencial(cli.llaves, resp, req)
+		return openCredential(cli.llaves, resp, req)
 	case <-time.After(credentialWait):
 		return domain.Credential{}, fmt.Errorf("el host no contestó el pedido de credencial en %s", credentialWait)
 	case <-ctx.Done():
@@ -205,29 +205,31 @@ func (c *Channel) RequestCredential(ctx context.Context, req domain.CredentialRe
 	}
 }
 
-// abrirCredencial abre el sobre y, cuando se puede, comprueba QUIÉN lo mandó.
+// openCredential opens the envelope and, when it can, checks WHO sent it.
 //
-// # Las tres respuestas posibles, y por qué ninguna es "rechazar por defecto"
+// # The three possible answers, and which one is the hard stop
 //
-//   - **Firma que valida contra la llave fijada**: es el host de esa sala, o
-//     alguien que le robó `identity.key`. Es lo más que se puede afirmar.
-//   - **Sin firma, o sin llave esperada**: no se pudo comprobar. Es el host
-//     viejo que todavía no firma, o un registro que no dio la llave. Se entra,
-//     porque negarse dejaría fuera a gente por una versión.
-//   - **Firma que NO valida**: alguien contestó por el host. Acá sí se para, y
-//     es el único caso duro de todo el canje: el vestíbulo lo puede ocupar
-//     cualquiera que tenga el código, y entrar sería entrar a SU red creyendo
-//     que es la del host, con los puertos del juego abiertos hacia ella.
-func abrirCredencial(
-	llaves keyPair, resp credentialResponseMsg, req domain.CredentialRequest,
+//   - **A signature that validates against the pinned key**: it is that room's
+//     host, or somebody who stole its `identity.key`. That is the most anyone
+//     can claim.
+//   - **No expected key**: there is nothing to compare against, so the exchange
+//     goes on unverified. A terse registry must not turn into a room nobody can
+//     enter.
+//   - **A missing or bad signature, with an expected key in hand**: somebody
+//     answered for the host. This is the hard case of the whole exchange:
+//     anybody holding the code can sit in the lobby, and entering would mean
+//     entering THEIR network believing it is the host's, with the game's ports
+//     opened towards it.
+func openCredential(
+	keys keyPair, resp credentialResponseMsg, req domain.CredentialRequest,
 ) (domain.Credential, error) {
 	if resp.Error != "" {
 		return domain.Credential{}, fmt.Errorf("el host no emitió la credencial: %s", resp.Error)
 	}
-	if err := verificarFirma(llaves, resp, req); err != nil {
+	if err := verifySignature(keys, resp, req); err != nil {
 		return domain.Credential{}, err
 	}
-	plano, err := llaves.open(resp.Sealed)
+	plano, err := keys.open(resp.Sealed)
 	if err != nil {
 		// Un sobre que no abre es un sobre que no era para nosotros, y en el
 		// vestíbulo eso puede ser cualquiera contestando. No se interpreta nada
@@ -513,27 +515,27 @@ func (c *client) stop() {
 // llave que llega junto a la firma que produce es un sello que se autofirma, y
 // lo único que la convierte en una afirmación es que coincida con la que llegó
 // antes y por otro camino. Ver [credentialResponseMsg].
-func verificarFirma(llaves keyPair, resp credentialResponseMsg, req domain.CredentialRequest) error {
+func verifySignature(keys keyPair, resp credentialResponseMsg, req domain.CredentialRequest) error {
 	if len(req.ExpectHostKey) != ed25519.PublicKeySize {
-		// No hay contra qué comparar: el registro no dio la llave, o no se pudo
-		// leer. Se sigue sin verificar, porque negarse acá sería convertir un
-		// registro parco en una sala a la que no se puede entrar.
+		// Nothing to compare against: the registry did not hand over the key, or
+		// it could not be read. The exchange goes on unverified, because
+		// refusing here would turn a terse registry into a room nobody can
+		// enter.
 		return nil
 	}
 	if len(resp.Sig) == 0 {
-		// **Sin firma se PARA, y esta rama es la que hace que todo lo demás
-		// sirva.** La primera versión de esto aceptaba una respuesta sin firma
-		// como "no se pudo comprobar", y medido en el canje entero salía lo
-		// obvio en cuanto se mira: quien ocupa el vestíbulo no manda una firma
-		// mala, manda ninguna, y entraba igual. Un mecanismo que se apaga
-		// omitiendo un campo no es un mecanismo.
+		// **A missing signature is a hard stop, and this branch is what makes
+		// every other one worth anything.** The first version of this accepted
+		// an unsigned answer as "could not be checked", and measuring the whole
+		// exchange showed the obvious: a lobby squatter does not send a bad
+		// signature, it sends none, and it got in anyway. A mechanism that turns
+		// itself off by omitting a field is not a mechanism.
 		//
-		// El precio, dicho entero: un host que corra una versión anterior a esta
-		// no firma nada, así que un invitado nuevo no puede entrar a su sala
-		// hasta que actualice. Es el único momento en que este producto exige
-		// que las dos puntas coincidan, y se acepta porque la alternativa es
-		// dejar abierta la única puerta por la que hoy se puede meter a alguien
-		// en la red de un desconocido.
+		// The price, stated whole: a host running an older version signs
+		// nothing, so a new guest cannot enter its room until it updates. It is
+		// the one moment this product demands that both ends match, and it is
+		// accepted because the alternative leaves open the only door through
+		// which somebody can be walked into a stranger's network.
 		return fmt.Errorf("quien contestó en el vestíbulo no firmó la credencial: " +
 			"o el host corre una versión vieja de Kanpachi, o no es el host de esa sala")
 	}
@@ -541,7 +543,7 @@ func verificarFirma(llaves keyPair, resp credentialResponseMsg, req domain.Crede
 		return fmt.Errorf("quien contestó en el vestíbulo no es el host de esa sala: " +
 			"la llave con la que firmó no es la que el registro tiene fijada para ese código")
 	}
-	msg := credentialTranscript(req.Rendezvous, llaves.pub[:], resp.Sealed)
+	msg := credentialTranscript(req.Rendezvous, keys.pub[:], resp.Sealed)
 	if !ed25519.Verify(ed25519.PublicKey(req.ExpectHostKey), msg, resp.Sig) {
 		return fmt.Errorf("la credencial no la firmó el host de esa sala, " +
 			"o no es la respuesta a este pedido")

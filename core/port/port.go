@@ -686,21 +686,22 @@ type RoomDirectory interface {
 	// obligaría a suponer el seed por defecto, y quien configuró el suyo en
 	// Avanzado repartiría códigos que apuntan al servidor equivocado.
 	Open(ctx context.Context, sealed []byte) (domain.Room, error)
-	// Lookup devuelve lo que ese registro sabe de un invite ID: la tarjeta
-	// cifrada, cuánta gente hay, y **con qué llave y qué firma la sirve**.
+	// Lookup returns what that registry knows about an invite ID: the encrypted
+	// card, how many people are in, and **which key and which signature it
+	// serves it with**.
 	//
-	// El contador puede venir ausente, y ausente dice la verdad: el registro
-	// omite el número si nunca pudo hablar con el motor, porque un cero
-	// afirmaría que no hay nadie y sería falso. **Ausente llega como -1, jamás
-	// como 0.** El adaptador no inventa el cero que el registro se negó a decir:
-	// son dos afirmaciones distintas, "no hay nadie" y "no lo sé", y solo una de
-	// las dos es cierta cuando el contador no arrancó.
+	// The count can come back absent, and absent tells the truth: the registry
+	// omits the number when it could never talk to the engine, because a zero
+	// would claim nobody is there and would be false. **Absent arrives as -1,
+	// never as 0.** The adapter does not invent the zero the registry declined
+	// to say: "nobody is there" and "I do not know" are two different claims,
+	// and only one of them is true when the counter never started.
 	//
-	// La llave y la firma llegaban a este adaptador y morían acá: el registro ya
-	// servía `host_key` y esta función devolvía tarjeta y miembros. Con eso, lo
-	// que un cliente recibía era una tarjeta y la palabra del servidor, que es
-	// justo lo que la decisión 24 dice que no alcanza. Ver [domain.InviteLookup]
-	// y su Trust.
+	// The key and the signature used to reach this adapter and die here: the
+	// registry already served `host_key` and this function returned card and
+	// members. What a client got out of that was a card and the server's word
+	// for it, which is exactly what decision 24 says is not enough. See
+	// [domain.InviteLookup] and its Trust.
 	Lookup(ctx context.Context, id domain.InviteID) (domain.InviteLookup, error)
 	// Publish actualiza la tarjeta, o reabre la sala con el mismo invite ID.
 	//

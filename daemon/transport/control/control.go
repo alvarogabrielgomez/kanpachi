@@ -98,23 +98,23 @@ var ErrNotAttached = errors.New("control: falta el emisor de credenciales")
 // ErrNotDialed es pedir una credencial sin haber marcado.
 var ErrNotDialed = errors.New("control: no hay conexión con el host")
 
-// Identity es la llave larga de esta instalación, para firmar lo que el host
-// contesta por la puerta.
+// Identity is this installation's long-term key, used to sign what the host
+// answers at the door.
 //
-// Se inyecta y no se carga acá por el motivo de siempre: `identity.key` la CREA
-// un solo paquete y todo lo demás la consume. Un segundo cargador es cómo se
-// acaba con dos escritores y una llave regenerada en silencio, que le costaría
-// a este equipo la cara con la que ya lo conocen los que jugaron con él.
+// It is injected rather than loaded here for the usual reason: `identity.key` is
+// CREATED by one package and consumed by everything else. A second loader is how
+// two writers happen, and with them a key silently regenerated, which would cost
+// this machine the face the people who already played with it know it by.
 //
-// Su cero significa **no firmar**: el daemon de consola sin directorio de datos
-// y los tests no tienen por qué tener identidad, y una respuesta sin firma es un
-// caso que el invitado ya sabe tratar.
+// Its zero means **do not sign**: the console daemon with no data directory and
+// the tests have no reason to hold an identity, and an unsigned answer is a case
+// the guest already knows how to treat.
 type Identity struct {
 	Public []byte
 	Sign   func(msg []byte) []byte
 }
 
-// Signs dice si esta identidad puede firmar de verdad.
+// Signs says whether this identity can actually sign.
 func (i Identity) Signs() bool { return i.Sign != nil && len(i.Public) > 0 }
 
 // Deps son las piezas del canal.
@@ -122,7 +122,7 @@ type Deps struct {
 	Clock port.Clock
 	Log   port.Logger
 
-	// Identity firma lo que el host emite por la puerta. Ver [Identity].
+	// Identity signs what the host hands out at the door. See [Identity].
 	Identity Identity
 
 	// Listen y Dial existen para el test y para nada más.

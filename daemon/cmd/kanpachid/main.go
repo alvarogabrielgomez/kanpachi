@@ -610,14 +610,15 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 		return abortar(err)
 	}
 
-	// El canal de control se construye DESPUÉS de la llave, y no antes como
-	// estaba: es el host firmando lo que emite por la puerta del vestíbulo, así
-	// que sin la llave el canal nacería sin poder firmar y nadie lo notaría —
-	// las respuestas saldrían sin firma, que es un caso válido del protocolo.
+	// The control channel is built AFTER the key, not before as it used to be:
+	// it is the host signing what it hands out at the lobby door, so without the
+	// key the channel would come up unable to sign and nobody would notice. The
+	// answers would go out unsigned, which is a valid case of the protocol.
 	//
-	// La llave se pasa como firmador y no entera. Este paquete es el único que
-	// la tiene, y el canal solo necesita poder firmar: darle la privada sería
-	// repartir por el cableado lo que `identity` existe para custodiar.
+	// The key is passed as a signer, not whole. This package is the only one
+	// that holds it, and the channel only needs to be able to sign: handing over
+	// the private key would spread through the wiring the very thing `identity`
+	// exists to guard.
 	canal := control.New(control.Deps{
 		Clock: relojReal{},
 		Log:   log,

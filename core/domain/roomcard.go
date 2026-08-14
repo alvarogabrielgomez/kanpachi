@@ -216,58 +216,61 @@ func (r Room) InviteLink(key [CardKeyLen]byte) string {
 	return "https://" + r.InviteURL() + "#" + CardKeyFragment(key)
 }
 
-// ---- Quién escribió la tarjeta que el registro sirvió ----------------------
+// ---- Who wrote the card the registry served ------------------------------
 
-// CardTrust es lo que se sabe del ORIGEN de una tarjeta, que es distinto de si
-// se pudo abrir.
+// CardTrust is what is known about a card's ORIGIN, which is a different
+// question from whether it opened.
 //
-// Abrirla la autentica contra la clave del fragmento, y eso solo prueba que la
-// escribió alguien que tenía el enlace. Quién de todos los que lo tienen, lo
-// contesta la firma de la llave larga del host, que es la que el registro FIJA
-// para ese invite ID la primera vez que la ve. Ver la decisión 24.
+// Opening it authenticates it against the fragment key, and that only proves it
+// was written by somebody holding the link. Which of the people holding it is
+// answered by the signature of the host's long-term key, the one the registry
+// PINS for that invite ID the first time it sees it. See decision 24.
 type CardTrust uint8
 
 const (
-	// CardUnverified es que no había con qué comprobar: el registro no mandó
-	// firma, o no mandó la llave fijada. Es el caso de una sala publicada antes
-	// de que el registro guardara la firma, y **no** es una acusación.
+	// CardUnverified means there was nothing to check against: the registry
+	// sent no signature, or no pinned key. It is the case of a room published
+	// before the registry stored signatures, and it is **not** an accusation.
 	CardUnverified CardTrust = iota
-	// CardSigned es que la firma valida contra la llave que ese registro fijó.
+	// CardSigned means the signature validates against the key that registry
+	// pinned.
 	CardSigned
-	// CardForged es que hay firma, hay llave, y no se corresponden.
+	// CardForged means there is a signature, there is a key, and they do not
+	// match.
 	//
-	// No significa "alguien manipuló los bytes en el cable": una tarjeta
-	// manipulada no abre, porque AES-GCM autentica. Significa que **el registro
-	// está sirviendo una tarjeta que la llave que él mismo fijó no respalda**, y
-	// eso solo puede pasar si ese registro está comprometido.
+	// It does not mean "somebody tampered with the bytes on the wire": a
+	// tampered card does not open at all, because AES-GCM authenticates. It
+	// means **the registry is serving a card that the key it pinned itself does
+	// not back**, which can only happen if that registry is compromised.
 	CardForged
 )
 
-// InviteLookup es lo que un registro contesta sobre un invite ID.
+// InviteLookup is what a registry answers about an invite ID.
 //
-// Es un struct y no cuatro retornos sueltos porque cuatro es donde una firma de
-// función deja de leerse, y porque los dos campos nuevos viajan juntos: una
-// firma sin la llave contra la que verificarla no dice nada.
+// It is a struct rather than four loose return values because four is where a
+// function signature stops being readable, and because the two new fields
+// travel together: a signature with no key to verify it against says nothing.
 type InviteLookup struct {
-	// Sealed es la tarjeta cifrada, opaca para el registro y para esto.
+	// Sealed is the encrypted card, opaque to the registry and to this.
 	Sealed []byte
-	// Members es cuánta gente hay, o -1 cuando el registro se negó a decirlo.
+	// Members is how many people are in, or -1 when the registry declined to
+	// say.
 	Members int
-	// HostKey es la llave larga que ese registro FIJÓ para este invite ID.
+	// HostKey is the long-term key that registry PINNED for this invite ID.
 	HostKey []byte
-	// Sig es la firma con la que se depositó la tarjeta.
+	// Sig is the signature the card was deposited with.
 	Sig []byte
 }
 
-// Trust dice qué se sabe del origen de esta tarjeta.
+// Trust says what is known about this card's origin.
 //
-// **La llave viene del mismo sitio que la tarjeta, y eso está asumido.** Un
-// registro comprometido puede servir su propia llave con su propia firma y esto
-// contestará [CardSigned]: lo que compra hoy es que no pueda cambiar la tarjeta
-// SIN cambiar también la llave, o sea que la mentira deje rastro. Quien nota ese
-// rastro es la libreta de huellas de la decisión 25, que recuerda con qué llave
-// se vio a este host las veces anteriores. Sin ella, esto es continuidad de una
-// sola sesión y se dice así.
+// **The key comes from the same place the card does, and that is assumed
+// here.** A compromised registry can serve its own key with its own signature
+// and this will answer [CardSigned]: what it buys today is that the card cannot
+// be changed WITHOUT also changing the key, so the lie leaves a trace. Who
+// notices that trace is the fingerprint book of decision 25, which remembers
+// which key this host was seen with the previous times. Without it, this is
+// continuity within a single session, and it is stated that way.
 func (l InviteLookup) Trust() CardTrust {
 	if len(l.Sig) == 0 || len(l.HostKey) != ed25519.PublicKeySize {
 		return CardUnverified

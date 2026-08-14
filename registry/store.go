@@ -57,20 +57,22 @@ type Room struct {
 	HostKey ed25519.PublicKey
 	Card    []byte
 
-	// Sig es la firma con la que se depositó [Room.Card], y se guarda para poder
-	// SERVIRLA.
+	// Sig is the signature [Room.Card] was deposited with, kept so that it can
+	// be SERVED.
 	//
-	// El registro ya la verificaba al recibir y la tiraba, y eso dejaba la
-	// comprobación viviendo en un solo sitio: acá. Lo que un cliente recibía era
-	// una tarjeta y la palabra de este servidor de que alguien la había firmado,
-	// o sea justo lo que la decisión 24 dice que no alcanza. Guardándola, quien
-	// la lee comprueba contra la llave que este mismo registro fijó primero, y un
-	// registro comprometido deja de poder cambiar el contenido sin que se note.
+	// The registry already verified it on the way in and then threw it away,
+	// which left the check living in exactly one place: here. What a client got
+	// was a card and this server's word that somebody had signed it, which is
+	// precisely what decision 24 says is not enough. Keeping it lets whoever
+	// reads the card check it against the key this same registry pinned first,
+	// and a compromised registry can no longer change the contents without it
+	// showing.
 	//
-	// **Vacía es un caso normal, no un error.** Las entradas escritas antes de
-	// este cambio vuelven de `rooms.json` sin firma, y se sirven igual: el
-	// cliente las trata como «sin verificar». Descartarlas dejaría fuera a los
-	// invitados de toda sala abierta, que es el fallo que arregló la decisión 33.
+	// **Empty is a normal case, not an error.** Entries written before this
+	// change come back from `rooms.json` with no signature, and they are served
+	// all the same: the client treats them as unverified. Discarding them would
+	// lock out the guests of every open room, which is the bug decision 33
+	// fixed.
 	Sig []byte
 
 	Network   string // nombre de la red de ENCUENTRO, para contar miembros

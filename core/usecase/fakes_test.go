@@ -497,9 +497,10 @@ func (r *mockRegistry) Open(_ context.Context, sealed []byte) (domain.Room, erro
 func (r *mockRegistry) Lookup(context.Context, domain.InviteID) (domain.InviteLookup, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	// Sin llave ni firma: este doble es de los casos de uso que no miran la
-	// procedencia, así que el veredicto que sale es `CardUnverified`, que es la
-	// verdad sobre un registro que no dice con qué llave sirve.
+	// No key and no signature: this double belongs to the use cases that do not
+	// look at provenance, so the verdict that comes out is `CardUnverified`,
+	// which is the truth about a registry that does not say which key it serves
+	// under.
 	return domain.InviteLookup{Sealed: r.publicado}, nil
 }
 

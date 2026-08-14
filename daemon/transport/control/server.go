@@ -281,11 +281,12 @@ func (s *server) issue(req credentialRequestMsg) credentialResponseMsg {
 
 	resp := credentialResponseMsg{Sealed: sellado}
 
-	// **La red de encuentro sale de la sala de ESTE host, jamás del pedido.**
-	// El invitado manda la suya para saber contra qué comparar, y firmar la que
-	// él dijo sería firmar datos elegidos por quien pregunta. Si no coinciden,
-	// la verificación falla del otro lado, que es exactamente lo que tiene que
-	// pasar cuando alguien pide la credencial de otra sala.
+	// **The rendezvous network comes from THIS host's room, never from the
+	// request.** The guest sends its own so that it knows what to compare
+	// against, and signing the one it named would mean signing data chosen by
+	// the asker. When the two differ, verification fails on the other side,
+	// which is exactly what should happen when somebody asks for another room's
+	// credential.
 	id := s.ch.deps.Identity
 	if id.Signs() && rdv != "" {
 		resp.HostKey = id.Public
