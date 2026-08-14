@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.2.2] - 2026-08-14
+
 ### Added
 
 - Explain the meeting server whole, in `kanpachi-seed.md`: what it does, when your packets go through it and why it cannot read them, what its state file actually holds, what a modified one could do differently, and the lobby gap that is still open. The three "Más información" links in the app go there, instead of an anchor that existed on no page ([a1b616d](https://github.com/alvarogabrielgomez/kanpachi/commit/a1b616d))
@@ -238,6 +240,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.2.2]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.2.2
 [0.2.1]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.2.1
 [0.2.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.2.0
 [0.1.9]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.1.9
