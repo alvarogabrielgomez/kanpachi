@@ -21,8 +21,6 @@ This file is in English, like commit messages and release notes, because a relea
 - See the game covers, which never once appeared: the hole with PORTADA STEAMDB written in it was all there ever was, and nothing anywhere asked for an image. They now come from Steam itself, in the shape each hole needs — the tall one for the thumbnails and the room, the wide one for the catalogue grid ([5bf4a72](https://github.com/alvarogabrielgomez/kanpachi/commit/5bf4a72))
 - Give a game its Steam id when you add it by hand, and watch its cover appear in the preview as you type. The whole address, pasted from the browser, works too ([5bf4a72](https://github.com/alvarogabrielgomez/kanpachi/commit/5bf4a72))
 
-- Check from `kanpachi doctor` on Windows whether the service is running, which was the one thing it never looked at: it is the same question the test tools ask before starting, answered by the same code, so the two can no longer disagree about what "running" means ([f78ef72](https://github.com/alvarogabrielgomez/kanpachi/commit/f78ef72))
-
 ### Changed
 
 - **Entering a room now needs both machines running this version or newer.** A host on an older Kanpachi does not sign anything, and an unsigned answer is exactly what somebody impersonating the host would send, so it can no longer be told apart or accepted. Updating the host fixes it ([c84c683](https://github.com/alvarogabrielgomez/kanpachi/commit/c84c683))
