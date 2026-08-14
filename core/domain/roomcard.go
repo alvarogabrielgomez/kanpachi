@@ -3,6 +3,7 @@ package domain
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -213,4 +214,66 @@ func ParseCardKeyFragment(s string) ([CardKeyLen]byte, error) {
 // teléfono. Esta es la que se copia al portapapeles y se pega en Telegram.
 func (r Room) InviteLink(key [CardKeyLen]byte) string {
 	return "https://" + r.InviteURL() + "#" + CardKeyFragment(key)
+}
+
+// ---- Quién escribió la tarjeta que el registro sirvió ----------------------
+
+// CardTrust es lo que se sabe del ORIGEN de una tarjeta, que es distinto de si
+// se pudo abrir.
+//
+// Abrirla la autentica contra la clave del fragmento, y eso solo prueba que la
+// escribió alguien que tenía el enlace. Quién de todos los que lo tienen, lo
+// contesta la firma de la llave larga del host, que es la que el registro FIJA
+// para ese invite ID la primera vez que la ve. Ver la decisión 24.
+type CardTrust uint8
+
+const (
+	// CardUnverified es que no había con qué comprobar: el registro no mandó
+	// firma, o no mandó la llave fijada. Es el caso de una sala publicada antes
+	// de que el registro guardara la firma, y **no** es una acusación.
+	CardUnverified CardTrust = iota
+	// CardSigned es que la firma valida contra la llave que ese registro fijó.
+	CardSigned
+	// CardForged es que hay firma, hay llave, y no se corresponden.
+	//
+	// No significa "alguien manipuló los bytes en el cable": una tarjeta
+	// manipulada no abre, porque AES-GCM autentica. Significa que **el registro
+	// está sirviendo una tarjeta que la llave que él mismo fijó no respalda**, y
+	// eso solo puede pasar si ese registro está comprometido.
+	CardForged
+)
+
+// InviteLookup es lo que un registro contesta sobre un invite ID.
+//
+// Es un struct y no cuatro retornos sueltos porque cuatro es donde una firma de
+// función deja de leerse, y porque los dos campos nuevos viajan juntos: una
+// firma sin la llave contra la que verificarla no dice nada.
+type InviteLookup struct {
+	// Sealed es la tarjeta cifrada, opaca para el registro y para esto.
+	Sealed []byte
+	// Members es cuánta gente hay, o -1 cuando el registro se negó a decirlo.
+	Members int
+	// HostKey es la llave larga que ese registro FIJÓ para este invite ID.
+	HostKey []byte
+	// Sig es la firma con la que se depositó la tarjeta.
+	Sig []byte
+}
+
+// Trust dice qué se sabe del origen de esta tarjeta.
+//
+// **La llave viene del mismo sitio que la tarjeta, y eso está asumido.** Un
+// registro comprometido puede servir su propia llave con su propia firma y esto
+// contestará [CardSigned]: lo que compra hoy es que no pueda cambiar la tarjeta
+// SIN cambiar también la llave, o sea que la mentira deje rastro. Quien nota ese
+// rastro es la libreta de huellas de la decisión 25, que recuerda con qué llave
+// se vio a este host las veces anteriores. Sin ella, esto es continuidad de una
+// sola sesión y se dice así.
+func (l InviteLookup) Trust() CardTrust {
+	if len(l.Sig) == 0 || len(l.HostKey) != ed25519.PublicKeySize {
+		return CardUnverified
+	}
+	if ed25519.Verify(ed25519.PublicKey(l.HostKey), l.Sealed, l.Sig) {
+		return CardSigned
+	}
+	return CardForged
 }

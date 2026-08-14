@@ -686,16 +686,22 @@ type RoomDirectory interface {
 	// obligaría a suponer el seed por defecto, y quien configuró el suyo en
 	// Avanzado repartiría códigos que apuntan al servidor equivocado.
 	Open(ctx context.Context, sealed []byte) (domain.Room, error)
-	// Lookup devuelve la tarjeta cifrada y cuánta gente hay. El contador puede
-	// venir ausente, y ausente dice la verdad: el registro omite el número si
-	// nunca pudo hablar con el motor, porque un cero afirmaría que no hay
-	// nadie y sería falso.
+	// Lookup devuelve lo que ese registro sabe de un invite ID: la tarjeta
+	// cifrada, cuánta gente hay, y **con qué llave y qué firma la sirve**.
 	//
-	// **Ausente llega como -1, jamás como 0.** El adaptador no inventa el cero
-	// que el registro se negó a decir: son dos afirmaciones distintas, "no hay
-	// nadie" y "no lo sé", y solo una de las dos es cierta cuando el contador
-	// no arrancó.
-	Lookup(ctx context.Context, id domain.InviteID) (sealed []byte, members int, err error)
+	// El contador puede venir ausente, y ausente dice la verdad: el registro
+	// omite el número si nunca pudo hablar con el motor, porque un cero
+	// afirmaría que no hay nadie y sería falso. **Ausente llega como -1, jamás
+	// como 0.** El adaptador no inventa el cero que el registro se negó a decir:
+	// son dos afirmaciones distintas, "no hay nadie" y "no lo sé", y solo una de
+	// las dos es cierta cuando el contador no arrancó.
+	//
+	// La llave y la firma llegaban a este adaptador y morían acá: el registro ya
+	// servía `host_key` y esta función devolvía tarjeta y miembros. Con eso, lo
+	// que un cliente recibía era una tarjeta y la palabra del servidor, que es
+	// justo lo que la decisión 24 dice que no alcanza. Ver [domain.InviteLookup]
+	// y su Trust.
+	Lookup(ctx context.Context, id domain.InviteID) (domain.InviteLookup, error)
 	// Publish actualiza la tarjeta, o reabre la sala con el mismo invite ID.
 	//
 	// **No crea nada.** Un invite ID que este registro jamás emitió, o uno cuyo

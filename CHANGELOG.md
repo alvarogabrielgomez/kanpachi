@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Security
+
+- Check the room card against the key the meeting server itself pinned for that code, instead of taking the card and the server's word for it. A server that has been taken over can no longer change the room name or the nickname on the invitation screen without the change showing: the card no longer opens, and the screen says so rather than painting what that server wanted read
+
 ### Added
 
 - See the game covers, which never once appeared: the hole with PORTADA STEAMDB written in it was all there ever was, and nothing anywhere asked for an image. They now come from Steam itself, in the shape each hole needs — the tall one for the thumbnails and the room, the wide one for the catalogue grid ([5bf4a72](https://github.com/alvarogabrielgomez/kanpachi/commit/5bf4a72))

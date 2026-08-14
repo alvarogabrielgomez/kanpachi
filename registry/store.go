@@ -54,8 +54,25 @@ var (
 // solo tienen quienes lo recibieron, así que el operador del seed guarda y
 // sirve el nombre de una sala sin poder leerlo jamás.
 type Room struct {
-	HostKey   ed25519.PublicKey
-	Card      []byte
+	HostKey ed25519.PublicKey
+	Card    []byte
+
+	// Sig es la firma con la que se depositó [Room.Card], y se guarda para poder
+	// SERVIRLA.
+	//
+	// El registro ya la verificaba al recibir y la tiraba, y eso dejaba la
+	// comprobación viviendo en un solo sitio: acá. Lo que un cliente recibía era
+	// una tarjeta y la palabra de este servidor de que alguien la había firmado,
+	// o sea justo lo que la decisión 24 dice que no alcanza. Guardándola, quien
+	// la lee comprueba contra la llave que este mismo registro fijó primero, y un
+	// registro comprometido deja de poder cambiar el contenido sin que se note.
+	//
+	// **Vacía es un caso normal, no un error.** Las entradas escritas antes de
+	// este cambio vuelven de `rooms.json` sin firma, y se sirven igual: el
+	// cliente las trata como «sin verificar». Descartarlas dejaría fuera a los
+	// invitados de toda sala abierta, que es el fallo que arregló la decisión 33.
+	Sig []byte
+
 	Network   string // nombre de la red de ENCUENTRO, para contar miembros
 	CardUntil time.Time
 	PinUntil  time.Time
@@ -201,7 +218,7 @@ func (s *Store) Issue(ctx context.Context, hostKey ed25519.PublicKey, card, sig 
 		if err != nil {
 			return domain.InviteID{}, err
 		}
-		if s.insert(id, hostKey, card, red) {
+		if s.insert(id, hostKey, card, sig, red) {
 			// Fuera del lock que `insertar` acaba de soltar. Ver [Store.respaldar].
 			s.respaldar()
 			return id, nil
@@ -277,7 +294,7 @@ func (s *Store) ocupado(id domain.InviteID) bool {
 
 // insert registra la sala y dice si lo consiguió. Devuelve false cuando el
 // invite ID se ocupó mientras se derivaba su red de encuentro.
-func (s *Store) insert(id domain.InviteID, hostKey ed25519.PublicKey, card []byte, red string) bool {
+func (s *Store) insert(id domain.InviteID, hostKey ed25519.PublicKey, card, sig []byte, red string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.limpiar()
@@ -289,6 +306,7 @@ func (s *Store) insert(id domain.InviteID, hostKey ed25519.PublicKey, card []byt
 	s.rooms[id.Raw()] = &Room{
 		HostKey:   append(ed25519.PublicKey(nil), hostKey...),
 		Card:      append([]byte(nil), card...),
+		Sig:       append([]byte(nil), sig...),
 		Network:   red,
 		CardUntil: ahora.Add(CardTTL),
 		PinUntil:  ahora.Add(PinTTL),
@@ -312,7 +330,7 @@ func (s *Store) publish(id domain.InviteID, hostKey ed25519.PublicKey, card, sig
 		return ErrBadSig
 	}
 
-	if err := s.publishUnderLock(id, hostKey, card); err != nil {
+	if err := s.publishUnderLock(id, hostKey, card, sig); err != nil {
 		return err
 	}
 	// Fuera del lock, y solo cuando algo cambió de verdad. Ver [Store.respaldar].
@@ -322,7 +340,7 @@ func (s *Store) publish(id domain.InviteID, hostKey ed25519.PublicKey, card, sig
 
 // publishUnderLock es el cuerpo de [Store.publish]. Va aparte para que el
 // respaldo a disco ocurra con el lock ya soltado.
-func (s *Store) publishUnderLock(id domain.InviteID, hostKey ed25519.PublicKey, card []byte) error {
+func (s *Store) publishUnderLock(id domain.InviteID, hostKey ed25519.PublicKey, card, sig []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.limpiar()
@@ -336,6 +354,7 @@ func (s *Store) publishUnderLock(id domain.InviteID, hostKey ed25519.PublicKey, 
 		return ErrPinned
 	}
 	r.Card = append([]byte(nil), card...)
+	r.Sig = append([]byte(nil), sig...)
 	r.CardUntil = ahora.Add(CardTTL)
 	r.PinUntil = ahora.Add(PinTTL)
 	return nil

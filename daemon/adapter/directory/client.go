@@ -55,6 +55,10 @@ type openedBody struct {
 type lookupBody struct {
 	Card    string `json:"card"`
 	HostKey string `json:"host_key"`
+	// Sig is the signature the card was published with. Absent for a room the
+	// registry wrote before it started keeping it, which is why it is not an
+	// error to be missing: it comes back as "unverified" and never as "forged".
+	Sig string `json:"sig"`
 	// A POINTER, and that is the whole design of this field. The registry omits
 	// the count when it has never managed to talk to the engine, because a zero
 	// would be the claim "there is nobody" and it would be false. Absent says

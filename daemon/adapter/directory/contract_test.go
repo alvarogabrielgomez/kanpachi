@@ -151,19 +151,24 @@ func TestContratoAbrirBuscarYPublicar(t *testing.T) {
 		t.Fatal("el registro no emitió invite ID")
 	}
 
-	vuelta, miembros, err := d.Lookup(ctx, room.InviteID)
+	vista, err := d.Lookup(ctx, room.InviteID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(vuelta) != string(sellada) {
+	if string(vista.Sealed) != string(sellada) {
 		t.Error("la tarjeta volvió distinta de como se subió")
 	}
 	// El contador nunca habló con el motor, así que ausente, y ausente es -1.
 	// Un cero acá sería la afirmación "no hay nadie" y sería falsa.
-	if miembros != -1 {
-		t.Errorf("miembros = %d, y el contador no sabe nada, así que tiene que ser -1", miembros)
+	if vista.Members != -1 {
+		t.Errorf("miembros = %d, y el contador no sabe nada, así que tiene que ser -1", vista.Members)
 	}
-	tarjeta, err := domain.OpenRoomCard(vuelta, clave)
+	// La procedencia vuelve del registro de verdad, así que la firma que se
+	// depositó tiene que validar contra la llave que ese registro fijó.
+	if got := vista.Trust(); got != domain.CardSigned {
+		t.Errorf("Trust() = %v, y el registro sirvió llave y firma propias", got)
+	}
+	tarjeta, err := domain.OpenRoomCard(vista.Sealed, clave)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,11 +181,14 @@ func TestContratoAbrirBuscarYPublicar(t *testing.T) {
 	if err := d.Publish(ctx, room.InviteID, otra); err != nil {
 		t.Fatal(err)
 	}
-	vuelta2, _, err := d.Lookup(ctx, room.InviteID)
+	vista2, err := d.Lookup(ctx, room.InviteID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tarjeta2, err := domain.OpenRoomCard(vuelta2, otraClave)
+	if got := vista2.Trust(); got != domain.CardSigned {
+		t.Errorf("tras republicar, Trust() = %v: la firma nueva tiene que sustituir a la vieja", got)
+	}
+	tarjeta2, err := domain.OpenRoomCard(vista2.Sealed, otraClave)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,11 +228,11 @@ func TestContratoOtraLlaveNoPisaElID(t *testing.T) {
 	}
 
 	// Y la del dueño sigue siendo la que está.
-	vuelta, _, err := dueño.Lookup(ctx, room.InviteID)
+	vista, err := dueño.Lookup(ctx, room.InviteID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(vuelta) != string(sellada) {
+	if string(vista.Sealed) != string(sellada) {
 		t.Error("la tarjeta cambió pese al rechazo")
 	}
 }
@@ -312,7 +320,7 @@ func TestContratoElIDViajaCrudoYVuelveCanónico(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := d.Lookup(ctx, room.InviteID); err != nil {
+	if _, err := d.Lookup(ctx, room.InviteID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -408,7 +416,7 @@ func TestContratoHospedarEnSeedCerrado(t *testing.T) {
 	// Y entrar sigue sin pedir nada. Un cliente recién nacido, sin token de
 	// ninguna clase, resuelve el código igual.
 	invitado := clienteReal(t, srv, t.TempDir())
-	if _, _, err := invitado.Lookup(ctx, room.InviteID); err != nil {
+	if _, err := invitado.Lookup(ctx, room.InviteID); err != nil {
 		t.Fatalf("un invitado sin credencial no pudo resolver el código: %v", err)
 	}
 

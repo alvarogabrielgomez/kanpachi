@@ -40,6 +40,13 @@ type InvitePreview struct {
 	// afirmado, no la ausencia de información: si el registro no contestó,
 	// esto queda en false.
 	Unknown bool
+
+	// Trust es qué se sabe de quién escribió la tarjeta. Ver [domain.CardTrust].
+	//
+	// Su cero es [domain.CardUnverified], que es lo correcto para todos los
+	// caminos que vuelven antes de preguntarle al registro: no haber podido
+	// comprobar es exactamente lo que pasó.
+	Trust domain.CardTrust
 }
 
 // HasCard dice si la tarjeta trae algo que enseñar.
@@ -87,7 +94,7 @@ func (s *Session) PeekInvite(ctx context.Context, link string) (InvitePreview, e
 		return out, nil
 	}
 
-	sealed, _, err := dir.Lookup(ctx, room.InviteID)
+	vista, err := dir.Lookup(ctx, room.InviteID)
 	switch {
 	case err == nil:
 		// sigue
@@ -104,11 +111,25 @@ func (s *Session) PeekInvite(ctx context.Context, link string) (InvitePreview, e
 		return out, nil
 	}
 
+	// El veredicto viaja SIEMPRE, haya tarjeta o no: «no se pudo comprobar» es
+	// tan informativo como «la firma valida», y las dos cosas se deciden acá
+	// antes de mirar el fragmento.
+	out.Trust = vista.Trust()
+	if out.Trust == domain.CardForged {
+		// No se abre. Enseñar el nombre de una sala que la llave fijada por ese
+		// registro no respalda es pintar en pantalla lo que un registro
+		// comprometido quiso que se leyera, y esta pantalla existe justo para
+		// decidir con lo que se lee.
+		s.deps.Log.Error("la tarjeta no valida contra la llave que el registro fijó",
+			"código", room.InviteID.String(), "seed", room.Seed)
+		return out, nil
+	}
+
 	key, hay := cardKeyOf(link)
 	if !hay {
 		return out, nil
 	}
-	card, err := domain.OpenRoomCard(sealed, key)
+	card, err := domain.OpenRoomCard(vista.Sealed, key)
 	if err != nil {
 		// Clave equivocada o tarjeta manipulada. AES-GCM autentica, así que un
 		// fallo acá significa que el contenido no es de fiar: se descarta

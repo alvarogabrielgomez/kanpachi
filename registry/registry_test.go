@@ -253,7 +253,7 @@ func TestIssueSobrevivePerderLaCarreraPorUnID(t *testing.T) {
 		id, err := domain.ParseInviteID(ids[turno])
 		turno++
 		if turno == 1 {
-			s.insert(id, intruso.pub, suyo, "red-del-intruso")
+			s.insert(id, intruso.pub, suyo, intruso.firma(suyo), "red-del-intruso")
 		}
 		return id, err
 	})

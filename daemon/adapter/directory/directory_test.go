@@ -234,7 +234,7 @@ func TestLaRespuestaGiganteSeCorta(t *testing.T) {
 		}
 	})
 
-	_, _, err := b.dir.Lookup(context.Background(), idDePrueba(t))
+	_, err := b.dir.Lookup(context.Background(), idDePrueba(t))
 	if err == nil {
 		t.Fatal("se aceptó una respuesta de ocho megas")
 	}
@@ -267,12 +267,12 @@ func TestMembersAusenteEsMenosUnoYPresenteEsElNúmero(t *testing.T) {
 			b := nuevoBanco(t, func(w http.ResponseWriter, r *http.Request) {
 				json.NewEncoder(w).Encode(c.cuerpo)
 			})
-			_, miembros, err := b.dir.Lookup(context.Background(), idDePrueba(t))
+			vista, err := b.dir.Lookup(context.Background(), idDePrueba(t))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if miembros != c.quiero {
-				t.Errorf("miembros = %d, se esperaba %d", miembros, c.quiero)
+			if vista.Members != c.quiero {
+				t.Errorf("miembros = %d, se esperaba %d", vista.Members, c.quiero)
 			}
 		})
 	}

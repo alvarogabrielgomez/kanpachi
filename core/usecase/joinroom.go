@@ -301,9 +301,25 @@ func (s *Session) checkRoomExists(ctx context.Context, room domain.Room) error {
 	}
 
 	s.deps.Progress.Stepf(domain.ScopeSeed, "preguntándole a %s si ese código existe", room.Seed)
-	_, _, err = dir.Lookup(ctx, room.InviteID)
+	vista, err := dir.Lookup(ctx, room.InviteID)
 	switch {
 	case err == nil:
+		// **Una tarjeta falsificada NO detiene la entrada, y se dice por qué.**
+		// La tarjeta es presentación: el nombre de la sala y el nick de quien
+		// invita. A qué sala se entra lo deciden el invite ID y el vestíbulo, y
+		// ninguno de los dos sale de acá. Pararse en este punto sería bloquear
+		// una entrada por un dato decorativo, que es justo el reflejo que la
+		// decisión 25 rechaza para la huella cambiada.
+		//
+		// Lo que sí significa es que ESE registro está sirviendo algo que la
+		// llave que él mismo fijó no respalda, o sea que está comprometido. Queda
+		// en el log con esas palabras, y quien lo enseña en pantalla es la
+		// pantalla del enlace, que es donde alguien todavía puede decidir.
+		if vista.Trust() == domain.CardForged {
+			s.deps.Log.Error("el registro sirve una tarjeta que su propia llave fijada no respalda",
+				"código", room.InviteID.String(), "seed", room.Seed)
+			s.deps.Progress.Step(domain.ScopeSeed, "ojo: la tarjeta de esa sala no valida contra la llave del registro")
+		}
 		s.deps.Progress.Step(domain.ScopeSeed, "el código existe, se sigue")
 		return nil
 

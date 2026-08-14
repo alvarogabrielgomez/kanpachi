@@ -160,30 +160,54 @@ func (d *Directory) Open(ctx context.Context, sealed []byte) (domain.Room, error
 	return domain.Room{InviteID: id, Seed: d.deps.Seed}, nil
 }
 
-// Lookup returns the sealed card and how many people are inside.
+// Lookup returns what the registry knows about an invite ID: the sealed card,
+// the head count, and the key and signature it serves them under.
 //
 // An absent count comes back as -1 and never as 0. The registry omits the
 // number when it has never managed to talk to the engine, and a zero would
 // turn "I do not know" into "there is nobody", which is a different claim and a
 // false one.
-func (d *Directory) Lookup(ctx context.Context, id domain.InviteID) ([]byte, int, error) {
+//
+// **The key and the signature are carried, not judged.** Whether they hold up
+// is [domain.InviteLookup.Trust], in the domain, where it can be reasoned about
+// without a network. This adapter's job is to stop dropping them: the registry
+// has been serving `host_key` all along and this function used to return the
+// card and the count, so what reached a client was a card and this server's word
+// for it.
+//
+// A key or a signature that is not base64 is NOT a hard failure. It is a
+// registry saying something malformed about provenance, and the card still
+// resolves: the trust verdict degrades to unverified, which is the truth, and
+// the room stays reachable. Refusing to resolve would hand any broken registry a
+// way to lock out every guest of every open room.
+func (d *Directory) Lookup(ctx context.Context, id domain.InviteID) (domain.InviteLookup, error) {
 	var out lookupBody
 	if err := d.do(ctx, http.MethodGet, "/api/i/"+id.Raw(), nil, &out, http.StatusOK); err != nil {
-		return nil, -1, err
+		return domain.InviteLookup{}, err
 	}
 	sealed, err := deB64(out.Card)
 	if err != nil {
-		return nil, -1, fmt.Errorf("la tarjeta que devolvió el registro no es base64url: %w", err)
+		return domain.InviteLookup{}, fmt.Errorf("la tarjeta que devolvió el registro no es base64url: %w", err)
 	}
 	if len(sealed) > domain.MaxCardBytes {
-		return nil, -1, fmt.Errorf("la tarjeta que devolvió el registro mide %d bytes y el tope es %d",
+		return domain.InviteLookup{}, fmt.Errorf("la tarjeta que devolvió el registro mide %d bytes y el tope es %d",
 			len(sealed), domain.MaxCardBytes)
 	}
 	miembros := -1
 	if out.Members != nil {
 		miembros = *out.Members
 	}
-	return sealed, miembros, nil
+	// Los dos se descartan en silencio si no decodifican, y el aviso queda en el
+	// veredicto: sin ellos la tarjeta es `CardUnverified`, que es exactamente lo
+	// que se sabe de ella.
+	llave, _ := deB64(out.HostKey)
+	firma, _ := deB64(out.Sig)
+	return domain.InviteLookup{
+		Sealed:  sealed,
+		Members: miembros,
+		HostKey: llave,
+		Sig:     firma,
+	}, nil
 }
 
 // Publish updates the card of a room this installation already owns.

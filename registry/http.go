@@ -213,6 +213,13 @@ func (s *Server) vista(sala Room) map[string]any {
 		"card":     aB64(sala.Card),
 		"host_key": aB64(sala.HostKey),
 	}
+	// La firma va SOLO si la hay. Una sala escrita antes de que el registro la
+	// guardara vuelve de disco sin ella, y omitirla dice la verdad —«no la
+	// tengo»— mientras que una cadena vacía diría «está sin firmar», que es otra
+	// cosa y además falsa.
+	if len(sala.Sig) > 0 {
+		v["sig"] = aB64(sala.Sig)
+	}
 	// El contador se omite si nunca se pudo hablar con EasyTier. Un cero sería
 	// una afirmación falsa, "no hay nadie"; ausente dice la verdad, "no lo sé".
 	if n, ok := s.counter.For(sala.Network); ok {
