@@ -75,7 +75,7 @@ func InstalarEasyTier(destino string, progreso func(string)) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	progreso(fmt.Sprintf("descargando EasyTier %s (%s)", VersionEasyTier, runtime.GOARCH))
+	progreso(fmt.Sprintf("downloading engine lib %s (%s)", VersionEasyTier, runtime.GOARCH))
 
 	tmp, err := os.CreateTemp("", "easytier-*.zip")
 	if err != nil {

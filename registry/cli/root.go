@@ -39,7 +39,7 @@ func Ejecutar(args []string) int {
 	case "uninstall":
 		err = cmdUninstall(args[1:])
 	case "version", "--version", "-v":
-		fmt.Printf("kanpseed %s (EasyTier %s, %s/%s)\n", Version, setup.VersionEasyTier, runtime.GOOS, runtime.GOARCH)
+		fmt.Printf("kanpseed %s (engine lib %s, %s/%s)\n", Version, setup.VersionEasyTier, runtime.GOOS, runtime.GOARCH)
 		return 0
 	case "help", "--help", "-h":
 		ayuda()

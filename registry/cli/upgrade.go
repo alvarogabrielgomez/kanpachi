@@ -225,9 +225,9 @@ func cmdReconfigure(args []string) error {
 		return err
 	}
 	if descargado {
-		ok("EasyTier %s installed", setup.VersionEasyTier)
+		ok("engine lib %s installed", setup.VersionEasyTier)
 	} else {
-		ok("EasyTier %s ya estaba", setup.VersionEasyTier)
+		ok("engine lib %s was already there", setup.VersionEasyTier)
 	}
 
 	// Reescribir las units importa tanto como el binario: un arreglo que vive

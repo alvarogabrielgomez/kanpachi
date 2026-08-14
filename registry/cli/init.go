@@ -73,9 +73,9 @@ func cmdInit(args []string) error {
 		return err
 	}
 	if descargado {
-		ok("EasyTier %s installed in %s", setup.VersionEasyTier, setup.DirLib)
+		ok("engine lib %s installed in %s", setup.VersionEasyTier, setup.DirLib)
 	} else {
-		ok("EasyTier %s was already installed", setup.VersionEasyTier)
+		ok("engine lib %s was already installed", setup.VersionEasyTier)
 	}
 
 	if err := instalarPagina(*pagina); err != nil {

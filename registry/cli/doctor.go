@@ -60,9 +60,9 @@ func cmdDoctor(args []string) error {
 	}
 	if v := versionEasyTier(); v != "" {
 		if strings.Contains(v, strings.TrimPrefix(setup.VersionEasyTier, "v")) {
-			ok("EasyTier %s, the pinned version", v)
+			ok("engine lib %s, the pinned version", v)
 		} else {
-			aviso("EasyTier installed: %s, and the pinned one is %s", v, setup.VersionEasyTier)
+			aviso("engine lib installed: %s, and the pinned one is %s", v, setup.VersionEasyTier)
 			tenue("  a version other than the pinned one changes how the network behaves without saying so")
 		}
 	}
