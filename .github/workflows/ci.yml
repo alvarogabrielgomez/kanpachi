@@ -8,6 +8,13 @@
 #
 # Esto se lanza a mano desde la pestana Actions, o lo llama otro workflow.
 #
+# **La receta no esta aca: esta en `scripts/verify.ps1`.** Cada job la llama con
+# su `-Surface`, y esa es la unica copia. Cuando la lista de paquetes vivia
+# dentro de este fichero Y dentro del script, las dos derivaron: comprobar algo
+# antes de empujar significaba teclear a mano una lista de dieciseis entradas, y
+# lo que se teclea distinto se comprueba distinto. Que paquete entra a cada
+# comprobacion se decide en el script y en ningun otro sitio.
+#
 # La interfaz se prueba contra el repositorio REAL del pipe sobre un transporte
 # de bytes en memoria. No hay repositorio alternativo ni estado plantado en el
 # cubit: saludo, codec, metodos y mapeo de respuestas cruzan la misma frontera
@@ -27,6 +34,10 @@ jobs:
   # corren sin admin, sin red y sin Windows". Ejecutarlos en Ubuntu es lo que
   # convierte esa frase en algo comprobable. Si un día core deja de compilar
   # acá, la arquitectura se rompió y este job es quien lo dice.
+  #
+  # `pwsh` viene preinstalado en los runners de Ubuntu, así que el mismo script
+  # corre en los tres sistemas. Hay que pedirlo explícito: el shell por omisión
+  # en Linux es bash, y un `.ps1` no arranca solo.
   core:
     name: core en Linux, sin privilegios
     runs-on: ubuntu-latest
@@ -38,113 +49,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # El daemon ENTERO tiene que compilar en Linux, y hasta ahora nadie lo
-      # comprobaba: este job hacía `go vet` sobre una lista y el de Windows era
-      # el único que construía. Mientras el daemon fue solo de Windows eso era
-      # correcto; desde que hay adaptadores de Linux, un fallo de compilación de
-      # los suyos no salía hasta que alguien los construía a mano.
-      #
-      # `./...` y no una lista: el punto de este paso es justamente que no haya
-      # una lista que actualizar.
-      - name: Compilar todo en Linux
-        run: go build ./...
-
-      - name: go vet
-        run: go vet ./core/... ./internal/... ./daemon/service/... ./daemon/transport/protocol/... ./daemon/transport/wire/... ./daemon/transport/control/... ./daemon/transport/pipe/... ./daemon/adapter/sinimplementar/... ./daemon/adapter/safewrite/... ./daemon/adapter/state/... ./daemon/adapter/catalog/... ./daemon/adapter/canary/... ./daemon/adapter/directory/... ./daemon/adapter/identity/... ./daemon/adapter/firewall/... ./registry/...
-
-      - name: Test de pureza de imports
-        # Se ejecuta aparte y primero para que su fallo sea inconfundible en el
-        # log. Es una violación de arquitectura, no un test más que se rompió.
-        run: go test -v -count=1 ./internal/arch/...
-
-      - name: Tests de core
-        run: go test -race -count=1 ./core/...
-
-      # Lo de daemon/ que NO es de Windows va en el job de Linux, por el mismo
-      # motivo que core. Son cinco cosas y cada una por su razón:
-      #
-      #   service/            el supervisor solo habla con puertos de core
-      #   transport/protocol/ el protocolo se define aparte de su transporte
-      #   transport/wire/     enmarcado de mensajes, io.Reader e io.Writer
-      #   transport/control/  el canal de la sala: sockets y bytes, sin Windows
-      #   transport/pipe/     el canal local. Acá compila SU LADO DE LINUX, que
-      #                       es un socket Unix de verdad, más todo lo que no es
-      #                       de ningún sistema: plazas, plazos y cierre son
-      #                       lógica sobre net.Listener, y la lógica que solo
-      #                       corre en la máquina donde se programa no tiene CI
-      #   adapter/sinimplementar/  que los provisionales fallen en todo es lo
-      #                       que hace la cuarentena verificable desde dentro
-      #   adapter/{safewrite,state,catalog}/  son rutas y bytes, no API de Windows
-      #   adapter/probe/      marca un puerto TCP. Es `net` puro, y el caso que
-      #                       más importa, el rechazo de Winsock, se prueba acá
-      #                       con su número escrito a mano
-      #   adapter/canary/     el oyente que existe para ser bloqueado. Abre
-      #                       sockets de verdad sobre loopback y no toca ninguna
-      #                       API de Windows. El `/...` incluye a `opener/`, que
-      #                       es el traductor a la lengua de core y vive en su
-      #                       propio paquete justo para que el de arriba conserve
-      #                       su grafo de imports libre de `core`
-      #   adapter/firewall    el orden de las DOS capas, que es una regla probada.
-      #                       Entró el día que `Measurement` se mudó a un archivo
-      #                       portable: mientras vivió en `gate_windows.go`, el
-      #                       paquete compuesto NO COMPILABA en Linux y sus tests
-      #                       puros no llegaban a ejecutarse nunca
-      #   adapter/firewall/gate/   QUÉ bloquea y qué abre la compuerta. Lo usan
-      #                       los dos sistemas, WFP en Windows y nftables en
-      #                       Linux, así que es el sitio donde un fallo sale caro
-      #                       por partida doble
-      #   adapter/firewall/windows/{wfp,netfw}/  la mitad SIN etiqueta de esos dos
-      #                       adaptadores: la traducción de condiciones, la
-      #                       derivación de claves por posición, y qué dice cada
-      #                       regla del Firewall de Windows. Están bajo
-      #                       `windows/` porque el adaptador es de Windows, y aun
-      #                       así lo que deciden se comprueba acá
-      #
-      # Correrlos en Ubuntu es lo que convierte esas frases en algo comprobable.
-      # Con -race porque el supervisor y el canal de la sala son los dos
-      # paquetes del proyecto con goroutines de larga vida.
-      #
-      # La lista es explícita a propósito: el motor y netcfg son solo Windows y
-      # sus paquetes no compilan acá.
-      #
-      # adapter/directory es net/http puro, y su test de CONTRATO habla con el
-      # paquete registry de este mismo repositorio: las dos puntas del protocolo
-      # del seed quedan congeladas acá, sin red y sin despliegue.
-      - name: Tests de lo portable de daemon
-        run: >-
-          go test -race -count=1
-          ./daemon/service/...
-          ./daemon/transport/protocol/...
-          ./daemon/transport/wire/...
-          ./daemon/transport/control/...
-          ./daemon/transport/pipe/...
-          ./daemon/adapter/sinimplementar/...
-          ./daemon/adapter/safewrite/...
-          ./daemon/adapter/state/...
-          ./daemon/adapter/catalog/...
-          ./daemon/adapter/probe/...
-          ./daemon/adapter/canary/...
-          ./daemon/adapter/identity/...
-          ./daemon/adapter/directory/...
-          ./daemon/adapter/firewall
-          ./daemon/adapter/firewall/gate/...
-          ./daemon/adapter/firewall/windows/wfp/...
-          ./daemon/adapter/firewall/windows/netfw/...
-
-      # El registro es el seed, o sea Linux por definición. Va en este job y no
-      # en el de Windows. Con -race porque atiende peticiones concurrentes
-      # contra un mapa compartido, que es justo donde una carrera se esconde.
-      - name: Tests del registro del seed
-        run: go test -race -count=1 ./registry/...
-
-      - name: gofmt
-        run: |
-          sin_formato=$(gofmt -l ./core ./internal ./daemon)
-          if [ -n "$sin_formato" ]; then
-            echo "Estos archivos no están formateados:"
-            echo "$sin_formato"
-            exit 1
-          fi
+      # Compila TODO en Linux, corre vet, los guardianes de arquitectura, core,
+      # lo portable de daemon, el registro y gofmt. Qué entra en cada paso, y
+      # por qué la lista es explícita en vez de `./...`, está en la cabecera del
+      # script.
+      - name: Los chequeos de esta superficie
+        shell: pwsh
+        run: ./scripts/verify.ps1 -Surface ci-linux
 
   # El daemon se compila donde va a correr, y desde que hay dos sistemas eso son
   # dos jobs: este y el de `core`, que ya compila y prueba en Linux.
@@ -165,18 +76,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # Sin -ldflags="-s -w". Quitar la tabla de símbolos dispara falsos
-      # positivos del modelo de Defender sobre binarios Go, y este daemon crea
-      # adaptadores de red y toca el firewall, o sea es candidato de manual.
-      # Ver docs/07-futuro.md.
-      - name: Compilar todo
-        run: go build ./...
-
-      # Sin -race: el runner de Windows es el más lento de los tres y estos
-      # tests ya corren con -race en el job de Linux, que es el mismo código.
-      # Lo que este job agrega es lo que allá NO compila.
-      - name: Tests del daemon en Windows
-        run: go test -count=1 ./daemon/... ./internal/...
+      # Sin -ldflags="-s -w" y sin -race, las dos por su razón, escritas en el
+      # script: la primera son los falsos positivos de Defender sobre binarios
+      # Go, la segunda es que -race en Windows exige una cadena de C y el mismo
+      # código ya corre con -race en el job de arriba.
+      - name: Los chequeos de esta superficie
+        shell: pwsh
+        run: .\scripts\verify.ps1 -Surface ci-windows
 
   # La UI corre en UBUNTU, con el cliente siendo solo de Windows, y no es un
   # descuido.
@@ -191,9 +97,6 @@ jobs:
   ui:
     name: la UI de Flutter
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ui
     steps:
       - uses: actions/checkout@v4
 
@@ -210,14 +113,8 @@ jobs:
           channel: stable
           cache: true
 
-      - run: flutter pub get
-
-      - name: dart format
-        run: dart format --output=none --set-exit-if-changed lib test
-
-      # --fatal-infos y no --fatal-warnings: hoy pasa limpio, así que el listón
-      # se pone donde está el proyecto y no un escalón por debajo.
-      - name: flutter analyze
-        run: flutter analyze --fatal-infos
-
-      - run: flutter test
+      # Sin `working-directory`: el script entra a `ui/` por su cuenta, que es
+      # lo que le permite correrse igual desde la raíz en una máquina cualquiera.
+      - name: Los chequeos de esta superficie
+        shell: pwsh
+        run: ./scripts/verify.ps1 -Surface ci-ui

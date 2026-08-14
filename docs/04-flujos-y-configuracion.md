@@ -184,8 +184,8 @@ El daemon corre como aplicación de consola, sin reinstalar el servicio. **Exige
 ```
 .\scripts\preparar-stage.ps1
 C:\kt\stage\kanpachid.exe --console -data C:\ruta\a\datos
-C:\kt\stage\kanpctl.exe -data C:\ruta\a\datos status
-C:\kt\stage\kanpctl.exe -data C:\ruta\a\datos -no-token status
+C:\kt\stage\pipeprobe.exe -data C:\ruta\a\datos status
+C:\kt\stage\pipeprobe.exe -data C:\ruta\a\datos -no-token status
 ```
 
 `preparar-stage.ps1` sigue siendo el banco de pruebas con las sondas dentro, y `kanpachi-portable.ps1 debug` es lo otro: la carpeta que se reparte, compilada en depuración. Para medir un adaptador suelto sirve el stage; para ver el producto entero funcionando, la carpeta portable.
@@ -343,7 +343,31 @@ Checklist del droplet:
 
 ## Las herramientas de medición
 
-Viven en `internal/`, no se distribuyen con el instalador y el producto no las puede importar. Son seis sondas de un solo asunto (`fwprobe`, `engineprobe`, `netcfgprobe`, `dirprobe`, `watchprobe`, `kanpctl`) más dos que se usan juntas y conviene leer como una sola cosa.
+Viven en `internal/`, no se distribuyen con el instalador y el producto no las puede importar. Son seis sondas de un solo asunto (`fwprobe`, `engineprobe`, `netcfgprobe`, `dirprobe`, `watchprobe`, `pipeprobe`) más dos que se usan juntas y conviene leer como una sola cosa.
+
+**Todas se llaman `<lo que mide>probe`, y eso es una regla y no una casualidad.** `pipeprobe` se llamó `kanpctl` hasta el 2026-08-14, y el nombre hizo el daño solo: se leía como hermano de `kanpachi`, o sea como un binario del producto, hasta el punto de que `preparar-stage.ps1` lo describía como "el cliente de linea de comandos". Una sonda con nombre de producto invita a que alguien la instale, la distribuya, o escriba contra ella lo que tenía que escribir contra el cliente.
+
+### `pipeprobe`: la frontera del pipe, incluido lo que hay que rechazar
+
+Le habla al daemon por el canal local a pelo. Pide el método por su **nombre de cable**, con el JSON crudo en `-params`, y sabe saludar con un token que no vale:
+
+```
+go run ./internal/pipeprobe -data C:\ruta\a\datos status
+go run ./internal/pipeprobe -data C:\ruta\a\datos -params '{"name":"Prueba"}' create_room
+go run ./internal/pipeprobe -data C:\ruta\a\datos -no-token status      (debe fallar)
+```
+
+**No es el CLI, y confundirlos lleva a documentar mal las dos cosas.** `kanpachi` es el cliente: subcomandos con nombre, parámetros validados y salida para leer. `pipeprobe` no valida nada a propósito, porque quien valida es el daemon, con esquema estricto y tope de tamaño, y esta sonda existe para poder mandarle también lo que va a rechazar. Por eso el JSON de `-params` viaja tal cual, sin pasar por `json.Marshal`: envolverlo lo re-serializaría normalizado, y entonces no podría mandar el JSON malformado que existe para poder mandar.
+
+**Lo que la sostiene es lo que el cliente NO puede expresar.** Un método que no existe, un JSON malformado, un token que no vale, y los cuatro métodos del protocolo que la tabla de comandos deja fuera a propósito (`show_ui`, `pending_invite`, `progress`, `cancel`). Los tests de `daemon/transport/protocol` cubren esas mismas puertas, con el `Server` en memoria y sin pipe: el canal real, el token en disco y el descriptor de seguridad solo se tocan por acá.
+
+Es la que usan los scripts de medición para operar el daemon desde PowerShell: `medir-netcfg.ps1`, `medir-reset.ps1`, `medir-directorio.ps1`, `medir-cambio-de-red.ps1` y `medir-motor-punta-a-punta.ps1`. **Siguen con ella y no con el cliente**, porque `kanpachi host` antes de llamar al método abre otra conexión para leer el registro, exige uno configurado y exige `--yes` para no preguntar: maquinaria entre el script y justo lo que mide. Tres cosas que muerden a cualquier script que la invoque, las tres medidas:
+
+1. **Saluda antes de cada llamada, y el saludo trae `"result"`.** Buscar `"result"` en la salida entera da verde sobre cualquier error. Se busca la línea del método concreto y se mira si trae `"error"`.
+2. **El `-params` con espacios hay que armarlo con `ProcessStartInfo`.** El operador de llamada de PowerShell parte el JSON por los espacios y la sonda recibe un fragmento truncado, con el que contesta `unexpected end of JSON input`. Comillas, escapes y acento grave fallan los tres.
+3. **El plazo es el del cliente del pipe, 90 s, y se ajusta con `-timeout`.** Los 10 s fijos que tenía cortaban `create_room` con el daemon trabajando bien: una sala levanta DOS adaptadores, el motor se da 30 s por cada uno, y encima va el sondeo del MTU. El síntoma era un `i/o timeout` con la sala ya creada.
+
+Pide el daemon corriendo: `kanpachid --console -data C:\ruta`, en consola elevada, ya que el pipe vive bajo `ProtectedPrefix\Administrators`.
 
 ### `roomprobe`: la sala entera, sin daemon ni instalador
 
@@ -405,6 +429,67 @@ El segundo acepta `-RecompilarMotor` para compilar el motor desde su repositorio
 No hace falta consola elevada: solo compila y copia. Deja todo en `testTools\`, que está en `.gitignore`. El script corre además `GOOS=linux go vet ./internal/...` antes de nada, que es la puerta del CI: `roomprobe` la rompió una vez importando `x/sys/windows` sin etiqueta de compilación, y descubrirlo acá cuesta cuatro segundos en vez de un push.
 
 Ninguna de las dos se compila con `-ldflags="-s -w"`, por lo mismo que el resto del proyecto.
+
+### `verify.ps1`: los chequeos, una superficie por cada job
+
+```powershell
+scripts\verify.ps1                            # lo que esta máquina puede contestar
+scripts\verify.ps1 -Surface ci-linux          # el job "core en Linux"
+```
+
+La receta vivía solo dentro de los workflows, así que comprobar algo antes de empujar era teclear a mano una lista de paquetes de dieciséis entradas, y lo que se teclea distinto se comprueba distinto. **Cada job llama a este script con su `-Surface`, y esa es la única copia:** si un paquete nuevo entra a una comprobación, entra acá y en ningún otro sitio.
+
+| Superficie | Qué corre | Quién la llama |
+|---|---|---|
+| `all` | build de Windows y cruzado a Linux, vet, guardianes, core, registro, daemon e internal, gofmt | a mano, antes de empujar |
+| `ci-linux` | lo anterior con `-race` donde el CI lo usa, más lo portable de daemon | `ci.yml`, job `core` |
+| `ci-windows` | `go build ./...` y los tests de `daemon` e `internal`, sin `-race` | `ci.yml`, job `daemon` |
+| `ci-ui` | `pub get`, `dart format`, `analyze --fatal-infos`, `flutter test` | `ci.yml`, job `ui` |
+| `release-windows` | `core` y los guardianes de `internal/arch`, más la UI sin `dart format` | `release.yml`, job `instalador` |
+| `release-linux` | `core` y los guardianes de `internal/arch` | `release.yml`, job `paquete-linux` |
+| `release-seed` | `core`, `registry` y los guardianes, con `-race` | `release-seed.yml` |
+
+**Cada superficie corre exactamente lo que su job corre hoy.** Dos diferencias parecen descuidos y no lo son: `dart format` va en `ci-ui` y no en `release-windows`, porque un fichero mal formateado no puede bloquear una publicación; y las dos superficies de publicación corren `core` más `internal/arch` y nada más, porque lo que se publica pasa por los tests que lo gobiernan y el barrido entero es de `ci.yml`.
+
+No pide consola elevada, no crea salas y no toca el firewall. Eso son los `medir-*.ps1`.
+
+Dos cosas que hace y no se ven:
+
+- **No se planta en el primer fallo.** Apunta el paso en rojo y sigue, y el código de salida sale al final. Un gate que aborta obliga a una vuelta entera por cada error.
+- **Ignora los finales de línea al comprobar el formato.** `gofmt -l` a secas miente en Windows: con `core.autocrlf=true` el árbol de trabajo tiene CRLF y el índice LF, así que marca ficheros que en el CI salen limpios. Marcaba diez, y cuatro lo estaban de verdad. Un gate que da rojo por algo que no lo es se deja de mirar, que es peor que no tenerlo.
+
+Lo que no corre en `all` son los tests con `-race`: en Windows exige una cadena de C, y ese mismo código ya va con `-race` en el job de Linux. Lo dice al terminar en vez de dejarlo creer.
+
+### Los scripts que publican
+
+El YAML de los tres workflows quedó de pegamento: eventos, checkouts, toolchains, la versión derivada del tag y la subida al release. El trabajo lo hacen estos, y por eso una publicación se puede reproducir a mano.
+
+| Script | Qué hace |
+|---|---|
+| `fetch-third-party.ps1` | baja los siete binarios de EasyTier del release oficial a `third_party\easytier`. Casa única de la URL y de la versión; las sumas viven en `internal/arch/easytier.sums` y en `02`, y las comprueba el guardián de suministro. Sirve igual en un clone recién hecho |
+| `package-windows.ps1` | el cliente de Windows entero: sella la versión en los recursos, arma la carga, corre Inno Setup, arma el portable y escribe `SHA256SUMS-windows`. Comprueba lo que necesita ANTES de escribir nada, porque el primer paso reescribe los `.syso` que están versionados |
+| `release-notes.ps1` | escribe el tramo del `CHANGELOG.md` de una versión, para el cuerpo de la publicación. Falla si esa sección no existe o está vacía, que es lo que impide etiquetar sin decir qué cambió |
+| `build-seed.sh` | los dos `kanpseed` de Linux, `index.html` y `SHA256SUMS-seed-linux` |
+| `build-deb.sh --strict` | el `.deb` del cliente de Linux. Con `--strict`, el piso de glibc pasa de aviso a parada y escribe `SHA256SUMS-linux`. Sin la bandera avisa y sigue, que es lo correcto en una máquina de desarrollo |
+
+**Quien produce el artefacto produce su manifiesto.** No hay script de sumas suelto, y los tres nombres son distintos (`-windows`, `-linux`, `-seed-linux`) porque tres workflows escriben en la misma publicación: con un nombre compartido, el último en subir pisa a los otros.
+
+### Los scripts que operan las mediciones
+
+Las sondas son binarios; quien las orquesta contra un daemon de verdad son estos, todos en `scripts\` y todos con consola elevada:
+
+| Script | Qué corre |
+|---|---|
+| `preparar-stage.ps1` | puebla `C:\kt\stage` con los binarios, las DLL y el catálogo. Lo dan por hecho todos los de abajo |
+| `medir-netcfg.ps1` | los caminos del adaptador que una sala normal no toca: rutas de broadcast y multicast, política de prefijo, borrado de ruta por defecto |
+| `medir-reset.ps1` | que `--reset` limpie lo de la sala y REPONGA la cuarentena de base |
+| `medir-directorio.ps1` | el registro del seed contra un daemon vivo |
+| `medir-cambio-de-red.ps1` | qué sobrevive a que Windows reidentifique la red |
+| `medir-motor-punta-a-punta.ps1` | el motor entero contra `kanpachi.accentio.dev` |
+| `canario-dos-maquinas.ps1` | **la Protección Kanpachi con dos máquinas, en tres fases.** Su encabezado ES el runbook, con por qué la fase 2 no es opcional |
+| `limpiar-reglas-del-motor.ps1` | quita las reglas que el motor VIEJO dejó puestas. En una máquina limpia no hay nada que quitar |
+
+Ninguno se distribuye ni lo llama el producto. **Y la carpeta se barre cada tanto:** un script que midió algo que ya está escrito y que nadie va a volver a correr se borra, porque una carpeta con restos hace que nadie sepa cuál es el que se corre de verdad.
 
 ## Diagnóstico cuando algo falla
 

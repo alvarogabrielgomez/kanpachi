@@ -650,7 +650,7 @@ daemon/
                       ELECCIÓN de los adaptadores concretos. Solo Windows
 
 internal/
-  kanpctl/            la herramienta con la que se prueba el pipe a mano. En
+  pipeprobe/          la sonda con la que se prueba el pipe a mano. En
                       internal/ para que el producto no la importe y el
                       instalador no la distribuya
 ```

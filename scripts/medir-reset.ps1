@@ -74,7 +74,7 @@ Start-Sleep -Seconds 3
 $params = (@{ nickname = 'Alvaro'; name = 'Prueba' } | ConvertTo-Json -Compress).Replace('"', '\"')
 $antes = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
-& (Join-Path $Stage 'kanpctl.exe') -data $Data -params $params create_room 2>&1 | Out-Null
+& (Join-Path $Stage 'pipeprobe.exe') -data $Data -params $params create_room 2>&1 | Out-Null
 $codigo = $LASTEXITCODE
 $ErrorActionPreference = $antes
 if ($codigo -ne 0) { throw "no se pudo crear la sala (exit $codigo), asi que no hay nada sucio que limpiar" }
@@ -153,7 +153,7 @@ $daemon2 = Start-Process -FilePath (Join-Path $Stage 'kanpachid.exe') `
 Start-Sleep -Seconds 3
 $antes = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
-& (Join-Path $Stage 'kanpctl.exe') -data $Data -params $params create_room 2>&1 | Out-Null
+& (Join-Path $Stage 'pipeprobe.exe') -data $Data -params $params create_room 2>&1 | Out-Null
 $codigo = $LASTEXITCODE
 $ErrorActionPreference = $antes
 if ($codigo -eq 0) { Bien "la sala nueva se creo" }

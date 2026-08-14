@@ -1,20 +1,25 @@
-// Command kanpctl le habla al daemon por el canal local, a pelo.
+// Command pipeprobe le habla al daemon por el canal local, a pelo.
 //
 // Vive en `internal/` para que el producto no lo pueda importar y el instalador
-// no lo distribuya: es la herramienta con la que se prueba el canal a mano, y de
-// paso la que puede mandar lo que el daemon tiene que RECHAZAR.
+// no lo distribuya: es la sonda con la que se prueba el canal a mano, y de paso
+// la que puede mandar lo que el daemon tiene que RECHAZAR.
 //
-// # En qué se diferencia del CLI, ahora que hay uno
+// # En qué se diferencia del CLI, y por qué el nombre importa
 //
 // `kanpachi` es el cliente: subcomandos con nombre, parámetros validados y
 // salida para leer. Esto pide el método por su nombre de cable con el JSON crudo
 // en `-params`, y sabe saludar con un token que no vale. O sea que sirve para
 // probar la frontera, no para dárselo a nadie.
 //
+// Se llamó `kanpctl` hasta el 2026-08-14, y el nombre hacía el daño solo: se leía
+// como hermano de `kanpachi`, o sea como un binario del producto. `preparar-stage.ps1`
+// llegó a describirlo como "el cliente de linea de comandos". Ahora se llama como
+// el resto del instrumental, `<lo que mide>probe`, y lo que mide es el pipe.
+//
 // Uso:
 //
-//	go run ./internal/kanpctl -data C:\ruta\a\datos status
-//	go run ./internal/kanpctl -data C:\ruta\a\datos -no-token status   (debe fallar)
+//	go run ./internal/pipeprobe -data C:\ruta\a\datos status
+//	go run ./internal/pipeprobe -data C:\ruta\a\datos -no-token status   (debe fallar)
 package main
 
 import (
@@ -49,7 +54,7 @@ func main() {
 	}
 
 	if err := hablar(*datos, *nombre, metodo, *params, *sinToken, *plazo); err != nil {
-		fmt.Fprintln(os.Stderr, "kanpctl:", err)
+		fmt.Fprintln(os.Stderr, "pipeprobe:", err)
 		os.Exit(1)
 	}
 }

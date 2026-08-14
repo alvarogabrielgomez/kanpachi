@@ -19,8 +19,18 @@
 # vacía para siempre y la pantalla dijo "todavía no hay instalador" durante toda
 # la vida del producto.
 #
+# # --strict: the same check, with teeth
+#
+# The glibc floor is a warning here and a hard stop with --strict, and that is
+# the difference between a development machine and a publication. Warning is
+# right when somebody is building a package to try it out with whatever engine
+# they have around. A package that cannot start on the release most people run
+# is not something to warn about and publish, so the release passes --strict.
+# It also writes SHA256SUMS-linux there: whoever produces the artifact produces
+# its manifest.
+#
 # Uso:
-#   scripts/build-deb.sh --version 0.2.0 --engine /ruta/kanpachi-engine [--out dist]
+#   scripts/build-deb.sh --version 0.2.0 --engine /ruta/kanpachi-engine [--out dist] [--strict]
 
 set -euo pipefail
 
@@ -28,12 +38,14 @@ raiz="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 version=""
 engine=""
 out="$raiz/dist"
+strict=0
 
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--version) shift; version="${1:-}" ;;
 	--engine) shift; engine="${1:-}" ;;
 	--out) shift; out="${1:-}" ;;
+	--strict) strict=1 ;;
 	*) echo "opción desconocida: $1" >&2; exit 2 ;;
 	esac
 	shift
@@ -159,6 +171,7 @@ if [ -n "$glibc" ]; then
 	GLIBC_2.3[6-9] | GLIBC_2.4*)
 		echo "  --  por encima del 2.35 de Ubuntu 22.04: este paquete NO va a arrancar ahí." >&2
 		echo "      El artefacto que se publica se compila en un runner 22.04." >&2
+		[ "$strict" -eq 0 ] || exit 1
 		;;
 	esac
 fi
@@ -171,5 +184,14 @@ bien "$deb ($(( $(stat -c %s "$deb") / 1024 )) KiB)"
 
 paso "lo que quedó dentro"
 dpkg-deb --contents "$deb" | awk '{print "  " $1, $6}'
+
+# El manifiesto solo con --strict, o sea solo cuando esto publica. En una
+# máquina de desarrollo un SHA256SUMS-linux suelto en dist/ no lo verifica
+# nadie, y el nombre lleva `-linux` porque tres workflows escriben en la misma
+# publicación: con un nombre compartido, el último en subir pisa a los otros.
+if [ "$strict" -eq 1 ]; then
+	paso "sumas"
+	(cd "$out" && sha256sum kanpachi-amd64.deb >SHA256SUMS-linux && cat SHA256SUMS-linux)
+fi
 
 paso "listo"

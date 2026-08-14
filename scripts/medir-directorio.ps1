@@ -56,7 +56,7 @@ $fallos = 0
 $out = Join-Path $env:TEMP 'kanpachi-directorio.out'
 $daemon = $null
 
-# Ctl llama a kanpctl armando la linea de comandos A MANO.
+# Ctl llama a pipeprobe armando la linea de comandos A MANO.
 #
 # # Por que no se invoca con el operador de llamada y una lista
 #
@@ -67,7 +67,7 @@ $daemon = $null
 #   con espacios:  [1] "{\"nickname\":\"Alvaro\",\"name\":\"Los"            cortado
 #                  [2] "panas\"}"
 #
-# El sintoma no se parece a la causa: kanpctl recibe un JSON truncado y contesta
+# El sintoma no se parece a la causa: pipeprobe recibe un JSON truncado y contesta
 # "unexpected end of JSON input", tres pasos antes de donde el script se cae.
 # Ninguna combinacion de comillas, escapes o backticks lo arregla; lo unico que
 # funciona es construir la linea entera y que nadie la vuelva a interpretar.
@@ -82,7 +82,7 @@ function Ctl($metodo, $params) {
     $linea += " $metodo"
 
     $psi = New-Object Diagnostics.ProcessStartInfo
-    $psi.FileName = Join-Path $Stage 'kanpctl.exe'
+    $psi.FileName = Join-Path $Stage 'pipeprobe.exe'
     $psi.Arguments = $linea
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
@@ -95,7 +95,7 @@ function Ctl($metodo, $params) {
 
 # RespuestaDe saca la linea de la respuesta del METODO pedido.
 #
-# kanpctl SALUDA antes de cada llamada, y ese saludo siempre trae "result". Asi
+# pipeprobe SALUDA antes de cada llamada, y ese saludo siempre trae "result". Asi
 # que buscar "result" en la salida entera da verde sobre cualquier error, que es
 # exactamente lo que paso la primera vez que se corrio esto: create_room fallo,
 # el script lo dio por bueno, y el sintoma aparecio tres pasos despues como

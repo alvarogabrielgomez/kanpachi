@@ -17,6 +17,11 @@
 # release publicado al que todavía le falta el instalador. Se acepta a
 # conciencia: se cierra solo, y la alternativa era un único workflow donde
 # veinte minutos de Windows retrasan una carga de Linux que ya estaba lista.
+#
+# **El trabajo lo hacen los scripts.** Acá quedan el evento, el checkout, el
+# toolchain, la versión derivada del tag y la publicación. Compilar y probar
+# viven en `scripts/`, así que republicar el seed a mano es una orden y no una
+# lectura de este fichero.
 name: Release del seed
 
 on:
@@ -83,43 +88,22 @@ jobs:
           echo "VERSION=${TAG:-dev}" >> "$GITHUB_ENV"
           echo "release_target=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Tests antes de publicar
+      - name: Los chequeos de esta superficie
         # Publicar un binario que no pasa sus tests es peor que no publicar.
         #
         # `internal/arch` entra porque este workflow publica TAMBIEN la pagina:
         # ahi viven los guardianes que atan su alfabeto de invite ID, su seed
         # por defecto y sus invariantes al dominio de Go. Sin ellos se podria
         # publicar una pagina que acepta codigos que la app rechaza.
-        run: go test -race -count=1 ./core/... ./registry/... ./internal/arch/...
+        shell: pwsh
+        run: ./scripts/verify.ps1 -Surface release-seed
 
-      - name: Compilar
-        run: |
-          mkdir -p dist
-          for ARCO in amd64 arm64; do
-            # Sin -ldflags "-s -w": los símbolos pesan poco y quitarlos dispara
-            # falsos positivos de antivirus sobre binarios Go, que es una regla
-            # del proyecto y vale igual del lado del servidor.
-            CGO_ENABLED=0 GOOS=linux GOARCH=$ARCO go build \
-              -trimpath \
-              -ldflags "-X github.com/accentiostudios/kanpachi/registry/cli.Version=$VERSION" \
-              -o "dist/kanpseed-linux-$ARCO" \
-              ./registry/cmd/kanpseed
-          done
-          cp invite/index.html dist/index.html
-
-      - name: Checksums
-        # El formato es el que espera `sha256sum -c`, el que lee `install.sh` y
-        # el que lee `kanpseed upgrade`.
-        #
-        # El nombre lleva `-seed-` porque este release trae TRES cargas, una por
-        # workflow: el instalador de Windows, el `.deb` del cliente y esto. Con un
-        # nombre compartido, el último en terminar pisa al de los otros y el
-        # instalador se queda verificando binarios que no aparecen en el archivo.
-        #
-        # Se llamó `SHA256SUMS-linux` hasta que existió un cliente de Linux, que
-        # es a quien le corresponde ese nombre: el suyo lo bajan desconocidos
-        # desde la página, y el del seed lo baja quien se autohospeda.
-        run: cd dist && sha256sum kanpseed-linux-* index.html > SHA256SUMS-seed-linux && cat SHA256SUMS-seed-linux
+      # Los dos binarios, la página y su manifiesto. Por qué son dos
+      # arquitecturas, por qué van sin `-s -w`, por qué la versión viaja con su
+      # `v` y por qué el manifiesto se llama `-seed-linux`: todo en la cabecera
+      # del script, que es donde puede leerlo quien lo corra a mano.
+      - name: Armar la carga del seed
+        run: scripts/build-seed.sh --version "$VERSION" --out dist
 
       # Se publica cuando hay un release al que subir, y ese dato lo decidió el
       # paso de la versión. Preguntarlo otra vez acá, con otra expresión, es

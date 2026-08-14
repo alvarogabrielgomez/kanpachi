@@ -8,6 +8,11 @@
 # la que se queda desactualizada. La versión viaja dentro del ejecutable, en su
 # VersionInfo, y en el título de la publicación.
 #
+# **El trabajo lo hacen los scripts, no este fichero.** Acá quedan los eventos,
+# los checkouts, los toolchains, la versión derivada del evento y la
+# publicación. Lo que compila, prueba y empaqueta vive en `scripts/`, así que
+# una persona puede reproducir una publicación entera sin leer este YAML.
+#
 # Sin firmar todavía. Windows va a enseñar el aviso de SmartScreen, y eso está
 # dicho en el cuerpo de la publicación en vez de disimulado. La firma con
 # SignPath entra cuando la solicitud esté aprobada: ver `docs/07-futuro.md`.
@@ -23,7 +28,9 @@ name: Release
 # OJO con la consecuencia: para un release de la web, el fichero que se ejecuta
 # es el del COMMIT QUE APUNTA EL TAG. Etiquetar un commit anterior a este
 # párrafo vuelve a no disparar nada, y no hay arreglo posible en `main` para
-# eso: el tag tiene que salir de un commit que ya traiga este `on:`.
+# eso: el tag tiene que salir de un commit que ya traiga este `on:`. Lo mismo
+# vale para los scripts que llama: el commit del tag trae su YAML y sus scripts,
+# consistentes entre sí.
 on:
   push:
     tags: ["v*"]
@@ -68,6 +75,8 @@ jobs:
           ref: ${{ inputs.motor || 'main' }}
           path: motor
 
+      # La versión sale del EVENTO, así que se deriva acá y no en un script: es
+      # lo único de este job que no es trabajo sino contexto de Actions.
       - name: Versión
         shell: bash
         env:
@@ -119,235 +128,69 @@ jobs:
           choco install protoc --no-progress -y
           echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
 
+      - name: Inno Setup
+        run: choco install innosetup --no-progress -y
+
       - name: Compilar el motor
         working-directory: motor
         run: cargo build --release
 
-      # **Lo que se publica pasa por los tests que pasan hoy.**
-      #
-      # `core` es el dominio y los casos de uso, y `internal/arch` son los
-      # guardianes que atan las dos puntas del cable: el alfabeto del invite ID,
-      # la página de invitación, y el cableado que ya se quedó sin llamar tres
-      # veces en este repositorio.
-      #
-      # La UI también cruza el repositorio REAL del pipe en sus tests, sobre un
-      # transporte de bytes en memoria. El repositorio falso que antes dejaba
-      # la suite sin compilar ya no existe, así que el instalador vuelve a estar
-      # gobernado por `flutter analyze` y `flutter test` antes de empaquetarse.
-      # **Sin este paso no hay instalador, y por eso este workflow no publicó
-      # nunca nada.**
-      #
       # `/third_party/` está en .gitignore por tamaño (~80 MB), así que el
-      # checkout llega SIN `Packet.dll`, `wintun.dll` ni `WinDivert64.sys`, y
-      # `preparar-carga.ps1` corta con "falta third_party\easytier\Packet.dll".
-      # En la máquina de desarrollo los ficheros están de antes y no se nota; en
-      # un runner limpio no hay de dónde sacarlos.
-      #
-      # Se bajan los SIETE del release oficial, no los tres que se empaquetan.
-      # Con el directorio completo, el guardián de `internal/arch` del paso
-      # siguiente verifica el manifiesto entero contra `easytier.sums` en vez de
-      # saltárselo por directorio ausente: acá es donde esa comprobación de
-      # cadena de suministro pasa de intención a hecho.
-      #
-      # La versión se escribe acá y el hash NO: si este `v2.6.4` se separa del
-      # pin de `easytier.sums` y de docs/02, el test del paso siguiente falla
-      # fichero por fichero. Un tercer lugar donde copiar hashes sería un tercer
-      # lugar donde quedan viejos.
+      # checkout llega SIN las DLL del motor y el empaquetado cortaría. El
+      # script las baja del release oficial, y por qué se bajan las SIETE y no
+      # las tres que se empaquetan está en su cabecera: con el directorio
+      # completo, el guardián de suministro de `internal/arch` verifica el
+      # manifiesto entero en vez de saltárselo por directorio ausente.
       - name: Los binarios del motor
         shell: pwsh
-        run: |
-          $url = "https://github.com/EasyTier/EasyTier/releases/download/v2.6.4/easytier-windows-x86_64-v2.6.4.zip"
-          $zip = "$env:RUNNER_TEMP\easytier.zip"
-          Invoke-WebRequest -Uri $url -OutFile $zip
-          Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\easytier" -Force
-          $destino = "$env:GITHUB_WORKSPACE\third_party\easytier"
-          New-Item -ItemType Directory -Force -Path $destino | Out-Null
-          # El zip trae todo bajo una carpeta `easytier-windows-x86_64\`; el
-          # manifiesto lista las rutas relativas a `third_party\easytier`, así
-          # que se aplana acá.
-          Copy-Item -Path "$env:RUNNER_TEMP\easytier\easytier-windows-x86_64\*" -Destination $destino -Force
-          Get-ChildItem $destino | Format-Table Name, Length
+        run: .\scripts\fetch-third-party.ps1
 
-      - name: Tests de Go
-        run: go test -count=1 ./core/... ./internal/arch/...
+      # **Lo que se publica pasa por los tests que pasan hoy**, ni más ni menos:
+      # `core`, los guardianes de `internal/arch`, y la UI con `analyze` y
+      # `test`. Cuáles y por qué, en la cabecera del script.
+      - name: Los chequeos de esta superficie
+        shell: pwsh
+        run: .\scripts\verify.ps1 -Surface release-windows
 
-      - name: Tests de Flutter
-        working-directory: ui
-        run: |
-          flutter pub get
-          flutter analyze --fatal-infos
-          flutter test
-
-      # **Los recursos de versión se REGENERAN acá, con la versión del tag.**
-      #
-      # Los `.syso` están commiteados a propósito: llevan los iconos y el
-      # manifiesto que le dice a Windows que estos binarios NO piden elevación,
-      # y sin ellos un `go build` a mano cambiaría ese comportamiento. Lo que no
-      # puede quedar commiteado es el NÚMERO, y quedaba: se generaron una vez
-      # con `--file-version git-tag`, que resuelve `git describe` en el momento
-      # de generarlos, y desde entonces todo binario publicado decía la versión
-      # del día en que alguien corrió `go generate`. La v0.2.0 salió con
-      # `kanpachid.exe` diciendo `v0.1.9-10-g3f1c599` en sus propiedades, y el
-      # portable diciendo `v0.1.9-9-gc1da1b5`, que es otro commit distinto
-      # porque se generaron en días distintos.
-      #
-      # Se pasa la versión EXPLÍCITA y no `git-tag`: el checkout de Actions es
-      # superficial, así que `git describe` acá no tiene de dónde sacarla.
-      #
-      # `--file-version` va con la numérica, por lo mismo que
-      # `VersionInfoVersion` de Inno: el campo binario de VERSIONINFO no admite
-      # sufijos. `--product-version` lleva el tag entero, que es lo que se lee.
-      - name: Sellar la versión en los recursos de Windows
+      # Sella la versión en los recursos, arma la carga, corre Inno Setup, arma
+      # el portable y escribe SHA256SUMS-windows. Los cinco pasos y sus razones
+      # están en la cabecera del script, que es lo que permite reproducir una
+      # publicación a mano con una sola orden.
+      - name: Empaquetar el cliente de Windows
         shell: pwsh
         run: |
-          foreach ($p in @('daemon\cmd\kanpachid', 'internal\kanpachibundle')) {
-            Push-Location $p
-            try {
-              & go run github.com/tc-hib/go-winres@latest make `
-                --arch amd64 --out rsrc `
-                --file-version "$env:VERSION_NUM" `
-                --product-version "$env:VERSION"
-              if ($LASTEXITCODE -ne 0) { throw "go-winres salio con $LASTEXITCODE en $p" }
-            }
-            finally { Pop-Location }
-          }
-          Get-ChildItem -Recurse -Filter 'rsrc_windows_amd64.syso' | Format-Table FullName, Length
+          .\scripts\package-windows.ps1 `
+            -Version "$env:VERSION" `
+            -VersionNum "$env:VERSION_NUM" `
+            -Engine "$env:GITHUB_WORKSPACE\motor\target\release\kanpachi-engine.exe" `
+            -Repo "${{ github.repository }}" `
+            -Output "$env:GITHUB_WORKSPACE\dist"
 
-      - name: Armar la carga
-        shell: pwsh
-        run: |
-          .\scripts\preparar-carga.ps1 `
-            -Salida "$env:GITHUB_WORKSPACE\dist\carga" `
-            -Motor  "$env:GITHUB_WORKSPACE\motor\target\release\kanpachi-engine.exe" `
-            -Version "$env:VERSION"
-
-      - name: Inno Setup
-        run: choco install innosetup --no-progress -y
-
-      - name: Empaquetar
-        shell: pwsh
-        run: |
-          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          & $iscc `
-            "/DCarga=$env:GITHUB_WORKSPACE\dist\carga" `
-            "/DAppVersion=$env:VERSION" `
-            "/DRepo=${{ github.repository }}" `
-            "/DVersionInfo=$env:VERSION_NUM" `
-            "/O$env:GITHUB_WORKSPACE\dist" `
-            "installer\kanpachi.iss"
-          if ($LASTEXITCODE -ne 0) { throw "ISCC salio con $LASTEXITCODE" }
-
-      # **El portable sale del MISMO tag que el instalador**, y por eso se arma
-      # acá y no en un workflow aparte. Son dos formas de repartir el mismo
-      # producto: si se publicaran por separado, un amigo con el portable y otro
-      # con el instalado estarían en versiones distintas sin nada que lo diga, y
-      # el protocolo entre el daemon y el motor decodifica estricto.
-      #
-      # El motor se pasa EXPLÍCITO, el mismo que acaba de compilarse arriba. El
-      # script sabe elegir el más reciente por su cuenta y acá no hay nada entre
-      # lo que elegir; lo que sí hace igual es la verificación cruzada por
-      # SHA256 entre el que se le nombró y el que acabó dentro del bundle.
-      #
-      # Su comprobación de "el motor no es más viejo que su código" no corre acá,
-      # porque busca el repositorio del motor como hermano de este y en el runner
-      # está en `motor\`. No hace falta: se compiló en este mismo trabajo, tres
-      # pasos más arriba, así que no puede ser viejo.
-      #
-      # Lo que cuesta: la interfaz de Flutter se compila DOS veces en release,
-      # una para la carga del instalador y otra para el bundle. Son un par de
-      # minutos, y a cambio las dos salidas usan la misma receta que se usa a
-      # mano, sin una tercera lista de ficheros que mantener.
-      - name: Armar el portable
-        shell: pwsh
-        run: |
-          .\scripts\build_portable_bundle.ps1 `
-            -Salida "$env:GITHUB_WORKSPACE\dist\kanpachi-portable.exe" `
-            -Motor  "$env:GITHUB_WORKSPACE\motor\target\release\kanpachi-engine.exe"
-
+      # Los dos hashes salen del manifiesto que acaba de escribir el script, y
+      # no se calculan otra vez: dos cálculos son dos oportunidades de publicar
+      # un número que no es el del fichero que se subió.
       - name: Sumas
         id: sums
         shell: pwsh
         run: |
-          # El mismo formato que espera `sha256sum -c`, para que las dos cargas
-          # del release se verifiquen igual.
-          #
-          # El nombre lleva `-windows` porque este release trae TAMBIÉN la carga
-          # de Linux, que publica `release-seed.yml` en paralelo. Con los dos
-          # llamándose `SHA256SUMS`, el último en subir pisaba al otro y dejaba
-          # a `install.sh` verificando binarios que no salían en el archivo.
-          #
-          # Los DOS ejecutables de Windows van en el mismo archivo: son la misma
-          # carga repartida de dos formas, y quien verifique uno tiene que poder
-          # verificar el otro sin buscar en otro sitio.
-          function Suma($nombre) {
-            $f = Get-Item "$env:GITHUB_WORKSPACE\dist\$nombre"
-            return (Get-FileHash -Algorithm SHA256 $f.FullName).Hash.ToLower()
+          $sumas = @{}
+          foreach ($linea in Get-Content "$env:GITHUB_WORKSPACE\dist\SHA256SUMS-windows") {
+            $partes = $linea -split '\s+', 2
+            $sumas[$partes[1].Trim()] = $partes[0]
           }
-          $setup    = Suma 'kanpachi-setup.exe'
-          $portable = Suma 'kanpachi-portable.exe'
-
-          @(
-            "$setup  kanpachi-setup.exe"
-            "$portable  kanpachi-portable.exe"
-          ) | Out-File -FilePath "$env:GITHUB_WORKSPACE\dist\SHA256SUMS-windows" -Encoding ascii
-          Get-Content "$env:GITHUB_WORKSPACE\dist\SHA256SUMS-windows"
-
-          "setup_sha=$setup"       | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "portable_sha=$portable" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "setup_sha=$($sumas['kanpachi-setup.exe'])"       | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "portable_sha=$($sumas['kanpachi-portable.exe'])" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       # El tramo del CHANGELOG que le toca a esta versión, para el cuerpo de la
-      # publicación.
-      #
-      # **Se saca del archivo y no se escribe a mano en el release.** Escribirlo
-      # dos veces es tenerlo distinto dos veces, y el que la gente lee sería el
-      # que nadie revisó. El archivo ya se mantiene entrada a entrada, en el
-      # mismo commit que el cambio; esto solo lo cita.
-      #
-      # **Sin entrada no hay publicación, y eso es a propósito.** Una versión
-      # etiquetada sin una línea que diga qué cambió es exactamente lo que este
-      # archivo existe para impedir, y el momento de enterarse es antes de
-      # publicar, no después. La corrida manual queda fuera: ahí la versión es
-      # `0.0.0` y no hay nada que citar.
+      # publicación. Sin entrada no hay publicación, y eso es a propósito: el
+      # motivo está en la cabecera del script.
       - name: Notas de la versión
         id: notas
         shell: pwsh
         run: |
-          if ($env:VERSION -eq '0.0.0') {
-            "notas<<KANPACHI_FIN"      | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-            "_Corrida manual, sin tag: no hay tramo de changelog que citar._" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-            "KANPACHI_FIN"             | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-            exit 0
-          }
-
-          $lineas = Get-Content "$env:GITHUB_WORKSPACE\CHANGELOG.md"
-          $cabecera = "^##\s+\[$([regex]::Escape($env:VERSION))\]"
-          $desde = ($lineas | Select-String -Pattern $cabecera | Select-Object -First 1).LineNumber
-          if (-not $desde) {
-            throw "CHANGELOG.md no tiene la seccion de la version $env:VERSION. " +
-                  "Antes de etiquetar, la seccion Unreleased se convierte en '## [$env:VERSION] - AAAA-MM-DD'."
-          }
-
-          # `LineNumber` es 1-based y el corte va DESPUÉS de la cabecera, así
-          # que este índice ya apunta a la línea siguiente.
-          $resto = $lineas[$desde..($lineas.Count - 1)]
-          $hasta = ($resto | Select-String -Pattern '^##\s' | Select-Object -First 1).LineNumber
-          # El `-eq 1` no es defensa de más: con la sección vacía, `0..-1` en
-          # PowerShell no es un rango vacío, devuelve el primer elemento y el
-          # último. O sea que el caso a detectar saldría con dos líneas de otra
-          # versión pegadas, en vez de saltar.
-          $cuerpo = if ($hasta -eq 1) { @() }
-                    elseif ($hasta)   { $resto[0..($hasta - 2)] }
-                    else              { $resto }
-
-          # Los enlaces de referencia del pie no significan nada fuera del
-          # archivo, y `## [0.1.3]` sin su definición saldría como texto suelto.
-          $cuerpo = $cuerpo | Where-Object { $_ -notmatch '^\[[0-9]' }
-          $texto = ($cuerpo -join "`n").Trim()
-          if (-not $texto) { throw "La seccion de $env:VERSION en CHANGELOG.md esta vacia." }
-
-          Write-Host $texto
+          $texto = .\scripts\release-notes.ps1 -Version "$env:VERSION" | Out-String
           "notas<<KANPACHI_FIN" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          $texto                | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          $texto.TrimEnd()      | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "KANPACHI_FIN"        | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Publicar
@@ -494,7 +337,9 @@ jobs:
   # the two Go binaries are built with CGO off. Built on 24.04 it demands
   # GLIBC_2.39 and does NOT start on 22.04, which is the release most often
   # found on a VPS. Built here it demands 2.35 or less and runs on both. This is
-  # a release decision, so it lives in the workflow and not in the code.
+  # a release decision, so it lives in the workflow and not in the code — and
+  # the check that ENFORCES it lives in `build-deb.sh --strict`, which is the
+  # same check a person gets as a warning without the flag.
   #
   # It does not wait for the Windows job and the Windows job does not wait for
   # it. That is the same trade already accepted for the seed: a window exists
@@ -557,38 +402,23 @@ jobs:
 
       # The same tests the Windows job runs before packaging, and for the same
       # reason: what gets published passes the tests that pass today.
-      - name: Tests de Go
-        run: go test -count=1 ./core/... ./internal/arch/...
+      - name: Los chequeos de esta superficie
+        shell: pwsh
+        run: ./scripts/verify.ps1 -Surface release-linux
 
+      # `--strict` turns the glibc floor from a warning into a stop, and writes
+      # SHA256SUMS-linux beside the package. `SHA256SUMS-linux` is the CLIENT's
+      # and the seed's is `SHA256SUMS-seed-linux`: three workflows write into one
+      # release, so a shared name means the last one to upload overwrites the
+      # others and leaves `kanpachi upgrade` verifying a package that is not
+      # listed.
       - name: Armar el paquete
         run: |
           scripts/build-deb.sh \
+            --strict \
             --version "$VERSION" \
             --engine motor/target/release/kanpachi-engine \
             --out dist
-
-      # The floor is checked HERE and not only inside the script, because here
-      # it has to be able to stop the release. `build-deb.sh` warns, which is
-      # right on a development machine; a package that cannot start on the
-      # release most people run is not something to warn about and publish.
-      - name: El piso de glibc
-        run: |
-          PISO="$(objdump -T dist/kanpachi-deb/usr/libexec/kanpachi/kanpachi-engine |
-            grep -o 'GLIBC_[0-9.]*' | sort -V | tail -1)"
-          echo "the engine demands $PISO"
-          case "$PISO" in
-          GLIBC_2.3[6-9] | GLIBC_2.4*)
-            echo "above the 2.35 of Ubuntu 22.04: this package would not start there" >&2
-            exit 1
-            ;;
-          esac
-
-      - name: Checksums
-        # `SHA256SUMS-linux` is the CLIENT's, and the seed's is
-        # `SHA256SUMS-seed-linux`. Three workflows write into one release, so a
-        # shared name means the last one to upload overwrites the others and
-        # leaves `kanpachi upgrade` verifying a package that is not listed.
-        run: cd dist && sha256sum kanpachi-amd64.deb > SHA256SUMS-linux && cat SHA256SUMS-linux
 
       - name: Publicar
         if: steps.version.outputs.release_target != ''

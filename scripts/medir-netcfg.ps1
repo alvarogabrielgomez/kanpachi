@@ -39,7 +39,7 @@ $esAdmin = ([Security.Principal.WindowsPrincipal] `
 ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $esAdmin) { throw "Hace falta una consola elevada." }
 
-foreach ($f in 'kanpachid.exe', 'kanpachi-engine.exe', 'kanpctl.exe', 'netcfgprobe.exe') {
+foreach ($f in 'kanpachid.exe', 'kanpachi-engine.exe', 'pipeprobe.exe', 'netcfgprobe.exe') {
     if (-not (Test-Path (Join-Path $Stage $f))) { throw "Falta $f en $Stage" }
 }
 
@@ -65,11 +65,11 @@ try {
     $params = (@{ nickname = $Nick; name = $Room } | ConvertTo-Json -Compress).Replace('"', '\"')
     $antes = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    $ctl = & (Join-Path $Stage 'kanpctl.exe') -data $Data -params $params create_room 2>&1
+    $ctl = & (Join-Path $Stage 'pipeprobe.exe') -data $Data -params $params create_room 2>&1
     $codigo = $LASTEXITCODE
     $ErrorActionPreference = $antes
     Write-Host ($ctl -join "`n")
-    if ($codigo -ne 0) { Mal "kanpctl salio con $codigo"; $fallos++ }
+    if ($codigo -ne 0) { Mal "pipeprobe salio con $codigo"; $fallos++ }
 
     Paso "esperando el adaptador (hasta $Espera s)"
     $reloj = [Diagnostics.Stopwatch]::StartNew()
@@ -89,7 +89,7 @@ try {
     Paso "los miembros, que es lo que estaba roto"
     $antes = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    & (Join-Path $Stage 'kanpctl.exe') -data $Data status 2>&1 | ForEach-Object { Write-Host "  $_" }
+    & (Join-Path $Stage 'pipeprobe.exe') -data $Data status 2>&1 | ForEach-Object { Write-Host "  $_" }
     $ErrorActionPreference = $antes
 
     # La compuerta se le pregunta al SISTEMA, no al daemon.

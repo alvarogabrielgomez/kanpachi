@@ -12,7 +12,7 @@
     Que deja:
 
       kanpachid.exe        el daemon
-      kanpctl.exe          el cliente de linea de comandos
+      pipeprobe.exe        la sonda del pipe: metodos por su nombre de cable
       dirprobe.exe         la sonda del registro del seed
       engineprobe.exe      la sonda del motor
       netcfgprobe.exe      la sonda de los ajustes del adaptador
@@ -67,7 +67,7 @@ Paso "compilando"
 # ventana es el punto.
 $binarios = @(
     @{ nombre = 'kanpachid.exe';    paquete = './daemon/cmd/kanpachid'; gui = $true },
-    @{ nombre = 'kanpctl.exe';      paquete = './internal/kanpctl' },
+    @{ nombre = 'pipeprobe.exe';    paquete = './internal/pipeprobe' },
     @{ nombre = 'dirprobe.exe';     paquete = './internal/dirprobe' },
     @{ nombre = 'engineprobe.exe';  paquete = './internal/engineprobe' },
     @{ nombre = 'netcfgprobe.exe';  paquete = './internal/netcfgprobe' },

@@ -66,7 +66,7 @@ import (
 // se puede apagar desde fuera.
 const (
 	// MaxConns es cuántas conversaciones a la vez. La UI abre una. Ocho deja
-	// sitio para kanpctl y para una UI que se reabre sin haber cerrado limpio,
+	// sitio para pipeprobe y para una UI que se reabre sin haber cerrado limpio,
 	// y pone un techo a un proceso que abra conexiones en bucle.
 	MaxConns = 8
 

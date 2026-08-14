@@ -594,9 +594,17 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 	}
 
 	if consola {
+		// Se nombran los DOS, y cuál primero importa: para pedir algo que el
+		// producto ya sabe hacer, el cliente, que valida y pinta. `pipeprobe` es
+		// la sonda del canal, y lo que la justifica es lo que el cliente no puede
+		// expresar: un método por su nombre de cable, un JSON crudo, un token que
+		// no vale. Cuando esta pista nombraba solo a la sonda, se leía como si el
+		// canal se probara con ella y punto.
 		fmt.Printf("kanpachid en modo consola\n  pipe:  %s\n  token: %s\n  datos: %s\n\n"+
-			"Ctrl+C para salir. Prueba con:  go run ./internal/kanpctl -data %q status\n\n",
-			nombre, token, datos, datos)
+			"Ctrl+C para salir. Prueba con:\n"+
+			"  go run ./daemon/cmd/kanpachi -data %q -pipe %q status\n"+
+			"  go run ./internal/pipeprobe  -data %q -pipe %q -no-token status   (debe fallar)\n\n",
+			nombre, token, datos, datos, nombre, datos, nombre)
 	} else {
 		log.Info("kanpachid listo", "pipe", nombre, "datos", datos)
 	}

@@ -115,7 +115,7 @@ const Duration kDefaultTimeout = Duration(seconds: 10);
 /// ten seconds for everything, creating a room times out ALWAYS against a
 /// daemon that is working correctly, and the symptom is the worst one
 /// available: the room exists, the screen says it failed, and the user creates
-/// it again. `kanpctl` already uses ninety seconds for this exact reason, with
+/// it again. `pipeprobe` already uses ninety seconds for this exact reason, with
 /// the reason written next to it.
 ///
 /// The thirty seconds of the firewall group are not generosity: enumerating the

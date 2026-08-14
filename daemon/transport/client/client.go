@@ -38,7 +38,7 @@ import (
 //
 // Noventa segundos, y el número no es prudencia genérica: el techo real lo pone
 // el motor, con 30 s por adaptador, y crear una sala levanta DOS (la sala y el
-// vestíbulo) más el sondeo del MTU. Con el plazo de 10 s que tenía `kanpctl`,
+// vestíbulo) más el sondeo del MTU. Con el plazo de 10 s que tenía `pipeprobe`,
 // `create_room` cortaba del lado del cliente con el daemon trabajando bien, y el
 // síntoma era un `i/o timeout` con la sala ya creada.
 const DefaultTimeout = 90 * time.Second
@@ -84,7 +84,7 @@ func Open(addr, dataDir string) (*Client, error) {
 //
 // Existe para las herramientas que necesitan mandar uno que NO vale, que es la
 // única forma de comprobar que el daemon rechaza lo que tiene que rechazar. Ver
-// `internal/kanpctl`.
+// `internal/pipeprobe`.
 func OpenWithToken(addr, token string) (*Client, error) {
 	conn, err := Dial(addr)
 	if err != nil {
@@ -137,7 +137,7 @@ func (c *Client) Call(m protocol.Method, params any) (json.RawMessage, error) {
 // Existe para poder mandar lo que el daemon tiene que RECHAZAR. Pasar por
 // `json.Marshal` normalizaría el mensaje, así que un JSON malformado a propósito
 // llegaría al otro lado ya arreglado y la comprobación no probaría nada. Lo usa
-// `internal/kanpctl`.
+// `internal/pipeprobe`.
 func (c *Client) CallRaw(m protocol.Method, params json.RawMessage) (json.RawMessage, error) {
 	req := protocol.Request{ID: c.id.Add(1), Method: m, Params: params}
 	if err := c.w.Write(req); err != nil {

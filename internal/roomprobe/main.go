@@ -27,7 +27,7 @@
 //   - No abre puertos de juego. No hay catálogo y no hace falta: lo que se mide
 //     acá es la SALA, o sea la red cifrada, el canal de control, la compuerta y
 //     los adaptadores.
-//   - No sirve el named pipe, así que `kanpctl` y la interfaz no lo ven.
+//   - No sirve el named pipe, así que `pipeprobe` y la interfaz no lo ven.
 //   - No le pone ACL a `identity.key`. Ver [sinACL].
 //
 // # Cómo se corre

@@ -72,7 +72,7 @@ function Ctl($metodo, $params) {
     $a = @('-data', $Data)
     if ($params) { $a += @('-params', $params) }
     $a += $metodo
-    $salida = & (Join-Path $Stage 'kanpctl.exe') @a 2>&1 | Out-String
+    $salida = & (Join-Path $Stage 'pipeprobe.exe') @a 2>&1 | Out-String
     $ErrorActionPreference = $antes
     $salida
 }

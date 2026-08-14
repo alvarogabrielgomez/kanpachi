@@ -818,7 +818,7 @@ de rutas, el MTU, y `peers` con una sola entrada estando solo en la sala. De
 paso desapareció un `conn: degraded` que nadie había explicado.
 
 Un cuarto arreglo salió de la misma corrida y es de plazos, no de lógica:
-`kanpctl` cortaba a los 10 s fijos y `create_room` los pasaba con el daemon
+`pipeprobe` cortaba a los 10 s fijos y `create_room` los pasaba con el daemon
 trabajando bien. Una sala levanta DOS adaptadores, cada uno tarda unos 5 s en
 tomar dirección, y encima va el sondeo del MTU. El síntoma era `i/o timeout`
 con la sala ya creada.
@@ -965,7 +965,7 @@ Esta corrida costó cuatro intentos, y los cuatro fallos estaban en el script.
 Van escritos porque los tres primeros muerden a cualquier script de este
 repositorio:
 
-1. **`kanpctl` SALUDA antes de cada llamada, y el saludo trae `"result"`.**
+1. **`pipeprobe` SALUDA antes de cada llamada, y el saludo trae `"result"`.**
    Buscar `"result"` en la salida entera da verde sobre cualquier error. Un
    `create_room` fallido se dio por bueno y el síntoma apareció tres pasos
    después como "la sala no reportó código". Ahora se busca la línea del método
@@ -979,7 +979,7 @@ repositorio:
                   [2] "panas\"}"
    ```
 
-   `kanpctl` recibía un JSON truncado y contestaba `unexpected end of JSON
+   `pipeprobe` recibía un JSON truncado y contestaba `unexpected end of JSON
    input`. Envolver en comillas, no escapar, y escapar con acento grave fallan
    las tres. Lo único que aguanta es construir la línea de comandos entera con
    `ProcessStartInfo`, que nadie vuelve a interpretar. **`medir-motor-punta-a-punta.ps1`
@@ -1034,7 +1034,7 @@ buscando un archivo que nadie había escrito, así que cada arranque dejaba la
 línea `no se pudo leer el catálogo que vino con la app` y la lista de juegos
 volvía vacía, que es lo que el usuario vive como un producto que no hace nada.
 
-Medido el 2026-08-05 con el daemon de verdad y `kanpctl` por el pipe:
+Medido el 2026-08-05 con el daemon de verdad y `pipeprobe` por el pipe:
 
 | Comprobación | Resultado |
 |---|---|
@@ -1212,7 +1212,7 @@ A mano, en Windows, con consola elevada:
 
 ```
 go run ./daemon/cmd/kanpachid --console -data C:\ruta
-go run ./internal/kanpctl -data C:\ruta status
+go run ./internal/pipeprobe -data C:\ruta status
 ```
 
 Por adaptador, la prueba que de verdad importa:
