@@ -132,8 +132,18 @@ func cmdServe(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	addr := fs.String("addr", fmt.Sprintf("127.0.0.1:%d", cfg.PuertoRegistro), "address to listen on")
 	pagina := fs.String("page", setup.DirLib+"/index.html", "path to the invitation page")
-	cli := fs.String("easytier-cli", setup.DirLib+"/easytier-cli", "path to the easytier-cli binary")
-	portal := fs.String("rpc-portal", fmt.Sprintf("127.0.0.1:%d", cfg.PuertoRPC), "RPC portal of easytier-core")
+	// The flag names the ROLE, not the product behind it. What Kanpachi depends
+	// on is that something local answers "how many peers are in this network",
+	// and which engine answers it is meant to be replaceable: naming the vendor
+	// in the interface is how a swap turns into a rename across units, scripts
+	// and a droplet that has to be reconfigured by hand.
+	cli := fs.String("engine-cli", setup.DirLib+"/easytier-cli", "path to the engine's CLI binary")
+	// The old name stays and keeps working. A deployed seed has it written into
+	// its systemd unit, and a flag that disappears turns an upgrade into a
+	// service that refuses to start until somebody reruns `kanpseed init`. The
+	// unit written from this version already uses the new one.
+	viejoCLI := fs.String("easytier-cli", "", "deprecated: use -engine-cli")
+	portal := fs.String("rpc-portal", fmt.Sprintf("127.0.0.1:%d", cfg.PuertoRPC), "RPC portal of the engine")
 	cada := fs.Duration("poll", 3*time.Second, "how often the member counter is refreshed")
 	// Vacío significa registro volátil, que es el comportamiento de antes. La
 	// unidad lo llena con `StateDirectory=`, y systemd exporta esa ruta en
@@ -143,6 +153,10 @@ func cmdServe(args []string) error {
 		"directory where the room registry survives restarts")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+
+	if *viejoCLI != "" {
+		*cli = *viejoCLI
 	}
 
 	page, err := registry.NewPage(*pagina)

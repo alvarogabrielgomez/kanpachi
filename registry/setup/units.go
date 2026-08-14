@@ -147,7 +147,7 @@ Type=notify
 ExecStart=%s serve \
   --addr 127.0.0.1:%d \
   --page %s \
-  --easytier-cli %s \
+  --engine-cli %s \
   --rpc-portal 127.0.0.1:%d
 Restart=always
 RestartSec=2s

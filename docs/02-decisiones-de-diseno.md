@@ -122,6 +122,28 @@ Lo que el fork NO reemplaza es la compuerta. Su enemigo nunca fue EasyTier: son 
 
 `v2.6.4` es la **última publicada**, no una vieja. No hay tag posterior. Lo único más nuevo es la rama de desarrollo, sin versión, sin notas de cambios y sin binarios. La rama trae una forma elegante de apagar el portal al compilar; llegar a ella cuesta abandonar el tag y fijar un commit suelto, y esa conversación se abre cuando haya una razón, no antes.
 
+### El nombre del proveedor no sale a las interfaces
+
+**Regla, dicha el 2026-08-14:** EasyTier se nombra en el CÓDIGO y en estos documentos, donde hay que decir qué se está usando de verdad, y **no** en lo que ve una persona ni en lo que otra pieza consume. Lo que sale afuera nombra el PAPEL: «engine», «engine lib», `--engine-cli`. Un `kanpseed version` que diga `EasyTier v2.6.4` no es solo estética: es una promesa sobre qué hay detrás, y el día que haya otra cosa detrás obliga a cambiarla en las unidades de systemd, en los scripts y en un droplet que hay que reconfigurar a mano.
+
+Qué se cambió con la regla, y qué a propósito no:
+
+- Lo que imprime `kanpseed` —`version`, `doctor`, `init`, `upgrade` y el progreso de la descarga— dice «engine lib».
+- La bandera del registro pasó a ser `--engine-cli`. **`--easytier-cli` se conserva y sigue funcionando**: un seed ya desplegado la lleva escrita en su unit, y una bandera que desaparece convierte una actualización en un servicio que no arranca hasta que alguien vuelva a correr `kanpseed init`. Las units que escribe esta versión ya usan la nueva. Las dos, medidas el 2026-08-14 contra un `kanpseed serve` de verdad.
+- **Los identificadores internos y los comentarios se quedan.** `VersionEasyTier`, `registry/setup/easytier.go` y los comentarios que explican por qué el binario oficial no sirve nombran lo que hay: un comentario que dijera «el motor» donde el código descarga un zip de EasyTier sería el tipo de vaguedad que hace falta un rato para desenredar.
+- Los **nombres de ficheros instalados** (`easytier-core`, `easytier-cli` en `/usr/local/lib/kanpachi`) tampoco se tocan hoy. Renombrarlos rompe el seed desplegado hasta que se reconfigure, y no compra nada que no compre ya la bandera.
+
+### Qué costaría cambiar de motor, medido
+
+Conviene tenerlo escrito antes de necesitarlo. Buscando `easytier` en todo el árbol (2026-08-14), fuera de comentarios queda en dos sitios y ningún otro:
+
+| Dónde | Qué hay | Qué costaría un motor distinto |
+|---|---|---|
+| `daemon/adapter/engine/kanpachi/` | el adaptador del CLIENTE, detrás de [port.EnginePort] | escribir otro adaptador. Nada de `core` cambia, que es para lo que existe el puerto |
+| `registry/setup/` y `registry/counter.go` | el SEED: qué binarios baja, qué unit escribe y con qué CLI cuenta miembros | cambiar qué se baja, la unit, y de dónde sale el conteo de miembros |
+
+El cliente está desacoplado de verdad: `core` habla con `EnginePort` y **ni un fichero fuera de ese adaptador nombra el motor en código**. El seed no lo está, y es aceptable mientras haya un solo motor: su acoplamiento son unas rutas, una unit generada y el conteo de miembros por RPC. Lo que haría falta el día que haya dos es un puerto del lado del seed, y hoy sería una interfaz con una sola implementación escrita para un futuro que nadie pidió.
+
 ### El seed es el caso contrario
 
 En el droplet sigue corriendo `easytier-core` oficial sin modificar, y está bien que así sea: es una máquina nuestra, sin usuarios, donde el portal local no es una superficie que le importe a nadie más. La razón de todo lo anterior es la máquina **del usuario**.
