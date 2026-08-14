@@ -64,17 +64,44 @@ Bien "Linux compila y vetea"
 $destinoMotor = Join-Path $salida "kanpachi-engine.exe"
 $saltarMotor  = $false
 
+# Un motor VIEJO no falla al compilar: falla al crear la sala, y el mensaje
+# habla de un campo JSON que nadie relaciona con "el .exe es de hace seis dias".
+# Paso el 2026-08-14: el daemon manda `log_dir` y el motor de testTools era
+# anterior al campo, asi que abrir una sala moria en
+#   unreadable command: unknown field `log_dir`
+# Comparar fechas es barato y convierte ese rato de investigacion en una linea.
+$fuenteMotorMasNueva = $null
+if (Test-Path (Join-Path $raizMotor "src")) {
+    $fuenteMotorMasNueva = Get-ChildItem -Path (Join-Path $raizMotor "src") -Recurse -Include *.rs |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+}
+
 if ((Test-Path $destinoMotor) -and (-not $RecompilarMotor)) {
     $mb = [math]::Round((Get-Item $destinoMotor).Length / 1MB, 1)
+    $rancio = $fuenteMotorMasNueva -and
+              ((Get-Item $destinoMotor).LastWriteTime -lt $fuenteMotorMasNueva.LastWriteTime)
+    if ($rancio) {
+        Aviso "kanpachi-engine.exe es ANTERIOR a $($fuenteMotorMasNueva.Name) del repo del motor"
+        Nota  "  exe:    $((Get-Item $destinoMotor).LastWriteTime)"
+        Nota  "  fuente: $($fuenteMotorMasNueva.LastWriteTime)"
+        Nota  "  Un motor viejo compila bien y muere al crear la sala, hablando de un campo JSON."
+    }
     if ($SinPreguntar) {
-        $saltarMotor = $true
-        Nota "kanpachi-engine.exe ya esta ($mb MB), no se recompila"
+        if ($rancio) {
+            Aviso "se recompila igual: con -SinPreguntar no hay a quien preguntarle"
+        } else {
+            $saltarMotor = $true
+            Nota "kanpachi-engine.exe ya esta ($mb MB), no se recompila"
+        }
     } else {
-        Aviso "kanpachi-engine.exe ya existe en testTools ($mb MB)"
+        if (-not $rancio) { Aviso "kanpachi-engine.exe ya existe en testTools ($mb MB)" }
         $r = Read-Host "  Recompilarlo? (s/N)"
         if ($r -ne "s" -and $r -ne "S") { $saltarMotor = $true }
     }
 }
+
+# Recompilar por rancio es lo mismo que pedirlo a mano.
+if ((-not $saltarMotor) -and (Test-Path $destinoMotor)) { $RecompilarMotor = $true }
 
 if (-not $saltarMotor) {
     if ($RecompilarMotor) {
