@@ -121,6 +121,12 @@ and a modified one is still a working seed. Assume that one built to spy could:
 - **Keep the graph:** who met whom, how often, for how long, and how much traffic went through it
   while relaying.
 - **Keep every room card it was ever handed** — still encrypted, still unreadable to it, but stored.
+- **Serve a room card the host never wrote.** The card is signed, and today **nobody checks that
+  signature on the way out**: the registry verifies it when the card is published and the clients do
+  not verify it when they read one. So a seed that has been taken over can change the room name and
+  the nickname the invitation page shows. It cannot read what was in the real card, and it can put
+  something else in its place. Closing this is the verification half of decision 25, and it is
+  cheap, because the registry already serves the key it pinned.
 - **Lie about what it is doing.** Nothing you can check from the outside distinguishes a seed that
   discards addresses from one that files them.
 
@@ -151,9 +157,21 @@ What limits it today:
 - **Renewing the invite code disarms it**, because the lobby derives from the invite ID: a new ID is
   a new lobby, and the squatter is left alone in the old one.
 
-The fix — key continuity, the mechanism SSH and Signal use — is designed and not yet built. It is
-decision 21 in [`docs/02-decisiones-de-diseno.md`](docs/02-decisiones-de-diseno.md), with the
-trigger for building it written down next to it.
+The fix — key continuity, the mechanism SSH and Signal use — is designed and half built. It is
+decision 25 in [`docs/02-decisiones-de-diseno.md`](docs/02-decisiones-de-diseno.md), with the
+trigger for finishing it written down next to it.
+
+What exists today is the bottom half: every install has a long-term key, the room card is signed
+with it, and the registry pins the first key it ever sees for an invite ID and refuses any update
+signed by another. What is missing is the half you would notice — **nobody verifies that signature
+when reading**, and nothing remembers a key between rooms, which is what would let the app say "this
+is the same host you have played with five times" instead of taking a nickname at its word.
+
+One more thing worth stating precisely, because the comparison to Signal invites the wrong
+conclusion. Signal's own anonymous envelope — sealed sender — hides the sender **from the server**
+and the recipient still authenticates it, by checking that the identity key which encrypted the
+envelope matches the sender's certificate. Kanpachi's lobby envelope is anonymous to the transport
+**and** to the recipient. That is a weaker property, and it is the whole of the gap above.
 
 ## The practical advice
 

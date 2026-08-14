@@ -851,9 +851,22 @@ type ControlChannel interface {
 	SendCanaryReport(ctx context.Context, r domain.CanaryReport) error
 
 	// RequestCredential es el paso 5 del canje. El adaptador rellena la llave
-	// pública desde identity.key antes de firmar: esa llave vive en disco con
-	// ACL propia y core no la conoce, que es justo lo que la decisión 25
-	// necesita para que robarla sea la única forma de suplantar a alguien.
+	// pública del pedido y core no la ve, que es todo lo que este contrato
+	// promete hoy.
+	//
+	// **Esa llave es EFÍMERA, de sesión, y acá decía que salía de identity.key.**
+	// No sale: `control/client.go` manda la que generó al marcar, nadie firma
+	// nada, y la respuesta vuelve en una caja anónima. El comentario prometía la
+	// propiedad de la decisión 25 —que robar la llave larga sea la única forma de
+	// suplantar a alguien— sobre un canje que no la tiene, y `control/seal.go`
+	// decía lo contrario a dos carpetas de distancia: *«sin la llave larga de la
+	// decisión 25 no existe una llave del host contra la cual verificar»*. De los
+	// dos, el que estaba en lo cierto era seal.go.
+	//
+	// Lo que eso deja abierto, y por qué el vestíbulo se aguanta igual mientras
+	// tanto, está en `kanpachi-seed.md` y en la decisión 25. Cuando la firma
+	// exista, este comentario vuelve a hablar de la llave larga, esta vez en
+	// presente: la efímera sella, la larga firma.
 	RequestCredential(ctx context.Context, req domain.CredentialRequest) (domain.Credential, error)
 	// Close es IDEMPOTENTE, por lo mismo que Leave: lo llama el camino de
 	// error, que puede correr antes de que se haya abierto nada.

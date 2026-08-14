@@ -986,7 +986,11 @@ Se cierra con firma, no con la clave:
 
 1. La tarjeta va firmada por la llave larga del host, decisión 25.
 2. El registro **fija la primera llave pública** que ve para ese invite ID y rechaza toda actualización firmada por otra.
-3. La página verifica la firma también, así que un registro comprometido que sirva basura no valida en el cliente.
+3. La página y la app verifican la firma, así que un registro comprometido que sirva basura no valida en el cliente.
+
+**El punto 3 TODAVÍA NO OCURRE, y decirlo importa más que la frase que decía lo contrario.** Estaba escrito en presente y es falso: `invite/index.html` descifra la tarjeta con AES-GCM y no verifica ninguna firma, y del lado de la app `Directory.Lookup` devuelve la tarjeta y el número de miembros descartando el `host_key` que el registro **sí** sirve. O sea que lo que hoy sostiene esto es el punto 2 y nada más.
+
+Qué se pierde mientras tanto, dicho entero: el fijado impide que un TERCERO publique una tarjeta en un invite ID ajeno, y no impide que el REGISTRO sirva otra cosa. Un seed comprometido puede cambiar el nombre de la sala y el nick que la página enseña, y nadie lo nota. Cerrarlo es la fase de verificación de la decisión 25, y es barata: la llave ya viaja.
 
 El orden juega a favor: la sala no existe hasta que el host la abre y nadie puede entrar antes que él, o sea que **el host es primero por definición** y no hay carrera que perder. Para la reapertura, la llave fijada sobrevive a la muerte de la sala.
 

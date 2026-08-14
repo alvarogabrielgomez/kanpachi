@@ -2406,7 +2406,12 @@ ProgramData\Kanpachi\
   api.token                  rotado por arranque del servicio
   identity.key               llave privada larga de esta instalación (decisión 25).
                              La crea el primer uso del registro, con ACL propia
-  known-hosts.json           libreta de huellas: nick visto, llave con que se lo vio
+  known-hosts.json           TODAVÍA NO EXISTE. Es la libreta de huellas de la
+                             decisión 25 —nick visto, llave con que se lo vio—, y
+                             ningún código la escribe ni la lee hoy. Se deja
+                             nombrada porque el sitio ya está decidido; un listado
+                             de directorio que nombra un fichero ausente sin
+                             decirlo es de lo que más se confía y peor miente
   hosted-room.json           SOLO EN EL HOST: invite ID con su seed, identidad de la red
                              real, subred, nombre, nick, la tarjeta sellada con su
                              clave, e id del juego activo. Su PRESENCIA al arrancar
