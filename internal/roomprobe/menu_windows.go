@@ -47,7 +47,7 @@ func menuSinSala(ctx context.Context, e entorno) error {
 	e.c.limpiar()
 	fmt.Println(raya)
 	fmt.Printf("  ROOMPROBE            Yo: %s\n", e.op.nick)
-	fmt.Printf("  Registro: %-24s Log: %s\n", e.op.seed, LogFile)
+	fmt.Printf("  Registro: %-24s Log: %s\n", oVacio(registroActual(e), "(sin configurar)"), LogFile)
 	fmt.Println(raya)
 	fmt.Println()
 
@@ -59,7 +59,8 @@ func menuSinSala(ctx context.Context, e entorno) error {
 		descartar  = "5. Descartar la sala pendiente"
 		verificar  = "6. Verificaciones del sistema"
 		renombrar  = "7. Cambiar nombre"
-		salirDeTod = "8. Salir"
+		registro   = "8. Cambiar el registro (seed) de esta maquina"
+		salirDeTod = "9. Salir"
 	)
 
 	opciones := []string{crear, entrar}
@@ -69,7 +70,7 @@ func menuSinSala(ctx context.Context, e entorno) error {
 	if _, hay := e.s.PendingRoom(); hay {
 		opciones = append(opciones, reanudar, descartar)
 	}
-	opciones = append(opciones, verificar, renombrar, salirDeTod)
+	opciones = append(opciones, verificar, renombrar, registro, salirDeTod)
 
 	sel, err := elegir("Que hacemos:", opciones)
 	if err != nil {
@@ -94,6 +95,9 @@ func menuSinSala(ctx context.Context, e entorno) error {
 	case renombrar:
 		cambiarNombre(e)
 		return nil
+	case registro:
+		_, err := pedirRegistro(ctx, e)
+		return conAviso(e, err)
 	case salirDeTod:
 		e.apagar()
 		return errInterrumpido
@@ -106,13 +110,28 @@ func crearSala(ctx context.Context, e entorno) error {
 	if err != nil {
 		return err
 	}
+	// El registro PRIMERO, que es el paso que faltaba: sin él `CreateRoom` no
+	// falla a medias, no arranca, y preguntarlo después de escribir el nombre
+	// de la sala sería pedir un dato para tirarlo.
+	seed, err := asegurarRegistro(ctx, e)
+	if err != nil {
+		return err
+	}
+	if seed == "" {
+		fmt.Println("\n  Sin registro no se puede abrir una sala: los códigos los emite él.")
+		esperarEnter()
+		return nil
+	}
 	nombre, err := texto("Nombre de la sala (se ve en la invitacion):",
 		"Viaja dentro de la tarjeta cifrada. El seed no lo conoce.", "Prueba")
 	if err != nil {
 		return err
 	}
 	fmt.Println("\nCreando la sala. Esto tarda; los pasos van al log y a la vista.")
-	_, err = e.s.CreateRoom(ctx, nick, nombre)
+	err = conPasswordSiHaceFalta(ctx, e, func() error {
+		_, err := e.s.CreateRoom(ctx, nick, nombre)
+		return err
+	})
 	if err == nil {
 		e.log.Info("sala creada desde roomprobe", "enlace", e.s.InviteLink())
 		fmt.Println("\n  ENLACE PARA COMPARTIR:")
@@ -140,9 +159,19 @@ func entrarASala(ctx context.Context, e entorno) error {
 	if err != nil {
 		return err
 	}
-	// Lo que la ventana enseña antes de que alguien pulse: a qué sala, quién
-	// dice hospedarla, y qué sabe la libreta de su llave. Acá se imprime en vez
-	// de pintarse, y NO detiene nada, igual que en el producto.
+	// Un código sin registro no se completa a escondidas: se pregunta contra
+	// cuál probarlo, y el que se arma es el que se pasa TAL CUAL a JoinRoom.
+	if _, errP := domain.ParseRoom(pegado); errP != nil {
+		completo, errC := completarConRegistro(ctx, e, pegado, errP)
+		if errC != nil {
+			return errC
+		}
+		if completo == "" {
+			return conAviso(e, errP)
+		}
+		pegado = completo
+		fmt.Println("  Se prueba con:", pegado)
+	}
 	mirarAntesDeEntrar(ctx, e, pegado)
 	fmt.Println("\nEntrando. Los pasos van al log y a la vista.")
 	_, err = e.s.JoinRoom(ctx, pegado, nick)

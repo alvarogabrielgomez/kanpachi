@@ -47,6 +47,16 @@ func texto(mensaje, ayuda, porDefecto string) (string, error) {
 	return strings.TrimSpace(v), err
 }
 
+// secreto pide una línea SIN pintarla, para el password de hospedar.
+//
+// Sin `survey.Required`: un password vacío es una respuesta legítima —«mejor no,
+// cancela»— y forzarlo dejaría a alguien atrapado en la pregunta.
+func secreto(mensaje, ayuda string) (string, error) {
+	var v string
+	err := preguntar(&survey.Password{Message: mensaje, Help: ayuda}, &v)
+	return strings.TrimSpace(v), err
+}
+
 func pedirApodo(actual string) string {
 	msg := "Tu nombre:"
 	if actual != "" {

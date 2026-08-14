@@ -56,11 +56,17 @@ import (
 
 // opciones son los flags ya resueltos, para no pasarlos de a cinco.
 type opciones struct {
-	datos  string
-	seed   string
-	nick   string
-	force  bool
-	dirExe string
+	datos string
+	seed  string
+	// password es el de HOSPEDAR en ese registro, y solo existe para poder
+	// correr esto sin nadie delante. Va por bandera con un aviso: en Windows la
+	// línea de órdenes de un proceso la lee cualquiera de la misma sesión, así
+	// que para uso normal es mejor dejar que lo pregunte, que lo pide oculto y
+	// no lo escribe en ningún sitio.
+	password string
+	nick     string
+	force    bool
+	dirExe   string
 	// dirLog es DÓNDE se escribe roomprobe.log, y existe separado de dirExe
 	// por el bundle.
 	//
@@ -73,16 +79,13 @@ type opciones struct {
 }
 
 func main() {
-	// La elevación va PRIMERO, antes de leer flags: el proceso elevado los
-	// vuelve a leer enteros, y hacer trabajo antes es hacerlo dos veces.
-	if relanzado, err := elevar(); err != nil {
-		fmt.Fprintln(os.Stderr, "roomprobe:", err)
-		pausar()
-		os.Exit(1)
-	} else if relanzado {
-		return
-	}
-
+	// Las banderas se DECLARAN antes de elevar y se PARSEAN después.
+	//
+	// Declararlas no toca nada —son punteros a valores por defecto— y es lo que
+	// permite contestar `-h` sin pedir permisos. Antes la ayuda iba después de
+	// la elevación, así que `roomprobe -h` abría una ventana elevada que
+	// imprimía y se cerraba sola: en la consola donde alguien lo escribió no
+	// aparecía nada. Medido: salida vacía y código 0.
 	datos := flag.String("data", "data", "directorio de datos de ESTA herramienta")
 	dirLog := flag.String("log", "", "dónde dejar "+LogFile+" (por omisión, junto al ejecutable)")
 	// El seed gobierna dónde ABRE salas esta máquina, y nada más.
@@ -92,9 +95,33 @@ func main() {
 	// producto sin registro configurado. Para ENTRAR no hace falta, porque el
 	// registro sale del código pegado, que ahora siempre trae el suyo.
 	seed := flag.String("seed", "",
-		"host del registro donde esta máquina abre salas. Sin él solo se puede entrar")
+		"host del registro donde esta máquina abre salas. Sin él se pregunta al crear")
+	// Las dos banderas de arranque existen para la corrida desatendida y para
+	// no repetir la configuración en cada prueba. Lo que hacen se puede hacer
+	// igual desde el menú, que es el camino que mide lo que hace la ventana.
+	password := flag.String("seed-password", "",
+		"password para HOSPEDAR en ese registro. Sin él se pregunta cuando el registro lo pida")
 	force := flag.Bool("force", false,
 		"arrancar aunque el servicio kanpachi-daemon esté corriendo (le purga las reglas)")
+	if pideAyuda() {
+		fmt.Println("roomprobe: ejercita el ciclo de vida de una sala con los adaptadores reales.")
+		fmt.Println("Banderas:")
+		flag.CommandLine.SetOutput(os.Stdout)
+		flag.PrintDefaults()
+		return
+	}
+
+	// La elevación va antes de PARSEAR: el proceso elevado vuelve a leer los
+	// argumentos enteros, así que hacer trabajo con ellos acá es hacerlo dos
+	// veces.
+	if relanzado, err := elevar(); err != nil {
+		fmt.Fprintln(os.Stderr, "roomprobe:", err)
+		pausar()
+		os.Exit(1)
+	} else if relanzado {
+		return
+	}
+
 	flag.Parse()
 
 	// El directorio del EJECUTABLE, no `os.Args[0]`: tras la elevación por UAC
@@ -108,7 +135,8 @@ func main() {
 	}
 	dirExe := filepath.Dir(exe)
 
-	op := opciones{datos: *datos, seed: *seed, force: *force, dirExe: dirExe, dirLog: *dirLog}
+	op := opciones{datos: *datos, seed: *seed, password: *password, force: *force,
+		dirExe: dirExe, dirLog: *dirLog}
 	if !filepath.IsAbs(op.datos) {
 		op.datos = filepath.Join(dirExe, op.datos)
 	}
@@ -158,6 +186,19 @@ func guardarApodo(datos, nombre string) {
 		// y nadie sabría por qué.
 		fmt.Fprintln(os.Stderr, "roomprobe: no se pudo guardar el nombre:", err)
 	}
+}
+
+// pideAyuda mira las tres formas en que se pide, sin parsear: el parseo de
+// verdad ocurre en el proceso elevado, y acá solo hay que decidir si hace falta
+// elevar algo.
+func pideAyuda() bool {
+	for _, a := range os.Args[1:] {
+		switch a {
+		case "-h", "--h", "-help", "--help":
+			return true
+		}
+	}
+	return false
 }
 
 func pausar() {

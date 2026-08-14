@@ -26,6 +26,13 @@
 // `last-room.json` moriría en cada corrida, dejando "volver a la última sala"
 // sin funcionar nunca. Ver [argumentos].
 //
+// # Las banderas son las de roomprobe
+//
+// Este programa no tiene banderas propias: pasa las suyas enteras, así que
+// `roombundle.exe -seed kanpachi.accentio.dev -seed-password ...` es lo mismo
+// que dárselas a `roomprobe.exe`. Lo único que agrega son `-log` y `-data`
+// apuntando junto a este ejecutable, y solo si no vinieron. Ver [argumentos].
+//
 // # Cómo se construye
 //
 // **No se construye con `go build ./...`**, y eso es deliberado. La carga vive

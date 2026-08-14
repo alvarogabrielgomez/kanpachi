@@ -287,9 +287,24 @@ func correr(op opciones) error {
 	}
 	defer apagar()
 
-	if err := menuPrincipal(ctxRaiz, entorno{
-		s: sesion, log: log, c: c, op: &op, registros: registros, apagar: apagar, fallos: &fallos,
-	}); err != nil && !errors.Is(err, errInterrumpido) && !errors.Is(err, context.Canceled) {
+	e := entorno{s: sesion, log: log, c: c, op: &op, registros: registros,
+		apagar: apagar, fallos: &fallos}
+
+	// La bandera `-seed` SIEMBRA el estado, no lo sustituye.
+	//
+	// Antes solo llenaba `own` de la fábrica, así que la sesión seguía sin
+	// registro guardado y crear sala moría en "esta máquina no tiene registro
+	// configurado" con el nombre delante, en la cabecera. Guardarlo por el
+	// mismo camino que la ventana deja las dos cosas de acuerdo, y de paso
+	// comprueba que ese registro conteste antes de que nadie intente nada.
+	if op.seed != "" && sesion.OwnSeed() == "" {
+		if _, err := guardarRegistro(ctxRaiz, e, op.seed); err != nil {
+			return err
+		}
+	}
+	autenticarSiHaceFalta(ctxRaiz, e)
+
+	if err := menuPrincipal(ctxRaiz, e); err != nil && !errors.Is(err, errInterrumpido) && !errors.Is(err, context.Canceled) {
 		return err
 	}
 	apagar()

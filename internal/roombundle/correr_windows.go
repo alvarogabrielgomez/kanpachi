@@ -40,6 +40,17 @@ func correr() error {
 			"  ficheros a internal/roombundle/carga/ y compila con -tags bundle")
 	}
 
+	// La ayuda no eleva nada, y es la única cosa que corre sin permisos.
+	//
+	// Extraer a un temporal propio y preguntarle a roomprobe es lo que hace que
+	// esta ayuda sea LA SUYA: este programa no declara banderas y no tiene qué
+	// listar por su cuenta, así que cualquier texto escrito acá se quedaría
+	// corto en la primera bandera nueva. Medido: sin esto, `roombundle -h`
+	// pedía administrador para contestar una pregunta que no toca nada.
+	if pideAyuda() {
+		return ayuda()
+	}
+
 	// # Por qué se eleva ANTES de extraer nada
 	//
 	// roomprobe necesita administrador y se eleva solo si no lo tiene: la copia
@@ -113,6 +124,36 @@ func elevarYEsperar() error {
 
 func comillar(s string) string { return strings.ReplaceAll(s, "'", "''") }
 
+// pideAyuda mira las tres formas de pedirla, sin parsear: acá no hay banderas
+// propias que parsear.
+func pideAyuda() bool {
+	for _, a := range os.Args[1:] {
+		switch a {
+		case "-h", "--h", "-help", "--help":
+			return true
+		}
+	}
+	return false
+}
+
+// ayuda extrae lo justo y deja que conteste roomprobe.
+func ayuda() error {
+	dir, err := os.MkdirTemp("", "kanpachi-roomprobe-ayuda-")
+	if err != nil {
+		return fmt.Errorf("no se pudo crear la carpeta temporal: %w", err)
+	}
+	defer limpiar(dir)
+	if err := extraer(dir); err != nil {
+		return err
+	}
+	fmt.Println("roombundle lleva roomprobe dentro y le pasa TODAS las banderas tal cual.")
+	fmt.Println("Agrega -log y -data junto a este ejecutable, solo si no vinieron.")
+	fmt.Println()
+	cmd := exec.Command(filepath.Join(dir, elQueSeCorre), "-h")
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	return cmd.Run()
+}
+
 // decirDondeQuedoElLog es el mensaje de cierre.
 //
 // La carpeta temporal ya no está y roomprobe.log sí, junto a este ejecutable.
@@ -156,6 +197,14 @@ func decirDondeQuedoElLog() {
 //
 // Los dos apuntan al directorio del BUNDLE, que es donde la persona lo dejó al
 // descargarlo y donde va a saber buscarlos.
+//
+// **Todo lo demás pasa TAL CUAL.** Este programa no declara banderas propias ni
+// las interpreta: lo que recibe se lo entrega a roomprobe entero y en orden, así
+// que `-seed`, `-seed-password`, `-force` y las que se agreguen mañana funcionan
+// desde el bundle el día que existan en roomprobe, sin tocar este fichero. Un
+// espejo que hubiera que mantener a mano es un espejo que se queda corto en la
+// primera bandera nueva, y lo descubriría quien está probando en la máquina de
+// otro. `-h` también viaja, así que la ayuda que sale es la de roomprobe.
 //
 // Lo que venga por la línea de órdenes gana: quien pasa `-log` a mano sabe lo
 // que quiere, y pasarlo dos veces haría que Go se quedara con el último.
