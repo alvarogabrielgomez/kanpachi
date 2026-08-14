@@ -10,13 +10,13 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Added
 
-- See the game covers, which never once appeared: the hole with PORTADA STEAMDB written in it was all there ever was, and nothing anywhere asked for an image. They now come from Steam itself, in the shape each hole needs — the tall one for the thumbnails and the room, the wide one for the catalogue grid
-- Give a game its Steam id when you add it by hand, and watch its cover appear in the preview as you type. The whole address, pasted from the browser, works too
+- See the game covers, which never once appeared: the hole with PORTADA STEAMDB written in it was all there ever was, and nothing anywhere asked for an image. They now come from Steam itself, in the shape each hole needs — the tall one for the thumbnails and the room, the wide one for the catalogue grid ([5bf4a72](https://github.com/alvarogabrielgomez/kanpachi/commit/5bf4a72))
+- Give a game its Steam id when you add it by hand, and watch its cover appear in the preview as you type. The whole address, pasted from the browser, works too ([5bf4a72](https://github.com/alvarogabrielgomez/kanpachi/commit/5bf4a72))
 
 ### Changed
 
-- Take the cover from the Steam id the profile already carries for detection, instead of a link written into each profile: a URL inside a file nobody re-reads is a link that expires, copied into every profile anyone shares
-- Say SIN PORTADA in the hole of a game that has none — two of the eleven profiles that ship with Kanpachi are not on Steam — instead of naming a site the covers never came from
+- Take the cover from the Steam id the profile already carries for detection, instead of a link written into each profile: a URL inside a file nobody re-reads is a link that expires, copied into every profile anyone shares ([5bf4a72](https://github.com/alvarogabrielgomez/kanpachi/commit/5bf4a72))
+- Say SIN PORTADA in the hole of a game that has none — two of the eleven profiles that ship with Kanpachi are not on Steam — instead of naming a site the covers never came from ([5bf4a72](https://github.com/alvarogabrielgomez/kanpachi/commit/5bf4a72))
 
 ## [0.2.2] - 2026-08-14
 
