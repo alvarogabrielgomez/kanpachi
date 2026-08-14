@@ -42,6 +42,7 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/service/supervisor"
 	"github.com/accentiostudios/kanpachi/daemon/transport/control"
 	"github.com/accentiostudios/kanpachi/daemon/transport/pipe"
+	"github.com/accentiostudios/kanpachi/daemon/wiring"
 )
 
 func main() {
@@ -654,7 +655,7 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 		Log:     log,
 		Protect: protegerFichero,
 		Tokens:  almacén.Protect(protegerFichero),
-	}, seedPropio(almacén, log))
+	}, wiring.SeedFromDisk(almacén, log))
 
 	// El motor REAL. Vive al lado de este binario y no se busca en el PATH: un
 	// PATH que alguien pueda escribir es una forma de que este proceso, que

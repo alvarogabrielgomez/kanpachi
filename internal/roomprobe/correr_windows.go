@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
-	"github.com/accentiostudios/kanpachi/core/port"
 	"github.com/accentiostudios/kanpachi/core/usecase"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/canary/opener"
 	catalogstore "github.com/accentiostudios/kanpachi/daemon/adapter/catalog/jsonfile"
@@ -34,6 +33,7 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/adapter/sysevents"
 	"github.com/accentiostudios/kanpachi/daemon/service/supervisor"
 	"github.com/accentiostudios/kanpachi/daemon/transport/control"
+	"github.com/accentiostudios/kanpachi/daemon/wiring"
 )
 
 // plazoDeApagado es cuánto se le da al cierre ordenado.
@@ -47,46 +47,6 @@ const plazoDeApagado = 20 * time.Second
 type relojReal struct{}
 
 func (relojReal) Now() time.Time { return time.Now() }
-
-// auditoria junta las dos mitades del puerto de exposición.
-//
-// El adaptador del firewall se niega a implementar el puerto entero a
-// propósito: preguntarle al router es otra cosa y vive en otro sitio. El
-// daemon hace exactamente este mismo pegado en `wiring_windows.go`.
-type auditoria struct {
-	fw     *firewall.Firewall
-	router port.ExposureAudit
-}
-
-func (a auditoria) FirewallEnabled(ctx context.Context) ([]domain.FirewallProfileState, error) {
-	return a.fw.FirewallEnabled(ctx)
-}
-func (a auditoria) Enforcement(ctx context.Context) (domain.Enforcement, error) {
-	return a.fw.Enforcement(ctx)
-}
-func (a auditoria) RouterMappings(ctx context.Context) ([]domain.PortMapping, error) {
-	return a.router.RouterMappings(ctx)
-}
-
-// seedGuardado lee el registro de esta máquina del disco, como hace el daemon.
-//
-// Que falte es lo normal en la primera corrida y no es un error: significa que
-// todavía no hay dónde abrir salas, y el flujo de crear lo pregunta.
-func seedGuardado(almacén *statestore.Store, log port.Logger) string {
-	raw, err := almacén.LoadSeed()
-	if err != nil {
-		if !errors.Is(err, statestore.ErrNoState) {
-			log.Warn("no se pudo leer el registro guardado", "error", err)
-		}
-		return ""
-	}
-	seed, err := domain.ParseOwnSeed(raw)
-	if err != nil {
-		log.Error("el registro guardado no es un nombre válido, se ignora", "error", err)
-		return ""
-	}
-	return seed
-}
 
 // sinACL deja `identity.key` con los permisos que herede del directorio.
 //
@@ -175,8 +135,8 @@ func correr(op opciones) error {
 	// Sin esto la sonda hospeda sin firmar, o sea que ningún cliente con
 	// decisión 25 puede entrar a su sala: una respuesta sin firma, habiendo
 	// llave fijada en el registro, se rechaza. Una herramienta de medición que
-	// no puede reproducir el camino que mide no mide nada. Ver
-	// `daemon/cmd/kanpachid/main.go`, que hace lo mismo y por lo mismo.
+	// no puede reproducir el camino que mide no mide nada. El firmador lo arma
+	// `wiring.ControlIdentity`, el mismo que usa el daemon.
 	llave, err := identity.LoadOrCreate(op.datos, sinACL)
 	if err != nil {
 		return fmt.Errorf("cargando la llave de identidad: %w", err)
@@ -187,11 +147,7 @@ func correr(op opciones) error {
 	fmt.Println("Tu huella:", domain.Fingerprint(propia))
 
 	canal := control.New(control.Deps{
-		Clock: relojReal{}, Log: log,
-		Identity: control.Identity{
-			Public: propia,
-			Sign:   func(msg []byte) []byte { return ed25519.Sign(llave, msg) },
-		},
+		Clock: relojReal{}, Log: log, Identity: wiring.ControlIdentity(llave),
 	})
 
 	// El almacén se construye ACÁ y no dentro de las dependencias, porque de él
@@ -200,7 +156,7 @@ func correr(op opciones) error {
 
 	// **El registro propio sale del DISCO, y la bandera solo lo pisa.**
 	//
-	// Es lo mismo que hace `daemon/cmd/kanpachid` con `seedPropio`, y no estaba:
+	// Sale del MISMO `wiring.SeedFromDisk` que usa el daemon, y no estaba:
 	// la fábrica nacía solo con lo que trajera `-seed`, así que una corrida sin
 	// bandera arrancaba con `seed.txt` escrito, la cabecera enseñando ese
 	// registro —que lo lee del estado— y `CreateRoom` contestando "esta máquina
@@ -208,7 +164,7 @@ func correr(op opciones) error {
 	// fuentes para el mismo dato, discrepando en pantalla.
 	propioAlArrancar := op.seed
 	if propioAlArrancar == "" {
-		propioAlArrancar = seedGuardado(almacén, log)
+		propioAlArrancar = wiring.SeedFromDisk(almacén, log)
 	}
 	op.seed = propioAlArrancar
 
@@ -232,7 +188,7 @@ func correr(op opciones) error {
 		Library:     steam.New(log),
 		Directories: registros,
 		Control:     canal,
-		Audit:       auditoria{fw: fw, router: igd.New(log)},
+		Audit:       wiring.Exposure{FW: fw, Router: igd.New(log)},
 		Inspector:   inspector.New(),
 		Prober:      probe.New(),
 		Canary:      opener.New(log),

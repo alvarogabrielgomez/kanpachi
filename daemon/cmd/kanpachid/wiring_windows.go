@@ -19,6 +19,7 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/windows/netfw"
 	"github.com/accentiostudios/kanpachi/daemon/paths"
+	"github.com/accentiostudios/kanpachi/daemon/wiring"
 )
 
 // sistemaDeCuarentena es qué lista de puertos cierra la cuarentena de base.
@@ -139,7 +140,7 @@ func realFirewall(dataDir string, log port.Logger, router port.ExposureAudit) (
 			"  Escribir en el firewall exige administrador, así que en modo consola hay "+
 			"que abrir la terminal elevada", err)
 	}
-	return fw, exposure{fw: fw, router: router}, close, nil
+	return fw, wiring.Exposure{FW: fw, Router: router}, close, nil
 }
 
 // quitarCuarentenaDeBase es el único camino del repositorio que la borra.
