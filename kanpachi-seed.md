@@ -158,20 +158,26 @@ checks it against the key **the registry pinned for that code**, which is the pa
 key arrives by a different road than the answer does. An unsigned answer, where a pinned key exists,
 is refused rather than accepted as "unverified" — that leniency was the whole attack, spelled out.
 
-### The gap that is still open, stated plainly
+### Key continuity, and the gap it does not close
 
-**Nothing remembers a key between rooms yet.** Every check above is against a key learned on the
-spot: the registry pins the first key it sees for an invite code, and the client trusts what the
-registry pins. That catches a registry serving a card its own pinned key does not back, and a
-stranger squatting on a lobby. It does not tell you *whose* key it is the first time you see it, and
-it cannot say "this is the same host you have played with five times" instead of taking a nickname
-at its word.
+Every check above is against a key learned from the registry. Kanpachi also remembers, which is the
+mechanism SSH and Signal use: your machine keeps a book of the hosts you have joined — the key, the
+nickname it used, when you first and last saw it — and the confirmation screen says what it finds.
+"You have played with Humberto, in 5 rooms" is a different sentence from "this is the first time",
+and a known nickname arriving with a *different* key is a warning, printed with the old fingerprint
+above the new one so the two can be compared over any channel you already trust.
 
-The remaining piece — key continuity, the mechanism SSH and Signal use — is decision 25 in
-[`docs/02-decisiones-de-diseno.md`](docs/02-decisiones-de-diseno.md), and what it adds is a book of
-fingerprints on your own machine, plus a warning when one changes. A warning, not a locked door:
-Signal started by blocking on a key change and moved to advising, because people do reinstall their
-phones, and a block in a game is a button that gets clicked without reading.
+**The warning does not lock the door.** Reinstalling Windows generates a new key legitimately, and a
+block inside a game is a button people click without reading. Signal started by blocking on a key
+change and moved to advising, for the same reason. The button stays and reads "enter anyway".
+
+The gap that is left is the one every system of this kind has, and it is worth stating rather than
+hiding: **the first time, there is nothing to compare against.** The book says the key is the same
+one as before. It never says whose it is. That is also what Signal's key transparency says of
+itself — its log attests structural integrity, and the fallback for identity is still comparing a
+fingerprint by hand. If a case ever warrants it, compare the fingerprint with your friend over
+another channel. Decision 25 in
+[`docs/02-decisiones-de-diseno.md`](docs/02-decisiones-de-diseno.md) has the whole reasoning.
 
 One more thing worth stating precisely, because the comparison to Signal invites the wrong
 conclusion. Signal's own anonymous envelope — sealed sender — hides the sender **from the server**

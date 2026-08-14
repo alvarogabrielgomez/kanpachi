@@ -8,25 +8,22 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
-### Added
-
-- See who is hosting before you go in: the room you are about to enter now says whether you have played with that host before, and shows the fingerprint of the key that signed the invitation. "You have played with Humberto, in 5 rooms" is a different sentence from "this is the first time", and until now the app could say neither
-- Get warned when a host you know arrives with a different key, with the old fingerprint above the new one so the two can be compared over any other channel. It does not lock the door: reinstalling Windows produces a new key legitimately, so the button stays and reads "Entrar igual"
-
 ### Security
 
-- Refuse a credential in the lobby that is not signed by the host of that room. Anybody holding the invite code could sit on the host's lobby address and answer the request first, and what that got them is your machine joining THEIR network while it believes it is in your friends' one — with the game's ports opened towards it. The host now signs its answer with the long-term key of its installation, bound to the room and to that one request, and the guest checks it against the key the meeting server pinned for that code
-- Check the same signature on the invitation web page, which claimed to check it and never did: a page that is handed a card the room's own key does not back now says it could not verify the invitation, instead of printing whatever name and nickname it was given. Browsers without Ed25519 in WebCrypto say nothing was verified — they never pretend it was
-- Check the room card against the key the meeting server itself pinned for that code, instead of taking the card and the server's word for it. A server that has been taken over can no longer change the room name or the nickname on the invitation screen without the change showing: the card no longer opens, and the screen says so rather than painting what that server wanted read
+- Refuse a credential in the lobby that is not signed by the host of that room. Anybody holding the invite code could sit on the host's lobby address and answer the request first, and what that got them is your machine joining THEIR network while it believes it is in your friends' one — with the game's ports opened towards it. The host now signs its answer with the long-term key of its installation, bound to the room and to that one request, and the guest checks it against the key the meeting server pinned for that code ([c84c683](https://github.com/alvarogabrielgomez/kanpachi/commit/c84c683))
+- Check the same signature on the invitation web page, which claimed to check it and never did: a page that is handed a card the room's own key does not back now says it could not verify the invitation, instead of printing whatever name and nickname it was given. Browsers without Ed25519 in WebCrypto say nothing was verified — they never pretend it was ([b011aee](https://github.com/alvarogabrielgomez/kanpachi/commit/b011aee))
+- Check the room card against the key the meeting server itself pinned for that code, instead of taking the card and the server's word for it. A server that has been taken over can no longer change the room name or the nickname on the invitation screen without the change showing: the card no longer opens, and the screen says so rather than painting what that server wanted read ([99fb2d5](https://github.com/alvarogabrielgomez/kanpachi/commit/99fb2d5))
 
 ### Added
 
+- See who is hosting before you go in: the room you are about to enter now says whether you have played with that host before, and shows the fingerprint of the key that signed the invitation. "You have played with Humberto, in 5 rooms" is a different sentence from "this is the first time", and until now the app could say neither ([4390c52](https://github.com/alvarogabrielgomez/kanpachi/commit/4390c52))
+- Get warned when a host you know arrives with a different key, with the old fingerprint above the new one so the two can be compared over any other channel. It does not lock the door: reinstalling Windows produces a new key legitimately, so the button stays and reads "Entrar igual" ([4390c52](https://github.com/alvarogabrielgomez/kanpachi/commit/4390c52))
 - See the game covers, which never once appeared: the hole with PORTADA STEAMDB written in it was all there ever was, and nothing anywhere asked for an image. They now come from Steam itself, in the shape each hole needs — the tall one for the thumbnails and the room, the wide one for the catalogue grid ([5bf4a72](https://github.com/alvarogabrielgomez/kanpachi/commit/5bf4a72))
 - Give a game its Steam id when you add it by hand, and watch its cover appear in the preview as you type. The whole address, pasted from the browser, works too ([5bf4a72](https://github.com/alvarogabrielgomez/kanpachi/commit/5bf4a72))
 
 ### Changed
 
-- **Entering a room now needs both machines running this version or newer.** A host on an older Kanpachi does not sign anything, and an unsigned answer is exactly what somebody impersonating the host would send, so it can no longer be told apart or accepted. Updating the host fixes it
+- **Entering a room now needs both machines running this version or newer.** A host on an older Kanpachi does not sign anything, and an unsigned answer is exactly what somebody impersonating the host would send, so it can no longer be told apart or accepted. Updating the host fixes it ([c84c683](https://github.com/alvarogabrielgomez/kanpachi/commit/c84c683))
 - Take the cover from the Steam id the profile already carries for detection, instead of a link written into each profile: a URL inside a file nobody re-reads is a link that expires, copied into every profile anyone shares ([5bf4a72](https://github.com/alvarogabrielgomez/kanpachi/commit/5bf4a72))
 - Say SIN PORTADA in the hole of a game that has none — two of the eleven profiles that ship with Kanpachi are not on Steam — instead of naming a site the covers never came from ([5bf4a72](https://github.com/alvarogabrielgomez/kanpachi/commit/5bf4a72))
 
