@@ -40,6 +40,10 @@ $repoRoot   = Split-Path -Parent $PSScriptRoot
 $engineRoot = Join-Path (Split-Path -Parent $repoRoot) "kanpachi-engine"
 $output     = Join-Path $repoRoot "testTools"
 
+# Stamped BEFORE anything is built, so "did it come out of this run" is an exact
+# question and not a ninety-minute guess.
+$startedAt  = Get-Date
+
 if (-not (Test-Path $output)) { New-Item -ItemType Directory -Path $output | Out-Null }
 
 function Step($t) { Write-Host "`n$t" -ForegroundColor Cyan }
@@ -195,24 +199,49 @@ Ok "roombundle.exe ready ($mb MB) - this is what gets sent over chat"
 # Packet.dll builds fine and dies bringing up the network, on somebody else's
 # machine.
 Step "Checking that the five are there"
-# Two are BUILT here and have to be from this run. The other three are third
-# party: they are downloaded once, their date is the day they came down and they
-# are pinned by hash in internal/arch/suministro_test.go, so of those only
-# presence is demanded.
-$startedAt = (Get-Date).AddMinutes(-90)
-foreach ($f in @("roomprobe.exe", "kanpachi-engine.exe")) {
+# roomprobe and roombundle are BUILT here, so they have to be from this run.
+# Step 0 deleted them, so this only catches a build that silently wrote
+# somewhere else.
+foreach ($f in @("roomprobe.exe", "roombundle.exe")) {
     $path = Join-Path $output $f
     if (-not (Test-Path $path)) { throw "$f is missing from testTools: the bundle would be incomplete." }
     if ((Get-Item $path).LastWriteTime -lt $startedAt) {
         throw "$f is dated $((Get-Item $path).LastWriteTime): it did not come out of this run."
     }
 }
+
+# The engine is judged against its SOURCE and not against the clock, which is
+# the same check build-portable-bundle.ps1 makes.
+#
+# The clock version was wrong and it fired here: it demanded a date within the
+# last ninety minutes, and cargo does not rewrite the binary when nothing in the
+# source changed. A `Finished release profile in 15.45s` leaves the mtime of the
+# last real build, so rebuilding twice in one day failed over an engine that was
+# perfectly correct. What matters is not when it was built, it is whether
+# anything changed after it.
+$engineOk = $false
+if (Test-Path $engineRoot) {
+    $sources = @(Get-ChildItem (Join-Path $engineRoot 'src') -Recurse -File -ErrorAction SilentlyContinue) +
+               @(Get-ChildItem $engineRoot -File -Filter 'Cargo.toml' -ErrorAction SilentlyContinue) +
+               @(Get-ChildItem $engineRoot -File -Filter 'build.rs' -ErrorAction SilentlyContinue)
+    $newest = $sources | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $built = (Get-Item $engineTarget).LastWriteTime
+    if ($newest -and $newest.LastWriteTime -gt $built) {
+        throw "the engine is dated $built and $($newest.Name) is from $($newest.LastWriteTime): it is older than its own source."
+    }
+    $engineOk = $true
+}
+if (-not $engineOk) { Note "the engine repo is not at $engineRoot, staleness could not be checked" }
+
+# The other three are third party: they are downloaded once, their date is the
+# day they came down and they are pinned by hash in
+# internal/arch/suministro_test.go, so of those only presence is demanded.
 foreach ($f in @("wintun.dll", "Packet.dll", "WinDivert64.sys")) {
     if (-not (Test-Path (Join-Path $output $f))) {
         throw "$f is missing from testTools. It is third party and the engine build leaves it; without it the engine brings up no network."
     }
 }
-Ok "the five are there, and the two that get built are from this run"
+Ok "the five are there, the two that get built are from this run, and the engine is newer than its source"
 
 # ── 6. The service, which they will fight over ───────────────────────────────
 $svc = Get-Service kanpachi-daemon -ErrorAction SilentlyContinue
