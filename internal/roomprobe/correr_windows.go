@@ -68,6 +68,26 @@ func (a auditoria) RouterMappings(ctx context.Context) ([]domain.PortMapping, er
 	return a.router.RouterMappings(ctx)
 }
 
+// seedGuardado lee el registro de esta máquina del disco, como hace el daemon.
+//
+// Que falte es lo normal en la primera corrida y no es un error: significa que
+// todavía no hay dónde abrir salas, y el flujo de crear lo pregunta.
+func seedGuardado(almacén *statestore.Store, log port.Logger) string {
+	raw, err := almacén.LoadSeed()
+	if err != nil {
+		if !errors.Is(err, statestore.ErrNoState) {
+			log.Warn("no se pudo leer el registro guardado", "error", err)
+		}
+		return ""
+	}
+	seed, err := domain.ParseOwnSeed(raw)
+	if err != nil {
+		log.Error("el registro guardado no es un nombre válido, se ignora", "error", err)
+		return ""
+	}
+	return seed
+}
+
 // sinACL deja `identity.key` con los permisos que herede del directorio.
 //
 // El daemon le pone una ACL propia con `protegerFichero`, y acá no: esta
@@ -173,11 +193,30 @@ func correr(op opciones) error {
 			Sign:   func(msg []byte) []byte { return ed25519.Sign(llave, msg) },
 		},
 	})
+
+	// El almacén se construye ACÁ y no dentro de las dependencias, porque de él
+	// sale el registro con el que nace la fábrica.
+	almacén := statestore.New(op.datos)
+
+	// **El registro propio sale del DISCO, y la bandera solo lo pisa.**
+	//
+	// Es lo mismo que hace `daemon/cmd/kanpachid` con `seedPropio`, y no estaba:
+	// la fábrica nacía solo con lo que trajera `-seed`, así que una corrida sin
+	// bandera arrancaba con `seed.txt` escrito, la cabecera enseñando ese
+	// registro —que lo lee del estado— y `CreateRoom` contestando "esta máquina
+	// no tiene registro configurado", que es lo que la fábrica sabía. Dos
+	// fuentes para el mismo dato, discrepando en pantalla.
+	propioAlArrancar := op.seed
+	if propioAlArrancar == "" {
+		propioAlArrancar = seedGuardado(almacén, log)
+	}
+	op.seed = propioAlArrancar
+
 	// La fábrica, igual que el producto: al entrar manda el registro del código
-	// pegado, y `--seed` solo dice dónde ABRE salas esta sonda.
+	// pegado, y el propio solo dice dónde ABRE salas esta sonda.
 	registros := directory.NewFactory(directory.Deps{
 		DataDir: op.datos, Log: log, Protect: sinACL,
-	}, op.seed)
+	}, propioAlArrancar)
 
 	sesion, err := usecase.NewSession(ctxRaiz, usecase.Deps{
 		// Esta sonda es de Windows, así que la cuarentena es la de Windows. El
@@ -189,7 +228,7 @@ func correr(op opciones) error {
 		NetCfg:      netcfg.New(op.datos, log),
 		Routes:      routes.New(),
 		Store:       catalogstore.New(op.dirExe, op.datos, log),
-		State:       statestore.New(op.datos),
+		State:       almacén,
 		Library:     steam.New(log),
 		Directories: registros,
 		Control:     canal,
@@ -297,7 +336,7 @@ func correr(op opciones) error {
 	// configurado" con el nombre delante, en la cabecera. Guardarlo por el
 	// mismo camino que la ventana deja las dos cosas de acuerdo, y de paso
 	// comprueba que ese registro conteste antes de que nadie intente nada.
-	if op.seed != "" && sesion.OwnSeed() == "" {
+	if op.seed != "" && sesion.OwnSeed() != op.seed {
 		if _, err := guardarRegistro(ctxRaiz, e, op.seed); err != nil {
 			return err
 		}

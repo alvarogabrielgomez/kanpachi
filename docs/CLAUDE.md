@@ -188,6 +188,8 @@ Otras convenciones:
 - **Un binario con adaptadores provisionales se niega a correr como servicio.** El riesgo nunca fue que fallen: es que uno con un firewall que dice que purgó termine instalado. La etiqueta de compilación va al revés de lo intuitivo a propósito, ver `03-arquitectura.md`.
 - **Dos grupos de firewall, con dueños distintos.** `Kanpachi` es la sala y la escribe el daemon: al arrancar purga lo etiquetado con ese grupo y aplica el estado deseado. `Kanpachi-base` es la cuarentena y la ESCRIBE el daemon en cada arranque, antes de purgar, con un método que solo agrega: no existe el de borrarla. Por eso sigue puesta con el servicio detenido. Solo `daemon/adapter/firewall/windowscom/` puede nombrar el grupo. El desinstalador purga los dos. La comparación de grupo va por igualdad exacta y jamás por prefijo, porque `Kanpachi` es prefijo de `Kanpachi-base`. Lo vigila `internal/arch/grupobase_test.go`.
 - No compilar con `-ldflags="-s -w"`. Dispara falsos positivos de Defender sobre binarios Go.
+- **Las herramientas de prueba se construyen SOLO con su script, jamás a mano.** `scripts/build_test_tools.ps1` para `roomprobe` y `roombundle`. Un `go build -o testTools
+oomprobe.exe` suelto deja el resto del directorio como estaba, y de ahí salen los binarios mezclados: un roomprobe nuevo al lado de un motor de la semana pasada no falla al construirse, falla al crear la sala, con un mensaje que habla de un campo JSON. El script **borra todo lo construido antes de empezar**, recompila el motor siempre, y comprueba al final que los cinco ficheros estén y que los dos que se construyen sean de esa corrida. Correrlo cuesta minutos; el rato que ahorra es el de alguien probando en otra máquina.
 
 ## Cómo trabajar aquí
 

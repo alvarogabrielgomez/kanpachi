@@ -12,15 +12,23 @@
     Elevada la necesita roomprobe al correr, y se eleva sola.
 
 .PARAMETER RecompilarMotor
-    Recompila el motor aunque ya haya uno en testTools.
+    Obsoleto: el motor se recompila siempre. Se acepta para no romper lo que
+    alguien tenga escrito en el historial de su consola.
 
 .PARAMETER SinPreguntar
     No pregunta nada. Sirve para correrlo desatendido.
+
+.PARAMETER Limpio
+    Borra ademas roomprobe-data, data y roomprobe.log. Eso se lleva por delante
+    identity.key y la libreta de huellas de esta maquina, o sea que la sonda
+    vuelve a presentarse con otra cara y sin recordar a nadie. Sin este switch
+    se borra solo lo construido.
 #>
 [CmdletBinding()]
 param(
     [switch]$RecompilarMotor,
-    [switch]$SinPreguntar
+    [switch]$SinPreguntar,
+    [switch]$Limpio
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,12 +46,42 @@ function Bien($t) { Write-Host "  $t" -ForegroundColor Green }
 function Nota($t) { Write-Host "  $t" -ForegroundColor DarkGray }
 function Aviso($t) { Write-Host "  $t" -ForegroundColor Yellow }
 
-# ── 0. Basura de corridas anteriores ─────────────────────────────────────────
-# El `.exe~` lo deja Go al reemplazar un binario en uso, y el de la raiz sale de
-# un `go build` sin -o.
+# ── 0. Se BORRA todo lo construido, siempre ──────────────────────────────────
+#
+# No se reutiliza nada de una corrida anterior. Un directorio donde conviven
+# binarios de distintos dias no falla al construirse: falla al correr, con un
+# error que habla de otra cosa —un campo JSON que el motor no conoce, un menu
+# que no coincide con el codigo— y lo paga quien esta probando, no quien
+# construyo.
+#
+# Se borran los productos: los .exe, las DLL, el driver y la carga que se empotra
+# en el bundle. NO se borran `roomprobe-data` ni `roomprobe.log`: ahi viven
+# `identity.key`, la libreta de huellas y la evidencia de la ultima corrida, que
+# es justo lo que se manda por chat. Para eso esta -Limpio.
+Paso "Borrando lo construido antes (no se reutiliza nada)"
+$productos = @("roomprobe.exe", "roombundle.exe", "kanpachi-engine.exe",
+               "wintun.dll", "Packet.dll", "WinDivert64.sys")
+foreach ($f in $productos) {
+    $ruta = Join-Path $salida $f
+    if (Test-Path $ruta) { Remove-Item $ruta -Force; Nota "borrado $f" }
+}
 Get-ChildItem $salida -Filter "*.exe~" -ErrorAction SilentlyContinue | Remove-Item -Force
+$carga = Join-Path $raizRepo "internal\roombundle\carga"
+if (Test-Path $carga) {
+    Remove-Item (Join-Path $carga "*") -Force -Recurse -ErrorAction SilentlyContinue
+    Nota "vaciada internal\roombundle\carga"
+}
 $suelto = Join-Path $raizRepo "roomprobe.exe"
 if (Test-Path $suelto) { Remove-Item $suelto -Force; Nota "borrado el roomprobe.exe suelto de la raiz" }
+
+if ($Limpio) {
+    foreach ($d in @("roomprobe-data", "data")) {
+        $ruta = Join-Path $salida $d
+        if (Test-Path $ruta) { Remove-Item $ruta -Recurse -Force; Aviso "borrado $d (identidad y libreta incluidas)" }
+    }
+    $log = Join-Path $salida "roomprobe.log"
+    if (Test-Path $log) { Remove-Item $log -Force; Aviso "borrado roomprobe.log" }
+}
 
 # ── 1. La puerta del CI, corrida aqui ────────────────────────────────────────
 # El job de Linux hace `go vet ./internal/...`, y roomprobe se lo rompio una vez
@@ -60,105 +98,43 @@ try {
 } finally { Remove-Item Env:GOOS }
 Bien "Linux compila y vetea"
 
-# ── 2. El motor ───────────────────────────────────────────────────────────────
+# ── 2. El motor, recompilado SIEMPRE ─────────────────────────────────────────
+#
+# Nunca se reutiliza uno que haya por ahi. De reutilizarlo salio el fallo del
+# 2026-08-14: el daemon manda `log_dir` en cada orden, el .exe que estaba en
+# testTools era anterior al campo, y abrir una sala moria en
+#
+#   unreadable command: unknown field `log_dir`, expected one of `dev_name`...
+#
+# Ese mensaje no se parece en nada a "ese binario es de hace seis dias", asi que
+# lo paga en investigacion quien esta probando. Cuestan unos minutos de Rust y
+# quitan una clase entera de fallo.
 $destinoMotor = Join-Path $salida "kanpachi-engine.exe"
-$saltarMotor  = $false
 
-# Un motor VIEJO no falla al compilar: falla al crear la sala, y el mensaje
-# habla de un campo JSON que nadie relaciona con "el .exe es de hace seis dias".
-# Paso el 2026-08-14: el daemon manda `log_dir` y el motor de testTools era
-# anterior al campo, asi que abrir una sala moria en
-#   unreadable command: unknown field `log_dir`
-# Comparar fechas es barato y convierte ese rato de investigacion en una linea.
-$fuenteMotorMasNueva = $null
-if (Test-Path (Join-Path $raizMotor "src")) {
-    $fuenteMotorMasNueva = Get-ChildItem -Path (Join-Path $raizMotor "src") -Recurse -Include *.rs |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+Paso "Recompilando el motor desde $raizMotor..."
+if (-not (Test-Path (Join-Path $raizMotor "Cargo.toml"))) {
+    throw "No esta el repo kanpachi-engine en $raizMotor. Clonalo al lado de kanpachi."
+}
+$buildMotor = Join-Path $raizMotor "scripts\build.ps1"
+if (-not (Test-Path $buildMotor)) {
+    throw "Falta $buildMotor, que prepara MSVC, protoc, libclang y 7-Zip antes de compilar."
+}
+& $buildMotor -Stage $salida
+$motorExe = "C:\kt\release\kanpachi-engine.exe"
+if (-not (Test-Path $motorExe)) {
+    throw "El motor se compilo pero no aparecio en $motorExe."
 }
 
-if ((Test-Path $destinoMotor) -and (-not $RecompilarMotor)) {
-    $mb = [math]::Round((Get-Item $destinoMotor).Length / 1MB, 1)
-    $rancio = $fuenteMotorMasNueva -and
-              ((Get-Item $destinoMotor).LastWriteTime -lt $fuenteMotorMasNueva.LastWriteTime)
-    if ($rancio) {
-        Aviso "kanpachi-engine.exe es ANTERIOR a $($fuenteMotorMasNueva.Name) del repo del motor"
-        Nota  "  exe:    $((Get-Item $destinoMotor).LastWriteTime)"
-        Nota  "  fuente: $($fuenteMotorMasNueva.LastWriteTime)"
-        Nota  "  Un motor viejo compila bien y muere al crear la sala, hablando de un campo JSON."
-    }
-    if ($SinPreguntar) {
-        if ($rancio) {
-            Aviso "se recompila igual: con -SinPreguntar no hay a quien preguntarle"
-        } else {
-            $saltarMotor = $true
-            Nota "kanpachi-engine.exe ya esta ($mb MB), no se recompila"
-        }
-    } else {
-        if (-not $rancio) { Aviso "kanpachi-engine.exe ya existe en testTools ($mb MB)" }
-        $r = Read-Host "  Recompilarlo? (s/N)"
-        if ($r -ne "s" -and $r -ne "S") { $saltarMotor = $true }
-    }
-}
+Copy-Item $motorExe $destinoMotor -Force
+$mb = [math]::Round((Get-Item $destinoMotor).Length / 1MB, 1)
+Bien "Motor copiado desde $motorExe ($mb MB)"
 
-# Recompilar por rancio es lo mismo que pedirlo a mano.
-if ((-not $saltarMotor) -and (Test-Path $destinoMotor)) { $RecompilarMotor = $true }
-
-if (-not $saltarMotor) {
-    if ($RecompilarMotor) {
-        Paso "Recompilando el motor desde $raizMotor..."
-        if (-not (Test-Path (Join-Path $raizMotor "Cargo.toml"))) {
-            throw "No esta el repo kanpachi-engine en $raizMotor. Clonalo al lado de kanpachi."
-        }
-        $buildMotor = Join-Path $raizMotor "scripts\build.ps1"
-        if (-not (Test-Path $buildMotor)) {
-            throw "Falta $buildMotor, que prepara MSVC, protoc, libclang y 7-Zip antes de compilar."
-        }
-        & $buildMotor -Stage $salida
-        $motorExe = "C:\kt\release\kanpachi-engine.exe"
-        if (-not (Test-Path $motorExe)) {
-            throw "El motor se compiló pero no apareció en $motorExe."
-        }
-    } else {
-        Paso "Buscando un motor ya compilado..."
-        $motorExe = $null
-        foreach ($p in @(
-            "C:\kt\release\kanpachi-engine.exe",
-            "C:\kt\stage\kanpachi-engine.exe",
-            (Join-Path $raizMotor "target\release\kanpachi-engine.exe"))) {
-            if (Test-Path $p) { $motorExe = $p; break }
-        }
-
-        if (-not $motorExe) {
-            Aviso "No hay ninguno compilado. Compilando desde $raizMotor"
-            if (-not (Test-Path (Join-Path $raizMotor "Cargo.toml"))) {
-                throw "No esta el repo kanpachi-engine en $raizMotor. Clonalo al lado de kanpachi."
-            }
-            $buildMotor = Join-Path $raizMotor "scripts\build.ps1"
-            if (Test-Path $buildMotor) {
-                & $buildMotor
-            } else {
-                Push-Location $raizMotor
-                try { cargo build --release } finally { Pop-Location }
-            }
-            $motorExe = Join-Path $raizMotor "target\release\kanpachi-engine.exe"
-            if (-not (Test-Path $motorExe)) {
-                $motorExe = "C:\kt\release\kanpachi-engine.exe"
-                if (-not (Test-Path $motorExe)) { throw "El motor no se compilo. Mira la salida de cargo build." }
-            }
-        }
-    }
-
-    Copy-Item $motorExe $destinoMotor -Force
-    $mb = [math]::Round((Get-Item $destinoMotor).Length / 1MB, 1)
-    Bien "Motor copiado desde $motorExe ($mb MB)"
-
-    # Packet.dll es importacion dura del motor y wintun.dll es lo que crea el
-    # adaptador virtual: sin ellas el motor arranca y no levanta ninguna red.
-    $dirMotor = Split-Path -Parent $motorExe
-    foreach ($dep in @('Packet.dll', 'wintun.dll', 'WinDivert64.sys')) {
-        $src = Join-Path $dirMotor $dep
-        if (Test-Path $src) { Copy-Item $src (Join-Path $salida $dep) -Force; Nota "+ $dep" }
-    }
+# Packet.dll es importacion dura del motor y wintun.dll es lo que crea el
+# adaptador virtual: sin ellas el motor arranca y no levanta ninguna red.
+$dirMotor = Split-Path -Parent $motorExe
+foreach ($dep in @('Packet.dll', 'wintun.dll', 'WinDivert64.sys')) {
+    $src = Join-Path $dirMotor $dep
+    if (Test-Path $src) { Copy-Item $src (Join-Path $salida $dep) -Force; Nota "+ $dep" }
 }
 
 # ── 3. roomprobe ──────────────────────────────────────────────────────────────
@@ -208,6 +184,32 @@ try {
 }
 $mb = [math]::Round((Get-Item $destinoBundle).Length / 1MB, 1)
 Bien "roombundle.exe listo ($mb MB) - esto es lo que se manda por chat"
+
+# ── 5.5 Los cinco tienen que estar, y recien construidos ─────────────────────
+#
+# El paso 0 los borra todos, asi que lo que quede aqui salio de esta corrida. Se
+# comprueba igualmente: el script del motor copia sus DLL desde el stage, y si
+# ese stage esta vacio se queda avisando en gris y sigue. Un testTools sin
+# Packet.dll construye bien y muere al levantar la red, en la maquina de otro.
+Paso "Comprobando que estan los cinco"
+# Dos se CONSTRUYEN aqui y tienen que ser de esta corrida. Los otros tres son de
+# terceros: se descargan una vez, su fecha es la del dia que se bajaron y estan
+# fijados por hash en internal/arch/suministro_test.go, asi que de ellos solo se
+# exige que esten.
+$arranque = (Get-Date).AddMinutes(-90)
+foreach ($f in @("roomprobe.exe", "kanpachi-engine.exe")) {
+    $ruta = Join-Path $salida $f
+    if (-not (Test-Path $ruta)) { throw "Falta $f en testTools: el bundle quedaria incompleto." }
+    if ((Get-Item $ruta).LastWriteTime -lt $arranque) {
+        throw "$f tiene fecha de $((Get-Item $ruta).LastWriteTime): no salio de esta corrida."
+    }
+}
+foreach ($f in @("wintun.dll", "Packet.dll", "WinDivert64.sys")) {
+    if (-not (Test-Path (Join-Path $salida $f))) {
+        throw "Falta $f en testTools. Es de terceros y lo deja el build del motor; sin el, el motor no levanta ninguna red."
+    }
+}
+Bien "los cinco estan, y los dos que se construyen son de esta corrida"
 
 # ── 6. El servicio, que se van a pelear ───────────────────────────────────────
 $svc = Get-Service kanpachi-daemon -ErrorAction SilentlyContinue
