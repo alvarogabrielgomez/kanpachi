@@ -16,7 +16,10 @@
 // # Dónde queda lo que importa
 //
 // `roomprobe.log` y la carpeta `roomprobe-data` quedan **junto a este
-// ejecutable**, no en el temporal. No es una preferencia: roomprobe los pone
+// ejecutable**, no en el temporal. Dentro de esa carpeta viven `identity.key`,
+// que es la llave con la que esta máquina firma lo que hospeda, y
+// `known-hosts.json`, la libreta de huellas: borrarla es presentarse con otra
+// cara y olvidar a todo el mundo. No es una preferencia: roomprobe los pone
 // junto a SU ejecutable, que dentro del bundle vive en la carpeta que este
 // programa borra al salir. O sea que sin pasarle `-log` y `-data`, la limpieza
 // destruiría el log justo cuando alguien lo iba a mandar por chat, y

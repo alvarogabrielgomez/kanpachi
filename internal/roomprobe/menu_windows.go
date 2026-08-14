@@ -140,9 +140,85 @@ func entrarASala(ctx context.Context, e entorno) error {
 	if err != nil {
 		return err
 	}
+	// Lo que la ventana enseña antes de que alguien pulse: a qué sala, quién
+	// dice hospedarla, y qué sabe la libreta de su llave. Acá se imprime en vez
+	// de pintarse, y NO detiene nada, igual que en el producto.
+	mirarAntesDeEntrar(ctx, e, pegado)
 	fmt.Println("\nEntrando. Los pasos van al log y a la vista.")
 	_, err = e.s.JoinRoom(ctx, pegado, nick)
+	if err == nil {
+		tras := e.s.KnownHosts()
+		e.log.Info("libreta después de entrar", "hosts", len(tras.Hosts))
+	}
 	return err
+}
+
+// mirarAntesDeEntrar es la pantalla de confirmación de la app, en consola.
+//
+// Todo lo que sale de aquí es de la MISMA consulta que hace el producto,
+// `PeekInvite`, así que lo que se lee es lo que un usuario vería. Un fallo no
+// detiene el ingreso: esta función informa, y quien decide es quien pulsa.
+func mirarAntesDeEntrar(ctx context.Context, e entorno, pegado string) {
+	previa, err := e.s.PeekInvite(ctx, pegado)
+	if err != nil {
+		e.log.Warn("no se pudo mirar el enlace antes de entrar", "error", err)
+		fmt.Println("  (no se pudo previsualizar:", err, ")")
+		return
+	}
+	fmt.Println()
+	fmt.Println("  Sala:      ", oVacio(previa.Card.Room, "(no se pudo abrir la tarjeta)"))
+	fmt.Println("  Se ident.: ", oVacio(previa.Card.Host.String(), "(sin nick)"))
+	fmt.Println("  Tarjeta:   ", nombreDeConfianza(previa.Trust))
+	fmt.Println("  Huella:    ", oVacio(previa.Fingerprint, "(sin firma verificada)"))
+	fmt.Println("  Libreta:   ", fraseDeVeredicto(previa))
+	if previa.Verdict == domain.HostKeyChanged {
+		fmt.Println()
+		fmt.Println("  *** OJO: la huella cambió ***")
+		fmt.Println("      ANTES:", domain.Fingerprint(previa.Known.Key))
+		fmt.Println("      AHORA:", previa.Fingerprint)
+		fmt.Println("      Se entra igual, que es lo que hace el producto. El aviso avisa.")
+	}
+	e.log.Info("previsualización del enlace antes de entrar",
+		"sala", previa.Card.Room, "nick", previa.Card.Host.String(),
+		"tarjeta", nombreDeConfianza(previa.Trust),
+		"huella", previa.Fingerprint,
+		"veredicto", previa.Verdict.String(),
+		"huella-recordada", domain.Fingerprint(previa.Known.Key),
+		"salas-con-ese-host", previa.Known.Rooms)
+}
+
+func nombreDeConfianza(t domain.CardTrust) string {
+	switch t {
+	case domain.CardSigned:
+		return "firmada por la llave que el registro fijó"
+	case domain.CardForged:
+		return "NO valida contra la llave fijada: ese registro sirve algo que su propia llave no respalda"
+	default:
+		return "sin firma que comprobar (registro viejo, o sin llave fijada)"
+	}
+}
+
+func fraseDeVeredicto(p usecase.InvitePreview) string {
+	switch p.Verdict {
+	case domain.HostNew:
+		return "es la primera vez que ves esta llave"
+	case domain.HostKnown:
+		return fmt.Sprintf("ya jugaste con %s, en %d sala(s)", p.Known.Nick, p.Known.Rooms)
+	case domain.HostRenamed:
+		return fmt.Sprintf("es la llave de %s, que ahora se identifica como %s",
+			p.Known.Nick, p.Card.Host.String())
+	case domain.HostKeyChanged:
+		return fmt.Sprintf("CONOCES a %s con OTRA llave", p.Known.Nick)
+	default:
+		return "no hay nada que juzgar: sin firma verificada no se consulta"
+	}
+}
+
+func oVacio(v, siVacio string) string {
+	if v == "" {
+		return siVacio
+	}
+	return v
 }
 
 // volverALaUltima es el camino del INVITADO, y no es `ResumeRoom`.

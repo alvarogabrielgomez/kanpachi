@@ -52,6 +52,14 @@ func (s *Session) knownHosts() domain.KnownHosts {
 	return book
 }
 
+// KnownHosts is the book, for whoever wants to show it.
+//
+// Read-only and never fails, like [Session.knownHosts]. It takes no lock: the
+// book lives on disk and is not session state, so reading it while a join is
+// in flight shows the book as it was a moment ago, which is what any view of it
+// can ever promise.
+func (s *Session) KnownHosts() domain.KnownHosts { return s.knownHosts() }
+
 // judgeHost asks the book about a host that is about to be joined.
 //
 // The key must be one whose signature ALREADY verified. Judging an unverified

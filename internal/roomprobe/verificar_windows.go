@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"fmt"
 	"net"
 	"net/netip"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	kanpachiengine "github.com/accentiostudios/kanpachi/daemon/adapter/engine/kanpachi"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/identity"
 )
 
 // medidor lleva la cuenta y decide el código de salida del proceso.
@@ -46,15 +48,16 @@ func menuVerificaciones(ctx context.Context, e entorno) error {
 		alertas     = "4. Alertas (incluye si el firewall esta apagado)"
 		canario     = "5. Canario: comprobar la contencion desde la red"
 		sondeo      = "6. Sondear al host desde aqui"
-		volcado     = "7. Volcar el diagnostico completo al log"
-		todo        = "8. Todo lo que aplique"
-		volver      = "9. << Volver"
+		firmas      = "7. Firmas y libreta de huellas (decision 25)"
+		volcado     = "8. Volcar el diagnostico completo al log"
+		todo        = "9. Todo lo que aplique"
+		volver      = "0. << Volver"
 	)
 
 	for {
 		e.c.cocido()
 		sel, err := elegir("Verificaciones:", []string{
-			adaptadores, compuerta, motor, alertas, canario, sondeo, volcado, todo, volver,
+			adaptadores, compuerta, motor, alertas, canario, sondeo, firmas, volcado, todo, volver,
 		})
 		if err != nil {
 			return err
@@ -77,6 +80,8 @@ func menuVerificaciones(ctx context.Context, e entorno) error {
 			verCanario(ctx, m)
 		case sondeo:
 			verSondeo(ctx, m)
+		case firmas:
+			verFirmas(ctx, m)
 		case volcado:
 			volcarDiagnostico(ctx, e.s, e.log, e.op.seed)
 			fmt.Println("\n  Volcado a", LogFile)
@@ -86,6 +91,7 @@ func menuVerificaciones(ctx context.Context, e entorno) error {
 			verMotor(ctx, m)
 			verAlertas(ctx, m)
 			verCanario(ctx, m)
+			verFirmas(ctx, m)
 			volcarDiagnostico(ctx, e.s, e.log, e.op.seed)
 		}
 
@@ -339,4 +345,114 @@ func verSondeo(ctx context.Context, m medidor) {
 	for _, r := range rep.Results {
 		m.nota("%-28s puerto %-6d %v", r.Label, r.Port, r.Outcome)
 	}
+}
+
+// verFirmas mide la decisión 25 de punta a punta, que son tres preguntas
+// distintas y conviene no mezclarlas:
+//
+//  1. **Esta máquina, ¿con qué cara la ven las demás?** Es la huella de su
+//     `identity.key`, lo único que un amigo puede comparar contra lo que su
+//     ventana le enseñe.
+//  2. **El registro, ¿sirve la firma?** Un seed anterior a este cambio devuelve
+//     la tarjeta sin `sig`, y entonces todo lo demás se cae a «sin verificar»
+//     con razón. Es la primera cosa que hay que descartar cuando el aviso no
+//     aparece: el cliente puede estar entero y el servidor no.
+//  3. **La libreta, ¿qué recuerda?** Se enseña entera, con la huella de cada
+//     entrada, para poder compararla con lo que la otra máquina dice de sí.
+func verFirmas(ctx context.Context, m medidor) {
+	m.seccion("Firmas y libreta de huellas")
+
+	// 1. La propia.
+	priv, err := identity.LoadOrCreate(m.e.op.datos, sinACL)
+	if err != nil {
+		m.mal("no se pudo leer identity.key: %v", err)
+	} else {
+		pub := priv.Public().(ed25519.PublicKey)
+		m.bien("esta máquina firma con la huella %s", domain.Fingerprint(pub))
+		m.nota("es lo que ven los que entran a TU sala; compárala con lo que su ventana les enseñe")
+	}
+
+	// 2. El registro. Se le pregunta por la sala que haya a mano: la abierta si
+	// se hospeda, y si no la última a la que se entró. Sin ninguna de las dos no
+	// hay nada que resolver, y eso no es un fallo.
+	if code, seed, hay := salaAMano(m.e); !hay {
+		m.nota("no hay ninguna sala a mano para resolver: crea una o entra a una y vuelve")
+	} else {
+		verFirmaDelRegistro(ctx, m, code, seed)
+	}
+
+	// 3. La libreta.
+	libreta := m.e.s.KnownHosts()
+	if len(libreta.Hosts) == 0 {
+		m.nota("la libreta está vacía: esta máquina todavía no entró a ninguna sala con firma verificada")
+		return
+	}
+	m.bien("la libreta tiene %d host(s)", len(libreta.Hosts))
+	for _, h := range libreta.Hosts {
+		m.nota("%-14s %s   salas=%d   visto por última vez %s",
+			h.Nick, domain.Fingerprint(h.Key), h.Rooms, h.LastSeen.Format(time.RFC3339))
+	}
+}
+
+// salaAMano devuelve un código con el que preguntarle al registro.
+//
+// La sala abierta manda sobre la última: si se está hospedando, lo interesante
+// es qué está sirviendo el registro AHORA de la propia sala, que es lo que ven
+// los invitados.
+func salaAMano(e entorno) (domain.InviteID, string, bool) {
+	st := e.s.Status()
+	if st.Conn.InRoom() && !st.Room.InviteID.IsZero() {
+		return st.Room.InviteID, st.Room.Seed, true
+	}
+	if last, ok := e.s.LastRoom(); ok {
+		return last.Room.InviteID, last.Room.Seed, true
+	}
+	return domain.InviteID{}, "", false
+}
+
+// verFirmaDelRegistro pregunta por un código y cuenta qué vino, campo a campo.
+//
+// Va por el MISMO adaptador que el producto, así que lo que se lee acá es lo que
+// leería la app: si aquí falta la firma, allá también falta.
+func verFirmaDelRegistro(ctx context.Context, m medidor, code domain.InviteID, seed string) {
+	dir, err := m.e.registros.For(seed)
+	if err != nil {
+		m.mal("no se pudo abrir el registro %s: %v", seed, err)
+		return
+	}
+	plazo, fin := context.WithTimeout(ctx, plazoSeed)
+	defer fin()
+	vista, err := dir.Lookup(plazo, code)
+	if err != nil {
+		m.mal("%s no resolvió %s: %v", seed, code, err)
+		return
+	}
+	m.bien("%s resolvió %s: tarjeta de %d bytes", seed, code, len(vista.Sealed))
+	switch {
+	case len(vista.HostKey) == 0:
+		m.mal("ese registro NO sirve la llave del host: es anterior a la decisión 25 y hay que actualizarlo")
+	case len(vista.Sig) == 0:
+		m.mal("ese registro sirve la llave pero NO la firma: es anterior a este cambio y hay que actualizarlo")
+		m.nota("consecuencia: los clientes tratan la tarjeta como «sin verificar» y el aviso de huella nunca aparece")
+	default:
+		m.bien("sirve llave y firma; huella de la llave fijada: %s", domain.Fingerprint(vista.HostKey))
+	}
+	switch vista.Trust() {
+	case domain.CardSigned:
+		m.bien("la tarjeta VALIDA contra la llave que ese registro fijó")
+	case domain.CardForged:
+		m.mal("la tarjeta NO valida contra la llave fijada: ese registro sirve algo que su propia llave no respalda")
+	default:
+		m.nota("no hay con qué comprobar la tarjeta, así que queda «sin verificar»")
+	}
+	if v, h := m.e.s.KnownHosts().Judge(vista.HostKey, ""); v != domain.HostUnverified {
+		m.nota("la libreta dice: %s%s", v.String(), sufijoDeLibreta(h))
+	}
+}
+
+func sufijoDeLibreta(h domain.KnownHost) string {
+	if h.Nick == "" {
+		return ""
+	}
+	return fmt.Sprintf(" (%s, %d sala(s))", h.Nick, h.Rooms)
 }

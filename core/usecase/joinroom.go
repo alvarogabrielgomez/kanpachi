@@ -105,16 +105,21 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 		return domain.RoomState{}, err
 	}
 
-	// The credential came back signed by that key and the signature checked out,
-	// so this is the one moment where the key can be written down as belonging
-	// to whoever hosts this room. See [Session.rememberHost].
+	// **Getting here with a pinned key in hand IS the proof.** The lobby answer
+	// came back signed by that key and verified against it; an unsigned or bad
+	// one would have failed the join a few lines above. That is a stronger fact
+	// than the card's signature, and it is the one worth remembering: the card
+	// says what the room is called, the lobby answer says who opened it.
+	//
+	// It used to be tied to the card being signed instead, and measuring the
+	// deployed seed on 2026-08-14 showed what that cost: a registry from before
+	// the signature was stored serves the pinned key and no card signature, so
+	// nothing would ever have been written down.
 	//
 	// The nickname comes from the card, which is why the whole link is needed
 	// here and not just the room: the book compares names to keys, and a book
 	// full of keys with no names would only ever say "new".
-	if lookup.Trust() == domain.CardSigned {
-		s.rememberHost(hostKey, hostNickOf(input, lookup))
-	}
+	s.rememberHost(hostKey, hostNickOf(input, lookup))
 
 	s.state.Role = domain.RoleGuest
 	s.state.Room = room

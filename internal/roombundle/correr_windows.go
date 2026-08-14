@@ -148,6 +148,11 @@ func decirDondeQuedoElLog() {
 //   - El directorio de datos moriría con él, y con él `last-room.json`. La
 //     opción "volver a la última sala" no funcionaría nunca desde un bundle,
 //     porque cada corrida empezaría sin memoria.
+//   - Y desde la decisión 25 se llevaría además `identity.key` y
+//     `known-hosts.json`, o sea la identidad con la que esta máquina firma y la
+//     libreta de con quién jugó. Cada corrida se presentaría con una huella
+//     nueva y vería a todos como desconocidos, que es exactamente el aviso que
+//     hay que poder reproducir para medirlo.
 //
 // Los dos apuntan al directorio del BUNDLE, que es donde la persona lo dejó al
 // descargarlo y donde va a saber buscarlos.

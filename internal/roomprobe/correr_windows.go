@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/adapter/directory"
 	kanpachiengine "github.com/accentiostudios/kanpachi/daemon/adapter/engine/kanpachi"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/identity"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/inspector"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/library/steam"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/netcfg"
@@ -147,7 +149,30 @@ func correr(op opciones) error {
 		log.Warn("se mataron motores huérfanos de una corrida anterior", "cantidad", n)
 	}
 
-	canal := control.New(control.Deps{Clock: relojReal{}, Log: log})
+	// La llave larga de ESTA instalación de la sonda, y el canal construido
+	// DESPUÉS de tenerla.
+	//
+	// Sin esto la sonda hospeda sin firmar, o sea que ningún cliente con
+	// decisión 25 puede entrar a su sala: una respuesta sin firma, habiendo
+	// llave fijada en el registro, se rechaza. Una herramienta de medición que
+	// no puede reproducir el camino que mide no mide nada. Ver
+	// `daemon/cmd/kanpachid/main.go`, que hace lo mismo y por lo mismo.
+	llave, err := identity.LoadOrCreate(op.datos, sinACL)
+	if err != nil {
+		return fmt.Errorf("cargando la llave de identidad: %w", err)
+	}
+	propia := llave.Public().(ed25519.PublicKey)
+	log.Info("llave de identidad de esta máquina", "huella", domain.Fingerprint(propia),
+		"para-qué", "es lo que las otras máquinas recuerdan de esta; se compara con lo que ellas enseñan al entrar")
+	fmt.Println("Tu huella:", domain.Fingerprint(propia))
+
+	canal := control.New(control.Deps{
+		Clock: relojReal{}, Log: log,
+		Identity: control.Identity{
+			Public: propia,
+			Sign:   func(msg []byte) []byte { return ed25519.Sign(llave, msg) },
+		},
+	})
 	// La fábrica, igual que el producto: al entrar manda el registro del código
 	// pegado, y `--seed` solo dice dónde ABRE salas esta sonda.
 	registros := directory.NewFactory(directory.Deps{
@@ -263,7 +288,7 @@ func correr(op opciones) error {
 	defer apagar()
 
 	if err := menuPrincipal(ctxRaiz, entorno{
-		s: sesion, log: log, c: c, op: &op, apagar: apagar, fallos: &fallos,
+		s: sesion, log: log, c: c, op: &op, registros: registros, apagar: apagar, fallos: &fallos,
 	}); err != nil && !errors.Is(err, errInterrumpido) && !errors.Is(err, context.Canceled) {
 		return err
 	}
@@ -276,10 +301,14 @@ func correr(op opciones) error {
 
 // entorno es lo que los menús necesitan, junto en vez de en siete parámetros.
 type entorno struct {
-	s      *usecase.Session
-	log    *logRoomprobe
-	c      *consola
-	op     *opciones
-	apagar func()
-	fallos *int
+	s   *usecase.Session
+	log *logRoomprobe
+	c   *consola
+	op  *opciones
+	// registros es la MISMA fábrica que usa la sesión, para poder preguntarle a
+	// un registro por su cuenta sin construir un segundo cliente que hablaría
+	// con otras opciones y mediría otra cosa. Ver [verFirmaDelRegistro].
+	registros *directory.Factory
+	apagar    func()
+	fallos    *int
 }

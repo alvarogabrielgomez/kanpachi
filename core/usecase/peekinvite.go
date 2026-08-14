@@ -155,14 +155,20 @@ func (s *Session) PeekInvite(ctx context.Context, link string) (InvitePreview, e
 	// card carried: "a key you know" and "a name you know arriving with another
 	// key" are different sentences, and telling them apart needs both halves.
 	//
-	// Only a card whose signature verified gets this far into being judged. A
-	// key that vouches for nothing is a number, and printing it next to a room
-	// would be teaching somebody to read a fingerprint that means nothing, which
-	// is how a fingerprint stops being read where it does mean something.
-	if out.Trust == domain.CardSigned {
-		out.Fingerprint = domain.Fingerprint(vista.HostKey)
-		out.Verdict, out.Known = s.judgeHost(vista.HostKey, out.Card.Host.String())
-	}
+	// **What is judged is the PINNED key, not the card's signature**, and the
+	// difference matters. The card signature says the card matches the key; the
+	// continuity question is about the key itself, which is what the guest will
+	// check the host against in the lobby a moment later. Measured against the
+	// deployed seed on 2026-08-14: a registry from before the signature was
+	// stored serves `host_key` and no `sig`, so tying this to the card would
+	// have left every host reading as new forever, with the strict half of the
+	// mechanism running and the friendly half dark.
+	//
+	// The verdict is still absent when there is no pinned key: then there is
+	// nothing to be continuous about, and a fingerprint of nothing would be a
+	// number that decorates.
+	out.Fingerprint = domain.Fingerprint(vista.HostKey)
+	out.Verdict, out.Known = s.judgeHost(vista.HostKey, out.Card.Host.String())
 	return out, nil
 }
 

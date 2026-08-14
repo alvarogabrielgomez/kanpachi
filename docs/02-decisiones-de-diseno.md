@@ -1046,7 +1046,9 @@ Son cuatro piezas y cada una cubre lo que la anterior no puede.
 
 ### La libreta, y por qué el aviso no bloquea
 
-La libreta vive en `known-hosts.json`, sellada, y guarda por host la llave, el último nick con que se identificó, cuándo se lo vio la primera y la última vez, y en cuántas salas. **Se escribe solo cuando la firma verificó**: recordar una llave sin comprobar convierte la libreta en un registro de lo que dijo cualquiera, y el que la lee la creería con la autoridad de una libreta.
+La libreta vive en `known-hosts.json`, sellada, y guarda por host la llave, el último nick con que se identificó, cuándo se lo vio la primera y la última vez, y en cuántas salas. **Se escribe solo al ENTRAR a una sala, y solo con llave fijada de por medio**: llegar hasta ahí significa que la respuesta del vestíbulo venía firmada por esa llave y verificó contra ella, porque una sin firmar o mal firmada corta el ingreso antes. Recordar una llave sin comprobar convertiría la libreta en un registro de lo que dijo cualquiera, y quien la lee la creería con la autoridad de una libreta.
+
+**Lo que se juzga es la llave FIJADA, no la firma de la tarjeta**, y la diferencia se midió. Un registro anterior a este cambio sirve `host_key` y no sirve `sig`: atar la continuidad a la tarjeta habría dejado a todos los hosts como nuevos para siempre contra el seed que está desplegado hoy, con la mitad estricta del mecanismo corriendo y la amable apagada. La pregunta de la continuidad es sobre la llave, que es además contra lo que el invitado comprueba al host un instante después. Medido el 2026-08-14 contra `kanpachi.accentio.dev`.
 
 El veredicto se calcula por la LLAVE primero y por el nick después, y ese orden es el diseño: una llave conocida es la misma instalación se llame como se llame, y solo cuando la llave es desconocida importa que el nombre sí lo sea.
 
