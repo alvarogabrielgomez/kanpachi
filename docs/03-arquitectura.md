@@ -574,7 +574,7 @@ type ControlChannel interface {
 
     // El adaptador pone la llave pública EFÍMERA de esta sesión, generada al
     // marcar y descartada al salir. Core no la ve. La llave larga de la
-    // decisión 25 iría acá el día que exista
+    // la libreta de la decisión 25 vive en known-hosts.json
     RequestCredential(ctx context.Context, req domain.CredentialRequest) (domain.Credential, error)
     // Close es idempotente, y NUNCA espera a que alguien lea sus canales. No
     // es higiene: el caso de uso lo llama con el candado de la sesión tomado, y
@@ -2406,12 +2406,13 @@ ProgramData\Kanpachi\
   api.token                  rotado por arranque del servicio
   identity.key               llave privada larga de esta instalación (decisión 25).
                              La crea el primer uso del registro, con ACL propia
-  known-hosts.json           TODAVÍA NO EXISTE. Es la libreta de huellas de la
-                             decisión 25 —nick visto, llave con que se lo vio—, y
-                             ningún código la escribe ni la lee hoy. Se deja
-                             nombrada porque el sitio ya está decidido; un listado
-                             de directorio que nombra un fichero ausente sin
-                             decirlo es de lo que más se confía y peor miente
+  known-hosts.json           la libreta de huellas de la decisión 25: por cada host
+                             con el que se jugó, su llave, el último nick con que se
+                             identificó, cuándo se lo vio la primera y la última vez,
+                             y en cuántas salas. SELLADA, como el estado de la sala.
+                             Se escribe solo tras entrar a una sala cuya firma
+                             verificó, y no se borra al salir: olvidarla convertiría
+                             a todos en desconocidos otra vez
   hosted-room.json           SOLO EN EL HOST: invite ID con su seed, identidad de la red
                              real, subred, nombre, nick, la tarjeta sellada con su
                              clave, e id del juego activo. Su PRESENCIA al arrancar
@@ -2533,7 +2534,7 @@ Se pasó el producto por **OWASP Top 10 (2021)** y el repo por **OWASP Agentic S
 | # | Categoría | Estado |
 |---|---|---|
 | A01 Control de acceso | La lista cerrada del pipe, los dos alcances del canal, el rechazo por IP en el `Accept`, el recorte al expulsar | Cubierto, con tests que afirman que los métodos que no pueden existir no existen |
-| A02 Fallos criptográficos | Sellado de credencial y de código, tarjeta cifrada con clave en el fragmento, Argon2id congelado, credencial sin el secreto de la red | Cubierto con **un hueco nombrado**: sin la decisión 25 no hay autenticación del host en el vestíbulo |
+| A02 Fallos criptográficos | Sellado de credencial y de código, tarjeta cifrada con clave en el fragmento, Argon2id congelado, credencial sin el secreto de la red, y la respuesta del vestíbulo FIRMADA con la llave larga del host contra la que el registro fijó | Cubierto. Lo que queda fuera es de quién es esa llave la primera vez, que es la libreta de la decisión 25 y su límite declarado |
 | A03 Inyección | JSON estricto, tabla cerrada sin reflexión, ids contra alfabeto aburrido | Cubierto. Regla fijada para los adaptadores que faltan: el motor se invoca con lista de argumentos y jamás con una cadena de shell, y el firewall por COM y nunca por `netsh` con texto interpolado |
 | A04 Diseño inseguro | Deny-all por defecto, no existe abrir un puerto arbitrario, cortes que no se apagan desde fuera, capas que no dependen de la anterior | Cubierto. Es el grueso de las decisiones 4, 20, 22 y 26, con guardianes por AST en `internal/arch` |
 | A05 Configuración insegura | Banderas prohibidas del motor, `--disable-upnp`, portal RPC en loopback, ACL de ProgramData | **Arreglado un hallazgo.** La promesa de "hay un test que falla si alguien saca esas banderas" era cierta solo para el seed. `internal/arch/motor_test.go` la cubre ahora para el cliente: barre `daemon/` ENTERO buscando banderas prohibidas, encuentra el paquete del motor por su contenido y no por una ruta fija, mira los pares en orden dentro de un argv para que `--disable-upnp false` no pase por verde, y exige que el adaptador traiga su propio test de argumentos |
@@ -2610,7 +2611,7 @@ Ed25519, sobre la tarjeta ya sellada, en un solo sitio del cliente. El seed veri
 
 Qué compra: que nadie que no sea este equipo publique en un invite ID que él reservó, o sea que un ex miembro que conserva el código no se adelante al host cuando reabre.
 
-Qué NO compra, dicho para no vender lo que no hay: autenticación DENTRO de la sala. Los sobres del canal de control son anónimos a propósito, y la llave larga que cerraría eso es la decisión 25, que sigue diferida. En el vestíbulo las direcciones son autoasignadas, así que quien tenga el código puede ocupar la dirección del host y contestar por él. La respuesta que existe hoy es renovar el código, que levanta un vestíbulo nuevo y deja al ocupante solo en el viejo.
+Qué NO compra, dicho para no vender lo que no hay: el sobre sigue siendo anónimo, o sea que abrirlo no dice quién lo mandó. Lo que dice quién lo mandó es la FIRMA que va dentro, decisión 25: el host firma su respuesta del vestíbulo con la llave larga de su instalación, atada a la red de encuentro de esa sala y a la llave efímera de ese pedido, y el invitado la comprueba contra la llave que el registro fijó para ese código. En el vestíbulo las direcciones siguen siendo autoasignadas, así que ocupar la del host se puede; lo que ya no se puede es que la respuesta cuele. Renovar el código sigue existiendo y sigue sirviendo, ahora contra el ruido y no contra el engaño.
 
 ### Lo que se CIFRA, y con qué
 
@@ -2715,7 +2716,7 @@ Los dos sistemas protegen lo mismo por caminos distintos, y la diferencia import
 | Miembro expulsado que insiste | Revocada su credencial, sale de la red en ~1 s. Vuelve solo si conserva un código vigente, y el host lo cierra renovando |
 | Miembro manda basura al canal de control | Es la superficie más seria del producto, y solo existe en la máquina del host. Ver el modelo de amenazas de la decisión 23 |
 | Miembro intenta hacerse pasar por el host EN LA SALA | No puede. Los invitados marcan hacia una dirección conocida y no aceptan conexiones entrantes |
-| Alguien con el código ocupa la dirección del host EN EL VESTÍBULO | **Puede, y hoy no hay defensa criptográfica.** Ahí las direcciones son autoasignadas y verificar exige la llave larga de la decisión 25, que sigue diferida. La víctima entra a la red del impostor en vez de a la del host, o sea que el daño es no entrar a la sala que quería. Renovar el código lo desarma, porque el vestíbulo deriva del invite ID |
+| Alguien con el código ocupa la dirección del host EN EL VESTÍBULO | **Ocupar la dirección lo puede; que su respuesta cuele, no.** Las direcciones del vestíbulo siguen siendo autoasignadas, y lo que decide es la firma de la decisión 25: el host firma su respuesta con su llave larga, atada a esa sala y a ese pedido, y el invitado la comprueba contra la llave que el registro fijó para el código. Sin llave fijada no hay contra qué comparar, y ahí queda el límite de antes: renovar el código levanta un vestíbulo nuevo |
 | Miembro que deja de recibir para trabar al host | Toda escritura del canal lleva plazo, y vencido se le cierra la conexión |
 | Malware local como el usuario | Usa la API igual que el usuario: unirse a salas, aplicar perfiles del catálogo. No puede abrir puertos arbitrarios. Puede leer `hosted-room.json` y con eso entrar a la sala |
 | Malware local con admin | Fuera del alcance: con admin ya controla la máquina completa |

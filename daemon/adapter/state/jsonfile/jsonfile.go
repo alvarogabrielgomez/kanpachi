@@ -35,6 +35,10 @@ const (
 	// It is the only file here that gets BOTH the seal and an ACL of its own;
 	// see [Store.SaveSeedToken].
 	SeedTokenFile = "seed-token.json"
+
+	// KnownHostsFile is the book of hosts this machine has played with. Sealed,
+	// like the room state; see [Store.LoadKnownHosts].
+	KnownHostsFile = "known-hosts.json"
 )
 
 // ErrNoState es que el archivo no está.
@@ -160,6 +164,17 @@ func (s *Store) ClearLast() error          { return s.clear(LastRoomFile) }
 func (s *Store) LoadSeedToken() ([]byte, error) { return s.load(SeedTokenFile) }
 func (s *Store) SaveSeedToken(raw []byte) error { return s.saveProtected(SeedTokenFile, raw) }
 func (s *Store) ClearSeedToken() error          { return s.clear(SeedTokenFile) }
+
+// LoadKnownHosts and SaveKnownHosts keep the fingerprint book.
+//
+// Sealed, and the reason is the opposite of the seed token's: there is no secret
+// in a list of nicknames and public keys. What the seal buys is that a process
+// without privileges cannot PLANT an entry, and planting is the attack the book
+// exists to detect. There is no Clear: forgetting the book would silently turn
+// every host back into a stranger, and losing that history is not something a
+// clean exit should do.
+func (s *Store) LoadKnownHosts() ([]byte, error) { return s.load(KnownHostsFile) }
+func (s *Store) SaveKnownHosts(raw []byte) error { return s.save(KnownHostsFile, raw) }
 
 // saveProtected escribe y después le pone al fichero su propia ACL.
 //

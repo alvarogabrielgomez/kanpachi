@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/density_tokens.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 
 /// Las pantallas de la app.
@@ -179,11 +180,15 @@ class ShellState {
 class TrustRequest {
   const TrustRequest.hosting({required this.seed, required this.suggestedName})
     : joining = false,
-      code = '';
+      code = '',
+      preview = null;
 
-  const TrustRequest.joining({required this.seed, required this.code})
-    : joining = true,
-      suggestedName = '';
+  const TrustRequest.joining({
+    required this.seed,
+    required this.code,
+    this.preview,
+  }) : joining = true,
+       suggestedName = '';
 
   /// El registro que se va a usar. Nunca vacío: sin nombre no hay nada que
   /// enseñar, y un diálogo que pregunta por una máquina sin nombre no pregunta
@@ -204,16 +209,25 @@ class TrustRequest {
   /// mira. Ver [SessionState.roomNameDraft].
   final String suggestedName;
 
+  /// Lo que el daemon ya sabe de ese código, resuelto ANTES de preguntar.
+  ///
+  /// Es de dónde sale la huella del host y lo que la libreta dice de ella. Null
+  /// cuando no se pudo resolver, y entonces el diálogo pregunta igual por el
+  /// servidor: no haber podido comprobar quién hospeda no quita la decisión que
+  /// este diálogo existe para tomar.
+  final PendingInvite? preview;
+
   @override
   bool operator ==(Object other) =>
       other is TrustRequest &&
       other.seed == seed &&
       other.joining == joining &&
       other.code == code &&
-      other.suggestedName == suggestedName;
+      other.suggestedName == suggestedName &&
+      other.preview == preview;
 
   @override
-  int get hashCode => Object.hash(seed, joining, code, suggestedName);
+  int get hashCode => Object.hash(seed, joining, code, suggestedName, preview);
 }
 
 /// Navegación y preferencias de presentación.

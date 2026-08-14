@@ -99,6 +99,7 @@ class AppModalActions extends StatelessWidget {
     required this.onCancel,
     this.cancelLabel = 'Cancelar',
     this.stretch = false,
+    this.confirmVariant = AppButtonVariant.primaryFlat,
     super.key,
   });
 
@@ -106,6 +107,13 @@ class AppModalActions extends StatelessWidget {
   final VoidCallback onConfirm;
   final VoidCallback onCancel;
   final String cancelLabel;
+
+  /// Con qué peso se pinta el botón de confirmar.
+  ///
+  /// Existe para el aviso de huella cambiada de la decisión 25: ahí confirmar
+  /// deja de ser el camino cómodo y se pinta como el otro, sin dejar de estar.
+  /// El aviso NO bloquea, y quitarle el botón sería bloquear con otro nombre.
+  final AppButtonVariant confirmVariant;
 
   /// Los dos botones OCUPAN el ancho, en proporción 1:1,5.
   ///
@@ -133,7 +141,7 @@ class AppModalActions extends StatelessWidget {
     final AppButton confirmar = AppButton(
       label: confirmLabel,
       onPressed: onConfirm,
-      variant: AppButtonVariant.primaryFlat,
+      variant: confirmVariant,
       height: 39.5,
       horizontalPadding: stretch ? AppSpacing.lg : AppSpacing.x6l,
       // `primaryFlat` mapea al CTA de 14,5 px de «Unirse» y «Crear sala»;

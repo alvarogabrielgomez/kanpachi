@@ -571,6 +571,15 @@ class SessionCubit extends Cubit<SessionState> {
     return !isClosed && state.room != null;
   }
 
+  /// Lo que se sabe de un código PEGADO, sin entrar y sin tocar la sesión.
+  ///
+  /// Lo pide la portada antes de enseñar el diálogo de confianza, porque es de
+  /// donde sale la huella de quien hospeda. Null cuando no se pudo resolver, y
+  /// eso NO impide nada: el diálogo se enseña igual, y entrar tropieza después
+  /// con el mismo registro caído y con su mensaje.
+  Future<PendingInvite?> previewInvite(String code) =>
+      _repository.previewInvite(code);
+
   /// Descarta el enlace que llegó de fuera, sin entrar a nada.
   ///
   /// Es el «Cancelar» de la pantalla de confirmación, y no le pide nada al

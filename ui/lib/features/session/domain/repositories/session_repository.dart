@@ -93,6 +93,16 @@ abstract interface class SessionRepository {
   /// escrita y probada la frontera de entrada hostil.
   Future<PendingInvite?> pendingInvite();
 
+  /// Lo que se sabe de un código PEGADO, sin entrar.
+  ///
+  /// Es lo mismo que [pendingInvite] resuelve para un enlace del navegador,
+  /// pedido a mano y sin consumir nada. Lo pide la portada antes de enseñar el
+  /// diálogo de confianza, que es donde se ve la huella del host.
+  ///
+  /// Null cuando el enlace no se entendió o el daemon no contestó: nada de eso
+  /// impide entrar, y el diálogo se enseña igual sin el bloque del host.
+  Future<PendingInvite?> previewInvite(String link);
+
   /// La sala que quedó abierta cuando el daemon murió sucio, o null si no hay.
   ///
   /// **A diferencia de [pendingInvite], preguntarlo NO lo consume.** Son dos

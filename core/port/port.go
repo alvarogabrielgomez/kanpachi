@@ -387,6 +387,23 @@ type StateStore interface {
 	LoadSeedToken() ([]byte, error)
 	SaveSeedToken([]byte) error
 	ClearSeedToken() error
+
+	// LoadKnownHosts and SaveKnownHosts keep the book of hosts this machine has
+	// played with. See [domain.KnownHosts].
+	//
+	// # Why it is sealed
+	//
+	// Not to hide it from whoever can read `identity.key`: that person can sign
+	// as this machine, which is worse than reading a list of nicknames. It is
+	// sealed so that a process without privileges cannot PLANT an entry. A book
+	// anybody can write is a book that says a stranger's key is the one you have
+	// played with five times, which is the exact warning this file exists to
+	// raise.
+	//
+	// Missing is normal: it is what an installation that has joined nobody looks
+	// like, and it is not an error.
+	LoadKnownHosts() ([]byte, error)
+	SaveKnownHosts([]byte) error
 }
 
 // SystemEvents son las cosas que le pasan a la MÁQUINA y que invalidan lo que

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_kicker.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_dialog.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_editable_name.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/features/seed/presentation/widgets/host_trust_block.dart';
 import 'package:kanpachi_ui/features/seed/presentation/widgets/seed_trust_block.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 
@@ -60,6 +63,21 @@ class _TrustSeedDialogState extends State<TrustSeedDialog> {
     super.dispose();
   }
 
+  /// Lo que se sabe de quien hospeda, o null cuando no hay nada comprobado.
+  ///
+  /// Null es el caso normal de abrir una sala —la hospedas tú— y también el de
+  /// un registro que no contestó o que no sirve firma. Nada de eso se pinta:
+  /// una huella sin nada que la respalde es un número que decora.
+  PendingInvite? get _confianzaDelHost {
+    final PendingInvite? p = widget.request.preview;
+    if (p == null || !p.hasHostTrust) return null;
+    return p;
+  }
+
+  /// Si lo que hay que enseñar es el aviso, que cambia el botón.
+  bool get _huellaCambiada =>
+      _confianzaDelHost?.verdict == HostVerdict.llaveCambiada;
+
   String get _nombreFinal {
     final String v = _nombre.text.trim();
     return v.isEmpty ? widget.request.suggestedName : v;
@@ -95,6 +113,14 @@ class _TrustSeedDialogState extends State<TrustSeedDialog> {
           ),
           const SizedBox(height: AppSpacing.xl),
           _FilaDelSeed(seed: widget.request.seed),
+          // Quién hospeda va DEBAJO del servidor y encima del aviso, que es el
+          // orden en que se decide: a qué máquina le hablas, con quién juegas,
+          // y qué puede hacer una máquina así. Solo aparece cuando hay algo
+          // comprobado que decir. Ver [HostTrustBlock].
+          if (_confianzaDelHost != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.lg),
+            HostTrustBlock(invite: _confianzaDelHost!),
+          ],
           if (!entrando) ...<Widget>[
             const SizedBox(height: AppSpacing.lg),
             _NombreDeLaSala(controller: _nombre),
@@ -104,7 +130,16 @@ class _TrustSeedDialogState extends State<TrustSeedDialog> {
           const SizedBox(height: AppSpacing.x5l),
           AppModalActions(
             stretch: true,
-            confirmLabel: entrando ? 'Confiar y entrar' : 'Confiar y crear',
+            // Con la huella cambiada el botón dice lo que hace de verdad y deja
+            // de ser el camino cómodo: se pinta como el de cancelar. No se
+            // quita, porque el aviso avisa y quitarlo sería bloquear con otro
+            // nombre. Ver [HostTrustBlock].
+            confirmLabel: _huellaCambiada
+                ? 'Entrar igual'
+                : (entrando ? 'Confiar y entrar' : 'Confiar y crear'),
+            confirmVariant: _huellaCambiada
+                ? AppButtonVariant.ghost
+                : AppButtonVariant.primaryFlat,
             onCancel: abandonar,
             onConfirm: () async {
               shell.closeDialog();

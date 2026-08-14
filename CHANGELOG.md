@@ -8,6 +8,11 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Added
+
+- See who is hosting before you go in: the room you are about to enter now says whether you have played with that host before, and shows the fingerprint of the key that signed the invitation. "You have played with Humberto, in 5 rooms" is a different sentence from "this is the first time", and until now the app could say neither
+- Get warned when a host you know arrives with a different key, with the old fingerprint above the new one so the two can be compared over any other channel. It does not lock the door: reinstalling Windows produces a new key legitimately, so the button stays and reads "Entrar igual"
+
 ### Security
 
 - Refuse a credential in the lobby that is not signed by the host of that room. Anybody holding the invite code could sit on the host's lobby address and answer the request first, and what that got them is your machine joining THEIR network while it believes it is in your friends' one — with the game's ports opened towards it. The host now signs its answer with the long-term key of its installation, bound to the room and to that one request, and the guest checks it against the key the meeting server pinned for that code

@@ -92,6 +92,13 @@ abstract final class DaemonMethods {
   /// reached it and the app asks. What signals there is something to collect is
   /// the window opening, which is what the daemon does right after storing it.
   static const String pendingInvite = 'pending_invite';
+
+  /// Resolve a PASTED code against its registry, without joining.
+  ///
+  /// Same work [pendingInvite] does for a link the browser brought, asked for
+  /// by hand: the home screen confirms before entering, and the host's
+  /// fingerprint it has to show comes from here. Asking consumes nothing.
+  static const String previewInvite = 'preview_invite';
 }
 
 /// The default budget: what something answered from memory or with one small

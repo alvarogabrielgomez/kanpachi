@@ -541,6 +541,15 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 		}
 		return result(s.invite(ctx, link))
 
+	case MethodPreviewInvite:
+		p, e := decodeStrict[struct {
+			Link string `json:"link"`
+		}](req.Params)
+		if e != nil {
+			return nil, e
+		}
+		return result(s.invite(ctx, p.Link))
+
 	case MethodShutdown:
 		if s.host == nil {
 			return nil, sinHost()
@@ -626,6 +635,13 @@ func (s *Server) invite(ctx context.Context, link string) InviteView {
 	v.Room = p.Card.Room
 	v.Host = p.Card.Host.String()
 	v.Unknown = p.Unknown
+	v.Fingerprint = p.Fingerprint
+	if p.Verdict != domain.HostUnverified {
+		v.Verdict = p.Verdict.String()
+	}
+	v.KnownNick = p.Known.Nick
+	v.KnownFingerprint = domain.Fingerprint(p.Known.Key)
+	v.KnownRooms = p.Known.Rooms
 	return v
 }
 

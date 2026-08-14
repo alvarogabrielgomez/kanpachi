@@ -91,17 +91,29 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 	// there can be checked to be the host and not anybody holding the code.
 	// Empty when the registry did not hand it over, and then the room is entered
 	// unverified.
-	llaveDelHost, err := s.checkRoomExists(ctx, room)
+	lookup, err := s.checkRoomExists(ctx, room)
 	if err != nil {
 		return domain.RoomState{}, err
 	}
+	hostKey := lookup.HostKey
 
 	if err := s.state.Transition(domain.StateConnecting, "buscando al host"); err != nil {
 		return domain.RoomState{}, err
 	}
-	cred, err := s.joinRealNetworkLocked(ctx, room, nick, llaveDelHost)
+	cred, err := s.joinRealNetworkLocked(ctx, room, nick, hostKey)
 	if err != nil {
 		return domain.RoomState{}, err
+	}
+
+	// The credential came back signed by that key and the signature checked out,
+	// so this is the one moment where the key can be written down as belonging
+	// to whoever hosts this room. See [Session.rememberHost].
+	//
+	// The nickname comes from the card, which is why the whole link is needed
+	// here and not just the room: the book compares names to keys, and a book
+	// full of keys with no names would only ever say "new".
+	if lookup.Trust() == domain.CardSigned {
+		s.rememberHost(hostKey, hostNickOf(input, lookup))
 	}
 
 	s.state.Role = domain.RoleGuest
@@ -300,12 +312,12 @@ func (s *Session) joinRealNetworkLocked(
 // invite ID consultado. Jamás ve el secreto de la sala real, así que no puede
 // unirse a ninguna, y el diálogo de confianza enseña a dónde se va antes de
 // llegar acá.
-func (s *Session) checkRoomExists(ctx context.Context, room domain.Room) ([]byte, error) {
+func (s *Session) checkRoomExists(ctx context.Context, room domain.Room) (domain.InviteLookup, error) {
 	dir, err := s.deps.Directories.For(room.Seed)
 	if err != nil {
 		s.deps.Log.Error("no se pudo abrir el registro del código", "seed", room.Seed, "error", err)
 		s.deps.Progress.Stepf(domain.ScopeSeed, "el registro %s no se pudo usar", room.Seed)
-		return nil, fmt.Errorf("%w: %v", ErrNoRegistry, err)
+		return domain.InviteLookup{}, fmt.Errorf("%w: %v", ErrNoRegistry, err)
 	}
 
 	s.deps.Progress.Stepf(domain.ScopeSeed, "preguntándole a %s si ese código existe", room.Seed)
@@ -329,13 +341,13 @@ func (s *Session) checkRoomExists(ctx context.Context, room domain.Room) ([]byte
 			s.deps.Progress.Step(domain.ScopeSeed, "ojo: la tarjeta de esa sala no valida contra la llave del registro")
 		}
 		s.deps.Progress.Step(domain.ScopeSeed, "el código existe, se sigue")
-		return vista.HostKey, nil
+		return vista, nil
 
 	case errors.Is(err, port.ErrUnknownRoom):
 		// La respuesta. Se para acá, con el motor todavía sin arrancar y sin
 		// una sola regla escrita.
 		s.deps.Progress.Step(domain.ScopeSeed, "el registro dice que ese código no existe")
-		return nil, fmt.Errorf("%w: %s", ErrNoSuchRoom, room.InviteID)
+		return domain.InviteLookup{}, fmt.Errorf("%w: %s", ErrNoSuchRoom, room.InviteID)
 
 	default:
 		// Ausencia de información, y se para igual. Seguir a ciegas cuesta un
@@ -344,7 +356,7 @@ func (s *Session) checkRoomExists(ctx context.Context, room domain.Room) ([]byte
 		s.deps.Log.Error("el registro no contestó, así que no se entra",
 			"código", room.InviteID.String(), "error", err)
 		s.deps.Progress.Step(domain.ScopeSeed, "el registro no contestó")
-		return nil, fmt.Errorf("%w: %v.\n\n"+
+		return domain.InviteLookup{}, fmt.Errorf("%w: %v.\n\n"+
 			"Es la máquina por la que las salas se encuentran, así que sin ella no hay "+
 			"a dónde llegar.\n\n"+
 			"Qué hacer: vuelve a intentarlo en un momento", ErrNoRegistry, err)

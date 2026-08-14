@@ -1081,11 +1081,12 @@ func (c *mockCanary) tocar() {
 type mockState struct {
 	mu sync.Mutex
 
-	room      []byte
-	last      []byte
-	seed      []byte
-	seedToken []byte
-	deleted   int
+	room       []byte
+	last       []byte
+	seed       []byte
+	seedToken  []byte
+	knownHosts []byte
+	deleted    int
 
 	errSave error
 }
@@ -1188,6 +1189,27 @@ func (e *mockState) ClearSeedToken() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.seedToken = nil
+	return nil
+}
+
+// The fingerprint book. Same shape as the rest: bytes in, bytes out, with the
+// strict decoder living in the domain.
+func (e *mockState) LoadKnownHosts() ([]byte, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.knownHosts == nil {
+		return nil, errors.New("no hay libreta guardada")
+	}
+	return append([]byte(nil), e.knownHosts...), nil
+}
+
+func (e *mockState) SaveKnownHosts(raw []byte) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.errSave != nil {
+		return e.errSave
+	}
+	e.knownHosts = append([]byte(nil), raw...)
 	return nil
 }
 

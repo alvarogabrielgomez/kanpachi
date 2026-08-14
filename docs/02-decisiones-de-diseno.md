@@ -1033,19 +1033,45 @@ Para suplantar a Humberto ante alguien que ya jugó con él hace falta **robarle
 
 **La huella tampoco se muestra en la página, y eso se evaluó.** La primera versión la ponía al lado del nick. Se sacó porque una huella sin nada contra qué compararla no informa, decora, y peor: aparenta una verificación que en esa pantalla no ocurre. Mostrarla donde nadie puede juzgarla enseña a ignorarla, que es exactamente lo que hay que evitar para que signifique algo donde sí se juzga.
 
+### Cómo está construida, medida por medida
+
+Son cuatro piezas y cada una cubre lo que la anterior no puede.
+
+1. **La llave.** Cada instalación genera un par Ed25519 al primer arranque, en `identity.key`, con un solo escritor y con ACL propia. Una llave presente e ilegible es un error y jamás una llave nueva.
+2. **La tarjeta firmada, y el fijado del registro.** El host firma la tarjeta con esa llave, y el registro FIJA la primera llave pública que ve para ese invite ID durante 21 días: ninguna actualización firmada por otra entra.
+3. **La verificación en el cliente**, que es lo que hace valer el punto 2. La app comprueba la firma contra la llave fijada y **no abre** una tarjeta que no cuadre; la página de invitación hace la misma comprobación contra la llave que ese servidor publica. Ver decisión 24.
+4. **La respuesta del vestíbulo, firmada.** El host firma lo que contesta en el vestíbulo sobre un transcript que ata la respuesta a la red de encuentro de ESA sala y a la llave efímera de ESE pedido. El invitado la verifica contra la llave fijada por el registro, que llegó por otro camino y antes.
+
+**Sin firma, habiendo llave fijada, no se entra.** La primera versión lo trataba como «no se pudo comprobar» y dejaba pasar, y medido salió lo obvio: quien ocupa el vestíbulo no manda una firma mala, manda ninguna. Un mecanismo que se apaga omitiendo un campo no es un mecanismo. El precio, aceptado: un host con una versión anterior no firma, así que hay que actualizar las dos puntas.
+
+### La libreta, y por qué el aviso no bloquea
+
+La libreta vive en `known-hosts.json`, sellada, y guarda por host la llave, el último nick con que se identificó, cuándo se lo vio la primera y la última vez, y en cuántas salas. **Se escribe solo cuando la firma verificó**: recordar una llave sin comprobar convierte la libreta en un registro de lo que dijo cualquiera, y el que la lee la creería con la autoridad de una libreta.
+
+El veredicto se calcula por la LLAVE primero y por el nick después, y ese orden es el diseño: una llave conocida es la misma instalación se llame como se llame, y solo cuando la llave es desconocida importa que el nombre sí lo sea.
+
+| Veredicto | Qué pasó | Qué se enseña |
+|---|---|---|
+| Primera vez | llave que nunca se vio | «es la primera vez», con la huella. No es una alarma: es el estado normal de toda invitación primera |
+| Conocida | misma llave, mismo nick | «ya jugaste con Humberto, en 5 salas» |
+| Renombrada | misma llave, otro nick | quién era antes. Cambiar de apodo se puede y es barato; lo que continúa es la llave |
+| Huella cambiada | nick conocido, OTRA llave | el aviso, con la huella de antes y la de ahora, una encima de la otra |
+
+**El aviso no bloquea el botón, y es una decisión con precedente.** Signal empezó bloqueando ante un cambio de llave y se movió a avisar, porque la gente reinstala su teléfono; acá reinstalar Windows regenera `identity.key` igual. Un bloqueo dentro de un juego se convierte en un botón que se pulsa sin leer, y entonces deja de proteger de nada. Lo que sí hace el aviso es poner las dos huellas juntas, que es lo único que alguien puede comprobar por otro canal.
+
+**Entrar igual REEMPLAZA la entrada vieja.** Guardar las dos dejaría un nick con dos llaves y la vez siguiente no habría cómo decir cuál es la impostora. El aviso ocurre antes; entrar es la persona decidiendo, y la libreta anota la decisión en vez de discutirla.
+
+### La huella
+
+Es SHA-256 de la llave, cinco grupos de cuatro dígitos decimales, dos bytes del hash por grupo. Veinte dígitos son unos 66 bits, que no son los 256 de la llave y no hace falta que lo sean: esto existe para que dos personas que ya tienen un canal lo comparen. Signal imprime 60 dígitos porque están pensados para dictarse por teléfono; acá se pegan en un chat, y una huella que nadie va a leer entera no protege de nada. Los dígitos decimales viajan por cualquier chat sin que una tipografía los desfigure.
+
+**La huella no se enseña en la página web**, y eso se evaluó. Ver la decisión 24: sin memoria contra la que compararla, una huella decora y enseña a ignorarla.
+
 ### El hueco que queda
 
 La primera vez que alguien te invita no hay con qué comparar. Es el mismo hueco que tiene Signal y se cubre igual, comparando la huella por otro canal si el caso lo amerita. Escribirlo importa para no vender una garantía que no existe.
 
-**Y mientras esta decisión siga sin implementarse, el hueco es más grande y hay que decirlo entero.** En el vestíbulo las direcciones son autoasignadas, así que **alguien que tenga el código puede ocupar la dirección del host y contestar el pedido de credencial antes que él**. El canal de la sala sella lo que manda contra la llave de sesión del destinatario, y eso compra confidencialidad frente a quien relaye los bytes, no autenticación: una firma hecha con una llave efímera que llega en el mismo mensaje no prueba nada, y por eso la caja es anónima en vez de aparentar algo.
-
-Lo que acota el daño hoy, sin llave larga:
-
-- Solo lo puede intentar quien ya tiene el código, o sea alguien a quien ya invitaron.
-- Lo que consigue es que la víctima entre a SU red en vez de a la del host. No lee la sala real, no obtiene su identidad de red y no expulsa a nadie.
-- **Renovar el código lo desarma**, porque el vestíbulo deriva del invite ID: con un ID nuevo hay un vestíbulo nuevo y el ocupante se queda solo en el viejo.
-
-**Disparador para implementar esta decisión:** que Kanpachi deje de ser privado, o el primer caso real de un código compartido fuera del grupo. Lo que la vuelve necesaria no es la criptografía, es que el círculo de quien tiene un código deje de ser gente conocida.
+Lo que la libreta dice es que la llave es la de siempre. **Jamás de quién es.** Es lo mismo que declara la transparencia de llaves que Signal publicó en agosto de 2026: su log atestigua integridad estructural, y el respaldo para la identidad sigue siendo comparar la huella a mano.
 
 **Consecuencia en el copy.** La página no dice "Humberto te invitó a su sala", que es una afirmación de identidad que ninguna versión de esto respalda. Dice quién **se identifica** como el host. Hay un test que falla si alguien devuelve la frase original. Ver `05-ui.md`.
 
@@ -1053,6 +1079,8 @@ Lo que acota el daño hoy, sin llave larga:
 
 - Estado nuevo en el cliente: la llave propia y la libreta de huellas conocidas. Va en `ProgramData`, ver `03-arquitectura.md`.
 - Reinstalar Windows genera una llave nueva, así que el host pierde sus invite IDs fijados y sus amigos ven el aviso de huella cambiada. Se mitiga con el TTL de semanas del registro, y renovar el código ya es una función que existe por decisión 22.
+- **Una carpeta portable copiada se lleva `identity.key` dentro**, así que dos máquinas quedan con la misma identidad y sus amigos no ven ninguna diferencia entre las dos. No es un fallo de este diseño, es lo que significa copiar una identidad, y se escribe porque el modo portable lo hace fácil sin querer.
+- Entrar exige que las dos puntas firmen, o sea que actualizar el host deja de ser opcional para los invitados con esta versión.
 - Sin la libreta, la firma sola no prueba el nombre. La continuidad es lo que da la garantía, la firma es el mecanismo.
 
 La UI muestra la lista completa a todos, y eso es deliberado: ocultarla en pantalla no la ocultaría en la red, y aparentar una privacidad que no existe es peor que no tenerla.

@@ -137,6 +137,27 @@ type InviteView struct {
 	// contestara deja esto en false: son dos cosas distintas y la pantalla dice
 	// una frase distinta para cada una.
 	Unknown bool `json:"unknown"`
+
+	// Fingerprint is the printed shape of the key that signed this room's card,
+	// and it travels only when that signature verified. Empty means nothing was
+	// verified, and the screen says nothing about identity rather than printing
+	// a number that vouches for itself.
+	Fingerprint string `json:"fingerprint,omitempty"`
+
+	// Verdict is what the fingerprint book says: "new", "known", "renamed" or
+	// "key-changed". Empty when there was nothing to judge.
+	//
+	// A string and not a number, like every other enum on this wire: a screen
+	// reading a stale build gets a word it does not know and can fall back,
+	// instead of drawing the wrong warning with confidence.
+	Verdict string `json:"verdict,omitempty"`
+
+	// KnownNick, KnownFingerprint and KnownRooms describe the entry the book
+	// matched. They are what turns a warning into something somebody can act on:
+	// the fingerprint remembered, next to the one that just arrived.
+	KnownNick        string `json:"known_nick,omitempty"`
+	KnownFingerprint string `json:"known_fingerprint,omitempty"`
+	KnownRooms       int    `json:"known_rooms,omitempty"`
 }
 
 type PeerView struct {

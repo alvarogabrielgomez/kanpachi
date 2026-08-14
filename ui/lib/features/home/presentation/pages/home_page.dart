@@ -17,6 +17,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart
 import 'package:kanpachi_ui/features/games/domain/steam_art.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/domain/invite_code.dart';
 import 'package:kanpachi_ui/features/session/domain/room_names.dart';
 import 'package:kanpachi_ui/features/seed/presentation/ask_to_host.dart';
@@ -120,8 +121,17 @@ class _HomeScreenState extends State<HomeScreen> {
     // viaja tal cual al daemon, que es la frontera de entrada hostil.
     final String seed = InviteCode.seedOf(_code.text);
     if (seed.isEmpty) return;
+    // Se le pregunta al daemon qué hay detrás del código ANTES de enseñar el
+    // diálogo, para que la huella de quien hospeda esté ahí cuando aparece.
+    // Resolver dentro del diálogo lo dejaría un instante sin ese bloque y con
+    // el botón ya pulsable, que es enseñar la decisión antes que el dato del
+    // que depende. Que falle no quita el diálogo: ver [TrustRequest.preview].
+    final PendingInvite? preview = await context
+        .read<SessionCubit>()
+        .previewInvite(_code.text);
+    if (!mounted) return;
     context.read<ShellCubit>().askTrust(
-      TrustRequest.joining(seed: seed, code: _code.text),
+      TrustRequest.joining(seed: seed, code: _code.text, preview: preview),
     );
   }
 

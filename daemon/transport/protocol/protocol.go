@@ -114,6 +114,18 @@ const (
 	// volvería a enseñar la pantalla de confirmación cada dos segundos, incluso
 	// después de que alguien la cancelara.
 	MethodPendingInvite Method = "pending_invite"
+
+	// MethodPreviewInvite resuelve un código PEGADO contra su registro, sin
+	// entrar y sin tocar la sesión.
+	//
+	// Es el mismo trabajo que [MethodPendingInvite] hace con un enlace que trajo
+	// el navegador, pedido a mano. Existe porque la pantalla de inicio pregunta
+	// antes de entrar, y lo que tiene que enseñar ahí —la huella del host y qué
+	// dice de ella la libreta— sale de esta consulta. Sin él, el aviso de la
+	// decisión 25 solo aparecería para quien llega por enlace.
+	//
+	// No consume nada y se puede pedir las veces que haga falta.
+	MethodPreviewInvite Method = "preview_invite"
 	// MethodShutdown es "Salir de Kanpachi" del menú de la bandeja.
 	//
 	// **No lo coordina la interfaz.** La interfaz no controla nada de lo que
@@ -187,6 +199,7 @@ var métodos = map[Method]bool{
 	MethodCancel:              true,
 	MethodShowUI:              true,
 	MethodPendingInvite:       true,
+	MethodPreviewInvite:       true,
 	MethodShutdown:            true,
 	MethodAutostart:           true,
 	MethodOwnSeed:             true,

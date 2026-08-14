@@ -9,6 +9,7 @@ import 'package:kanpachi_ui/core/design_system/atoms/app_kicker.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/seed/presentation/widgets/seed_trust_block.dart';
+import 'package:kanpachi_ui/features/seed/presentation/widgets/host_trust_block.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
@@ -107,12 +108,20 @@ class InviteScreen extends StatelessWidget {
                 'El servidor no conoce esa sala. Puede que ya se haya cerrado, '
                 'o que el código se haya renovado desde que te llegó el enlace.',
               )
-            else
+            else ...<Widget>[
+              // Quién hospeda, cuando hay algo comprobado que decir, y ANTES
+              // del aviso del servidor: es la otra mitad de la misma decisión,
+              // y el orden es el mismo que en el diálogo. Ver [HostTrustBlock].
+              if (invite.hasHostTrust) ...<Widget>[
+                HostTrustBlock(invite: invite),
+                const SizedBox(height: AppSpacing.lg),
+              ],
               // El MISMO bloque que enseña el diálogo de confianza, y no un
               // texto propio: es la misma advertencia sobre la misma clase de
               // máquina, y escribirla dos veces es cómo una acaba diciendo algo
               // distinto de la otra. Ver [SeedTrustBlock].
               const SeedTrustBlock(),
+            ],
           ],
           const SizedBox(height: AppSpacing.x7l),
           // 5:7, que es el 1:1,4 del diseño, y el MISMO alto en los dos. Con

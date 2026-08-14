@@ -330,6 +330,25 @@ class PipeSessionRepository implements SessionRepository {
   }
 
   @override
+  Future<PendingInvite?> previewInvite(String link) async {
+    if (link.trim().isEmpty) return null;
+    try {
+      final Map<String, Object?> v = await _mapa(
+        DaemonMethods.previewInvite,
+        <String, Object?>{'link': link},
+      );
+      if ((v['code'] as String? ?? '').isEmpty) return null;
+      return PendingInvite.fromJson(v);
+    } on Object {
+      // Preguntar esto es un extra: lo que se pierde si falla es la huella del
+      // host en el diálogo, jamás la entrada. Se traga a propósito, y el
+      // registro caído se vuelve a encontrar al entrar, con su mensaje, que es
+      // el sitio donde una caída sí tiene que verse.
+      return null;
+    }
+  }
+
+  @override
   Future<PendingRoom?> pendingRoom() async {
     final Map<String, Object?> v = await _mapa(DaemonMethods.pendingRoom);
     // El daemon contesta `{"found": false}` cuando no hay nada, que es la

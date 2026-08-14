@@ -47,6 +47,19 @@ type InvitePreview struct {
 	// path that returns before asking the registry: not having been able to
 	// check is exactly what happened.
 	Trust domain.CardTrust
+
+	// Fingerprint is the printed shape of the key the registry pinned for this
+	// code, and it is filled ONLY when that key signed the card. A fingerprint
+	// of a key nothing vouches for is a number that decorates.
+	Fingerprint string
+
+	// Verdict is what the fingerprint book says about that key, and Known is
+	// the entry it matched. Their zeros mean nothing could be judged.
+	//
+	// This is where the decision-25 warning comes from, and it is a warning:
+	// the screen shows it, the button stays. See [domain.HostVerdict].
+	Verdict domain.HostVerdict
+	Known   domain.KnownHost
 }
 
 // HasCard dice si la tarjeta trae algo que enseñar.
@@ -125,20 +138,31 @@ func (s *Session) PeekInvite(ctx context.Context, link string) (InvitePreview, e
 		return out, nil
 	}
 
-	key, hay := cardKeyOf(link)
-	if !hay {
-		return out, nil
+	if key, hay := cardKeyOf(link); hay {
+		card, err := domain.OpenRoomCard(vista.Sealed, key)
+		if err != nil {
+			// Clave equivocada o tarjeta manipulada. AES-GCM autentica, así que un
+			// fallo acá significa que el contenido no es de fiar: se descarta
+			// entero, igual que hace la página.
+			s.deps.Log.Warn("la tarjeta del enlace no se pudo abrir",
+				"código", room.InviteID.String(), "error", err)
+		} else {
+			out.Card = card
+		}
 	}
-	card, err := domain.OpenRoomCard(vista.Sealed, key)
-	if err != nil {
-		// Clave equivocada o tarjeta manipulada. AES-GCM autentica, así que un
-		// fallo acá significa que el contenido no es de fiar: se descarta
-		// entero, igual que hace la página.
-		s.deps.Log.Warn("la tarjeta del enlace no se pudo abrir",
-			"código", room.InviteID.String(), "error", err)
-		return out, nil
+
+	// The book is consulted LAST, because it is consulted with the nickname the
+	// card carried: "a key you know" and "a name you know arriving with another
+	// key" are different sentences, and telling them apart needs both halves.
+	//
+	// Only a card whose signature verified gets this far into being judged. A
+	// key that vouches for nothing is a number, and printing it next to a room
+	// would be teaching somebody to read a fingerprint that means nothing, which
+	// is how a fingerprint stops being read where it does mean something.
+	if out.Trust == domain.CardSigned {
+		out.Fingerprint = domain.Fingerprint(vista.HostKey)
+		out.Verdict, out.Known = s.judgeHost(vista.HostKey, out.Card.Host.String())
 	}
-	out.Card = card
 	return out, nil
 }
 
