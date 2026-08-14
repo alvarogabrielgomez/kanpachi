@@ -226,7 +226,15 @@ func (s *Session) Rejoin(ctx context.Context) error {
 // rejoinLocked es el cuerpo, aparte para que el diario de progreso se cierre en
 // un solo sitio pase lo que pase. Asume el candado tomado.
 func (s *Session) rejoinLocked(ctx context.Context, room domain.Room, nick domain.Nickname) error {
-	cred, err := s.joinRealNetworkLocked(ctx, room, nick)
+	// Volver a entrar pasa por el MISMO vestíbulo, así que corre el mismo riesgo
+	// que entrar la primera vez: ahí puede contestar cualquiera que tenga el
+	// código. Se le vuelve a preguntar al registro por la llave fijada.
+	//
+	// **Y si el registro no contesta, se reingresa igual, sin verificar.** Este
+	// camino corre cuando la credencial murió y la sala sigue arriba: negarse
+	// aquí convertiría un registro caído en gente expulsada de una sala que
+	// funciona, que es peor que lo que se está evitando. Queda dicho en el log.
+	cred, err := s.joinRealNetworkLocked(ctx, room, nick, s.pinnedHostKey(ctx, room))
 	if err != nil {
 		return err
 	}

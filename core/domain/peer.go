@@ -198,12 +198,37 @@ func (c Credential) Expired(now time.Time) bool {
 // CredentialRequest es lo que un invitado le manda al host por el canal de
 // control: quién dice ser y con qué llave.
 //
-// Va firmado contra la llave del solicitante y viaja por el vestíbulo, que es
-// observable por definición: cualquiera con el invite ID puede derivar la
-// identidad de encuentro, el seed incluido. Ver decisión 25.
+// Viaja por el vestíbulo, que es observable por definición: cualquiera con el
+// invite ID puede derivar la identidad de encuentro, el seed incluido.
+//
+// **El pedido NO va firmado, y eso es una decisión y no un olvido.** Acá decía
+// que sí, y era falso. Firmarlo con la llave larga del invitado no le probaría
+// nada al host: no hay lista de invitados que el host conozca de antemano, así
+// que una firma solo diría "alguien con una llave", que es lo que ya dice la
+// conexión. Lo que sí cambia de manos es lo de vuelta, y ESO va firmado: ver
+// [CredentialRequest.ExpectHostKey].
 type CredentialRequest struct {
-	Name      Nickname
+	Name Nickname
+	// PublicKey es la llave EFÍMERA con la que se sella la respuesta. La rellena
+	// el adaptador y core no la ve.
 	PublicKey []byte
+
+	// Rendezvous es el nombre de la red de encuentro de la sala a la que se está
+	// entrando, derivado del invite ID que le pegaron a esta máquina.
+	//
+	// Viaja para poder comprobar la firma del host contra el mismo transcript
+	// que él firmó. Vacío en el lado del HOST, que lo saca de su propia sala:
+	// firmar lo que dijo el que pregunta sería firmar datos ajenos.
+	Rendezvous string
+
+	// ExpectHostKey es la llave larga contra la que se verifica la respuesta:
+	// la que el registro FIJÓ para este invite ID la primera vez que la vio.
+	//
+	// Vacía significa que el registro no la dio o que esta máquina no la pudo
+	// leer, y entonces la respuesta se acepta SIN verificar. Es lo que permite
+	// entrar a la sala de un host que todavía no firma, y lo que hace que
+	// desplegar esto no parta el producto en dos mitades que no se hablan.
+	ExpectHostKey []byte
 }
 
 // HostSpec es todo lo que el motor necesita para levantar la red como nodo

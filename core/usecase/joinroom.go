@@ -86,14 +86,19 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 	// para llegar a "no se pudo", cuando la respuesta se sabía en el primer
 	// segundo. Y no es gratis: durante ese minuto hay una red virtual arriba y
 	// reglas escritas por una sala que no existe.
-	if err := s.checkRoomExists(ctx, room); err != nil {
+	// La llave que el registro tiene FIJADA para este código baja desde acá
+	// hasta el canje del vestíbulo: es contra lo único que se puede comprobar
+	// que quien contesta ahí es el host y no cualquiera con el código. Vacía
+	// cuando el registro no la dio, y entonces se entra sin verificar.
+	llaveDelHost, err := s.checkRoomExists(ctx, room)
+	if err != nil {
 		return domain.RoomState{}, err
 	}
 
 	if err := s.state.Transition(domain.StateConnecting, "buscando al host"); err != nil {
 		return domain.RoomState{}, err
 	}
-	cred, err := s.joinRealNetworkLocked(ctx, room, nick)
+	cred, err := s.joinRealNetworkLocked(ctx, room, nick, llaveDelHost)
 	if err != nil {
 		return domain.RoomState{}, err
 	}
@@ -179,7 +184,9 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 // llamador tiene su propia idea de qué significa haber llegado hasta acá.
 //
 // Asume el candado tomado.
-func (s *Session) joinRealNetworkLocked(ctx context.Context, room domain.Room, nick domain.Nickname) (domain.Credential, error) {
+func (s *Session) joinRealNetworkLocked(
+	ctx context.Context, room domain.Room, nick domain.Nickname, hostKey []byte,
+) (domain.Credential, error) {
 	// Se deriva en el cliente y no se le pregunta al seed. El seed podría
 	// decir cuál es la red de encuentro, derivarla acá hace que llegar al
 	// vestíbulo no dependa de que su API esté viva ni de que diga la verdad.
@@ -212,7 +219,7 @@ func (s *Session) joinRealNetworkLocked(ctx context.Context, room domain.Room, n
 	}
 
 	s.deps.Progress.Step(domain.ScopeDaemon, "pidiéndole al host la credencial de la sala")
-	cred, err := s.exchangeForCredential(ctx, rdv, nick)
+	cred, err := s.exchangeForCredential(ctx, rdv, nick, hostKey)
 	if err != nil {
 		return domain.Credential{}, err
 	}
@@ -292,12 +299,12 @@ func (s *Session) joinRealNetworkLocked(ctx context.Context, room domain.Room, n
 // invite ID consultado. Jamás ve el secreto de la sala real, así que no puede
 // unirse a ninguna, y el diálogo de confianza enseña a dónde se va antes de
 // llegar acá.
-func (s *Session) checkRoomExists(ctx context.Context, room domain.Room) error {
+func (s *Session) checkRoomExists(ctx context.Context, room domain.Room) ([]byte, error) {
 	dir, err := s.deps.Directories.For(room.Seed)
 	if err != nil {
 		s.deps.Log.Error("no se pudo abrir el registro del código", "seed", room.Seed, "error", err)
 		s.deps.Progress.Stepf(domain.ScopeSeed, "el registro %s no se pudo usar", room.Seed)
-		return fmt.Errorf("%w: %v", ErrNoRegistry, err)
+		return nil, fmt.Errorf("%w: %v", ErrNoRegistry, err)
 	}
 
 	s.deps.Progress.Stepf(domain.ScopeSeed, "preguntándole a %s si ese código existe", room.Seed)
@@ -321,13 +328,13 @@ func (s *Session) checkRoomExists(ctx context.Context, room domain.Room) error {
 			s.deps.Progress.Step(domain.ScopeSeed, "ojo: la tarjeta de esa sala no valida contra la llave del registro")
 		}
 		s.deps.Progress.Step(domain.ScopeSeed, "el código existe, se sigue")
-		return nil
+		return vista.HostKey, nil
 
 	case errors.Is(err, port.ErrUnknownRoom):
 		// La respuesta. Se para acá, con el motor todavía sin arrancar y sin
 		// una sola regla escrita.
 		s.deps.Progress.Step(domain.ScopeSeed, "el registro dice que ese código no existe")
-		return fmt.Errorf("%w: %s", ErrNoSuchRoom, room.InviteID)
+		return nil, fmt.Errorf("%w: %s", ErrNoSuchRoom, room.InviteID)
 
 	default:
 		// Ausencia de información, y se para igual. Seguir a ciegas cuesta un
@@ -336,7 +343,7 @@ func (s *Session) checkRoomExists(ctx context.Context, room domain.Room) error {
 		s.deps.Log.Error("el registro no contestó, así que no se entra",
 			"código", room.InviteID.String(), "error", err)
 		s.deps.Progress.Step(domain.ScopeSeed, "el registro no contestó")
-		return fmt.Errorf("%w: %v.\n\n"+
+		return nil, fmt.Errorf("%w: %v.\n\n"+
 			"Es la máquina por la que las salas se encuentran, así que sin ella no hay "+
 			"a dónde llegar.\n\n"+
 			"Qué hacer: vuelve a intentarlo en un momento", ErrNoRegistry, err)
@@ -350,7 +357,7 @@ func (s *Session) checkRoomExists(ctx context.Context, room domain.Room) error {
 // del invitado, porque el vestíbulo es observable: un observador ve que
 // alguien pidió entrar, y no obtiene la credencial ni la identidad de la sala.
 func (s *Session) exchangeForCredential(
-	ctx context.Context, rdv domain.Rendezvous, nick domain.Nickname,
+	ctx context.Context, rdv domain.Rendezvous, nick domain.Nickname, hostKey []byte,
 ) (domain.Credential, error) {
 	// La dirección del host en el vestíbulo la derivan los dos lados del mismo
 	// código, sin hablarse, que es justo lo que hace falta acá: la subred de la
@@ -365,7 +372,14 @@ func (s *Session) exchangeForCredential(
 		// reconectando.
 		return domain.Credential{}, fmt.Errorf("el host no respondió, puede estar reconectando: %w", err)
 	}
-	cred, err := s.deps.Control.RequestCredential(ctx, domain.CredentialRequest{Name: nick})
+	cred, err := s.deps.Control.RequestCredential(ctx, domain.CredentialRequest{
+		Name: nick,
+		// Los dos campos que hacen verificable la respuesta: contra qué sala se
+		// firma, y con qué llave se comprueba. La llave la fijó el registro; el
+		// nombre de la red lo derivó esta máquina del código que le pegaron.
+		Rendezvous:    rdv.NetworkName(),
+		ExpectHostKey: hostKey,
+	})
 	if err != nil {
 		return domain.Credential{}, fmt.Errorf("el host no emitió la credencial: %w", err)
 	}
@@ -553,4 +567,27 @@ func markRoles(peers []domain.Peer, local netip.Addr, role domain.Role, subnet n
 		out = append(out, p)
 	}
 	return out
+}
+
+// pinnedHostKey pregunta por la llave que el registro fijó, y nunca falla.
+//
+// Devuelve nil ante cualquier problema, y nil significa "no se pudo comprobar",
+// que es exactamente lo que pasó. Lo usa el reingreso, donde parar por un
+// registro caído sacaría de una sala viva a quien solo necesitaba renovar su
+// credencial. El camino de entrar por primera vez NO usa esto: ahí el registro
+// tiene que contestar igualmente, para saber si la sala existe.
+func (s *Session) pinnedHostKey(ctx context.Context, room domain.Room) []byte {
+	dir, err := s.deps.Directories.For(room.Seed)
+	if err != nil {
+		s.deps.Log.Warn("sin registro con el que comprobar quién contesta en el vestíbulo",
+			"seed", room.Seed, "error", err)
+		return nil
+	}
+	vista, err := dir.Lookup(ctx, room.InviteID)
+	if err != nil {
+		s.deps.Log.Warn("el registro no dijo con qué llave está fijado el código",
+			"código", room.InviteID.String(), "error", err)
+		return nil
+	}
+	return vista.HostKey
 }

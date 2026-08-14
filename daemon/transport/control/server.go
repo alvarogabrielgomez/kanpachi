@@ -276,9 +276,22 @@ func (s *server) issue(req credentialRequestMsg) credentialResponseMsg {
 	// código nuevo si el host lo renueva.
 	s.mu.Lock()
 	s.keys[cred.VirtualIP] = req.PublicKey
+	rdv := s.scope.Rendezvous
 	s.mu.Unlock()
 
-	return credentialResponseMsg{Sealed: sellado}
+	resp := credentialResponseMsg{Sealed: sellado}
+
+	// **La red de encuentro sale de la sala de ESTE host, jamás del pedido.**
+	// El invitado manda la suya para saber contra qué comparar, y firmar la que
+	// él dijo sería firmar datos elegidos por quien pregunta. Si no coinciden,
+	// la verificación falla del otro lado, que es exactamente lo que tiene que
+	// pasar cuando alguien pide la credencial de otra sala.
+	id := s.ch.deps.Identity
+	if id.Signs() && rdv != "" {
+		resp.HostKey = id.Public
+		resp.Sig = id.Sign(credentialTranscript(rdv, req.PublicKey, sellado))
+	}
+	return resp
 }
 
 // serveRoom atiende la conexión de un miembro.

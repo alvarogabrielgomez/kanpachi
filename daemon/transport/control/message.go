@@ -90,6 +90,16 @@ type envelope struct {
 type credentialRequestMsg struct {
 	Name      string `json:"name"`
 	PublicKey []byte `json:"public_key"`
+
+	// Rendezvous es la red de encuentro que el invitado derivó del código que le
+	// pegaron, y viaja para que él pueda comprobar la firma contra el mismo
+	// transcript que el host firmó.
+	//
+	// **El host NO firma esta cadena: firma la suya.** Un pedido que nombre otra
+	// sala produce una firma que no valida del otro lado, que es justo lo que
+	// tiene que pasar. Vacía en un invitado viejo, y entonces no hay nada que
+	// comprobar. Ver [credentialTranscript].
+	Rendezvous string `json:"rendezvous,omitempty"`
 }
 
 // credentialResponseMsg lleva la credencial SELLADA, o el motivo del rechazo.
@@ -100,6 +110,21 @@ type credentialRequestMsg struct {
 type credentialResponseMsg struct {
 	Sealed []byte `json:"sealed,omitempty"`
 	Error  string `json:"error,omitempty"`
+
+	// HostKey y Sig son la llave larga del host y su firma sobre el transcript
+	// de ESTE canje. Ver [credentialTranscript].
+	//
+	// **Que la llave venga acá no prueba nada por sí sola**, y eso es lo que
+	// hacía falta decir en voz alta: una llave que llega en el mismo mensaje que
+	// firma es un sello que se autofirma. Sirve porque el invitado la compara
+	// con la que el REGISTRO fijó para ese invite ID, que llegó por otro camino
+	// y antes. Sin esa comparación, esto es decoración.
+	//
+	// Vacíos cuando el host todavía no firma. El invitado lo trata como "sin
+	// verificar", jamás como falso: un host viejo y un invitado nuevo tienen que
+	// poder jugar mientras esto se despliega.
+	HostKey []byte `json:"host_key,omitempty"`
+	Sig     []byte `json:"sig,omitempty"`
 }
 
 // credentialMsg es lo que va DENTRO del sobre sellado.
@@ -383,4 +408,38 @@ func jsonBytes(v any) ([]byte, error) {
 		return nil, fmt.Errorf("serializando el contenido sellado: %w", err)
 	}
 	return raw, nil
+}
+
+// credentialTranscript arma lo que el host firma y el invitado verifica.
+//
+// # Qué hay dentro y por qué está cada cosa
+//
+//		"kanpachi-cred-v1" 0x00 <red de encuentro> 0x00 <llave efímera> 0x00 <sobre>
+//
+//	  - **El prefijo** separa dominios: una firma de este canje no puede valer
+//	    como firma de una tarjeta, que es lo otro que la misma llave firma.
+//	  - **La red de encuentro** ata la respuesta a ESTA sala. Es lo único de acá
+//	    que el invitado conoce antes de recibir nada, porque lo derivó del código
+//	    que le pegaron, y es lo que impide reusar una respuesta buena de otra
+//	    sala: la llave efímera dura toda la sesión, así que sin este campo una
+//	    respuesta grabada en la sala A verificaría igual al entrar a la B.
+//	  - **La llave efímera** ata la respuesta a ESTE pedido.
+//	  - **El sobre** es lo que se está autenticando.
+//
+// Los separadores son 0x00 y alcanzan: el nombre de la red es hexadecimal con
+// un prefijo fijo, la llave mide 32 bytes siempre, y el sobre va al final. No
+// hay dos repartos distintos de los mismos bytes.
+//
+// La versión va DENTRO del prefijo a propósito. El día que el transcript cambie,
+// una firma vieja deja de validar contra el transcript nuevo, que es lo correcto:
+// se cae a "sin verificar" en vez de a "verificado" por accidente.
+func credentialTranscript(rendezvous string, guestKey, sealed []byte) []byte {
+	out := make([]byte, 0, len(rendezvous)+len(guestKey)+len(sealed)+32)
+	out = append(out, "kanpachi-cred-v1"...)
+	out = append(out, 0)
+	out = append(out, rendezvous...)
+	out = append(out, 0)
+	out = append(out, guestKey...)
+	out = append(out, 0)
+	return append(out, sealed...)
 }

@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"flag"
 	"fmt"
@@ -586,8 +587,6 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 
 	eventos := watch.Events
 
-	canal := control.New(control.Deps{Clock: relojReal{}, Log: log})
-
 	// The key that seals what stays on disk, derived from this machine's
 	// identity.
 	//
@@ -610,6 +609,23 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 	if err != nil {
 		return abortar(err)
 	}
+
+	// El canal de control se construye DESPUÉS de la llave, y no antes como
+	// estaba: es el host firmando lo que emite por la puerta del vestíbulo, así
+	// que sin la llave el canal nacería sin poder firmar y nadie lo notaría —
+	// las respuestas saldrían sin firma, que es un caso válido del protocolo.
+	//
+	// La llave se pasa como firmador y no entera. Este paquete es el único que
+	// la tiene, y el canal solo necesita poder firmar: darle la privada sería
+	// repartir por el cableado lo que `identity` existe para custodiar.
+	canal := control.New(control.Deps{
+		Clock: relojReal{},
+		Log:   log,
+		Identity: control.Identity{
+			Public: llaveDeIdentidad.Public().(ed25519.PublicKey),
+			Sign:   func(msg []byte) []byte { return ed25519.Sign(llaveDeIdentidad, msg) },
+		},
+	})
 
 	// El almacén se nombra en vez de construirse dentro de `usecase.Deps`, porque
 	// la fábrica de registros de abajo tiene que leer de él ANTES de que la

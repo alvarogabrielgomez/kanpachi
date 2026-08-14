@@ -1,7 +1,9 @@
 package control
 
 import (
+	"bytes"
 	"context"
+	"crypto/ed25519"
 
 	"fmt"
 	"net"
@@ -67,8 +69,8 @@ func (c *Channel) Dial(ctx context.Context, host netip.Addr) error {
 	c.mu.Lock()
 	anterior := c.cli
 	cli := &client{
-		ch:     c,
-		at:     netip.AddrPortFrom(host, domain.ControlPort),
+		ch: c,
+		at: netip.AddrPortFrom(host, domain.ControlPort),
 		// Marcar a una dirección del espacio de vestíbulos ES marcar la puerta.
 		// Antes se comparaba contra una dirección constante; ahora cada sala
 		// deriva la suya del código, así que lo que distingue es el espacio. Las
@@ -180,8 +182,9 @@ func (c *Channel) RequestCredential(ctx context.Context, req domain.CredentialRe
 		return domain.Credential{}, ErrNotDialed
 	}
 	sobre, err := wrap(KindCredentialRequest, credentialRequestMsg{
-		Name:      req.Name.String(),
-		PublicKey: cli.llaves.pub[:],
+		Name:       req.Name.String(),
+		PublicKey:  cli.llaves.pub[:],
+		Rendezvous: req.Rendezvous,
 	})
 	if err != nil {
 		return domain.Credential{}, err
@@ -192,7 +195,7 @@ func (c *Channel) RequestCredential(ctx context.Context, req domain.CredentialRe
 
 	select {
 	case resp := <-cli.creds:
-		return abrirCredencial(cli.llaves, resp)
+		return abrirCredencial(cli.llaves, resp, req)
 	case <-time.After(credentialWait):
 		return domain.Credential{}, fmt.Errorf("el host no contestó el pedido de credencial en %s", credentialWait)
 	case <-ctx.Done():
@@ -202,9 +205,27 @@ func (c *Channel) RequestCredential(ctx context.Context, req domain.CredentialRe
 	}
 }
 
-func abrirCredencial(llaves keyPair, resp credentialResponseMsg) (domain.Credential, error) {
+// abrirCredencial abre el sobre y, cuando se puede, comprueba QUIÉN lo mandó.
+//
+// # Las tres respuestas posibles, y por qué ninguna es "rechazar por defecto"
+//
+//   - **Firma que valida contra la llave fijada**: es el host de esa sala, o
+//     alguien que le robó `identity.key`. Es lo más que se puede afirmar.
+//   - **Sin firma, o sin llave esperada**: no se pudo comprobar. Es el host
+//     viejo que todavía no firma, o un registro que no dio la llave. Se entra,
+//     porque negarse dejaría fuera a gente por una versión.
+//   - **Firma que NO valida**: alguien contestó por el host. Acá sí se para, y
+//     es el único caso duro de todo el canje: el vestíbulo lo puede ocupar
+//     cualquiera que tenga el código, y entrar sería entrar a SU red creyendo
+//     que es la del host, con los puertos del juego abiertos hacia ella.
+func abrirCredencial(
+	llaves keyPair, resp credentialResponseMsg, req domain.CredentialRequest,
+) (domain.Credential, error) {
 	if resp.Error != "" {
 		return domain.Credential{}, fmt.Errorf("el host no emitió la credencial: %s", resp.Error)
+	}
+	if err := verificarFirma(llaves, resp, req); err != nil {
+		return domain.Credential{}, err
 	}
 	plano, err := llaves.open(resp.Sealed)
 	if err != nil {
@@ -484,4 +505,46 @@ func (c *client) stop() {
 	if conn != nil {
 		_ = conn.Close()
 	}
+}
+
+// verificarFirma comprueba la respuesta contra la llave que el REGISTRO fijó.
+//
+// La llave que viaja en el mensaje no se usa para verificar: se COMPARA. Una
+// llave que llega junto a la firma que produce es un sello que se autofirma, y
+// lo único que la convierte en una afirmación es que coincida con la que llegó
+// antes y por otro camino. Ver [credentialResponseMsg].
+func verificarFirma(llaves keyPair, resp credentialResponseMsg, req domain.CredentialRequest) error {
+	if len(req.ExpectHostKey) != ed25519.PublicKeySize {
+		// No hay contra qué comparar: el registro no dio la llave, o no se pudo
+		// leer. Se sigue sin verificar, porque negarse acá sería convertir un
+		// registro parco en una sala a la que no se puede entrar.
+		return nil
+	}
+	if len(resp.Sig) == 0 {
+		// **Sin firma se PARA, y esta rama es la que hace que todo lo demás
+		// sirva.** La primera versión de esto aceptaba una respuesta sin firma
+		// como "no se pudo comprobar", y medido en el canje entero salía lo
+		// obvio en cuanto se mira: quien ocupa el vestíbulo no manda una firma
+		// mala, manda ninguna, y entraba igual. Un mecanismo que se apaga
+		// omitiendo un campo no es un mecanismo.
+		//
+		// El precio, dicho entero: un host que corra una versión anterior a esta
+		// no firma nada, así que un invitado nuevo no puede entrar a su sala
+		// hasta que actualice. Es el único momento en que este producto exige
+		// que las dos puntas coincidan, y se acepta porque la alternativa es
+		// dejar abierta la única puerta por la que hoy se puede meter a alguien
+		// en la red de un desconocido.
+		return fmt.Errorf("quien contestó en el vestíbulo no firmó la credencial: " +
+			"o el host corre una versión vieja de Kanpachi, o no es el host de esa sala")
+	}
+	if !bytes.Equal(resp.HostKey, req.ExpectHostKey) {
+		return fmt.Errorf("quien contestó en el vestíbulo no es el host de esa sala: " +
+			"la llave con la que firmó no es la que el registro tiene fijada para ese código")
+	}
+	msg := credentialTranscript(req.Rendezvous, llaves.pub[:], resp.Sealed)
+	if !ed25519.Verify(ed25519.PublicKey(req.ExpectHostKey), msg, resp.Sig) {
+		return fmt.Errorf("la credencial no la firmó el host de esa sala, " +
+			"o no es la respuesta a este pedido")
+	}
+	return nil
 }

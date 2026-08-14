@@ -98,10 +98,32 @@ var ErrNotAttached = errors.New("control: falta el emisor de credenciales")
 // ErrNotDialed es pedir una credencial sin haber marcado.
 var ErrNotDialed = errors.New("control: no hay conexión con el host")
 
+// Identity es la llave larga de esta instalación, para firmar lo que el host
+// contesta por la puerta.
+//
+// Se inyecta y no se carga acá por el motivo de siempre: `identity.key` la CREA
+// un solo paquete y todo lo demás la consume. Un segundo cargador es cómo se
+// acaba con dos escritores y una llave regenerada en silencio, que le costaría
+// a este equipo la cara con la que ya lo conocen los que jugaron con él.
+//
+// Su cero significa **no firmar**: el daemon de consola sin directorio de datos
+// y los tests no tienen por qué tener identidad, y una respuesta sin firma es un
+// caso que el invitado ya sabe tratar.
+type Identity struct {
+	Public []byte
+	Sign   func(msg []byte) []byte
+}
+
+// Signs dice si esta identidad puede firmar de verdad.
+func (i Identity) Signs() bool { return i.Sign != nil && len(i.Public) > 0 }
+
 // Deps son las piezas del canal.
 type Deps struct {
 	Clock port.Clock
 	Log   port.Logger
+
+	// Identity firma lo que el host emite por la puerta. Ver [Identity].
+	Identity Identity
 
 	// Listen y Dial existen para el test y para nada más.
 	//
@@ -227,7 +249,7 @@ func (c *Channel) CanaryReports() <-chan domain.CanaryReport { return c.canaryRe
 func (c *Channel) MemberChannels() <-chan netip.Addr { return c.joins }
 
 func (c *Channel) log() port.Logger { return c.deps.Log }
-func (c *Channel) now() time.Time                            { return c.deps.Clock.Now() }
+func (c *Channel) now() time.Time   { return c.deps.Clock.Now() }
 func (c *Channel) dial(ctx context.Context, to netip.AddrPort) (net.Conn, error) {
 	return c.deps.Dial(ctx, to)
 }

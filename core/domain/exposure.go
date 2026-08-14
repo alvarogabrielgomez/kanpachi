@@ -293,6 +293,21 @@ type ControlScope struct {
 	Lobby   netip.Addr
 	Room    netip.Addr
 	Members []netip.Addr
+
+	// Rendezvous es el nombre de la red de encuentro de ESTA sala, y viaja acá
+	// porque es lo que el host firma al emitir una credencial.
+	//
+	// No es una dirección y por eso desentona en este struct. Está igual porque
+	// es el único dato de la sala que el canal de control necesita saber y no
+	// puede deducir: lo demás lo trae la conexión. La alternativa era un método
+	// más en el puerto para decir una cadena.
+	//
+	// **Para qué se firma.** Los dos lados lo derivan del invite ID sin hablarse,
+	// así que atarlo a la respuesta impide reusar una respuesta buena de otra
+	// sala: la llave efímera del invitado vive toda la sesión, así que sin esto
+	// una respuesta grabada en la sala A abriría igual en la sala B. Ver
+	// [Rendezvous] y el canje del paso 5.
+	Rendezvous string
 }
 
 // AlertKind es el conjunto cerrado de cosas que Kanpachi no controla y que

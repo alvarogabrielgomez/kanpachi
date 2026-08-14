@@ -236,6 +236,9 @@ func (s *Session) controlScope() domain.ControlScope {
 		Lobby:   s.lobbyHostAddrLocked(),
 		Room:    s.state.LocalIP,
 		Members: s.authorizedControlIPsLocked(),
+		// La red de encuentro de ESTA sala, que es lo que el host firma al
+		// emitir una credencial. Vacía en el invitado, que no sirve nada.
+		Rendezvous: s.hostSpec.Rendezvous.NetworkName(),
 	}
 }
 
