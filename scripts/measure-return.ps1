@@ -110,14 +110,30 @@ function Native([scriptblock]$block) {
     return $out
 }
 
+# Host-Run corre algo en el host de Linux y FALLA si falla.
+#
+# Comprobar el código de salida no es celo: sin esto, un `sudo` que pide password
+# devuelve error, el script sigue, e imprime OK sobre un despliegue que no
+# ocurrió. Pasó en la primera ejecución, y una medición que dice que sí cuando
+# fue que no es peor que no medir.
 function Host-Run([string]$cmd) {
+    $out = Native { & ssh $Droplet $cmd }
+    if ($script:lastCode -ne 0) {
+        throw "on the host: ``$cmd`` failed (exit $script:lastCode)`n$($out.Trim())"
+    }
+    return $out
+}
+
+# Host-Try es lo mismo para lo que SE PUEDE ir mal sin que importe: parar algo
+# que no estaba corriendo, o preguntar por un paquete que no está.
+function Host-Try([string]$cmd) {
     return Native { & ssh $Droplet $cmd }
 }
 
 # Host-Json pide algo al host de Linux y devuelve el objeto. `sudo` porque el
 # canal y el token son de root, que es lo que su propia ayuda dice.
 function Host-Json([string]$verb) {
-    $raw = Host-Run "sudo kanpachi --json $verb"
+    $raw = Host-Run "sudo -n kanpachi --json $verb"
     if (-not $raw.Trim()) { return $null }
     try { return $raw | ConvertFrom-Json } catch { Info "host $verb -> $($raw.Trim())"; return $null }
 }
@@ -182,7 +198,7 @@ if ($Deploy) {
         throw "no measurement build in $Build. Run scripts/build-measure-clocks.ps1 first."
     }
 
-    $installed = (Host-Run 'dpkg -l kanpachi 2>/dev/null | grep -c "^ii" || true').Trim()
+    $installed = (Host-Try 'dpkg -l kanpachi 2>/dev/null | grep -c "^ii" || true').Trim()
     if ($installed -eq '0') {
         Note 'the published package is not installed; installing it for its engine, units and catalogue'
         $deb = Join-Path $buildDir 'released.deb'
@@ -190,21 +206,21 @@ if ($Deploy) {
             Native { & gh release download --pattern 'kanpachi-amd64.deb' --output $deb --clobber } | Out-Null
         }
         Native { & scp -q $deb "${Droplet}:/tmp/kanpachi-released.deb" } | Out-Null
-        Host-Run 'sudo dpkg -i /tmp/kanpachi-released.deb' | Out-Null
+        Host-Run 'sudo -n dpkg -i /tmp/kanpachi-released.deb' | Out-Null
         Ok 'published package installed'
     }
     else { Ok 'published package already installed' }
 
-    Host-Run 'sudo systemctl stop kanpachid kanpseed-registry' | Out-Null
+    Host-Try 'sudo -n systemctl stop kanpachid kanpseed-registry' | Out-Null
     Native { & scp -q (Join-Path $buildDir 'linux/kanpachid') "${Droplet}:/tmp/kanpachid" } | Out-Null
     Native { & scp -q (Join-Path $buildDir 'linux/kanpachi') "${Droplet}:/tmp/kanpachi" } | Out-Null
     Native { & scp -q (Join-Path $buildDir 'kanpseed-linux-amd64') "${Droplet}:/tmp/kanpseed" } | Out-Null
-    Host-Run ('sudo install -m755 /tmp/kanpachid /usr/libexec/kanpachi/kanpachid' +
-        ' && sudo install -m755 /tmp/kanpachi /usr/bin/kanpachi' +
-        ' && sudo install -m755 /tmp/kanpseed /usr/local/bin/kanpseed') | Out-Null
-    Host-Run 'sudo systemctl start kanpseed-registry' | Out-Null
+    Host-Run ('sudo -n install -m755 /tmp/kanpachid /usr/libexec/kanpachi/kanpachid' +
+        ' && sudo -n install -m755 /tmp/kanpachi /usr/bin/kanpachi' +
+        ' && sudo -n install -m755 /tmp/kanpseed /usr/local/bin/kanpseed') | Out-Null
+    Host-Run 'sudo -n systemctl start kanpseed-registry' | Out-Null
     Ok 'kanpachid, kanpachi and kanpseed replaced, registry back up'
-    Info (Host-Run 'sudo systemctl is-active kanpseed-registry; /usr/bin/kanpachi version 2>/dev/null || true').Trim()
+    Info (Host-Run 'sudo -n systemctl is-active kanpseed-registry; /usr/bin/kanpachi version 2>/dev/null || true').Trim()
     return
 }
 
@@ -215,14 +231,14 @@ if ($Restore) {
         Native { & gh release download --pattern 'kanpachi-amd64.deb' --output $deb --clobber } | Out-Null
     }
     Native { & gh release download --pattern 'kanpseed-linux-amd64' --output (Join-Path $buildDir 'kanpseed-released') --clobber } | Out-Null
-    Host-Run 'sudo systemctl stop kanpachid kanpseed-registry' | Out-Null
+    Host-Try 'sudo -n systemctl stop kanpachid kanpseed-registry' | Out-Null
     Native { & scp -q $deb "${Droplet}:/tmp/kanpachi-released.deb" } | Out-Null
     Native { & scp -q (Join-Path $buildDir 'kanpseed-released') "${Droplet}:/tmp/kanpseed" } | Out-Null
-    Host-Run ('sudo dpkg -i /tmp/kanpachi-released.deb' +
-        ' && sudo install -m755 /tmp/kanpseed /usr/local/bin/kanpseed' +
-        ' && sudo systemctl start kanpseed-registry') | Out-Null
+    Host-Run ('sudo -n dpkg -i /tmp/kanpachi-released.deb' +
+        ' && sudo -n install -m755 /tmp/kanpseed /usr/local/bin/kanpseed' +
+        ' && sudo -n systemctl start kanpseed-registry') | Out-Null
     Ok 'released kanpseed and package back in place'
-    Info (Host-Run 'sudo systemctl is-active kanpseed-registry').Trim()
+    Info (Host-Run 'sudo -n systemctl is-active kanpseed-registry').Trim()
     return
 }
 
@@ -240,7 +256,7 @@ $scenarios = [ordered]@{
     1 = @{
         name  = 'going back after Kanpachi is closed and opened'
         run   = {
-            Host-Run 'sudo systemctl restart kanpachid' | Out-Null
+            Host-Run 'sudo -n systemctl restart kanpachid' | Out-Null
             Start-Sleep -Seconds 8
             $h = Host-Json 'host Medicion'
             $script:code = $h.room.code + '@' + $h.room.seed
@@ -266,7 +282,7 @@ $scenarios = [ordered]@{
         run   = {
             $before = (Host-Json 'status').room.code
             Note 'restarting the host daemon, which is a reboot as far as the room is concerned'
-            Host-Run 'sudo systemctl restart kanpachid' | Out-Null
+            Host-Run 'sudo -n systemctl restart kanpachid' | Out-Null
             Check 'the host brought the room back by itself' (Wait-Until {
                     $s = Host-Json 'status'; $null -ne $s -and $s.conn -eq 'connected'
                 } 180 'the host room to be back')
@@ -280,7 +296,7 @@ $scenarios = [ordered]@{
         name  = 'the guest arrives BEFORE the host is up'
         run   = {
             Note 'stopping the host daemon without closing the room'
-            Host-Run 'sudo systemctl stop kanpachid' | Out-Null
+            Host-Run 'sudo -n systemctl stop kanpachid' | Out-Null
             Peer-Kill
             Peer-Start
             Check 'the guest is not in a room' (-not (Peer-InRoom))
@@ -295,7 +311,7 @@ $scenarios = [ordered]@{
         name  = 'the host comes up and the guest walks in on the next try'
         run   = {
             $before = (Peer-Returning).attempts
-            Host-Run 'sudo systemctl start kanpachid' | Out-Null
+            Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
             Check 'the host room is up' (Wait-Until {
                     $s = Host-Json 'status'; $null -ne $s -and $s.conn -eq 'connected'
                 } 180 'the host room')
@@ -306,7 +322,7 @@ $scenarios = [ordered]@{
     5 = @{
         name  = 'the guest retries several times while the host stays down'
         run   = {
-            Host-Run 'sudo systemctl stop kanpachid' | Out-Null
+            Host-Run 'sudo -n systemctl stop kanpachid' | Out-Null
             Peer-Kill
             Peer-Start
             $seen = 0
@@ -322,7 +338,7 @@ $scenarios = [ordered]@{
             Check 'it kept trying, at least three times, with nobody asking' ($seen -ge 3)
             Check 'and it still has the room saved' ((Peer-Json 'last').found)
 
-            Host-Run 'sudo systemctl start kanpachid' | Out-Null
+            Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
             Check 'and it got in as soon as the host was there' (Wait-Until { Peer-InRoom } 150 'the guest to get in')
         }
     }
@@ -331,7 +347,7 @@ $scenarios = [ordered]@{
         name  = 'the host never comes back, the room expires, and the guest stops'
         run   = {
             Note 'closing the host daemon and waiting out RoomTTL, which is four minutes in this build'
-            Host-Run 'sudo systemctl stop kanpachid' | Out-Null
+            Host-Run 'sudo -n systemctl stop kanpachid' | Out-Null
             Peer-Kill
             Peer-Start
             Check 'the guest is going back' (Wait-Until { $null -ne (Peer-Returning) } 90 'the guest to start going back')
@@ -347,7 +363,7 @@ $scenarios = [ordered]@{
     7 = @{
         name  = 'a kicked guest does NOT come back on its own'
         run   = {
-            Host-Run 'sudo systemctl start kanpachid' | Out-Null
+            Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
             Start-Sleep -Seconds 8
             $h = Host-Json 'status'
             if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion' }
@@ -357,7 +373,7 @@ $scenarios = [ordered]@{
 
             $me = (Peer-Json 'status').local_ip
             Note "the host kicks $me"
-            Host-Run "sudo kanpachi kick $me" | Out-Null
+            Host-Run "sudo -n kanpachi kick $me" | Out-Null
             Check 'the guest is out' (Wait-Until { -not (Peer-InRoom) } 120 'the guest to be out')
 
             $last = Peer-Json 'last'
