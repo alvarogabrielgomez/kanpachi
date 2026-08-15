@@ -153,26 +153,16 @@ func RemoteAccessExecutables() []string {
 	return out
 }
 
-// ClassifyForeign dice qué clase es una regla, a partir de su ejecutable.
+// ClassifyForeignAgainst dice qué clase es una regla, a partir de su ejecutable
+// y de TODOS los ejecutables del perfil activo.
 //
 // Es pura y vive en el dominio a propósito: la clasificación es POLÍTICA, y el
 // adaptador solo sabe leer el almacén de reglas de Windows.
 //
-// `gameExe` es la ruta del ejecutable del perfil activo, y puede ir vacía
-// cuando no hay juego activo. El control remoto gana sobre el juego: un
-// ejecutable que esté en las dos listas es lo peligroso de las dos.
-func ClassifyForeign(executable, gameExe string) RuleClass {
-	return ClassifyForeignAgainst(executable, []string{gameExe})
-}
-
-// ClassifyForeignAgainst es la misma decisión contra TODOS los ejecutables de
-// un perfil.
-//
-// Existe porque [Detect.Executables] es una lista: un juego reparte cliente,
-// servidor dedicado y lanzador en binarios distintos, y una regla permisiva
-// puede apuntar a cualquiera de ellos. Recorrer esa lista es política y por eso
-// vive acá: el adaptador lee el almacén de reglas de Windows y no decide qué es
-// peligroso.
+// Recibe una lista y no un ejecutable porque [Detect.Executables] es una lista:
+// un juego reparte cliente, servidor dedicado y lanzador en binarios distintos,
+// y una regla permisiva puede apuntar a cualquiera de ellos. Puede ir vacía
+// cuando no hay juego activo.
 //
 // El control remoto se comprueba PRIMERO y gana, así que un ejecutable que
 // estuviera en las dos listas vuelve como lo peligroso de las dos.
@@ -221,7 +211,7 @@ type ForeignRule struct {
 	Name       string
 	Executable string
 	Profiles   []FirewallProfile
-	// Class decide el trato en la UI. La calcula [ClassifyForeign], que es
+	// Class decide el trato en la UI. La calcula [ClassifyForeignAgainst], que es
 	// dominio, y jamás el adaptador.
 	Class RuleClass
 	// WasEnabled es el estado previo, para restaurar. Se persiste ANTES de

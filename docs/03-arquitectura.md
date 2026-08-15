@@ -887,22 +887,15 @@ Cuatro cosas de esa cadena tienen razón y no son detalle:
 
 **Ese botón se queda aunque entrar sí dependa del registro**, y conviene decir por qué. Esta pantalla es una medición de un instante, y el registro puede estar de vuelta cuando la persona pulse. Quitarlo por un fallo de hace un momento sería tratar la ausencia de información como una respuesta, que es la distinción que sostiene todo el ingreso temprano. Si sigue caído, entrar lo dice en el primer segundo con su propio mensaje, y el aviso de la portada ya lo venía anunciando por su lado.
 
-### Punto de extensión de identidad
+### De dónde sale la identidad de encuentro
 
-```go
-// Resuelve un invite ID a la identidad de ENCUENTRO, jamás a la red real.
-// La red real solo llega por el canje de credencial con el host.
-type RendezvousProvider interface {
-    // Devuelve también la Room, o sea el invite ID con su seed: un invite ID
-    // solo significa algo en el registro que lo emitió, y quien resuelve la
-    // entrada es el único que sabe cuál era.
-    Resolve(input string) (domain.Room, domain.Rendezvous, error)
-}
-```
+**No hay puerto, y no hace falta.** Un invite ID se resuelve a la identidad de ENCUENTRO con una función pura del dominio, `domain.DeriveRendezvous(id)`: Argon2id sobre el invite ID, sin red y sin preguntarle a nadie. Los dos lados la derivan por separado y coinciden, que es justo lo que hace que el vestíbulo se forme sin coordinar nada.
 
-`LocalDerivation` es la v1: Argon2id sobre el invite ID, sin red y sin preguntarle a nadie. Un proveedor remoto daría salas con identidad de encuentro rotativa sin tocar UI ni daemon.
+La red REAL no sale de ahí en ningún caso. Llega por el canje de credencial con el host, y es lo único que ese canje entrega.
 
-El registro del seed se consume por un puerto aparte, porque resuelve otra cosa: la identidad de encuentro se deriva en la máquina y el registro emite y guarda los invite IDs. Que sean dos puertos es lo que permite cambiar uno sin tocar el otro.
+Hubo un `RendezvousProvider` declarado en `core/port` para dejar el hueco de un proveedor remoto que diera salas con identidad de encuentro rotativa. Nunca tuvo implementación ni consumidor, y una interfaz que nadie satisface no reserva ningún hueco: se borró. El día que haga falta, el puerto se declara entonces, con el consumidor delante.
+
+El registro del seed sí es un puerto, y resuelve otra cosa: la identidad de encuentro se deriva en la máquina y el registro emite y guarda los invite IDs. Que estén separados es lo que permite cambiar uno sin tocar el otro.
 
 **El puerto no es opcional, y este documento decía que sí.** La cabecera anterior era *"Solo presentación. Que falle no impide entrar a ninguna sala"*. La tarjeta sí es presentación; el registro no: los códigos los emite él, y su máquina es el punto de encuentro al que llegan host e invitado.
 

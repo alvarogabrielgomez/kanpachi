@@ -207,7 +207,7 @@ type FirewallPort interface {
 	//
 	// `p` puede ir vacío cuando no hay juego activo, y la auditoría de control
 	// remoto sigue valiendo igual. Cada hallazgo llega clasificado por
-	// [domain.ClassifyForeign], que es dominio: el adaptador lee Windows y no
+	// [domain.ClassifyForeignAgainst], que es dominio: el adaptador lee Windows y no
 	// decide qué es peligroso.
 	AuditForeign(ctx context.Context, p domain.GameProfile) ([]domain.ForeignRule, error)
 	// SuspendForeign las desactiva, jamás las borra, y persiste el estado
@@ -569,16 +569,6 @@ type Canary interface {
 	// host lo mira.
 	WasTouched() bool
 	Close() error
-}
-
-// RendezvousProvider resuelve un invite ID a la identidad de ENCUENTRO, jamás
-// a la red real. La red real solo llega por el canje de credencial con el host.
-//
-// La v1 es derivación local: Argon2id sobre el invite ID, sin red y sin
-// preguntarle a nadie. Un proveedor remoto daría salas con identidad de
-// encuentro rotativa sin tocar UI ni daemon.
-type RendezvousProvider interface {
-	Resolve(input string) (domain.Room, domain.Rendezvous, error)
 }
 
 // ErrUnknownRoom es el registro diciendo que ese invite ID NO EXISTE.

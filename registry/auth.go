@@ -286,17 +286,13 @@ func (a *Auth) Login(proof string) (Tokens, error) {
 		return Tokens{}, ErrOpenSeed
 	}
 	if len(proof) != domain.SeedAuthProofLen {
-		return Tokens{}, ErrBadPassword
+		return Tokens{}, ErrBadCredential
 	}
 	if subtle.ConstantTimeCompare(c.derive(proof), c.Hash) != 1 {
-		return Tokens{}, ErrBadPassword
+		return Tokens{}, ErrBadCredential
 	}
 	return a.mint(c)
 }
-
-// ErrBadPassword covers everything a client is told about a failed login, and
-// it says nothing about why. See [respondError].
-var ErrBadPassword = errors.New("credencial inválida")
 
 func (a *Auth) mint(c *storedCredential) (Tokens, error) {
 	access, err := c.sign(kindAccess, a.now().Add(AccessTTL))
@@ -325,7 +321,7 @@ func (a *Auth) Refresh(token string) (string, int, error) {
 		return "", 0, ErrOpenSeed
 	}
 	if !c.verify(token, kindRefresh, a.now()) {
-		return "", 0, ErrBadToken
+		return "", 0, ErrBadCredential
 	}
 	access, err := c.sign(kindAccess, a.now().Add(AccessTTL))
 	if err != nil {
@@ -334,11 +330,15 @@ func (a *Auth) Refresh(token string) (string, int, error) {
 	return access, int(AccessTTL.Seconds()), nil
 }
 
-// ErrBadToken is the single answer to every bad bearer. There is deliberately
-// no way to ask whether a token expired or was never valid: both lead to the
-// same place, which is refreshing and then typing the password, and telling
-// them apart only hands information to whoever is guessing.
-var ErrBadToken = errors.New("credencial inválida")
+// ErrBadCredential is the single answer to every rejected password and every
+// rejected bearer, and it says nothing about why.
+//
+// **One sentinel and not two on purpose.** A wrong password, a malformed one,
+// an expired token and one that was never valid all lead to the same place,
+// which is typing the password again. Two errors with the same text is an
+// invitation to branch on them, and a branch here is a distinction handed to
+// whoever is guessing. See [respondError].
+var ErrBadCredential = errors.New("credencial inválida")
 
 // Allows says whether this bearer may mutate. An open seed allows everything,
 // which is what every seed does until somebody closes it.

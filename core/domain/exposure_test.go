@@ -82,8 +82,8 @@ func TestElControlRemotoSeReconocePorElNombreDelArchivo(t *testing.T) {
 
 	for _, c := range casos {
 		t.Run(c.nombre, func(t *testing.T) {
-			if got := ClassifyForeign(c.exe, c.juego); got != c.quiere {
-				t.Errorf("ClassifyForeign(%q, %q) = %v, quiere %v\n  %s",
+			if got := ClassifyForeignAgainst(c.exe, []string{c.juego}); got != c.quiere {
+				t.Errorf("ClassifyForeignAgainst(%q, []string{%q}) = %v, quiere %v\n  %s",
 					c.exe, c.juego, got, c.quiere, c.porQué)
 			}
 		})
@@ -127,7 +127,7 @@ func TestLaListaDeControlRemotoEsUnaCopia(t *testing.T) {
 	if b[0] == "manoseado.exe" {
 		t.Error("quien la pida puede alterar la política del dominio")
 	}
-	if ClassifyForeign(remoteAccessExes[0], "") != ClassRemoteControl {
+	if ClassifyForeignAgainst(remoteAccessExes[0], []string{""}) != ClassRemoteControl {
 		t.Error("clasificar dejó de funcionar después de que alguien tocara la copia")
 	}
 }
@@ -137,7 +137,7 @@ func TestTodaLaListaSeReconoceYEstaEnMinusculas(t *testing.T) {
 		if exe != baseLower(exe) {
 			t.Errorf("%q tiene que estar en minúsculas y sin ruta, porque así se compara", exe)
 		}
-		if got := ClassifyForeign(`C:\donde sea\`+exe, ""); got != ClassRemoteControl {
+		if got := ClassifyForeignAgainst(`C:\donde sea\`+exe, []string{""}); got != ClassRemoteControl {
 			t.Errorf("%q se clasificó como %v", exe, got)
 		}
 	}

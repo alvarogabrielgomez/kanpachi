@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 )
 
 // Marca es el hueco que la página deja para el estado resuelto en el servidor.
@@ -36,7 +35,6 @@ type Page struct {
 	mu      sync.RWMutex
 	antes   []byte
 	despues []byte
-	visto   time.Time
 }
 
 // NewPage carga la página y verifica que tenga el hueco. Falla temprano y
@@ -69,7 +67,6 @@ func (p *Page) cargar() error {
 	defer p.mu.Unlock()
 	p.antes = crudo[:inicio]
 	p.despues = crudo[inicio+j:]
-	p.visto = time.Now()
 	return nil
 }
 
