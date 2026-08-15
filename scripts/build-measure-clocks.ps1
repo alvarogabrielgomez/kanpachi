@@ -65,6 +65,22 @@ function Ok($t) { Write-Host "  OK   $t" -ForegroundColor Green }
 function Info($t) { Write-Host "       $t" -ForegroundColor DarkGray }
 function Fail($t) { Write-Host "  FAIL $t" -ForegroundColor Red }
 
+# Native corre un binario externo y decide por su CODIGO DE SALIDA.
+#
+# El rodeo con $ErrorActionPreference es el mismo que hace verify.ps1, y hace
+# falta por lo mismo: en PowerShell 5.1 lo que un exe escribe en stderr se
+# convierte en ErrorRecord, y con 'Stop' eso aborta el script. `go: downloading`
+# sale por stderr y no es un fallo, asi que sin esto un build limpio se muere en
+# la primera dependencia que haya que bajar.
+function Native($what, [scriptblock]$block) {
+    $before = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & $block
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $before
+    if ($code -ne 0) { throw "$what failed (exit $code)" }
+}
+
 $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
 
@@ -139,10 +155,8 @@ try {
     Ok "$($clocks.Count) clocks cut"
 
     Step 'it still has to compile and pass its own guards'
-    & go build ./...
-    if ($LASTEXITCODE -ne 0) { throw 'go build failed with the short clocks' }
-    & go test ./internal/arch/ | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'the architecture guards fail with the short clocks' }
+    Native 'go build with the short clocks' { & go build ./... }
+    Native 'the architecture guards with the short clocks' { & go test ./internal/arch/ | Out-Null }
     Ok 'builds, and the deadline guard still holds'
 
     $outDir = Join-Path $repo $Out
@@ -150,8 +164,7 @@ try {
     New-Item -ItemType Directory -Force $outDir | Out-Null
 
     Step 'the seed'
-    & bash scripts/build-seed.sh --version v0.0.0-measure --out $Out
-    if ($LASTEXITCODE -ne 0) { throw 'build-seed.sh failed' }
+    Native 'build-seed.sh' { & bash scripts/build-seed.sh --version v0.0.0-measure --out $Out }
     Ok 'kanpseed built for linux'
 
     Step 'the engine, taken out of the published .deb'
@@ -162,16 +175,16 @@ try {
         # dejaría copiado fuera de internal/brand, que es donde vive el canal de
         # publicación, y un fork acabaría bajando el .deb del repositorio
         # original. Lo prohibe el guardián de marca, y con razón.
-        & gh release download --pattern 'kanpachi-amd64.deb' --output $deb --clobber
-        if ($LASTEXITCODE -ne 0) { throw 'could not download the published .deb' }
-        & bash -c "cd '$($outDir -replace '\\','/')' && ar x released.deb && tar xf data.tar.* ./usr/lib/kanpachi/kanpachi-engine && mv usr/lib/kanpachi/kanpachi-engine . && rm -rf usr data.tar.* control.tar.* debian-binary released.deb"
-        if ($LASTEXITCODE -ne 0) { throw 'could not extract the engine from the .deb' }
+        Native 'gh release download' { & gh release download --pattern 'kanpachi-amd64.deb' --output $deb --clobber }
+        $unix = $outDir -replace '\\', '/'
+        $unpack = "cd '$unix' && ar x released.deb && tar xf data.tar.* ./usr/lib/kanpachi/kanpachi-engine" +
+        " && mv usr/lib/kanpachi/kanpachi-engine . && rm -rf usr data.tar.* control.tar.* debian-binary released.deb"
+        Native 'unpacking the engine' { & bash -c $unpack }
     }
     Ok ("kanpachi-engine {0:N0} KB" -f ((Get-Item $engine).Length / 1KB))
 
     Step 'the Linux host'
-    & bash scripts/build-deb.sh --version 0.0.0-measure --engine $engine --out $Out
-    if ($LASTEXITCODE -ne 0) { throw 'build-deb.sh failed' }
+    Native 'build-deb.sh' { & bash scripts/build-deb.sh --version 0.0.0-measure --engine $engine --out $Out }
     Ok 'kanpachi-amd64.deb built'
 
     if ($SkipPortable) {
@@ -180,8 +193,8 @@ try {
     }
     else {
         Step 'the Windows guest'
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'build-portable-bundle.ps1')
-        if ($LASTEXITCODE -ne 0) { throw 'build-portable-bundle.ps1 failed' }
+        $bundler = Join-Path $PSScriptRoot 'build-portable-bundle.ps1'
+        Native 'build-portable-bundle.ps1' { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $bundler }
         Copy-Item (Join-Path $repo 'dist/kanpachi-portable.exe') (Join-Path $outDir 'kanpachi-portable.exe') -Force
         Ok 'kanpachi-portable.exe built'
     }
