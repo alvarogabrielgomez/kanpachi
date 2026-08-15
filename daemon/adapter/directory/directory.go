@@ -30,6 +30,7 @@ import (
 	"net/http"
 	"net/netip"
 	"sync"
+	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
@@ -236,6 +237,36 @@ func (d *Directory) Publish(ctx context.Context, id domain.InviteID, sealed []by
 // something on the other side spoke HTTP.
 func (d *Directory) Reachable(ctx context.Context) error {
 	return d.do(ctx, http.MethodGet, "/healthz", nil, nil, http.StatusOK)
+}
+
+// Close tells the registry the room is over. See [port.RoomDirectory.Close].
+//
+// The signature is NOT over a card, because there is none: it is over
+// [domain.RoomCloseMessage], which binds it to this invite ID and to this
+// instant. The timestamp travels beside the signature because whoever verifies
+// has to rebuild the same bytes, and a stamp that lived only inside the
+// signature would leave no way to know which one was signed.
+//
+// The clock is the caller's, and the registry gives it [domain.RoomCloseSkew] of
+// room in both directions. A machine whose clock is minutes out cannot close its
+// room here, and it is the correct way to fail: the alternative is a recorded
+// request that stays good forever.
+func (d *Directory) Close(ctx context.Context, id domain.InviteID) error {
+	priv, err := d.llave()
+	if err != nil {
+		return err
+	}
+	pub, ok := priv.Public().(ed25519.PublicKey)
+	if !ok {
+		return errors.New("la llave de esta instalación no es Ed25519")
+	}
+	now := time.Now()
+	cuerpo := closeBody{
+		HostKey: b64(pub),
+		Sig:     b64(ed25519.Sign(priv, domain.RoomCloseMessage(id, now))),
+		TS:      now.Unix(),
+	}
+	return d.do(ctx, http.MethodDelete, "/api/i/"+id.Raw(), cuerpo, nil, http.StatusNoContent)
 }
 
 // firmar signs the sealed card with this installation's key.

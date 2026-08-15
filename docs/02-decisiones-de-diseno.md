@@ -993,6 +993,18 @@ inviteID (8 chars, emitido por el seed)
 
 Con TTL: la tarjeta muere con la sala, y la llave fijada del host sobrevive semanas para que reabrir con el mismo ID siga siendo del host. **Se guarda en disco**, ver la decisión 33.
 
+### Una entrada muere de dos formas, y antes solo de una
+
+La tarjeta vencía sola a las seis horas, y ese era el único final. **Cerrar la sala no llegaba al registro por ningún camino**, así que durante hasta seis horas ese código seguía contestando que existe: quien lo pegara levantaba el vestíbulo, marcaba a un host que ya no estaba, y esperaba el timeout largo del sistema operativo para terminar en un mensaje que hablaba de reconexión. Medido contra el despliegue el 2026-08-15, veintidós segundos, de los cuales veintiuno eran ese marcado.
+
+Ahora el host lo dice al cerrar, con `DELETE /api/i/{id}`, y renovar el código cierra además el viejo. Eso último es lo que hace cierta la frase «renovar cierra la puerta» en el instante en que se pulsa, en vez de seis horas después.
+
+**Cierra la tarjeta y jamás el fijado.** El invite ID sigue siendo de su host, así que reabrir la misma sala con el mismo código no se toca, que es de lo que depende el host headless que se reabre solo en cada arranque. Borrar la entrada la devolvería al bote y reabriría la carrera que el fijado existe para cerrar.
+
+**La petición va firmada y fechada.** Firmada con la llave que fijó ese invite ID, igual que publicar, porque lo que dice que la sala es tuya no es el password del seed: ese es del operador y un seed abierto no lo pide. Y fechada, con cinco minutos de tolerancia, porque **cerrar es el único mensaje cuya copia grabada sigue sirviendo más tarde**: publicar una tarjeta vieja deja una tarjeta vieja, y reproducir un cierre después de que el host reabra mata una sala viva.
+
+Lo que sigue sin cubrir es el cierre que nadie llegó a hacer, o sea el corte de luz y el proceso matado. Ahí la entrada sigue muriendo de vieja, y lo que hay que acotar es el marcado al vestíbulo.
+
 ### El contador sale de EasyTier, verificado
 
 `easytier-cli peer list-foreign` sobre el portal RPC del seed devuelve peers agrupados por nombre de red, sin cooperación del host y sin unirse a nada:

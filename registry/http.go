@@ -80,6 +80,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/rooms", s.limitado(s.guarded(s.emitir)))
 	mux.HandleFunc("GET /api/i/{id}", s.limitado(s.resolver))
 	mux.HandleFunc("PUT /api/i/{id}", s.limitado(s.guarded(s.publicar)))
+	mux.HandleFunc("DELETE /api/i/{id}", s.limitado(s.guarded(s.cerrar)))
 	mux.HandleFunc("POST /api/auth/token", s.authLimited(s.login))
 	mux.HandleFunc("POST /api/auth/refresh", s.authLimited(s.refresh))
 	mux.HandleFunc("GET /healthz", s.salud)
@@ -183,6 +184,73 @@ func (s *Server) publicar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.publish(id, llave, tarjeta, firma); err != nil {
+		traducir(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// cuerpoCerrar es lo que manda el host para cerrar su sala.
+//
+// No lleva tarjeta, así que la firma no puede ir sobre ella como en publicar: va
+// sobre [domain.RoomCloseMessage], que ata la firma a ESE invite ID y a ESE
+// instante. `ts` viaja aparte porque el que comprueba tiene que rearmar los
+// mismos bytes, y con la marca dentro de la firma y fuera de ella no habría
+// forma de saber cuál se firmó.
+type cuerpoCerrar struct {
+	HostKey string `json:"host_key"`
+	Sig     string `json:"sig"`
+	TS      int64  `json:"ts"`
+}
+
+// cerrar caduca la tarjeta de una sala que su host acaba de cerrar.
+//
+// # Por qué existe, medido
+//
+// Sin esto la sala se acababa en la máquina del host y el registro no se
+// enteraba: el código seguía contestando "existe" hasta que venciera la tarjeta,
+// o sea hasta seis horas. Quien pegaba ese código levantaba el vestíbulo, marcaba
+// al host que ya no estaba, y se comía el timeout largo del sistema operativo
+// para terminar en un mensaje que hablaba de reconexión. Comprobado contra el
+// despliegue el 2026-08-15: veintidós segundos, de los cuales veintiuno eran el
+// marcado a una puerta que nadie iba a abrir.
+//
+// # Lo que NO hace, y es la mitad del diseño
+//
+// No borra la entrada. Caduca la tarjeta y deja el fijado en pie, así que el
+// invite ID sigue siendo de su host y reabrir la misma sala con el mismo código
+// sigue funcionando. Ver [Store.retire].
+func (s *Server) cerrar(w http.ResponseWriter, r *http.Request) {
+	id, ok := idDeRuta(w, r)
+	if !ok {
+		return
+	}
+	var c cuerpoCerrar
+	if !leerJSON(w, r, &c) {
+		return
+	}
+	llave, err := deB64(c.HostKey)
+	if err != nil || len(llave) != ed25519.PublicKeySize {
+		respondError(w, http.StatusBadRequest, CodeBadRequest, "")
+		return
+	}
+	firma, err := deB64(c.Sig)
+	if err != nil || len(firma) != ed25519.SignatureSize {
+		respondError(w, http.StatusBadRequest, CodeBadRequest, "")
+		return
+	}
+	// El reloj se comprueba ANTES que la firma, y el orden importa poco para la
+	// seguridad y mucho para el coste: verificar Ed25519 es barato, y aun así no
+	// hay motivo para gastarlo en un mensaje que se va a rechazar por viejo.
+	if err := domain.CheckRoomCloseTime(time.Unix(c.TS, 0), time.Now()); err != nil {
+		respondError(w, http.StatusBadRequest, CodeBadRequest, "")
+		return
+	}
+	if !ed25519.Verify(ed25519.PublicKey(llave), domain.RoomCloseMessage(id, time.Unix(c.TS, 0)), firma) {
+		respondError(w, http.StatusForbidden, CodeBadSig, "")
+		return
+	}
+	if err := s.store.retire(id, ed25519.PublicKey(llave)); err != nil {
 		traducir(w, err)
 		return
 	}

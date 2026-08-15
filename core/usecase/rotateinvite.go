@@ -167,6 +167,29 @@ func (s *Session) RotateInviteCode(ctx context.Context) (domain.RoomState, error
 		s.deps.Log.Warn("no se les pudo repartir el código nuevo a los presentes", "error", err)
 	}
 
+	// Y el código VIEJO se cierra en el registro, que es lo que hace cierto
+	// "renovar cierra la puerta" en el mismo instante en que se pulsa.
+	//
+	// Sin esto tardaba hasta seis horas en serlo. El vestíbulo viejo ya no
+	// existe, porque se rehospedó unas líneas más arriba con el nombre nuevo, y
+	// aun así el registro seguía contestando que ese código existe: quien lo
+	// tuviera levantaba una red virtual, marcaba a una puerta que nadie iba a
+	// abrir, y esperaba el timeout del sistema operativo para nada. Renovar es
+	// **la** operación con la que un host cierra la puerta, así que era justo la
+	// que peor lo hacía.
+	//
+	// Va al FINAL y no es fatal, por lo mismo que el reparto de arriba: el código
+	// nuevo ya es el bueno y la sala ya vive en él. Que falle deja el viejo
+	// resolviendo hasta que venza su tarjeta, que es lo que pasaba siempre.
+	//
+	// El fijado del código viejo sobrevive, y da igual: era de esta misma
+	// máquina, y nadie va a reabrir con él porque la sala ya se mudó.
+	if err := dir.Close(ctx, old.InviteID); err != nil {
+		s.deps.Log.Warn("el código viejo no se pudo cerrar en el registro, así que va a "+
+			"seguir resolviendo hasta que venza su tarjeta",
+			"código", old.InviteID.String(), "error", err)
+	}
+
 	s.deps.Log.Info("código renovado",
 		"antes", old.InviteID.String(), "ahora", room.InviteID.String(), "presentes", len(s.state.Peers))
 	return s.snapshot(), nil

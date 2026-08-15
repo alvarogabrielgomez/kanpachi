@@ -362,6 +362,63 @@ func (s *Store) publishUnderLock(id domain.InviteID, hostKey ed25519.PublicKey, 
 	return nil
 }
 
+// retire caduca la tarjeta de una sala AHORA, dejando el fijado en pie.
+//
+// # Por qué caducar y no borrar la entrada
+//
+// Porque son dos hechos distintos y el segundo no ocurrió. La sala se acabó, y
+// el invite ID **sigue siendo de su host**: borrar la entrada lo devolvería al
+// bote y reabriría la carrera que el fijado existe para cerrar, o sea que el ex
+// miembro que se quedó con el código llegaría primero. Caducando la tarjeta,
+// [Store.lookup] contesta que no existe al instante y [Store.publish] sigue
+// funcionando, que es exactamente la asimetría de TTLs que este almacén ya
+// tenía. Reabrir con el mismo código no se toca.
+//
+// La tarjeta y su firma se vacían además de vencerse. El vencimiento ya alcanza
+// para que nadie las lea, y guardarlas sería conservar el nombre de una sala que
+// se acabó en un servidor que no tiene por qué recordarlo.
+//
+// # Lo que exige, y es lo mismo que publicar
+//
+// Que la entrada exista, y que la llave sea la que fijó ese invite ID la primera
+// vez. Sin lo segundo, cerrar salas ajenas sería una petición.
+func (s *Store) retire(id domain.InviteID, hostKey ed25519.PublicKey) error {
+	if err := s.retireUnderLock(id, hostKey); err != nil {
+		return err
+	}
+	// Fuera del lock, y solo cuando algo cambió. Ver [Store.respaldar].
+	s.respaldar()
+	return nil
+}
+
+// retireUnderLock es el cuerpo de [Store.retire]. Va aparte para que el respaldo
+// a disco ocurra con el lock ya soltado.
+func (s *Store) retireUnderLock(id domain.InviteID, hostKey ed25519.PublicKey) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.limpiar()
+
+	r, hay := s.rooms[id.Raw()]
+	if !hay {
+		return ErrNotFound
+	}
+	if !r.HostKey.Equal(hostKey) {
+		return ErrPinned
+	}
+	// Ya cerrada es un no-op y NO un error. Cerrar lo llama el camino de salir de
+	// la sala, que es idempotente a propósito y lo invocan tres sitios.
+	r.Card = nil
+	r.Sig = nil
+	// Un segundo ATRÁS y no el instante exacto. [Store.lookup] descarta con
+	// `After(CardUntil)`, así que dejarlo en el ahora deja la sala resolviendo
+	// durante ese mismo segundo: el cierre tiene que valer desde la petición que
+	// lo pidió, no desde el tick siguiente. No se pone el cero porque
+	// [entradaSana] descarta las entradas con plazos vacíos, y eso se llevaría
+	// también el fijado, que es lo único que esto conserva a propósito.
+	r.CardUntil = s.currentTime().Add(-time.Second)
+	return nil
+}
+
 // lookup devuelve la sala si su tarjeta sigue viva.
 //
 // Una sala cuya tarjeta expiró pero cuyo fijado sigue en pie NO se devuelve: al

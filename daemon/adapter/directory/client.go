@@ -48,6 +48,15 @@ type publishBody struct {
 	Sig     string `json:"sig"`
 }
 
+// closeBody carries no card, because closing has none to carry. What the
+// signature covers is `domain.RoomCloseMessage`, and `ts` travels beside it so
+// that the other end can rebuild the same bytes.
+type closeBody struct {
+	HostKey string `json:"host_key"`
+	Sig     string `json:"sig"`
+	TS      int64  `json:"ts"`
+}
+
 type openedBody struct {
 	InviteID string `json:"invite_id"`
 }

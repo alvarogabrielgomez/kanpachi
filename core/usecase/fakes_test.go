@@ -400,8 +400,10 @@ type mockRegistry struct {
 	// publicaciones cuenta las llamadas a Publish, incluidas las que fallan. Es
 	// lo que distingue "no republicó" de "republicó y le contestaron que no".
 	publicaciones int
-	siguiente     string
-	seed          string
+	// cerrados son las salas que se cerraron en el registro, en orden.
+	cerrados  []domain.InviteID
+	siguiente string
+	seed      string
 	// pruebas son los proofs que llegaron a Authenticate, en orden.
 	pruebas []string
 	err     error
@@ -515,6 +517,18 @@ func (r *mockRegistry) Publish(_ context.Context, _ domain.InviteID, sealed []by
 	defer r.mu.Unlock()
 	r.publicado = append([]byte(nil), sealed...)
 	return nil
+}
+
+// Close anota qué salas se cerraron en el registro, en orden.
+//
+// Se anotan incluso cuando el falso está declarado caído: cerrar es best-effort
+// y lo que hay que poder comprobar es que se INTENTÓ, que es justo lo que
+// distingue "no lo llamó" de "lo llamó y el registro no contestó".
+func (r *mockRegistry) Close(_ context.Context, id domain.InviteID) error {
+	r.mu.Lock()
+	r.cerrados = append(r.cerrados, id)
+	r.mu.Unlock()
+	return r.err
 }
 
 type mockControl struct {

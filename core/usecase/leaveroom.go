@@ -188,6 +188,7 @@ func (s *Session) leaveLocked(
 		if err := s.deps.State.ClearRoom(); err != nil {
 			s.deps.Log.Warn("no se pudo borrar la sala guardada al salir", "error", err)
 		}
+		s.closeRoomInRegistryLocked(ctx)
 	}
 
 	s.teardown(ctx)
@@ -226,6 +227,57 @@ func (s *Session) leaveLocked(
 	}
 	s.deps.Log.Info("fuera de la sala", "código", code, "motivo", reason)
 	return s.snapshot()
+}
+
+// closeRoomInRegistryLocked le dice al registro que esta sala se acabó.
+//
+// # Por qué hace falta decirlo, medido
+//
+// Porque cerrar la sala no llegaba al registro por ningún camino, y su entrada
+// solo moría de vieja. Durante hasta seis horas ese código seguía contestando
+// "existe": quien lo pegara levantaba el vestíbulo, marcaba a un host que ya no
+// estaba y se comía el timeout largo del sistema operativo para terminar en un
+// mensaje que hablaba de reconexión. Comprobado contra el despliegue el
+// 2026-08-15, veintidós segundos de los cuales veintiuno eran ese marcado.
+//
+// # Solo el HOST, y esa guarda es lo único que separa esto de un desastre
+//
+// `leaveLocked` lo llaman los dos roles, y un invitado que sale llegaría acá con
+// el código de una sala que no es suya. No lo conseguiría, porque el registro
+// exige la firma de la llave que fijó ese invite ID, así que lo único que
+// lograría es un 403 por cada persona que sale de una sala. La guarda evita
+// gastar el límite de tasa de todos los invitados en peticiones que van a fallar.
+//
+// # No es fatal, y no puede serlo
+//
+// Salir termina fuera de la sala pase lo que pase. Que el registro no conteste
+// cuesta que el código siga resolviendo hasta que venza su tarjeta, que es
+// exactamente lo que pasaba siempre antes de que esto existiera. Un intento y
+// ninguno más: el límite de tasa del registro cuenta también lo que falla.
+//
+// Asume el candado tomado.
+func (s *Session) closeRoomInRegistryLocked(ctx context.Context) {
+	if !s.state.IsHost() || s.state.Room.InviteID.IsZero() {
+		return
+	}
+	// El registro que EMITIÓ este código, y no el propio. Suelen ser el mismo, y
+	// no tienen por qué: una sala reabierta del arranque anterior conserva su
+	// seed, y ese es el único registro donde su entrada existe. Es el mismo
+	// motivo por el que republicar la tarjeta lo toma de la sala.
+	dir, err := s.deps.Directories.For(s.state.Room.Seed)
+	if err != nil {
+		s.deps.Log.Warn("no se pudo abrir el registro para cerrar la sala",
+			"seed", s.state.Room.Seed, "error", err)
+		return
+	}
+	if err := dir.Close(ctx, s.state.Room.InviteID); err != nil {
+		s.deps.Log.Warn("el registro no aceptó el cierre de la sala, así que el código "+
+			"va a seguir resolviendo hasta que venza su tarjeta",
+			"código", s.state.Room.InviteID.String(), "error", err)
+		return
+	}
+	s.deps.Log.Info("la sala quedó cerrada en el registro",
+		"código", s.state.Room.InviteID.String())
 }
 
 // SetHostPresent lo llama el supervisor cuando el canal de control se cae o

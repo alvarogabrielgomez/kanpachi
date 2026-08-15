@@ -732,6 +732,32 @@ type RoomDirectory interface {
 	// de la tarjeta se deriva del enlace, así que cualquiera que lo recibió
 	// puede fabricar una tarjeta que la página descifra.
 	Publish(ctx context.Context, id domain.InviteID, sealed []byte) error
+	// Close le dice al registro que esa sala se acabó, y es BEST-EFFORT.
+	//
+	// # Qué cambia del otro lado
+	//
+	// La tarjeta caduca al instante, así que el código deja de resolver y quien
+	// lo pegue lo descubre en el primer segundo. El FIJADO se queda, o sea que
+	// el invite ID sigue siendo de este equipo y reabrir la misma sala con el
+	// mismo código sigue valiendo. Cerrar no es renunciar al código.
+	//
+	// # Por qué best-effort, y qué significa acá
+	//
+	// Porque cerrar la sala termina fuera de la sala pase lo que pase. Esta
+	// llamada corre en el camino de salir, y un registro caído no puede impedir
+	// que alguien cierre su propia sala: lo que cuesta que falle es que el
+	// código siga contestando hasta que venza su tarjeta, que es exactamente lo
+	// que pasaba siempre antes de que esto existiera. Quien llame anota el fallo
+	// y sigue.
+	//
+	// Un intento y ninguno más. El límite de tasa del registro cuenta también
+	// las peticiones que fallan.
+	//
+	// La firma sale de `identity.key`, igual que en Publish, y va sobre
+	// [domain.RoomCloseMessage]: ata el cierre a ESE invite ID y a ESE instante,
+	// para que una copia grabada no pueda cerrar la sala que el host reabra
+	// mañana con el mismo código.
+	Close(ctx context.Context, id domain.InviteID) error
 	// Authenticate cambia una prueba de password por la credencial con la que
 	// este registro deja HOSPEDAR.
 	//

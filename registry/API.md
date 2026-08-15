@@ -13,6 +13,7 @@ One process, one port. The invitation page and its API share an origin, so there
 | `POST /api/rooms` | Mints an invite ID and registers the room | 30/min per IP | Yes, if the seed is closed |
 | `GET /api/i/{id}` | Resolves an invite ID | 30/min per IP | Never |
 | `PUT /api/i/{id}` | Updates the card of an existing room | 30/min per IP | Yes, if the seed is closed |
+| `DELETE /api/i/{id}` | Closes a room: expires its card, keeps its pin | 30/min per IP | Yes, if the seed is closed |
 | `POST /api/auth/token` | Trades the password proof for tokens | **5/min** per IP | It is what issues them |
 | `POST /api/auth/refresh` | Renews the access token | **5/min** per IP | It verifies the refresh |
 | `GET /healthz` | Service health | None | Never, and it cannot |
@@ -104,6 +105,39 @@ If it passes, the card and signature are refreshed and both deadlines renewed. R
 | Closed seed without a bearer | `401 unauthorized`, `sub: reauth` |
 
 A `403 pinned` and not a `409`: the invite ID exists and it is not yours. It is the answer a member gets when they try to overwrite the host's card.
+
+### `DELETE /api/i/{id}`, closing
+
+Who calls it: the host closing the room, and renewing a code, which closes the old one. Both through [`Directory.Close`](../daemon/adapter/directory/directory.go), and both **best-effort** — a registry that does not answer cannot stop somebody closing their own room.
+
+Body:
+
+```json
+{"host_key": "<Ed25519 public, 32 bytes>", "sig": "<signature over the close message>", "ts": 1755264000}
+```
+
+**There is no card to sign here, so the signature covers a message built for this** ([`core/domain/roomclose.go`](../core/domain/roomclose.go)):
+
+```
+"kanpachi/room-close/v1" ‖ 0x00 ‖ inviteID ‖ 0x00 ‖ unix(8, big-endian)
+```
+
+The invite ID goes inside, or a good signature for one room would close any other room of the same host. And the timestamp goes inside because **closing is the one message whose recorded copy keeps working later**: publishing an old card leaves an old card, which is what was already there, but replaying a close after the host REOPENS the same room kills a live one — and reopening with the same code is exactly what a headless host does on every boot. `ts` travels beside the signature because the verifier has to rebuild the same bytes. Tolerance is ±5 minutes, in both directions: a stamp in the future is a wrong clock or somebody extending a signature's life on purpose.
+
+What it does ([`store.go`](store.go), `retire`): expires the card **one second in the past** and empties the card and its signature. It does **not** delete the entry, and that is the whole design. `lookup` answers 404 from that instant, `networks()` stops counting it, and `publish` keeps working — so **reopening the same room with the same code is untouched**. Deleting the entry would return the ID to the pool and reopen the race the pin exists to close.
+
+Closing an already-closed room is a no-op and not an error: closing is on the idempotent path out of a room, which three places call.
+
+Response: `204`, no body.
+
+| Failure | Status and code |
+|---|---|
+| Malformed key, signature or body | `400 bad_request` |
+| The stamp is outside ±5 minutes | `400 bad_request` |
+| The signature does not verify | `403 bad_sig` |
+| The key is not the pinned one | `403 pinned` |
+| No such entry, or its pin expired and it was swept | `404 not_found` |
+| Closed seed without a bearer | `401 unauthorized`, `sub: reauth` |
 
 ### `POST /api/auth/token`, login
 
@@ -272,7 +306,7 @@ On the client side, the adapter brings its own refusals ([`client.go`](../daemon
 
 ## What the API does not have, on purpose
 
-- **`DELETE`.** Closing a room does not tell the registry: the entry dies by TTL. The measured consequence is below.
+- **A way to release an invite ID.** Closing expires the card and keeps the pin, so the code stays reserved for its host for the pin's whole life. There is no verb for "this ID is free again": that would be the race the pin exists to close, offered as an endpoint.
 - **A room listing.** There is no way to ask which rooms exist, closed or open. The space can only be walked code by code, against the brake.
 - **Accounts.** One shared password per seed, no operator or host identity anywhere in the auth API. The way to throw everybody out is to change it.
 - **`/api/version`.** It existed and was deleted once it ran out of callers: the version travels embedded in the page.
@@ -282,7 +316,7 @@ On the client side, the adapter brings its own refusals ([`client.go`](../daemon
 
 Both came out of the same test: open a room, close the room, and try to enter with the code still in hand. The third thing that test turned up, the page without a limiter, is fixed and documented above.
 
-1. **The ghost room.** The registry answered "it exists" about a closed room, and it will keep doing so until the card expires, up to 6 hours. The guest pays for finding out the hard way: the lobby brought up, and the dial to the host burning through its deadline.
+1. **The ghost room, now only when the close was dirty.** Closing a room tells the registry, so a room somebody closed on purpose stops resolving in the same second. What is still open is the close nobody got to make: a power cut, a killed VPS, a process that died. There the code answers "it exists" until the card expires, up to 6 hours, and the guest pays for it the hard way — the lobby brought up, and the dial to the host burning through its deadline. Bounding that dial to five seconds per attempt, which is what the dial into the room already does deliberately, is the fix and it is not written yet.
 2. **`members` measures the lobby, not the room.** The host stays in the rendezvous network while hosting and the guest leaves it as soon as it collects the credential, so the real number is "the host plus whoever is entering right now". As "how many people are in" it is a bad number; as a signal for "the host is at the door" it is exact, and in the test it said `0` while the daemon's `checkRoomExists` carried on without reading it.
 
 Neither touches containment or the real network's secret: they are failures of answer-truthfulness and of waiting time, not of access.
