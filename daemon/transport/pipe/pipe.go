@@ -45,7 +45,6 @@ import (
 	"fmt"
 	"net"
 	"sync"
-	"time"
 
 	"github.com/accentiostudios/kanpachi/core/port"
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
@@ -69,19 +68,6 @@ const (
 	// sitio para pipeprobe y para una UI que se reabre sin haber cerrado limpio,
 	// y pone un techo a un proceso que abra conexiones en bucle.
 	MaxConns = 8
-
-	// HelloWait es lo que se espera al saludo antes de cortar. Quien se conecta
-	// y no saluda está ocupando una plaza de las ocho sin decir quién es.
-	HelloWait = 5 * time.Second
-
-	// IdleWait es lo que aguanta una conversación sin que llegue nada. La UI
-	// pregunta el estado seguido, así que diez minutos de silencio es una UI
-	// que murió sin cerrar el socket.
-	IdleWait = 10 * time.Minute
-
-	// WriteWait es por MENSAJE y no por escritura, igual que en el canal de la
-	// sala. Un cliente que deja de leer no puede congelar al daemon.
-	WriteWait = 5 * time.Second
 )
 
 // ErrSinDescriptor es negarse a arrancar sin descriptor de seguridad.

@@ -15,7 +15,7 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
-	"github.com/accentiostudios/kanpachi/core/usecase"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/daemon/transport/wire"
 )
 
@@ -25,13 +25,6 @@ import (
 // desincronizado: lo que sigue es la cola de algo que nunca se leyó entero. Por
 // eso pasarse es terminal para el proceso y no un aviso.
 const maxLine = 1 << 20
-
-// callTimeout es lo que se espera una respuesta antes de darla por perdida.
-//
-// Existe porque el motor podría no contestar nunca, y sin plazo el llamador se
-// queda colgado con la sala a medio abrir. Es holgado a propósito: `host` crea
-// un adaptador virtual, que en una máquina cargada tarda segundos.
-const callTimeout = 45 * time.Second
 
 // child es el proceso hijo, detrás de una interfaz para que este fichero sea Go
 // puro y lo prueben los dos CI sin lanzar un proceso de verdad.
@@ -615,7 +608,7 @@ func (e *Engine) warn(msg string, kv ...any) {
 
 // call manda una orden y espera su respuesta.
 func (e *Engine) call(ctx context.Context, build func(id uint64) request) (*responseData, error) {
-	ctx, cancel := context.WithTimeout(ctx, callTimeout)
+	ctx, cancel := context.WithTimeout(ctx, timing.EngineCallTimeout)
 	defer cancel()
 
 	e.mu.Lock()
@@ -749,7 +742,7 @@ func (e *Engine) awaitAddress(ctx context.Context, adapter string, want netip.Ad
 	// la hace volver y el canal con búfer recibe su error sin lector.
 	res := make(chan error, 1)
 	go func() {
-		res <- waitForAddress(ctxEspera, e.deps.Addrs, adapter, want, AddressDeadline)
+		res <- waitForAddress(ctxEspera, e.deps.Addrs, adapter, want, timing.AddressDeadline)
 	}()
 
 	select {
@@ -828,7 +821,7 @@ func (e *Engine) Leave(ctx context.Context) error {
 func (e *Engine) IssueCredential(ctx context.Context, req domain.CredentialRequest) (domain.Credential, error) {
 	data, err := e.call(ctx, func(id uint64) request {
 		return request{ID: id, Cmd: command{IssueCredential: &issueArgs{
-			TTLSeconds: int64(usecase.CredentialTTL / time.Second),
+			TTLSeconds: int64(timing.CredentialTTL / time.Second),
 		}}}
 	})
 	if err != nil {

@@ -22,8 +22,9 @@
 │  │                firewall por COM, netcfg, motor, Steam,          │
 │  │                iphlpapi, catálogo y estado en JSON              │
 │  └── core/        sin I/O, sin syscalls, sin API de Windows        │
-│      ├── domain/    tipos y reglas puras, invariantes, plazos      │
+│      ├── domain/    tipos y reglas puras, invariantes             │
 │      ├── port/      las interfaces que el dominio necesita         │
+│      ├── timing/    TODOS los relojes del producto, en un archivo  │
 │      └── usecase/   una intención por archivo                      │
 │                                                                    │
 │  adaptador Wintun "kanpachi0"  ← creado por el instalador          │
@@ -1590,7 +1591,7 @@ primero** de estas tres:
 2. **Contestaron todos los que se preguntó.** No va a llegar nada más.
 3. **Vence el plazo de ronda, unos diez segundos.**
 
-Los treinta segundos de `TTLMax` **no son la espera**: son el tope duro que
+Los treinta segundos de `timing.CanaryTTLMax` **no son la espera**: son el tope duro que
 cierra el socket incluso si el que lo abrió se murió. Confundirlos deja el
 canario abierto la mitad del tiempo. Con las tres condiciones de arriba, una
 ronda dura alrededor de un segundo, así que el ciclo de trabajo real ronda el dos

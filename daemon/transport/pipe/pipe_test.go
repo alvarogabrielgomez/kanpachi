@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
 )
 
@@ -167,7 +168,7 @@ func TestElQueNoSaludaAtiempoSeQuedaFuera(t *testing.T) {
 	b := nuevoBancoCon(t, func(d *Deps) {})
 	c := b.marca(t)
 
-	// No se puede esperar HelloWait entero en un test, así que se comprueba lo
+	// No se puede esperar timing.PipeHelloWait entero en un test, así que se comprueba lo
 	// que el vigilante consulta: hasta que no hay saludo, Greeted es falso, y es
 	// lo único que decide si esa conexión se corta.
 	srv := protocol.NewServer(&apiFalsa{}, "token-de-prueba", relojReal{}, logMudo{})
@@ -259,8 +260,8 @@ func TestCerrarNoSeCuelgaConConexionesAbiertas(t *testing.T) {
 //
 // El de arriba cierra a los pocos milisegundos, o sea mientras el vigilante de
 // la conexión todavía existe, y por eso pasaba con el fallo puesto. Pasado
-// `HelloWait`, ese vigilante terminaba y la conexión se quedaba sin nadie que
-// la cerrara al apagar: `Close` esperaba hasta `IdleWait`, diez minutos.
+// `timing.PipeHelloWait`, ese vigilante terminaba y la conexión se quedaba sin nadie que
+// la cerrara al apagar: `Close` esperaba hasta `timing.PipeIdleWait`, diez minutos.
 //
 // Es la forma que tiene una conexión de verdad. La interfaz abre la suya al
 // arrancar y pide el apagado minutos u horas después, así que la que colgaba
@@ -276,7 +277,7 @@ func TestCerrarNoSeCuelgaConUnaConexiónVIEJA(t *testing.T) {
 
 	// Justo pasado el plazo del saludo, que es cuando el vigilante decidía si
 	// seguía haciendo falta.
-	time.Sleep(HelloWait + 200*time.Millisecond)
+	time.Sleep(timing.PipeHelloWait + 200*time.Millisecond)
 
 	hecho := make(chan struct{})
 	go func() {

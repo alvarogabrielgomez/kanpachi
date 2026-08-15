@@ -34,7 +34,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/accentiostudios/kanpachi/internal/brand"
 )
@@ -66,10 +65,6 @@ const Releases = "https://github.com/" + Repo + "/releases/latest"
 // distinto: acá no se reintenta ni se revisa la conexión, no hay nada que
 // preguntar. Ver [Enabled].
 var ErrUpdatesDisabled = errors.New("este build no comprueba versiones")
-
-// Timeout es el plazo total de un `upgrade`. Generoso porque incluye bajar
-// decenas de MB por la red de un servidor cualquiera.
-const Timeout = 5 * time.Minute
 
 // Base es la URL de donde cuelgan los artefactos de un tag.
 func Base(tag string) string {

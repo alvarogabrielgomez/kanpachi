@@ -34,6 +34,7 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/identity"
 )
 
@@ -113,7 +114,7 @@ func New(d Deps) (*Directory, error) {
 		d.Resolve = resolveWithNet
 	}
 	if d.connect == nil {
-		d.connect = (&net.Dialer{Timeout: dialTimeout}).DialContext
+		d.connect = (&net.Dialer{Timeout: timing.RegistryDialTimeout}).DialContext
 	}
 	base := d.base
 	if base == "" {
@@ -247,7 +248,7 @@ func (d *Directory) Reachable(ctx context.Context) error {
 // has to rebuild the same bytes, and a stamp that lived only inside the
 // signature would leave no way to know which one was signed.
 //
-// The clock is the caller's, and the registry gives it [domain.RoomCloseSkew] of
+// The clock is the caller's, and the registry gives it [timing.RoomCloseSkew] of
 // room in both directions. A machine whose clock is minutes out cannot close its
 // room here, and it is the correct way to fail: the alternative is a recorded
 // request that stays good forever.

@@ -10,6 +10,7 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/core/usecase"
 	kanpachiengine "github.com/accentiostudios/kanpachi/daemon/adapter/engine/kanpachi"
 )
@@ -269,12 +270,12 @@ func volcarPlazos(log port.Logger, st domain.RoomState, ahora time.Time) {
 		"última-señal", desde(st.HostLastHeard, ahora))
 
 	if !st.HostPresent && !st.HostGoneSince.IsZero() {
-		queda := domain.HostAbsenceLimit - ahora.Sub(st.HostGoneSince)
+		queda := timing.HostAbsenceLimit - ahora.Sub(st.HostGoneSince)
 		log.Warn("  esta máquina saldrá sola de la sala si el host no vuelve",
 			"queda", queda.Round(time.Second).String())
 	}
 	if !st.ReconnectingSince.IsZero() {
-		queda := domain.ReconnectLimit - ahora.Sub(st.ReconnectingSince)
+		queda := timing.ReconnectLimit - ahora.Sub(st.ReconnectingSince)
 		log.Warn("  sin túnel", "desde", desde(st.ReconnectingSince, ahora),
 			"se cierra la sala en", queda.Round(time.Second).String())
 	}

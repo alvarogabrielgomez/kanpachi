@@ -323,7 +323,7 @@ type Session struct {
 	// vence solo: [lastAnnounce] el silencio que ve el otro lado, [lastPublish]
 	// la ventana del registro, y este la vida de las credenciales. Estaban los
 	// dos primeros y faltaba éste, así que una sala que durase más de
-	// [CredentialTTL] echaba a sus miembros uno por uno.
+	// [timing.CredentialTTL] echaba a sus miembros uno por uno.
 	lastRenew time.Time
 
 	// staleProxAviso es, por miembro, DESDE CUÁNDO se le puede volver a decir
@@ -341,7 +341,7 @@ type Session struct {
 	// La espera se guarda en vez de ser una constante porque lleva jitter, y el
 	// jitter tiene que fijarse al programar el intento y no al comprobarlo: si
 	// se sorteara en cada latido, la condición cambiaría cada quince segundos y
-	// la dispersión no dispersaría nada. Ver [RejoinInterval].
+	// la dispersión no dispersaría nada. Ver [timing.RejoinInterval].
 	lastRejoin time.Time
 	rejoinWait time.Duration
 

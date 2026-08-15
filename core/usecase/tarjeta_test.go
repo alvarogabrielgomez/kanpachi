@@ -7,6 +7,7 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // La tarjeta sellada sobrevive al apagón y se vuelve a subir al reabrir.
@@ -52,7 +53,7 @@ func TestUnaSalaAbiertaRepublicaLaTarjetaCadaHora(t *testing.T) {
 	b := salaCreada(t)
 	antes := b.registry.publicaciones
 
-	b.clock.avanza(RepublishInterval - time.Second)
+	b.clock.avanza(timing.RepublishInterval - time.Second)
 	b.session.Tick(ctx())
 	if b.registry.publicaciones != antes {
 		t.Fatal("la tarjeta se republicó antes de cumplir el intervalo")
@@ -77,19 +78,19 @@ func TestUnaSalaAbiertaRepublicaLaTarjetaCadaHora(t *testing.T) {
 func TestUnFalloTransitorioNoReviveUnCódigoPerdido(t *testing.T) {
 	b := salaCreada(t)
 	b.registry.err = port.ErrUnknownRoom
-	b.clock.avanza(RepublishInterval)
+	b.clock.avanza(timing.RepublishInterval)
 	if st := b.session.Tick(ctx()); !st.CodeLost {
 		t.Fatal("el registro rechazó el código y el estado no lo marcó perdido")
 	}
 
 	b.registry.err = errors.New("el registro no contesta")
-	b.clock.avanza(RepublishInterval)
+	b.clock.avanza(timing.RepublishInterval)
 	if st := b.session.Tick(ctx()); !st.CodeLost {
 		t.Fatal("un fallo transitorio revivió un código que el registro había perdido")
 	}
 
 	b.registry.err = nil
-	b.clock.avanza(RepublishInterval)
+	b.clock.avanza(timing.RepublishInterval)
 	if st := b.session.Tick(ctx()); st.CodeLost {
 		t.Fatal("una publicación aceptada no apagó el aviso de código perdido")
 	}

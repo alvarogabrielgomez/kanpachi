@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/accentiostudios/kanpachi/core/timing"
 	compartido "github.com/accentiostudios/kanpachi/internal/selfupdate"
 )
 
@@ -31,7 +32,7 @@ import (
 // alias de verdad, no envoltorios: hay una sola implementación.
 const (
 	Repo    = compartido.Repo
-	Timeout = compartido.Timeout
+	Timeout = timing.UpgradeTimeout
 )
 
 var (

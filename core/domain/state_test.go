@@ -4,6 +4,8 @@ import (
 	"net/netip"
 	"testing"
 	"time"
+
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 func TestTransicionesLegales(t *testing.T) {
@@ -106,7 +108,7 @@ func TestElContadorDeAusenciaCuentaDesdeLaPrimeraCaída(t *testing.T) {
 	if r.ShouldLeaveForHostAbsence(t0.Add(19 * time.Minute)) {
 		t.Error("salió antes de tiempo")
 	}
-	if !r.ShouldLeaveForHostAbsence(t0.Add(HostAbsenceLimit)) {
+	if !r.ShouldLeaveForHostAbsence(t0.Add(timing.HostAbsenceLimit)) {
 		t.Fatal("no salió a los veinte minutos: la marca se reinició con cada latido")
 	}
 }

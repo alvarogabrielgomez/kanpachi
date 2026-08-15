@@ -14,6 +14,7 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/daemon/transport/wire"
 )
 
@@ -337,7 +338,7 @@ func TestElAvisoSeAcusaYLaExpulsiónNoEsperaMásDeLaCuenta(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if tardó := time.Since(arranque); tardó >= NoticeAckWait {
+	if tardó := time.Since(arranque); tardó >= timing.NoticeAckWait {
 		t.Fatalf("con acuse tendría que volver enseguida, tardó %s", tardó)
 	}
 	aviso := espera(t, uno.Notices(), "el aviso de expulsión")
@@ -372,10 +373,10 @@ func TestSinAcuseSeSigueIgualAlVencerElTope(t *testing.T) {
 		t.Fatal(err)
 	}
 	tardó := time.Since(arranque)
-	if tardó < NoticeAckWait {
+	if tardó < timing.NoticeAckWait {
 		t.Fatalf("devolvió en %s sin haber esperado el acuse", tardó)
 	}
-	if tardó > 3*NoticeAckWait {
+	if tardó > 3*timing.NoticeAckWait {
 		t.Fatalf("esperó %s, o sea que el tope no está acotando nada", tardó)
 	}
 }

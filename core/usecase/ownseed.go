@@ -13,19 +13,10 @@ package usecase
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
-
-// seedCheckTimeout es cuánto se espera a que el registro conteste antes de
-// negarse a guardarlo.
-//
-// Más corto que el plazo del pipe (diez segundos en las dos caras) a propósito:
-// si esto lo agotara, el cliente se rendiría primero y el fallo llegaría como
-// "el daemon no contestó", que manda a sospechar del daemon en vez del nombre
-// que se acaba de escribir.
-const seedCheckTimeout = 6 * time.Second
 
 // OwnSeed contesta a qué registro abre salas esta máquina, o "" si todavía no
 // hay ninguno.
@@ -111,7 +102,7 @@ func (s *Session) SetOwnSeed(ctx context.Context, seed string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	sondeo, cancel := context.WithTimeout(ctx, seedCheckTimeout)
+	sondeo, cancel := context.WithTimeout(ctx, timing.SeedCheckTimeout)
 	defer cancel()
 	if err := dir.Reachable(sondeo); err != nil {
 		return "", fmt.Errorf("%w: %s no contestó: %v", ErrNoRegistry, limpio, err)

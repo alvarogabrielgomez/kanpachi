@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // OnEngineEvent traduce lo que dice el motor a una transición.
@@ -223,7 +224,7 @@ func (s *Session) rederiveConnLocked() {
 //
 // La sala NO se abandona: los reintentos son del túnel y no del ingreso, así
 // que nadie tiene que volver a pegar un código. Lo que arranca es el plazo de
-// [domain.ReconnectLimit], que es el respaldo del watchdog del supervisor para
+// [timing.ReconnectLimit], que es el respaldo del watchdog del supervisor para
 // el caso de que el watchdog tampoco esté.
 func (s *Session) tunnelDownLocked(ctx context.Context, ev domain.EngineEvent) (domain.RoomState, error) {
 	s.state.SetTunnelDown(s.deps.Clock.Now())
@@ -239,7 +240,7 @@ func (s *Session) tunnelDownLocked(ctx context.Context, ev domain.EngineEvent) (
 	if err := s.state.Transition(domain.StateReconnecting, texto); err != nil {
 		s.deps.Log.Warn("transición rechazada", "error", err)
 	}
-	s.deps.Log.Warn("sin túnel, reintentando", "motivo", texto, "plazo", domain.ReconnectLimit)
+	s.deps.Log.Warn("sin túnel, reintentando", "motivo", texto, "plazo", timing.ReconnectLimit)
 	return s.snapshot(), nil
 }
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // Los tests de la CADENA de respaldos.
@@ -96,7 +97,7 @@ func TestElExpulsadoVuelveAEntrarConElMismoCódigo(t *testing.T) {
 	// Y el que vuelve recibe credencial. Se emite pasada la ventana de gracia,
 	// que existe para que el sondeo del motor no lo devuelva a la lista, no
 	// para bloquearlo.
-	b.clock.avanza(KickGrace + time.Minute)
+	b.clock.avanza(timing.KickGrace + time.Minute)
 	b.motor.credenciales = func() domain.Credential { return domain.Credential{ID: "c2", Token: "t2"} }
 
 	cred, err := b.session.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")})
@@ -144,7 +145,7 @@ func TestCadaEventoDelMotorLlegaASuTransición(t *testing.T) {
 // va peor, normalmente por relay, que es un caso soportado y no un fallo.
 func TestDegradadoNoArrancaNingúnPlazo(t *testing.T) {
 	b := salaConAlguienPorRelay(t)
-	b.clock.avanza(domain.ReconnectLimit + time.Hour)
+	b.clock.avanza(timing.ReconnectLimit + time.Hour)
 	if st := b.session.Tick(ctx()); st.Conn == domain.StateIdle {
 		t.Fatal("estar degradado sacó de la sala, y el túnel seguía en pie")
 	}
@@ -282,7 +283,7 @@ func TestSinTúnelHayUnPlazoYAlVencerSeCierraTodo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	b.clock.avanza(domain.ReconnectLimit - time.Minute)
+	b.clock.avanza(timing.ReconnectLimit - time.Minute)
 	if st := b.session.Tick(ctx()); st.Conn != domain.StateReconnecting {
 		t.Fatalf("se rindió antes de tiempo: %s", st.Conn)
 	}
@@ -329,7 +330,7 @@ func TestElHostCalladoCuentaDesdeLoÚltimoQueSeOyó(t *testing.T) {
 	inicio := b.clock.Now()
 
 	// Vence el silencio. Marca ausente y no saca a nadie.
-	b.clock.avanza(domain.HostSilenceLimit + time.Minute)
+	b.clock.avanza(timing.HostSilenceLimit + time.Minute)
 	st := b.session.Tick(ctx())
 	if st.HostPresent {
 		t.Fatal("el host sigue presente tras pasarse del límite de silencio")
@@ -339,12 +340,12 @@ func TestElHostCalladoCuentaDesdeLoÚltimoQueSeOyó(t *testing.T) {
 	}
 
 	// Un minuto antes de los veinte contados desde la última señal.
-	b.clock.ahora = inicio.Add(domain.HostAbsenceLimit - time.Minute)
+	b.clock.ahora = inicio.Add(timing.HostAbsenceLimit - time.Minute)
 	if st := b.session.Tick(ctx()); st.Conn == domain.StateIdle {
 		t.Fatal("salió antes de los veinte minutos")
 	}
 	// Y justo a los veinte.
-	b.clock.ahora = inicio.Add(domain.HostAbsenceLimit)
+	b.clock.ahora = inicio.Add(timing.HostAbsenceLimit)
 	st = b.session.Tick(ctx())
 	if st.Conn != domain.StateIdle {
 		t.Fatalf("no salió a los veinte minutos: %s", st.Conn)
@@ -359,7 +360,7 @@ func TestElHostCalladoCuentaDesdeLoÚltimoQueSeOyó(t *testing.T) {
 func TestUnAnuncioCuentaComoPruebaDeVida(t *testing.T) {
 	b := salaConInvitado(t)
 
-	b.clock.avanza(domain.HostSilenceLimit - time.Minute)
+	b.clock.avanza(timing.HostSilenceLimit - time.Minute)
 	if _, err := b.session.OnRoomAnnounce(ctx(), domain.RoomAnnounce{RoomName: "Los panas"}); err != nil {
 		t.Fatal(err)
 	}
@@ -419,7 +420,7 @@ func TestLaTablaDePeersNoEnciendeLaPresencia(t *testing.T) {
 func TestLosVencimientosCorrenAunqueNadieLlameAlLatido(t *testing.T) {
 	b := salaConInvitado(t)
 	b.session.SetHostPresent(false)
-	b.clock.avanza(domain.HostAbsenceLimit + time.Minute)
+	b.clock.avanza(timing.HostAbsenceLimit + time.Minute)
 
 	st, err := b.session.OnPeersChanged(ctx())
 	if err != nil {
@@ -435,7 +436,7 @@ func TestLosVencimientosCorrenAunqueNadieLlameAlLatido(t *testing.T) {
 func TestElBarridoDeExposiciónTambiénHaceVencerLosPlazos(t *testing.T) {
 	b := salaConInvitado(t)
 	b.session.SetHostPresent(false)
-	b.clock.avanza(domain.HostAbsenceLimit + time.Minute)
+	b.clock.avanza(timing.HostAbsenceLimit + time.Minute)
 
 	if st := b.session.RefreshAlerts(ctx()); st.Conn != domain.StateIdle {
 		t.Fatalf("el barrido no hizo vencer el contador: %s", st.Conn)
@@ -446,7 +447,7 @@ func TestElBarridoDeExposiciónTambiénHaceVencerLosPlazos(t *testing.T) {
 func TestUnHostNoSeEchaDeSuPropiaSalaPorNingunaCapa(t *testing.T) {
 	b := salaCreada(t)
 	b.session.SetHostPresent(false)
-	b.clock.avanza(domain.HostAbsenceLimit + domain.HostSilenceLimit + time.Hour)
+	b.clock.avanza(timing.HostAbsenceLimit + timing.HostSilenceLimit + time.Hour)
 
 	if st := b.session.Tick(ctx()); st.Conn != domain.StateConnected {
 		t.Fatalf("el host se echó de su propia sala: %s", st.Conn)
@@ -464,7 +465,7 @@ func TestElHostRepiteElAnuncioCadaDosMinutos(t *testing.T) {
 	}
 	antes := len(b.control.anuncios)
 
-	b.clock.avanza(AnnounceInterval - time.Second)
+	b.clock.avanza(timing.AnnounceInterval - time.Second)
 	b.session.Tick(ctx())
 	if len(b.control.anuncios) != antes {
 		t.Fatal("anunció antes de tiempo")
@@ -482,7 +483,7 @@ func TestElHostRepiteElAnuncioCadaDosMinutos(t *testing.T) {
 func TestUnInvitadoNoAnuncia(t *testing.T) {
 	b := salaConInvitado(t)
 	antes := len(b.control.anuncios)
-	b.clock.avanza(AnnounceInterval * 3)
+	b.clock.avanza(timing.AnnounceInterval * 3)
 	b.session.Tick(ctx())
 
 	if len(b.control.anuncios) != antes {

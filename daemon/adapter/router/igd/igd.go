@@ -50,21 +50,13 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
-// Los plazos. Salen de que esto alimenta una pantalla: el usuario ya pulsó algo
-// y está esperando.
+// Los topes que no se miden en tiempo. Los plazos viven en [timing], porque
+// salen de que esto alimenta una pantalla y hay que poder compararlos con el
+// resto de lo que el usuario espera.
 const (
-	// searchWait es cuánto se escuchan respuestas al multicast. Los routers
-	// contestan en decenas de milisegundos; el resto del tiempo es margen para
-	// uno lento, no para esperar a uno que no está.
-	searchWait = 2 * time.Second
-	// httpTimeout cubre la descripción del dispositivo y cada llamada SOAP.
-	httpTimeout = 3 * time.Second
-	// wholeBudget es el techo de todo junto, por si la suma de plazos chicos se
-	// va de las manos con un router que contesta lento a cada paso.
-	wholeBudget = 8 * time.Second
-
 	// maxBody es lo que se lee de una respuesta. La descripción de un IGD son
 	// unos pocos kilobytes.
 	maxBody = 256 << 10
@@ -113,7 +105,7 @@ func (r *Router) Enforcement(context.Context) (domain.Enforcement, error) {
 
 // RouterMappings devuelve los reenvíos de puerto que el router tiene puestos.
 func (r *Router) RouterMappings(ctx context.Context) ([]domain.PortMapping, error) {
-	ctx, cancel := context.WithTimeout(ctx, wholeBudget)
+	ctx, cancel := context.WithTimeout(ctx, timing.IGDWholeBudget)
 	defer cancel()
 
 	loc, from, err := discover(ctx)
@@ -160,7 +152,7 @@ func discover(ctx context.Context) (*url.URL, netip.Addr, error) {
 		"MX: 1\r\n" +
 		"ST: " + ssdpDevice + "\r\n\r\n"
 
-	deadline := time.Now().Add(searchWait)
+	deadline := time.Now().Add(timing.IGDSearchWait)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
@@ -397,7 +389,7 @@ func (r *Router) get(ctx context.Context, u *url.URL) ([]byte, error) {
 // do es el único sitio que habla HTTP, y trae puesto el cinturón entero.
 func (r *Router) do(req *http.Request) ([]byte, int, error) {
 	client := &http.Client{
-		Timeout: httpTimeout,
+		Timeout: timing.IGDHTTPTimeout,
 		// Sin redirecciones. Seguir una anularía la comprobación de target
 		// justo después de haberla hecho.
 		CheckRedirect: func(*http.Request, []*http.Request) error {

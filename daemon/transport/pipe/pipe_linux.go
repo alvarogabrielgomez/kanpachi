@@ -25,7 +25,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
-	"time"
+
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // socketDir es el directorio del canal, y es la mitad de la seguridad de esto.
@@ -83,14 +84,6 @@ const ConsoleName = socketDir + "/console.sock"
 // puede ser root en esa máquina; darle una vía que NO pasa por `sudo` solo quita
 // el registro de quién hizo qué.
 const SecurityDescriptor = "0600"
-
-// probeTimeout es lo que se espera a saber si el socket de al lado está vivo.
-//
-// Generoso a propósito. Lo que se decide con esta respuesta es si se BORRA el
-// socket, y equivocarse por impaciencia significaría echar a un daemon que está
-// corriendo. Un `connect` local contesta en microsegundos, así que dos segundos
-// solo se agotan cuando pasa algo raro, y ahí lo correcto es no tocar nada.
-const probeTimeout = 2 * time.Second
 
 // abrirPipe crea el socket Unix de verdad.
 //
@@ -240,7 +233,7 @@ func clearDeadSocket(path string) error {
 			path)
 	}
 
-	c, err := net.DialTimeout("unix", path, probeTimeout)
+	c, err := net.DialTimeout("unix", path, timing.SocketProbeTimeout)
 	if err == nil {
 		_ = c.Close()
 		return fmt.Errorf("pipe: ya hay un daemon escuchando en %s", path)

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // La Protección Kanpachi: comprobar desde la red que la compuerta contiene.
@@ -33,23 +34,9 @@ import (
 // código de invitación no es secreto, no hay baneo, y volver a entrar tampoco
 // cuesta nada.
 
+// Los plazos de la ronda del canario viven en [timing]. Acá queda lo que no se
+// mide en tiempo.
 const (
-	// CanaryRoundDeadline es lo que dura una ronda como mucho.
-	//
-	// Diez segundos porque un invitado tarda hasta seis en contestar, que son los
-	// dos sondeos de tres, y hace falta margen para el viaje de ida y vuelta por
-	// el canal de la sala. Una ronda real medida contra el droplet tardó 3376 ms
-	// con el ida y vuelta de ssh incluido.
-	CanaryRoundDeadline = 10 * time.Second
-
-	// CanaryTTL es lo que el socket puede quedar abierto, y va POR ENCIMA del
-	// plazo de ronda a propósito.
-	//
-	// El tope del adaptador es la red de seguridad para el caso de que este
-	// proceso se muera a mitad de una ronda, jamás la espera normal. Si fuera
-	// menor que el plazo, cerraría canarios vivos en el camino bueno.
-	CanaryTTL = 12 * time.Second
-
 	// CanaryRepairLimit son las reposiciones silenciosas antes de avisar.
 	//
 	// UNO, y no tres como [TamperRepairLimit], y la diferencia tiene motivo: las
@@ -102,7 +89,7 @@ func (s *Session) RunCanaryRound(ctx context.Context, afterApply bool) domain.Ca
 		return domain.CanaryCheck{}
 	}
 
-	c, err := s.deps.Canary.Listen(plan.at, plan.nonce, CanaryTTL, plan.avoid)
+	c, err := s.deps.Canary.Listen(plan.at, plan.nonce, timing.CanaryTTL, plan.avoid)
 	if err != nil {
 		// No es fatal y no levanta alerta. No haber podido comprobar no es un
 		// hallazgo, y encender un aviso acá enseñaría a ignorar los avisos.
@@ -245,7 +232,7 @@ func (s *Session) collectCanary(ctx context.Context, c interface {
 		Asked:      plan.asked,
 	}
 
-	plazo := time.After(CanaryRoundDeadline)
+	plazo := time.After(timing.CanaryRoundDeadline)
 	for {
 		select {
 		case <-c.Touched():

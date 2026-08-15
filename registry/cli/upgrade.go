@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/registry/selfupdate"
 	"github.com/accentiostudios/kanpachi/registry/setup"
 )
@@ -34,7 +35,7 @@ func cmdUpgrade(args []string) error {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), selfupdate.Timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timing.UpgradeTimeout)
 	defer cancel()
 
 	tag := *target

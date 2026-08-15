@@ -8,33 +8,7 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
-)
-
-// The clocks of going back to a room. They live together and with names, because
-// the only way to change them is to change them here.
-//
-// **They are compile-time constants and they stay that way.** "Configurable"
-// means easy to find and edit in the source, not adjustable from outside: a file
-// that tuned this would be a cadence against the meeting server that somebody
-// sets to one second, and there is no configuration file for the client daemon to
-// put it in.
-const (
-	// ReturnInterval is how often a guest tries to get back in.
-	//
-	// **There is no attempt cap.** What ends this is the room ceasing to exist,
-	// or a person saying so. The ladder this replaced ran four rungs over seven
-	// and a half minutes and then gave up, justified by "the button to go back is
-	// on the home screen" — which is not true of a headless host, and is a poor
-	// answer even with a screen: a friend's server that comes back at noon should
-	// find everybody in it, not everybody waiting to be told.
-	ReturnInterval = 5 * time.Minute
-
-	// ReturnJitter spreads out everybody who was in the same room.
-	//
-	// A host going down takes its whole room with it, so without this they all
-	// come back at the registry on the same second, forever. Same reason
-	// [RejoinJitter] exists.
-	ReturnJitter = 30 * time.Second
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // loadLast reads the saved last room into memory at startup.
@@ -265,7 +239,7 @@ func (s *Session) Return(ctx context.Context) {
 //
 // Asume el candado tomado.
 func (s *Session) nextReturnWaitLocked(err error) time.Duration {
-	base := ReturnInterval
+	base := timing.ReturnInterval
 	if errors.Is(err, port.ErrSeedThrottled) {
 		base *= 4
 	}
@@ -274,7 +248,7 @@ func (s *Session) nextReturnWaitLocked(err error) time.Duration {
 		// Sin aleatoriedad se espera el máximo, que es el lado seguro de
 		// equivocarse: la manada queda sin dispersar, y más separada en vez de
 		// más apretada.
-		return base + ReturnJitter
+		return base + timing.ReturnJitter
 	}
-	return base + time.Duration(b[0])*ReturnJitter/255
+	return base + time.Duration(b[0])*timing.ReturnJitter/255
 }

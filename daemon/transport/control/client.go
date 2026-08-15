@@ -12,37 +12,18 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/daemon/transport/wire"
 )
 
-// reconnect es la escalera con la que el invitado vuelve a marcar.
-//
-// No es un plazo de corte y no alarga nada: mientras reintenta, el contador de
-// ausencia del host de la decisión 20 corre igual, porque lo que ese contador
-// mide es la ausencia y no los intentos. Arranca corto porque la causa común es
-// un enlace del motor que se rehace en segundos, y se aplana en medio minuto
-// porque más rápido no arregla nada y llena el log.
-var reconnect = []time.Duration{
-	1 * time.Second,
-	2 * time.Second,
-	5 * time.Second,
-	10 * time.Second,
-	20 * time.Second,
-	30 * time.Second,
-}
+// reconnect es la escalera con la que el invitado vuelve a marcar, y sale de
+// [timing.ControlReconnectBackoff], donde está el porqué de cada peldaño.
+var reconnect = timing.ControlReconnectBackoff()
 
 // initialRoomDialAttempts es cuántas veces se intenta abrir el canal de la
 // sala al entrar. El primer SYN puede disparar el handshake del relay de la
 // red overlay y perderse antes de que el camino de datos esté listo.
 const initialRoomDialAttempts = 2
-
-// initialRoomDialWait limita cada intento inicial y deja que el relay termine
-// su handshake antes del siguiente. Son plazos de la conexión inicial; la
-// reconexión de una sesión ya establecida usa [reconnect].
-const (
-	initialRoomDialWait  = 5 * time.Second
-	initialRoomRetryWait = 2 * time.Second
-)
 
 // Dial conecta con el host. Reemplaza la conexión anterior.
 //
@@ -117,8 +98,8 @@ func (c *Channel) dialInitial(ctx context.Context, at netip.AddrPort, puerta boo
 	if puerta {
 		return c.dial(ctx, at)
 	}
-	return dialWithRetry(ctx, at, initialRoomDialAttempts, initialRoomDialWait,
-		initialRoomRetryWait, c.dial)
+	return dialWithRetry(ctx, at, initialRoomDialAttempts, timing.InitialRoomDialWait,
+		timing.InitialRoomRetryWait, c.dial)
 }
 
 // dialWithRetry marca con un presupuesto por intento y una pausa cancelable.
@@ -196,8 +177,8 @@ func (c *Channel) RequestCredential(ctx context.Context, req domain.CredentialRe
 	select {
 	case resp := <-cli.creds:
 		return openCredential(cli.llaves, resp, req)
-	case <-time.After(credentialWait):
-		return domain.Credential{}, fmt.Errorf("el host no contestó el pedido de credencial en %s", credentialWait)
+	case <-time.After(timing.CredentialWait):
+		return domain.Credential{}, fmt.Errorf("el host no contestó el pedido de credencial en %s", timing.CredentialWait)
 	case <-ctx.Done():
 		return domain.Credential{}, ctx.Err()
 	case <-cli.ctx.Done():

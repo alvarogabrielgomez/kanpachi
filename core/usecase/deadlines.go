@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // Tick es el latido, y lo llama el supervisor.
@@ -82,7 +83,7 @@ func (s *Session) enforceDeadlinesLocked(ctx context.Context) bool {
 		// saber del host, no desde que este código se dio cuenta.
 		s.state.SetHostPresent(false, s.state.HostLastHeard)
 		s.deps.Log.Info("el host lleva demasiado sin dar señales",
-			"último", s.state.HostLastHeard, "límite", domain.HostSilenceLimit)
+			"último", s.state.HostLastHeard, "límite", timing.HostSilenceLimit)
 	}
 
 	if s.leaveForHostAbsenceLocked(ctx) {
@@ -95,26 +96,26 @@ func (s *Session) enforceDeadlinesLocked(ctx context.Context) bool {
 
 	// El anuncio periódico del host es lo que le da al otro lado algo que medir.
 	// Va al final: si algo de arriba sacó de la sala, no hay a quién anunciarle.
-	if s.state.IsHost() && now.Sub(s.lastAnnounce) >= AnnounceInterval {
+	if s.state.IsHost() && now.Sub(s.lastAnnounce) >= timing.AnnounceInterval {
 		s.announceLocked(ctx)
 	}
 
 	// Y la republicación de la tarjeta, por lo mismo y con el mismo criterio.
 	// La diferencia con el anuncio es a quién le habla: el anuncio va a los que
 	// ya están dentro, y esto va al registro, o sea a los que todavía no
-	// entraron. Without it, a room that stays open past `registry.RoomTTL` gets
+	// entraron. Without it, a room that stays open past `timing.RoomTTL` gets
 	// swept and its invite ID goes back in the pool, so the code somebody handed
 	// out weeks ago stops being theirs.
-	if s.state.IsHost() && now.Sub(s.lastPublish) >= RepublishInterval {
+	if s.state.IsHost() && now.Sub(s.lastPublish) >= timing.RepublishInterval {
 		s.republishCardLocked(ctx)
 	}
 
 	// Y el tercero de la familia, que le habla al MOTOR. El anuncio refresca lo
 	// que ven los que están dentro, la republicación lo que ve el registro, y
 	// esto la vida de las credenciales con las que los de dentro siguen dentro.
-	// Sin él, una sala más larga que [CredentialTTL] echa a sus miembros uno por
+	// Sin él, una sala más larga que [timing.CredentialTTL] echa a sus miembros uno por
 	// uno al cumplirse las 24 h de cada ingreso.
-	if s.state.IsHost() && now.Sub(s.lastRenew) >= RenewInterval {
+	if s.state.IsHost() && now.Sub(s.lastRenew) >= timing.RenewInterval {
 		s.renewCredentialsLocked(ctx)
 	}
 

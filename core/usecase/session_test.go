@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 func ctx() context.Context { return context.Background() }
@@ -1202,7 +1203,7 @@ func TestLaCredencialEmitidaNoLlevaElSecretoDeLaRed(t *testing.T) {
 	if strings.Contains(fmt.Sprintf("%+v", cred), secreto) {
 		t.Fatal("el secreto de la red viajó dentro de la credencial")
 	}
-	if cred.ExpiresAt.Sub(cred.IssuedAt) != CredentialTTL {
+	if cred.ExpiresAt.Sub(cred.IssuedAt) != timing.CredentialTTL {
 		t.Errorf("vencimiento = %s", cred.ExpiresAt.Sub(cred.IssuedAt))
 	}
 }
@@ -1295,7 +1296,7 @@ func TestElSondeoNoDevuelveAlExpulsado(t *testing.T) {
 
 	// Pasada la ventana, si está, está: volver con un código que el host no
 	// renovó es legítimo y tiene que funcionar.
-	b.clock.avanza(KickGrace + time.Second)
+	b.clock.avanza(timing.KickGrace + time.Second)
 	st, err = b.session.OnPeersChanged(ctx())
 	if err != nil {
 		t.Fatal(err)
@@ -1977,7 +1978,7 @@ func TestElMotivoDeSalidaDistingueLosCuatroCaminos(t *testing.T) {
 	t.Run("el host desaparece veinte minutos", func(t *testing.T) {
 		b := salaConInvitado(t)
 		b.session.SetHostPresent(false)
-		b.clock.avanza(domain.HostAbsenceLimit + time.Minute)
+		b.clock.avanza(timing.HostAbsenceLimit + time.Minute)
 		if !b.session.TickHostAbsence(ctx()) {
 			t.Fatal("no salió")
 		}

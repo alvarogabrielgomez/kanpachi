@@ -23,10 +23,9 @@ import (
 	"net/http"
 	"os"
 	"time"
-)
 
-// probeTimeout bounds every check that leaves the process.
-const probeTimeout = 5 * time.Second
+	"github.com/accentiostudios/kanpachi/core/timing"
+)
 
 // EngineAt says whether the engine binary is where the caller will launch it
 // from. It does not run it: presence is the preflight question, and the deep
@@ -58,7 +57,7 @@ func ClockSkew(ctx context.Context, registryHost string) (time.Duration, error) 
 	if registryHost == "" {
 		return 0, errors.New("no hay registro con el que comparar")
 	}
-	plazo, fin := context.WithTimeout(ctx, probeTimeout)
+	plazo, fin := context.WithTimeout(ctx, timing.PreflightProbeTimeout)
 	defer fin()
 	req, err := http.NewRequestWithContext(plazo, http.MethodHead, "https://"+registryHost+"/", nil)
 	if err != nil {

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -48,21 +49,6 @@ import (
 const authFile = "auth.json"
 
 const authVersion = 1
-
-// The lifetimes of the two tokens.
-//
-// Access is short because it travels on every mutation and buys nothing by
-// living longer: a refresh costs one round trip against a seed the client is
-// already talking to.
-//
-// Refresh is long and does NOT slide. Refreshing mints a new access token and
-// hands back the same refresh, so the session has a hard ceiling instead of one
-// that a stolen token can extend forever. Thirty days later the person types
-// the password again, which is also the only moment the interface has to ask.
-const (
-	AccessTTL  = 15 * time.Minute
-	RefreshTTL = 30 * 24 * time.Hour
-)
 
 // The Argon2id cost of checking a password.
 //
@@ -295,21 +281,21 @@ func (a *Auth) Login(proof string) (Tokens, error) {
 }
 
 func (a *Auth) mint(c *storedCredential) (Tokens, error) {
-	access, err := c.sign(kindAccess, a.now().Add(AccessTTL))
+	access, err := c.sign(kindAccess, a.now().Add(timing.AccessTTL))
 	if err != nil {
 		return Tokens{}, err
 	}
-	refresh, err := c.sign(kindRefresh, a.now().Add(RefreshTTL))
+	refresh, err := c.sign(kindRefresh, a.now().Add(timing.RefreshTTL))
 	if err != nil {
 		return Tokens{}, err
 	}
-	return Tokens{Access: access, Refresh: refresh, ExpiresIn: int(AccessTTL.Seconds())}, nil
+	return Tokens{Access: access, Refresh: refresh, ExpiresIn: int(timing.AccessTTL.Seconds())}, nil
 }
 
 // Refresh mints a fresh access token from a live refresh token.
 //
 // It hands back only the access token, and that is the design: the refresh does
-// not slide, so a session has a hard ceiling of [RefreshTTL] from the moment
+// not slide, so a session has a hard ceiling of [timing.RefreshTTL] from the moment
 // the password was typed. A sliding refresh would let a stolen token renew
 // itself forever, and the only thing that would end it is the operator
 // noticing.
@@ -323,11 +309,11 @@ func (a *Auth) Refresh(token string) (string, int, error) {
 	if !c.verify(token, kindRefresh, a.now()) {
 		return "", 0, ErrBadCredential
 	}
-	access, err := c.sign(kindAccess, a.now().Add(AccessTTL))
+	access, err := c.sign(kindAccess, a.now().Add(timing.AccessTTL))
 	if err != nil {
 		return "", 0, err
 	}
-	return access, int(AccessTTL.Seconds()), nil
+	return access, int(timing.AccessTTL.Seconds()), nil
 }
 
 // ErrBadCredential is the single answer to every rejected password and every

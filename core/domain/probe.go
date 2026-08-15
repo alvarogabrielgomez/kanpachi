@@ -62,14 +62,6 @@ import (
 // que le hace a un TCP se lo hace igual a un UDP. Eso NO cubre las reglas del
 // Firewall de Windows, que sí son por protocolo, y por eso la pantalla lo dice.
 
-// ProbeDeadline es cuánto se espera a cada puerto.
-//
-// Tres segundos porque el silencio es el resultado más común y es el que hay que
-// esperar entero: el RTT medido por el túnel a otra máquina anda en las décimas
-// de segundo, así que esto es más de diez veces el camino bueno. Bajarlo
-// convertiría un peer lento en un falso "cerrado".
-const ProbeDeadline = 3 * time.Second
-
 // ProbeKind dice POR QUÉ un puerto está en la lista, que es lo mismo que decir
 // qué prueba su respuesta.
 type ProbeKind uint8

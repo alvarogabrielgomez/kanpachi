@@ -54,7 +54,7 @@ type opciones struct {
 	//
 	// Los dos, y no solo el segundo: el texto crudo se conserva porque el error de
 	// un valor que no vale tiene que poder citarlo tal como lo escribieron. Cero
-	// en `espera` significa que nadie lo pidió y vale [client.DefaultTimeout].
+	// en `espera` significa que nadie lo pidió y vale [timing.PipeDefaultTimeout].
 	plazo  string
 	espera time.Duration
 }

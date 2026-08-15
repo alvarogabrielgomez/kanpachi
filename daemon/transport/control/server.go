@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/daemon/transport/wire"
 )
 
@@ -214,7 +215,7 @@ func (s *server) serveDoor(conn net.Conn) {
 		s.mu.Unlock()
 	}()
 
-	_ = conn.SetReadDeadline(s.ch.now().Add(doorHelloWait))
+	_ = conn.SetReadDeadline(s.ch.now().Add(timing.DoorHelloWait))
 	linea, err := wire.NewReader(conn, MaxMessage).ReadLine()
 	if err != nil {
 		return
@@ -519,8 +520,8 @@ func (c *Channel) Notify(ctx context.Context, to netip.Addr, n domain.RoomNotice
 
 	select {
 	case <-esperar:
-	case <-time.After(NoticeAckWait):
-		c.log().Warn("el aviso no se acusó a tiempo, se sigue igual", "espera", NoticeAckWait.String())
+	case <-time.After(timing.NoticeAckWait):
+		c.log().Warn("el aviso no se acusó a tiempo, se sigue igual", "espera", timing.NoticeAckWait.String())
 	case <-ctx.Done():
 	}
 	return errors.Join(fallos...)
@@ -705,7 +706,7 @@ func (p *peerConn) write(e envelope) error {
 		return net.ErrClosed
 	}
 	p.mu.Lock()
-	_ = p.conn.SetWriteDeadline(p.ch.now().Add(writeWait))
+	_ = p.conn.SetWriteDeadline(p.ch.now().Add(timing.ControlWriteWait))
 	err := p.w.Write(e)
 	_ = p.conn.SetWriteDeadline(time.Time{})
 	p.mu.Unlock()

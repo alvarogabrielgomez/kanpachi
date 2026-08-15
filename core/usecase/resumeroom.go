@@ -264,7 +264,7 @@ func (s *Session) noteGameLostLocked(gameID, motivo string) {
 // Porque la tarjeta también muere EN VIDA de la sala. El registro la caduca a
 // las seis horas de la última publicación, así que una partida que sigue abierta
 // dejaba de aceptar gente nueva sin un solo error de este lado. Ahora esto
-// además cuelga del latido, cada [RepublishInterval]. Ver `enforceDeadlinesLocked`.
+// además cuelga del latido, cada [timing.RepublishInterval]. Ver `enforceDeadlinesLocked`.
 //
 // Asume el candado tomado.
 func (s *Session) republishCardLocked(ctx context.Context) {

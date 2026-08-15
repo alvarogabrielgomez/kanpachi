@@ -12,16 +12,9 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/core/usecase"
 )
-
-// vistaRefresco es cada cuánto se redibuja la vista en vivo.
-//
-// Un segundo y no menos: lo que se mira ahí son plazos de minutos, y redibujar
-// más rápido solo consigue que la consola parpadee. Va muy por debajo del
-// latido de quince segundos del supervisor a propósito: la vista enseña el
-// estado ya cambiado, no compite con quien lo cambia.
-const vistaRefresco = 1 * time.Second
 
 func menuPrincipal(ctx context.Context, e entorno) error {
 	for {
@@ -329,7 +322,7 @@ func enVivo(ctx context.Context, e entorno) (byte, error) {
 		_, _ = os.Stdout.Write(buf.Bytes())
 		e.c.borrarElResto()
 
-		if t, hubo := e.c.esperarTecla(vistaRefresco); hubo {
+		if t, hubo := e.c.esperarTecla(timing.LiveViewRefresh); hubo {
 			if t == 'd' || t == 'D' {
 				volcarDiagnostico(ctx, e.s, e.log, e.op.seed)
 				continue

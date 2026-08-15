@@ -54,6 +54,8 @@ import (
 	"net/netip"
 	"sync"
 	"time"
+
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // NonceSize es el largo del número que ata la pregunta con la respuesta.
@@ -70,14 +72,6 @@ const NonceSize = 16
 // sea como una fuga que no existe. Por TCP no hace falta, porque el apretón de
 // manos ya prueba que se llegó a ESE socket.
 type Nonce [NonceSize]byte
-
-// TTLMax es lo máximo que el canario puede quedar abierto.
-//
-// Existe como tope duro y no como sugerencia: el oyente lo abre el daemon, que
-// corre como SYSTEM, y un plazo que dependa de que alguien llame a Close deja el
-// socket vivo cuando quien tenía que cerrarlo se murió. Con esto, el peor caso
-// es medio minuto.
-const TTLMax = 30 * time.Second
 
 // Logger es lo que el canario necesita contar. Se declara acá y no se importa
 // de core para que este paquete no dependa de nada del dominio.
@@ -133,7 +127,7 @@ type Canary struct {
 // tiene abierto sería alcanzable A PROPÓSITO, y su respuesta se leería como que
 // la compuerta dejó de contener. Ver `domain.RuleSet.Allows`.
 //
-// `ttl` se recorta a [TTLMax]. En cero vale [TTLMax].
+// `ttl` se recorta a [timing.CanaryTTLMax]. En cero vale [timing.CanaryTTLMax].
 func Listen(at netip.Addr, nonce Nonce, ttl time.Duration, avoid func(uint16) bool, log Logger) (*Canary, error) {
 	if !at.IsValid() {
 		return nil, errors.New("canary: sin dirección de la sala no hay dónde ligar, y ligar " +
@@ -144,8 +138,8 @@ func Listen(at netip.Addr, nonce Nonce, ttl time.Duration, avoid func(uint16) bo
 		// que este paquete promete no hacer.
 		return nil, fmt.Errorf("canary: se pidió ligar en %s, que es todas las interfaces", at)
 	}
-	if ttl <= 0 || ttl > TTLMax {
-		ttl = TTLMax
+	if ttl <= 0 || ttl > timing.CanaryTTLMax {
+		ttl = timing.CanaryTTLMax
 	}
 
 	tcp, udp, port, err := bindBoth(at, avoid)

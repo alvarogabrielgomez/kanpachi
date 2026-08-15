@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/canary"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/probe"
 )
@@ -53,7 +54,7 @@ func canario(args []string) error {
 
 	// Sin `avoid`: este arnés no tiene un RuleSet del que sacar qué puertos
 	// abrió el juego activo. El que sí lo tiene es el daemon, por `opener`.
-	c, err := canary.Listen(at, nonce, canary.TTLMax, nil, logConsola{})
+	c, err := canary.Listen(at, nonce, timing.CanaryTTLMax, nil, logConsola{})
 	if err != nil {
 		return err
 	}
@@ -64,7 +65,7 @@ func canario(args []string) error {
 	fmt.Printf("  desde la otra máquina:\n\n")
 	fmt.Printf("    fwprobe canary-probe -host %s -port %d -nonce %s\n\n",
 		at, c.Port(), hex.EncodeToString(nonce[:]))
-	fmt.Printf("  se cierra solo en %v\n\n", canary.TTLMax)
+	fmt.Printf("  se cierra solo en %v\n\n", timing.CanaryTTLMax)
 
 	// Se corta con lo primero de tres: que lo toquen, el plazo duro, o Ctrl+C.
 	// Cortar en el toque es lo que hace que el script de dos máquinas termine
@@ -74,7 +75,7 @@ func canario(args []string) error {
 	select {
 	case <-c.Touched():
 	case <-sig:
-	case <-time.After(canary.TTLMax):
+	case <-time.After(timing.CanaryTTLMax):
 	}
 
 	// Lo que importa al final es `WasTouched`, que es un hecho PROPIO: si alguien
@@ -117,7 +118,7 @@ func canarioSonda(args []string) error {
 	var nonce domain.CanaryNonce
 	copy(nonce[:], raw)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*domain.ProbeDeadline)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*timing.ProbeDeadline)
 	defer cancel()
 
 	destino := netip.AddrPortFrom(at, uint16(*port))

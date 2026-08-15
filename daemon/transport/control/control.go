@@ -33,44 +33,12 @@ import (
 	"github.com/accentiostudios/kanpachi/core/port"
 )
 
-// NoticeAckWait es cuánto se espera el acuse de un aviso antes de devolver.
-//
-// Acotado y no indefinido, y el tope es lo importante: esperar sin límite
-// convertiría la expulsión en cooperativa, que es justo lo que la decisión 22
-// evita. Vencido el plazo se devuelve igual y lo único que se pierde es que el
-// otro se entere.
-//
-// Sin ninguna espera queda una ventana real: mandar devuelve cuando los bytes
-// entraron al búfer local, no cuando llegaron, y un segundo después la
-// revocación mata la conexión con lo que quedara sin salir.
-const NoticeAckWait = 1 * time.Second
-
-// credentialWait es cuánto espera el que entra a que el host le conteste.
-//
-// Con tope por lo mismo que arriba: sin él, alguien que acepte la conexión y no
-// conteste nunca deja el ingreso colgado para siempre, y del lado del usuario
-// eso es una pantalla que no dice nada.
-const credentialWait = 10 * time.Second
-
-// doorHelloWait es cuánto tiene una conexión de la puerta para decir a qué
-// vino. Una que llega y calla no es un cliente lento, es una conexión ocupando
-// un hueco de los dieciséis.
-const doorHelloWait = 5 * time.Second
-
 // maxDoorConns es el tope de conexiones simultáneas en la puerta.
 //
 // La puerta acepta desconocidos por definición, así que es la única superficie
 // que alguien con el código puede intentar agotar. Dieciséis es holgado para una
 // sala de cinco y ridículo como recurso.
 const maxDoorConns = 16
-
-// writeWait es cuánto se espera a que el otro lado reciba un mensaje.
-//
-// Existe por la misma razón que NoticeAckWait y protege lo mismo: escribir en un
-// socket bloquea mientras el otro no recibe, y quien manda es el host con el
-// candado de la sesión tomado. Sin plazo, un miembro que abre la conexión y deja
-// de leer traba la sesión entera sin mandar un solo mensaje inválido.
-const writeWait = 2 * time.Second
 
 // outBuffer es cuánto se amortigua cada canal de salida.
 //

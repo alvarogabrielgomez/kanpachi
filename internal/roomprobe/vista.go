@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // eventosEnPantalla es cuántas líneas del log se pintan debajo de la sala.
@@ -103,12 +104,12 @@ func pintarPlazos(w io.Writer, st domain.RoomState, ahora time.Time) {
 				hace(st.HostGoneSince, ahora))
 		}
 		fmt.Fprintf(w, "    Silencio 6m   %s\n",
-			cuentaAtras(st.HostLastHeard, domain.HostSilenceLimit, ahora))
+			cuentaAtras(st.HostLastHeard, timing.HostSilenceLimit, ahora))
 		fmt.Fprintf(w, "    Ausencia 20m  %s\n",
-			cuentaAtras(st.HostGoneSince, domain.HostAbsenceLimit, ahora))
+			cuentaAtras(st.HostGoneSince, timing.HostAbsenceLimit, ahora))
 	}
 	fmt.Fprintf(w, "    Sin tunel 10m %s\n",
-		cuentaAtras(st.ReconnectingSince, domain.ReconnectLimit, ahora))
+		cuentaAtras(st.ReconnectingSince, timing.ReconnectLimit, ahora))
 	fmt.Fprintln(w)
 }
 

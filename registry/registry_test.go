@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/internal/selfupdate"
 )
 
@@ -194,14 +195,14 @@ func TestReabrirConElMismoIDSigueSiendoDelHost(t *testing.T) {
 }
 
 // TestLaSalaCaducaPorAbandono is the other ending, the one nobody asks for:
-// nobody republished for RoomTTL and the sweep takes the room, pin included.
+// nobody republished for timing.RoomTTL and the sweep takes the room, pin included.
 func TestLaSalaCaducaPorAbandono(t *testing.T) {
 	s, reloj := storeDePrueba(t)
 	h := nuevoHost(t, 1)
 	card := []byte("x")
 	id, _ := s.Issue(context.Background(), h.pub, card, h.firma(card))
 
-	reloj.avanza(RoomTTL + time.Hour)
+	reloj.avanza(timing.RoomTTL + time.Hour)
 	if n := s.Sweep(); n != 1 {
 		t.Errorf("Sweep discarded %d rooms, wanted 1", n)
 	}

@@ -38,7 +38,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/probe"
 )
 
@@ -180,7 +180,7 @@ func listen(args []string) error {
 //	                       mide la TRANSICIÓN y no un estado suelto
 //	NO SE PUDO PREGUNTAR   esta máquina no llegó a mandar el paquete
 //
-// El plazo por puerto es el del producto, [domain.ProbeDeadline], y no hay
+// El plazo por puerto es el del producto, [timing.ProbeDeadline], y no hay
 // bandera para cambiarlo: medir con otro plazo sería medir otra cosa.
 func sondear(args []string) error {
 	fs := flag.NewFlagSet("probe", flag.ExitOnError)
@@ -207,7 +207,7 @@ func sondear(args []string) error {
 	// Los puertos van de a uno, así que el techo total es el plazo por puerto
 	// por cuantos haya, con uno de margen.
 	ctx, cancel := context.WithTimeout(context.Background(),
-		domain.ProbeDeadline*time.Duration(len(list)+1))
+		timing.ProbeDeadline*time.Duration(len(list)+1))
 	defer cancel()
 
 	for _, p := range list {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/core/usecase"
 )
 
@@ -823,7 +824,7 @@ func TestElSilencioNoLlevaTiempoDeRespuesta(t *testing.T) {
 		Results: []domain.ProbeResult{{
 			ProbeTarget: domain.ProbeTarget{Port: 445, Kind: domain.ProbeForbidden, Label: "SMB"},
 			Outcome:     domain.ProbeSilent,
-			RTT:         domain.ProbeDeadline,
+			RTT:         timing.ProbeDeadline,
 		}},
 	}
 

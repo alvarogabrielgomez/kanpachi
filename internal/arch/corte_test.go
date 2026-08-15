@@ -33,44 +33,55 @@ import (
 //     por el archivo de sala guardada, o sea justo el camino que el esquema de
 //     ese archivo existe para cerrar.
 
-// plazosVigilados son las constantes que sostienen los cortes automáticos, con
-// el archivo donde tienen que vivir.
-var plazosVigilados = map[string]string{
-	"HostAbsenceLimit": "../../core/domain/state.go",
-	"HostSilenceLimit": "../../core/domain/state.go",
-	"ReconnectLimit":   "../../core/domain/state.go",
-	"AnnounceInterval": "../../core/usecase/announce.go",
-	"KickGrace":        "../../core/usecase/kickmember.go",
-	"CredentialTTL":    "../../core/usecase/issuecredential.go",
-	// ReturnInterval no corta nada, y está acá por lo mismo que Beat y Sweep:
-	// es una CADENCIA contra una máquina ajena, sin tope de intentos, y lo que
-	// este guardián comprueba —que sea constante y que nada exportado la ponga—
-	// es exactamente lo que impide que alguien la deje en un segundo y convierta
-	// a cada invitado en un martillo sobre el registro.
-	"ReturnInterval": "../../core/usecase/returnroom.go",
-	"Beat":           "../../daemon/service/supervisor/supervisor.go",
-	"Sweep":          "../../daemon/service/supervisor/supervisor.go",
+// ficheroDePlazos es dónde viven TODOS los relojes del producto.
+//
+// Uno solo desde que se centralizaron: antes esta vigilancia llevaba un mapa de
+// nombre a fichero porque los plazos estaban repartidos por nueve paquetes, y
+// mantener ese mapa al día era otra cosa que se podía olvidar.
+const ficheroDePlazos = "../../core/timing/timing.go"
+
+// plazosVigilados son las constantes que sostienen los cortes automáticos.
+//
+// No son todas las del fichero, y la diferencia importa: éstas son las que, si
+// alguien las pudiera cambiar desde fuera, dejarían a un agente externo
+// conectado para siempre o martillando a una máquina ajena. Un plazo de red
+// mal puesto es un fallo; uno de éstos es la promesa del producto rota.
+var plazosVigilados = []string{
+	"HostAbsenceLimit",
+	"HostSilenceLimit",
+	"ReconnectLimit",
+	"AnnounceInterval",
+	"KickGrace",
+	"CredentialTTL",
+	// ReturnInterval no corta nada, y está acá por lo mismo que SupervisorBeat y
+	// SupervisorSweep: es una CADENCIA contra una máquina ajena, sin tope de
+	// intentos, y lo que este guardián comprueba —que sea constante y que nada
+	// exportado la ponga— es exactamente lo que impide que alguien la deje en un
+	// segundo y convierta a cada invitado en un martillo sobre el registro.
+	"ReturnInterval",
+	"SupervisorBeat",
+	"SupervisorSweep",
 	// Los dos del canal de la sala. NoticeAckWait es el que impide que esperar
-	// el acuse convierta la expulsión en cooperativa, y writeWait el que impide
-	// que un miembro que deja de recibir trabe al host: los dos son plazos que
-	// alguien podría "arreglar" poniéndolos en infinito.
-	"NoticeAckWait": "../../daemon/transport/control/control.go",
-	"writeWait":     "../../daemon/transport/control/control.go",
+	// el acuse convierta la expulsión en cooperativa, y ControlWriteWait el que
+	// impide que un miembro que deja de recibir trabe al host: los dos son
+	// plazos que alguien podría "arreglar" poniéndolos en infinito.
+	"NoticeAckWait",
+	"ControlWriteWait",
 }
 
 // TestLosPlazosSonConstantesDeCompilación.
 func TestLosPlazosSonConstantesDeCompilación(t *testing.T) {
-	for nombre, archivo := range plazosVigilados {
+	for _, nombre := range plazosVigilados {
 		t.Run(nombre, func(t *testing.T) {
-			decl := buscaDeclaración(t, archivo, nombre)
+			decl := buscaDeclaración(t, ficheroDePlazos, nombre)
 			if decl == nil {
 				t.Fatalf("%s ya no está declarado en %s: si se movió, mueve también esta vigilancia",
-					nombre, archivo)
+					nombre, ficheroDePlazos)
 			}
 			if decl.Tok != token.CONST {
 				t.Fatalf("%s dejó de ser const en %s.\n"+
 					"  Una var se puede reasignar desde cualquier init del programa, y con eso el corte "+
-					"automático se apaga sin tocar una línea de la lógica.", nombre, archivo)
+					"automático se apaga sin tocar una línea de la lógica.", nombre, ficheroDePlazos)
 			}
 		})
 	}
@@ -82,11 +93,11 @@ func TestLosPlazosSonConstantesDeCompilación(t *testing.T) {
 // a un literal y mañana a algo que sale de un archivo. El valor tiene que
 // leerse en el sitio donde está la constante.
 func TestNingúnPlazoSaleDeUnValorCalculado(t *testing.T) {
-	for nombre, archivo := range plazosVigilados {
+	for _, nombre := range plazosVigilados {
 		t.Run(nombre, func(t *testing.T) {
-			decl := buscaDeclaración(t, archivo, nombre)
+			decl := buscaDeclaración(t, ficheroDePlazos, nombre)
 			if decl == nil {
-				t.Fatalf("%s ya no está en %s", nombre, archivo)
+				t.Fatalf("%s ya no está en %s", nombre, ficheroDePlazos)
 			}
 			for _, spec := range decl.Specs {
 				vs, ok := spec.(*ast.ValueSpec)
@@ -98,7 +109,7 @@ func TestNingúnPlazoSaleDeUnValorCalculado(t *testing.T) {
 						continue
 					}
 					if !esLiteralDeTiempo(vs.Values[i]) {
-						t.Fatalf("%s no sale de un literal en %s: su valor viene de otro sitio", nombre, archivo)
+						t.Fatalf("%s no sale de un literal en %s: su valor viene de otro sitio", nombre, ficheroDePlazos)
 					}
 				}
 			}

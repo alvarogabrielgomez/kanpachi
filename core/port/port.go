@@ -508,7 +508,7 @@ type ExposureAudit interface {
 // para separar "no contestó" de "no se pudo preguntar", y esas dos cosas dicen
 // lo contrario la una de la otra.
 type Prober interface {
-	// Probe marca y espera como mucho [domain.ProbeDeadline], o hasta que el
+	// Probe marca y espera como mucho [timing.ProbeDeadline], o hasta que el
 	// contexto se cancele.
 	//
 	// La duración solo tiene sentido con [domain.ProbeAnswered]: en el silencio
@@ -608,7 +608,7 @@ var ErrUnknownRoom = errors.New("el registro no conoce esa sala")
 // worse. **The registry's rate limit counts what fails too**, so a client that
 // keeps its cadence through a throttle keeps its own door shut. Everything that
 // retries against the registry has to be able to recognise it and back off; see
-// [usecase.ReturnInterval].
+// [timing.ReturnInterval].
 //
 // It is NOT [ErrUnknownRoom] and must never be treated as one: being throttled
 // says nothing at all about whether a room exists.

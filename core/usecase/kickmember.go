@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // KickMember saca a quien está dentro.
@@ -149,19 +150,10 @@ func (s *Session) dropPeerLocked(ip netip.Addr) {
 	s.state.Peers = kept
 }
 
-// KickGrace es cuánto se ignora a un expulsado que el motor todavía reporta.
-//
-// La revocación tarda alrededor de un segundo, medido. Treinta segundos son
-// treinta veces eso, que es margen de sobra para una máquina cargada, y siguen
-// siendo poco para el otro caso que cubre esta ventana: que el expulsado vuelva
-// a entrar con un código que el host no renovó, cosa que es legítima y tiene
-// que funcionar. Pasada la ventana, si está, está.
-const KickGrace = 30 * time.Second
-
 // forgetOldKicks limpia la lista de expulsados recientes. Asume el candado.
 func (s *Session) forgetOldKicks(now time.Time) {
 	for ip, t := range s.kicked {
-		if now.Sub(t) >= KickGrace {
+		if now.Sub(t) >= timing.KickGrace {
 			delete(s.kicked, ip)
 		}
 	}
@@ -332,38 +324,6 @@ func (s *Session) OnMemberChannelUp(ctx context.Context, ip netip.Addr) domain.R
 	return s.snapshot()
 }
 
-// StaleNoticeCooldown es cada cuánto se le repite a un miembro que el host no
-// tiene su credencial, cuando el aviso SÍ salió.
-//
-// Hace falta porque el disparador es un cambio de miembros, y el motor los emite
-// en ráfagas: un invitado sin credencial produce además un parpadeo de un
-// segundo, entrando y saliendo de la tabla. Sin freno, eso serían decenas de
-// avisos por minuto a la misma máquina.
-//
-// Treinta segundos son de sobra: reingresar tarda unos diez, así que un solo
-// aviso suele bastar y el siguiente solo llega si el primero no sirvió de nada.
-const StaleNoticeCooldown = 30 * time.Second
-
-// StaleNoticeRetry es cada cuánto se reintenta cuando el aviso NO salió.
-//
-// # Por qué no vale el enfriamiento largo, medido
-//
-// El 2026-08-11 el host volvió a las 20:21:23. El motor le puso a los dos
-// invitados en la tabla a las 20:21:22.365, y ahí mismo se les intentó avisar y
-// los dos fallaron con "no hay canal abierto". Es lo ESPERABLE y no un
-// accidente: el host acaba de arrancar, su servidor de control lleva
-// milisegundos escuchando y los invitados todavía no lo redialaron. Uno de ellos
-// reconectó trece segundos después.
-//
-// O sea que el primer intento del caso que esto existe para arreglar falla
-// SIEMPRE, y sin un reintento corto el aviso no llega nunca. Aquella medición
-// dio recuperaciones de 1m51s y 1m56s, que fue exactamente lo que tardó el
-// invitado en darse cuenta solo: el aviso no aportó nada.
-//
-// Dos segundos alcanzan porque lo que se está esperando es que el otro lado
-// redial, y el coste de errar es una línea de log.
-const StaleNoticeRetry = 2 * time.Second
-
 // StaleNoticeTries es cuántas veces seguidas se reintenta rápido antes de pasar
 // al plazo largo.
 //
@@ -441,12 +401,12 @@ func (s *Session) tellStaleMembersLocked(ctx context.Context) {
 		case err == nil:
 			s.deps.Log.Info("se le avisó a un miembro de que este host no tiene su credencial",
 				"nombre", p.Name.String(), "ip", p.VirtualIP.String())
-			s.staleProxAviso[p.VirtualIP] = avisoStale{prox: ahora.Add(StaleNoticeCooldown)}
+			s.staleProxAviso[p.VirtualIP] = avisoStale{prox: ahora.Add(timing.StaleNoticeCooldown)}
 		case estado.intentos+1 < StaleNoticeTries:
 			s.deps.Log.Warn("no se le pudo avisar a un miembro sin credencial, se reintenta",
-				"ip", p.VirtualIP.String(), "error", err, "en", StaleNoticeRetry)
+				"ip", p.VirtualIP.String(), "error", err, "en", timing.StaleNoticeRetry)
 			s.staleProxAviso[p.VirtualIP] = avisoStale{
-				prox: ahora.Add(StaleNoticeRetry), intentos: estado.intentos + 1,
+				prox: ahora.Add(timing.StaleNoticeRetry), intentos: estado.intentos + 1,
 			}
 		default:
 			// Se agotaron los intentos rápidos. Esto ya no es "todavía no
@@ -455,7 +415,7 @@ func (s *Session) tellStaleMembersLocked(ctx context.Context) {
 			// plazo largo para no llenar el log con lo mismo.
 			s.deps.Log.Warn("no se le pudo avisar a un miembro sin credencial, se deja de insistir",
 				"ip", p.VirtualIP.String(), "error", err, "intentos", estado.intentos+1)
-			s.staleProxAviso[p.VirtualIP] = avisoStale{prox: ahora.Add(StaleNoticeCooldown)}
+			s.staleProxAviso[p.VirtualIP] = avisoStale{prox: ahora.Add(timing.StaleNoticeCooldown)}
 		}
 	}
 	// Y se olvida lo que ya no frena nada, para que el mapa no crezca con la

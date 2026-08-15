@@ -26,6 +26,7 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // Entrada es la superficie por la que le hablan al daemon. La implementa el
@@ -86,13 +87,6 @@ type Deps struct {
 	ApagadoMax time.Duration
 }
 
-// ApagadoPorDefecto son veinte segundos.
-//
-// El Administrador de servicios de Windows da treinta antes de matar el
-// proceso. Rendirse a los veinte deja diez para anotar por qué, que es la
-// diferencia entre un log que explica y un proceso que desapareció.
-const ApagadoPorDefecto = 20 * time.Second
-
 // Runtime es el daemon corriendo.
 type Runtime struct {
 	deps  Deps
@@ -123,7 +117,7 @@ func Start(ctx context.Context, d Deps) (*Runtime, error) {
 		return nil, errors.New("service: faltan piezas del arranque")
 	}
 	if d.ApagadoMax <= 0 {
-		d.ApagadoMax = ApagadoPorDefecto
+		d.ApagadoMax = timing.ShutdownGrace
 	}
 
 	r := &Runtime{deps: d, fin: make(chan struct{})}

@@ -9,15 +9,9 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	kanpachiengine "github.com/accentiostudios/kanpachi/daemon/adapter/engine/kanpachi"
 )
-
-// plazoSeed es cuánto se espera a que el seed acepte la conexión.
-//
-// Cinco segundos: el seed está en un droplet al otro lado de internet, así que
-// un segundo daría falsos negativos desde una conexión lenta, y quince
-// convertirían la comprobación en una espera que nadie termina de mirar.
-const plazoSeed = 5 * time.Second
 
 // resultadoSeed es una dirección del seed y qué pasó al marcarla.
 type resultadoSeed struct {
@@ -72,7 +66,7 @@ func medirSeed(ctx context.Context, host string) ([]resultadoSeed, error) {
 			out = append(out, r)
 			continue
 		}
-		plazo, fin := context.WithTimeout(ctx, plazoSeed)
+		plazo, fin := context.WithTimeout(ctx, timing.SeedReachWait)
 		inicio := time.Now()
 		conn, err := (&net.Dialer{}).DialContext(plazo, "tcp",
 			netip.AddrPortFrom(d, kanpachiengine.SeedPort).String())

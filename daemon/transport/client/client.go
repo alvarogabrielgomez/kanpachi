@@ -30,25 +30,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/daemon/transport/pipe"
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
 )
-
-// DefaultTimeout es cuánto se espera una respuesta.
-//
-// Noventa segundos, y el número no es prudencia genérica: el techo real lo pone
-// el motor, con 30 s por adaptador, y crear una sala levanta DOS (la sala y el
-// vestíbulo) más el sondeo del MTU. Con el plazo de 10 s que tenía `pipeprobe`,
-// `create_room` cortaba del lado del cliente con el daemon trabajando bien, y el
-// síntoma era un `i/o timeout` con la sala ya creada.
-const DefaultTimeout = 90 * time.Second
-
-// dialTimeout es cuánto se espera a que el canal ACEPTE.
-//
-// Mucho más corto que el otro y por otro motivo: conectarse a un canal local es
-// inmediato o no va a pasar. Esperar más solo alarga el rato en que el CLI
-// parece colgado cuando lo que hay es un daemon que no arrancó.
-const dialTimeout = 5 * time.Second
 
 // Client es una conexión ya saludada.
 //
@@ -94,7 +79,7 @@ func OpenWithToken(addr, token string) (*Client, error) {
 		conn:  conn,
 		w:     protocol.NewWriter(conn),
 		r:     protocol.NewReader(conn),
-		Plazo: DefaultTimeout,
+		Plazo: timing.PipeDefaultTimeout,
 		Addr:  addr,
 	}
 	if _, err := c.Call(protocol.MethodHello, struct {

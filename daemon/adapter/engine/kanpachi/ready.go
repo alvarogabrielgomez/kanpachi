@@ -8,18 +8,9 @@ import (
 	"net/netip"
 	"strings"
 	"time"
+
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
-
-// AddressDeadline is how long a start command waits for the virtual address.
-//
-// Generous on purpose. Creating a wintun adapter, naming it and configuring an
-// address is several privileged operations, and on a cold machine the driver
-// gets loaded on the way. Failing early here would report a broken network on a
-// machine that was merely slow.
-const AddressDeadline = 30 * time.Second
-
-// addressPoll is how often the interface is re-read while waiting.
-const addressPoll = 250 * time.Millisecond
 
 // waitForAddress blocks until `want` is configured on `adapter`.
 //
@@ -70,7 +61,7 @@ func waitForAddress(ctx context.Context, addrs addrLister, adapter string, want 
 		select {
 		case <-ctx.Done():
 			return agotado(adapter, want, deadline, last)
-		case <-time.After(addressPoll):
+		case <-time.After(timing.AddressPoll):
 		}
 	}
 }

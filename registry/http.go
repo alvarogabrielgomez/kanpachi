@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/internal/selfupdate"
 )
 
@@ -710,18 +711,13 @@ func withLimit(l *limiter, h http.HandlerFunc) http.HandlerFunc {
 //
 // The cap is what keeps this from becoming the outage it is meant to prevent.
 // An operator whose seed is under a guessing run still gets in, just slowly, and
-// a run that has to wait [maxThrottle] between attempts is a run that will not
+// a run that has to wait [timing.MaxThrottle] between attempts is a run that will not
 // finish. A success resets it, so a single fat-fingered password costs the next
 // attempt a tenth of a second and nothing more.
 type throttle struct {
 	mu       sync.Mutex
 	failures int
 }
-
-const (
-	throttleStep = 100 * time.Millisecond
-	maxThrottle  = 2 * time.Second
-)
 
 // wait sleeps for what the recent failures have earned. It returns the context
 // error when the caller hangs up mid-wait, and the handler answers nothing:
@@ -731,9 +727,9 @@ func (t *throttle) wait(ctx context.Context) error {
 	n := t.failures
 	t.mu.Unlock()
 
-	wait := time.Duration(n) * throttleStep
-	if wait > maxThrottle {
-		wait = maxThrottle
+	wait := time.Duration(n) * timing.ThrottleStep
+	if wait > timing.MaxThrottle {
+		wait = timing.MaxThrottle
 	}
 	if wait == 0 {
 		return nil
@@ -753,7 +749,7 @@ func (t *throttle) failed() {
 	defer t.mu.Unlock()
 	// Capped where the delay caps, so a long run cannot bank a counter that
 	// takes hours to drain once it stops.
-	if t.failures < int(maxThrottle/throttleStep) {
+	if t.failures < int(timing.MaxThrottle/timing.ThrottleStep) {
 		t.failures++
 	}
 }

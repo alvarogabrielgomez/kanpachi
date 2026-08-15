@@ -8,6 +8,7 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // El vigía de la malla, que estuvo un tiempo SOLO en `roomprobe`.
@@ -17,13 +18,6 @@ import (
 // persona que corriera otra herramienta y reprodujera el fallo. El binario que
 // ya está corriendo tiene que anotarlo solo. Viviendo acá lo heredan los tres
 // —instalado, portable y roomprobe— sin que ninguno se acuerde de nada.
-
-// latidoMalla es cada cuánto se le pregunta al motor quién hay en la malla.
-//
-// Un segundo: lo que se persigue son los veintiún segundos que un invitado pasa
-// marcando al host, y con el latido de quince del supervisor eso son una o dos
-// muestras. Cuesta un mensaje por la tubería del motor, que es barato.
-const LatidoMalla = 1 * time.Second
 
 // malla es lo poco que el vigía necesita del motor.
 type Malla interface {
@@ -58,7 +52,7 @@ type VigiaDeMalla struct {
 }
 
 func (m *VigiaDeMalla) Correr(ctx context.Context) {
-	t := time.NewTicker(LatidoMalla)
+	t := time.NewTicker(timing.MeshBeat)
 	defer t.Stop()
 
 	// El arranque no cuenta como cambio: sin sala no hay malla, y anunciarlo

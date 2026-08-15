@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 func ctx() context.Context { return context.Background() }
@@ -156,8 +157,8 @@ func TestElContextoCanceladoNoEsSilencio(t *testing.T) {
 }
 
 func TestElPlazoPorDefectoEsElDelDominio(t *testing.T) {
-	if got := New().deadline; got != domain.ProbeDeadline {
-		t.Fatalf("plazo = %v, se esperaba %v", got, domain.ProbeDeadline)
+	if got := New().deadline; got != timing.ProbeDeadline {
+		t.Fatalf("plazo = %v, se esperaba %v", got, timing.ProbeDeadline)
 	}
 }
 

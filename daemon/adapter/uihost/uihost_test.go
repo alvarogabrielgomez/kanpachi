@@ -3,6 +3,8 @@ package uihost
 import (
 	"testing"
 	"time"
+
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // La cadena padre-hijo de Kanpachi, comprobada en el único punto que se puede
@@ -54,9 +56,9 @@ func TestUnaInterfazQueAguantóDevuelveLasTresOportunidades(t *testing.T) {
 		r.murió(time.Second)
 	}
 
-	// Una que vivió más que `quickDeath`: no es un arranque que falla, es
+	// Una que vivió más que `timing.UIQuickDeath`: no es un arranque que falla, es
 	// alguien que cerró la ventana.
-	if _, rendirse := r.murió(quickDeath + time.Second); rendirse {
+	if _, rendirse := r.murió(timing.UIQuickDeath + time.Second); rendirse {
 		t.Fatal("una interfaz que aguantó se contó como caída en cadena")
 	}
 	intento, _ := r.murió(time.Second)
@@ -73,7 +75,7 @@ func TestLaVidaLargaLimpiaAntesDeSumar(t *testing.T) {
 	r.murió(time.Second)
 	r.murió(time.Second)
 
-	intento, _ := r.murió(quickDeath + time.Millisecond)
+	intento, _ := r.murió(timing.UIQuickDeath + time.Millisecond)
 	if intento != 1 {
 		t.Fatalf("la caída larga tendría que reabrir la cuenta en 1, y dio %d", intento)
 	}

@@ -13,18 +13,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/core/usecase"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/directory"
 	"github.com/accentiostudios/kanpachi/daemon/preflight"
 	"github.com/accentiostudios/kanpachi/daemon/wiring"
 )
-
-// plazoDeApagado es cuánto se le da al cierre ordenado.
-//
-// Veinte segundos, que es `service.ApagadoPorDefecto` y por el mismo motivo:
-// cerrar una sala es avisar a los miembros, escribir en el firewall por COM y
-// bajar dos redes virtuales, y ninguna de las tres es instantánea.
-const plazoDeApagado = 20 * time.Second
 
 // sinACL deja `identity.key` con los permisos que herede del directorio.
 //
@@ -163,7 +157,7 @@ func correr(op opciones) error {
 			// llegó por Ctrl+C, y con un contexto cancelado cada cierre de
 			// puerto es un no-op, o sea que el apagado limpio no limpiaría nada.
 			ctxCierre, fin := context.WithTimeout(
-				context.WithoutCancel(ctxRaiz), plazoDeApagado)
+				context.WithoutCancel(ctxRaiz), timing.ShutdownGrace)
 			defer fin()
 
 			// Esto es el cierre gracioso: siendo host avisa a todos los

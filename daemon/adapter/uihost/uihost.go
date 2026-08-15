@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/port"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // Deps es lo que hace falta para lanzar.
@@ -134,31 +135,23 @@ type Deps struct {
 	Log port.Logger
 }
 
-// Los topes del relanzamiento.
+// maxRelaunches es el tope del relanzamiento.
 //
-// Sin ellos, una interfaz que revienta al arrancar deja al daemon relanzándola
-// para siempre. Con ellos, una cadena de caídas rápidas se lee como "esto no va
-// a arrancar" y se apaga todo, que es lo que la invariante pide.
+// Sin él, una interfaz que revienta al arrancar deja al daemon relanzándola para
+// siempre. Con él, una cadena de caídas rápidas se lee como "esto no va a
+// arrancar" y se apaga todo, que es lo que la invariante pide.
 //
 // **Se rinde en la CUARTA caída, no en la tercera**, y conviene decirlo porque
-// el número engaña: `maxRelaunches` son los relanzamientos que se conceden, y
-// [relanzador.murió] compara `seguidas > maxRelaunches`. O sea que tres caídas
-// gastan los tres relanzamientos y la cuarta ya no tiene ninguno. Es lo que fija
+// el número engaña: son los relanzamientos que se CONCEDEN, y [relanzador.murió]
+// compara `seguidas > maxRelaunches`. O sea que tres caídas gastan los tres
+// relanzamientos y la cuarta ya no tiene ninguno. Es lo que fija
 // `TestCuatroCaídasRápidasApaganElDaemon`, y el texto que se le enseña al
 // usuario decía "tres" hasta el 2026-08-11.
-const (
-	maxRelaunches = 3
-	// quickDeath es qué se considera "se cayó enseguida". Una interfaz que
-	// vivió más que esto y se cerró es un caso normal, así que el contador se
-	// reinicia y se vuelve a tener las tres oportunidades.
-	quickDeath = 60 * time.Second
-	// relaunchGrace es lo que se espera antes de volver a lanzarla.
-	//
-	// Corto: quien mira la bandeja la quiere de vuelta. Suficiente para que la
-	// que acaba de morir suelte lo suyo, empezando por el evento con nombre de
-	// la instancia única, que es lo que la nueva se toparía consigo misma.
-	relaunchGrace = 1500 * time.Millisecond
-)
+//
+// Los dos plazos que lo acompañan viven en [timing]: qué cuenta como una caída
+// rápida es [timing.UIQuickDeath], y lo que se espera antes de relanzar es
+// [timing.UIRelaunchGrace].
+const maxRelaunches = 3
 
 // relanzador cuenta caídas RÁPIDAS SEGUIDAS de la interfaz.
 //
@@ -179,7 +172,7 @@ type relanzador struct{ seguidas int }
 // vida larga limpia la cuenta ANTES de sumar, así que una interfaz que aguantó
 // y se cerró vuelve a tener las tres oportunidades enteras.
 func (r *relanzador) murió(vivió time.Duration) (intento int, rendirse bool) {
-	if vivió > quickDeath {
+	if vivió > timing.UIQuickDeath {
 		r.seguidas = 0
 	}
 	r.seguidas++

@@ -4,42 +4,9 @@ import (
 	"fmt"
 	"net/netip"
 	"time"
+
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
-
-// HostAbsenceLimit es la salida automática de la decisión 20.
-//
-// Veinte minutos y no dos: el margen tiene que cubrir un reinicio del host con
-// holgura. Una salida inmediata echaría a todo el mundo cada vez que al host
-// se le cierra el juego, que es el caso más común de todos.
-//
-// Es política LOCAL pura. No hay mensaje, no hay coordinación y no hay que
-// confiar en nadie: cada máquina decide sobre sí misma a partir de un hecho
-// que no se puede falsificar, que su socket al host no está.
-const HostAbsenceLimit = 20 * time.Minute
-
-// HostSilenceLimit es el respaldo del socket que miente.
-//
-// Que la conexión de control esté caída es la señal buena, y es una señal que
-// puede no llegar NUNCA: un socket TCP medio abierto sobrevive horas a una
-// máquina apagada de golpe, sin FIN y sin RST. Sin esto, ese caso deja la
-// presencia clavada en true y el contador de veinte minutos no arranca jamás.
-//
-// Seis minutos son tres anuncios perdidos. Vencer no saca a nadie de la sala:
-// marca al host como ausente, que es lo que arranca el contador de arriba.
-const HostSilenceLimit = 6 * time.Minute
-
-// ReconnectLimit es cuánto se tolera estar sin túnel antes de rendirse.
-//
-// Diez minutos y no veinte, y la asimetría con [HostAbsenceLimit] tiene razón.
-// La ausencia del host es que falta la persona con la red impecable, y ahí
-// esperar un reinicio completo vale la pena. Esto es lo contrario, esta máquina
-// no tiene túnel, y sostener una sala sin red veinte minutos solo consigue que
-// el usuario mire una pantalla que miente.
-//
-// Es el RESPALDO del watchdog del supervisor, no su competidor. El watchdog
-// agota sus reintentos bastante antes, y ese orden importa: si se cruzaran, la
-// sala se cerraría a mitad de un reintento que iba a funcionar.
-const ReconnectLimit = 10 * time.Minute
 
 // ConnState es el estado del túnel, y es un valor único y explícito, sin flags
 // booleanos regados. La UI lo renderiza, no lo infiere.
@@ -303,7 +270,7 @@ type RoomState struct {
 // # What it is NOT
 //
 // It is not [StateReconnecting], which is a tunnel that dropped while still
-// INSIDE a live room and is bounded by [ReconnectLimit]. It is not `Rejoining`
+// INSIDE a live room and is bounded by [timing.ReconnectLimit]. It is not `Rejoining`
 // either, which is a guest asking its host for a credential again, also from
 // inside. This is being in no room at all and still trying, with no cap: what
 // ends it is the room ceasing to exist, or a person saying so.
@@ -450,7 +417,7 @@ func (r RoomState) ShouldLeaveForHostAbsence(now time.Time) bool {
 	if r.Role != RoleGuest || r.HostPresent || r.HostGoneSince.IsZero() {
 		return false
 	}
-	return now.Sub(r.HostGoneSince) >= HostAbsenceLimit
+	return now.Sub(r.HostGoneSince) >= timing.HostAbsenceLimit
 }
 
 // SetHostPresent registra la presencia y arranca o para el contador.
@@ -493,7 +460,7 @@ func (r *RoomState) NoteHostAlive(now time.Time) {
 	r.SetHostPresent(true, now)
 }
 
-// HostSilent dice si pasó [HostSilenceLimit] sin oír nada del host.
+// HostSilent dice si pasó [timing.HostSilenceLimit] sin oír nada del host.
 //
 // Es la señal que llega sola cuando la caída del socket no llega nunca. Solo en
 // invitados, y solo si alguna vez se oyó algo: sin marca previa no hay silencio
@@ -502,7 +469,7 @@ func (r RoomState) HostSilent(now time.Time) bool {
 	if r.Role != RoleGuest || r.HostLastHeard.IsZero() {
 		return false
 	}
-	return now.Sub(r.HostLastHeard) >= HostSilenceLimit
+	return now.Sub(r.HostLastHeard) >= timing.HostSilenceLimit
 }
 
 // SetTunnelDown marca que no hay túnel, sin pisar la marca previa.
@@ -532,7 +499,7 @@ func (r RoomState) ShouldLeaveForReconnectTimeout(now time.Time) bool {
 	if !r.Conn.InRoom() || r.ReconnectingSince.IsZero() {
 		return false
 	}
-	return now.Sub(r.ReconnectingSince) >= ReconnectLimit
+	return now.Sub(r.ReconnectingSince) >= timing.ReconnectLimit
 }
 
 // AnyRelay dice si algún OTRO miembro llega por relay ahora mismo.

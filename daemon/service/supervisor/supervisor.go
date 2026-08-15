@@ -20,6 +20,7 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // Room es lo que el supervisor necesita de la sesión.
@@ -143,45 +144,16 @@ func (d Deps) validate() error {
 	return nil
 }
 
-// Las cadencias. Son constantes de compilación y NO se configuran desde fuera:
-// el corte por ausencia del host de la decisión 20 no puede depender de un
-// valor que un agente externo pueda cambiar para quedarse conectado siempre.
-const (
-	// Beat es cada cuánto se evalúan los vencimientos. Quince segundos es la
-	// granularidad de los treinta de KickGrace, y son veinticuatro muestras
-	// dentro del plazo más corto que se vigila, los seis minutos de silencio.
-	Beat = 15 * time.Second
-	// Sweep es cada cuánto corre el módulo de exposición. Va aparte del latido
-	// porque hace siempre tres llamadas al sistema, una al IGD del router, que
-	// en la mayoría de los routers termina en timeout. Un latido para el
-	// tiempo, un barrido para el mundo.
-	Sweep = 60 * time.Second
-	// AdapterReapplyEvery es cada cuántos latidos se reaplican los ajustes del
-	// adaptador aunque Windows no haya avisado nada.
-	//
-	// Es el respaldo de la suscripción al Event ID 10000. Ocho latidos son dos
-	// minutos, y sin esto una suscripción muerta se traduce exactamente en
-	// "ayer funcionaba".
-	AdapterReapplyEvery = 8
-)
-
-// backoff es la escalera del watchdog del motor.
+// backoff es la escalera del watchdog del motor, y sale de [timing].
 //
-// Arranca corto porque el caso común es que el motor se muera por un adaptador
-// que Windows quitó y vuelve en segundos, y se aplana en un minuto porque más
-// allá de ahí reintentar no es lo que arregla nada.
-//
-// Sin jitter: hay una máquina reiniciando un hijo local, no hay manada que
-// dispersar.
-var backoff = [...]time.Duration{
-	1 * time.Second, 2 * time.Second, 5 * time.Second, 10 * time.Second,
-	20 * time.Second, 40 * time.Second, 60 * time.Second, 60 * time.Second,
-}
+// Se pide una vez y se guarda: la función devuelve una copia nueva en cada
+// llamada, a propósito, para que nadie pueda mover los números de sitio.
+var backoff = timing.EngineRestartBackoff()
 
 // MaxRestarts es cuántas veces se reintenta antes de rendirse.
 //
 // La suma de la escalera son 198 segundos, tres minutos y dieciocho, que entra
-// holgada dentro de [domain.ReconnectLimit]. Ese orden importa y no es
+// holgada dentro de [timing.ReconnectLimit]. Ese orden importa y no es
 // casualidad: el plazo de core es el RESPALDO de este watchdog, no su
 // competidor, y si se cruzaran la sala se cerraría a mitad de un reintento que
 // iba a funcionar.
@@ -295,8 +267,8 @@ func New(d Deps) (*Supervisor, error) {
 	if err := d.validate(); err != nil {
 		return nil, err
 	}
-	latido := time.NewTicker(Beat)
-	barrido := time.NewTicker(Sweep)
+	latido := time.NewTicker(timing.SupervisorBeat)
+	barrido := time.NewTicker(timing.SupervisorSweep)
 	s := nuevo(d, latido.C, barrido.C)
 	s.stop = func() {
 		latido.Stop()
@@ -437,7 +409,7 @@ func (s *Supervisor) manejar(ctx context.Context, it item) {
 		n, _ := it.value.(domain.RoomNotice)
 		s.deps.Room.OnRoomNotice(ctx, n)
 		// Un aviso puede dejar pedido un reingreso, y esperar al latido para
-		// lanzarlo cuesta hasta [Beat] de nada. Medido el 2026-08-11: quince
+		// lanzarlo cuesta hasta [timing.SupervisorBeat] de nada. Medido el 2026-08-11: quince
 		// segundos de los treinta y uno que tardó la recuperación entera eran
 		// esto. La comprobación es barata y no reingresa sola: [Room.RejoinDue]
 		// solo mira relojes, y si no toca, esto no hace nada.
@@ -521,7 +493,7 @@ func (s *Supervisor) latido(ctx context.Context) {
 
 	// Reaplicar el adaptador cada tantos latidos es el respaldo de la
 	// suscripción a los eventos de Windows, que puede morirse sin avisar.
-	if s.latidos%AdapterReapplyEvery == 0 {
+	if s.latidos%timing.AdapterReapplyEvery == 0 {
 		s.reaplicarAdaptador(ctx, "respaldo periódico")
 	}
 	// Y volver a suscribirse es el respaldo del cableado. Es el requisito

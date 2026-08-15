@@ -25,7 +25,7 @@ var (
 
 // probeConcurrency es cuántos puertos se marcan a la vez.
 //
-// La lista son unas dos docenas y el plazo de cada uno son [domain.ProbeDeadline]
+// La lista son unas dos docenas y el plazo de cada uno son [timing.ProbeDeadline]
 // segundos, así que en serie el usuario esperaría más de un minuto mirando un
 // botón. Con esto son dos tandas.
 //

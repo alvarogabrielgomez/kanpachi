@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // wsaeconnrefused es el WSAECONNREFUSED de Winsock.
@@ -40,12 +41,12 @@ const wsaeconnrefused = syscall.Errno(10061)
 // Prober es la implementación de [port.Prober].
 type Prober struct {
 	// deadline es cuánto se espera a cada puerto. Se puede fijar para los
-	// tests; en cero vale [domain.ProbeDeadline].
+	// tests; en cero vale [timing.ProbeDeadline].
 	deadline time.Duration
 }
 
 // New construye la sonda con el plazo del dominio.
-func New() *Prober { return &Prober{deadline: domain.ProbeDeadline} }
+func New() *Prober { return &Prober{deadline: timing.ProbeDeadline} }
 
 // Probe marca y clasifica.
 //
@@ -55,7 +56,7 @@ func New() *Prober { return &Prober{deadline: domain.ProbeDeadline} }
 func (p *Prober) Probe(ctx context.Context, at netip.AddrPort) (domain.ProbeOutcome, time.Duration) {
 	deadline := p.deadline
 	if deadline <= 0 {
-		deadline = domain.ProbeDeadline
+		deadline = timing.ProbeDeadline
 	}
 
 	inner, cancel := context.WithTimeout(ctx, deadline)
@@ -106,7 +107,7 @@ func (p *Prober) ProbeCanary(ctx context.Context, at netip.AddrPort, nonce domai
 func (p *Prober) probeUDP(ctx context.Context, at netip.AddrPort, nonce domain.CanaryNonce) domain.ProbeOutcome {
 	deadline := p.deadline
 	if deadline <= 0 {
-		deadline = domain.ProbeDeadline
+		deadline = timing.ProbeDeadline
 	}
 
 	var d net.Dialer

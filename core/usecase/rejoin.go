@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // El reingreso del invitado: volver a pedir credencial cuando el host se cayó y
@@ -35,54 +36,7 @@ import (
 // quien estaba apagado tiene el viejo, deriva el vestíbulo viejo, y ahí no
 // espera nadie. Con la credencial guardada eso habría que construirlo.
 //
-// El precio es que se recibe una dirección nueva. Ver [ArrivalGrace].
-
-// RejoinInterval y RejoinJitter son cada cuánto se reintenta el canje.
-//
-// # Por qué éste SÍ lleva jitter y las otras escaleras del proyecto no
-//
-// La del watchdog dice textual "sin jitter: hay una máquina reiniciando un hijo
-// local, no hay manada que dispersar", y para aquello es cierto. Acá es al
-// revés: hay tantos invitados como miembros tenga la sala, todos empezaron a
-// reintentar por el MISMO evento, que es el host desapareciendo, y todos van a
-// acertar en el mismo instante, que es el host volviendo.
-//
-// Sin dispersar, el host recibe todos los canjes a la vez. Emitir una credencial
-// toma el candado de la sesión durante un viaje de ida y vuelta al motor, así
-// que se serializan de todas formas, y lo único que se gana apretándolos es
-// dejar al daemon sin atender nada más mientras tanto.
-//
-// Treinta más hasta treinta reparten los intentos entre medio minuto y uno, o
-// sea entre veinte y cuarenta oportunidades dentro de los veinte minutos que el
-// invitado aguanta sin host. De sobra para no necesitar escalera creciente.
-const (
-	RejoinInterval = 30 * time.Second
-	RejoinJitter   = 30 * time.Second
-)
-
-// RejoinAfter es cuánto tiene que llevar ausente el host antes del PRIMER
-// intento.
-//
-// # Sin esto, esto rompe más de lo que arregla
-//
-// La presencia del host se apaga en cuanto se cae el socket de control, y ese
-// socket se vuelve a marcar solo, con una escalera que empieza en UN segundo
-// ([control.reconnect]). O sea que un corte momentáneo de red apaga la presencia
-// y la enciende un segundo después, sin que nada estuviera mal.
-//
-// El reingreso, en cambio, REEMPLAZA la instancia de sala del motor. Disparado
-// en ese primer segundo, tiraría un túnel que funcionaba para rehacerlo igual,
-// con dirección nueva, cada vez que la WiFi parpadea. La cura sería peor.
-//
-// Dos minutos separan las dos cosas sin ambigüedad. El remarcado ordinario, si
-// va a funcionar, funciona en treinta segundos como mucho, que es donde se
-// aplana su escalera. Y si el host reinició y ya no reconoce la llave de nadie,
-// no va a funcionar nunca, porque sin confianza no hay ruta sobre la que marcar:
-// ahí lo único que arregla es volver a pedir credencial.
-//
-// Quedan dieciocho de los veinte minutos que el invitado aguanta sin host, o sea
-// entre veinte y treinta intentos. De sobra.
-const RejoinAfter = 2 * time.Minute
+// El precio es que se recibe una dirección nueva. Ver [timing.ArrivalGrace].
 
 // RejoinDue dice si toca reintentar el canje con el host.
 //
@@ -119,7 +73,7 @@ func (s *Session) rejoinDueLocked(now time.Time) bool {
 	//
 	// Medido el 2026-08-11: el aviso llega por un canal de control VIVO, o sea
 	// que el host está presente y su reloj de ausencia acaba de reiniciarse con
-	// la prueba de vida que es el propio mensaje. Esperar a [RejoinAfter] sobre
+	// la prueba de vida que es el propio mensaje. Esperar a [timing.RejoinAfter] sobre
 	// un reloj que no corre es esperar para siempre.
 	//
 	// Y no hay nada que desambiguar, que es para lo que existía la espera: aquí
@@ -133,10 +87,10 @@ func (s *Session) rejoinDueLocked(now time.Time) bool {
 		case s.state.HostPresent:
 			return false
 
-		// Y no antes de [RejoinAfter], que es lo que separa "el host reinició"
+		// Y no antes de [timing.RejoinAfter], que es lo que separa "el host reinició"
 		// de "parpadeó la WiFi". El cero no puede pasar: significaría que el
 		// host está, y eso ya lo descartó la rama de arriba.
-		case s.state.HostGoneSince.IsZero(), now.Sub(s.state.HostGoneSince) < RejoinAfter:
+		case s.state.HostGoneSince.IsZero(), now.Sub(s.state.HostGoneSince) < timing.RejoinAfter:
 			return false
 		}
 	}
@@ -153,7 +107,7 @@ func (s *Session) rejoinDueLocked(now time.Time) bool {
 // # Qué NO toca, y cada cosa por su motivo
 //
 // **La máquina de estados.** No se pasa a Reconectando, y eso es deliberado:
-// esa transición arranca [domain.ReconnectLimit], o sea el corte de diez
+// esa transición arranca [timing.ReconnectLimit], o sea el corte de diez
 // minutos, y acá el túnel del invitado nunca se cayó. Quien manda en este caso
 // es el de veinte por ausencia del host, y meter el de diez lo adelantaría a la
 // mitad sin que nada se hubiera roto.
@@ -290,7 +244,7 @@ func (s *Session) nextRejoinWaitLocked() time.Duration {
 		// equivocarse: la manada queda sin dispersar, pero más separada en vez
 		// de más apretada.
 		s.deps.Log.Warn("no se pudo dispersar el reintento del canje", "error", err)
-		return RejoinInterval + RejoinJitter
+		return timing.RejoinInterval + timing.RejoinJitter
 	}
-	return RejoinInterval + time.Duration(b[0])*RejoinJitter/255
+	return timing.RejoinInterval + time.Duration(b[0])*timing.RejoinJitter/255
 }

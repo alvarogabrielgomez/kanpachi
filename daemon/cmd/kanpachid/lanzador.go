@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/daemon/transport/pipe"
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
 )
@@ -39,28 +40,6 @@ import (
 // arrancar, el arranque siguiente devuelve ERROR_SERVICE_ALREADY_RUNNING y se
 // vuelve al pipe. Ninguna rama termina en dos daemons.
 
-// probeWait es lo que se espera a la sonda del pipe.
-//
-// Corto a propósito: alguien acaba de hacer doble clic y está mirando. Si el
-// daemon está vivo, contesta en milisegundos; si no está, el fallo es
-// inmediato. Lo único que este plazo cubre es una máquina con el disco ocupado.
-const probeWait = 750 * time.Millisecond
-
-// callWait es lo que se espera a la respuesta de un método.
-const callWait = 5 * time.Second
-
-// readyWait es cuánto se insiste con el pipe después de mandar arrancar el
-// servicio.
-//
-// Un servicio recién arrancado tarda: purga el firewall y levanta el motor
-// antes de abrir el pipe, y hasta que no lo abre no hay a quién hablarle. Este
-// plazo solo se paga en el camino de "estaba arrancando cuando llegué", que es
-// una carrera rara, no el caso normal.
-const (
-	readyWait  = 20 * time.Second
-	readyRetry = 400 * time.Millisecond
-)
-
 // abrir es el modo lanzador: deja a Kanpachi corriendo y, si se pide, con la
 // ventana a la vista.
 //
@@ -71,7 +50,7 @@ const (
 // termina en el mismo buzón, ver [procesoHost].
 func abrir(datos string, mostrar bool, enlace string) error {
 	// 1. ¿Ya hay daemon? Si lo hay, esto es todo lo que hay que hacer.
-	if conn, err := marcarPipe(probeWait); err == nil {
+	if conn, err := marcarPipe(timing.LauncherProbeWait); err == nil {
 		defer func() { _ = conn.Close() }()
 		if !mostrar {
 			return nil
@@ -145,17 +124,17 @@ func argsDeArranque(mostrar bool, enlace string) []string {
 
 // esperarPipe insiste hasta que el daemon abra la puerta.
 func esperarPipe() (net.Conn, error) {
-	hasta := time.Now().Add(readyWait)
+	hasta := time.Now().Add(timing.LauncherReadyWait)
 	for {
-		conn, err := marcarPipe(probeWait)
+		conn, err := marcarPipe(timing.LauncherProbeWait)
 		if err == nil {
 			return conn, nil
 		}
 		if time.Now().After(hasta) {
 			return nil, fmt.Errorf("el servicio de Kanpachi está corriendo y no abrió su canal en %s: %w",
-				readyWait, err)
+				timing.LauncherReadyWait, err)
 		}
-		time.Sleep(readyRetry)
+		time.Sleep(timing.LauncherReadyRetry)
 	}
 }
 
@@ -180,7 +159,7 @@ func decirShow(conn net.Conn, datos, enlace string) error {
 		if err := w.Write(protocol.Request{ID: id, Method: m, Params: params}); err != nil {
 			return fmt.Errorf("pidiéndole %s al daemon: %w", m, err)
 		}
-		_ = conn.SetReadDeadline(time.Now().Add(callWait))
+		_ = conn.SetReadDeadline(time.Now().Add(timing.LauncherCallWait))
 		linea, err := r.ReadLine()
 		if err != nil {
 			return fmt.Errorf("esperando la respuesta a %s: %w", m, err)

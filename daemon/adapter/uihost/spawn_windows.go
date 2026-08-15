@@ -8,6 +8,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // enAlgúnJob dice si un proceso ya pertenece a algún job.
@@ -393,7 +395,7 @@ func (h *Host) watch() {
 		select {
 		case <-h.stop:
 			return
-		case <-time.After(relaunchGrace):
+		case <-time.After(timing.UIRelaunchGrace):
 		}
 
 		// En silencio: la ventana la abrió el usuario o no, y relanzarla con

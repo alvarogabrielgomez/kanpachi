@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"time"
+
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // Closing a room in the registry: what gets signed, and why it carries a clock.
@@ -33,16 +35,6 @@ import (
 // roomCloseLabel keeps this signature apart from any other use of the same key.
 // Versioned, like every other domain separator in this project.
 const roomCloseLabel = "kanpachi/room-close/v1"
-
-// RoomCloseSkew is how far off the signer's clock is allowed to be.
-//
-// Five minutes in both directions. There is nothing to synchronise between the
-// two machines and a desktop clock drifts by seconds without anybody noticing,
-// so a narrow margin would turn closing into something that fails depending on
-// which PC asks. Wider buys nothing: what this bounds is how long a recorded
-// copy is worth anything, and five minutes is far less than the six hours a card
-// lives.
-const RoomCloseSkew = 5 * time.Minute
 
 // RoomCloseMessage builds the bytes that are signed to close a room.
 //
@@ -74,9 +66,9 @@ func CheckRoomCloseTime(at, now time.Time) error {
 	if d < 0 {
 		d = -d
 	}
-	if d > RoomCloseSkew {
+	if d > timing.RoomCloseSkew {
 		return fmt.Errorf("%w: la petición de cierre está fechada a %s de ahora, y el tope es %s",
-			ErrInputShape, d.Round(time.Second), RoomCloseSkew)
+			ErrInputShape, d.Round(time.Second), timing.RoomCloseSkew)
 	}
 	return nil
 }

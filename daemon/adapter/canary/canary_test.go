@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 const local = "127.0.0.1"
@@ -216,9 +218,9 @@ func TestElPlazoSeRecortaAlTope(t *testing.T) {
 	}
 	defer func() { _ = c.Close() }()
 
-	if TTLMax > time.Minute {
+	if timing.CanaryTTLMax > time.Minute {
 		t.Errorf("el tope del canario son %v, y es demasiado para un socket que "+
-			"abre un proceso que corre como SYSTEM", TTLMax)
+			"abre un proceso que corre como SYSTEM", timing.CanaryTTLMax)
 	}
 }
 

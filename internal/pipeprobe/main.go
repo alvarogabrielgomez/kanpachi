@@ -28,6 +28,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/daemon/transport/client"
 	"github.com/accentiostudios/kanpachi/daemon/transport/pipe"
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
@@ -45,7 +46,7 @@ func main() {
 	// con esquema estricto y tope de tamaño, y esta herramienta existe para
 	// poder mandarle también lo que va a rechazar.
 	params := flag.String("params", "", "JSON crudo para el campo params del método")
-	plazo := flag.Duration("timeout", client.DefaultTimeout, "cuánto esperar la respuesta del daemon")
+	plazo := flag.Duration("timeout", timing.PipeDefaultTimeout, "cuánto esperar la respuesta del daemon")
 	flag.Parse()
 
 	metodo := "status"

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	kanpachiengine "github.com/accentiostudios/kanpachi/daemon/adapter/engine/kanpachi"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/identity"
 )
@@ -420,7 +421,7 @@ func verFirmaDelRegistro(ctx context.Context, m medidor, code domain.InviteID, s
 		m.mal("no se pudo abrir el registro %s: %v", seed, err)
 		return
 	}
-	plazo, fin := context.WithTimeout(ctx, plazoSeed)
+	plazo, fin := context.WithTimeout(ctx, timing.SeedReachWait)
 	defer fin()
 	vista, err := dir.Lookup(plazo, code)
 	if err != nil {

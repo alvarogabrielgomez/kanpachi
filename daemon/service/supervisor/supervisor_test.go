@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // corriendo arranca el bucle y devuelve el banco con su cancelación.
@@ -222,7 +223,7 @@ func TestElLatidoSeResuscribeAUnCanalNuevo(t *testing.T) {
 func TestLosAjustesDelAdaptadorSeReaplicanSinEventoDeWindows(t *testing.T) {
 	b, _ := corriendo(t)
 
-	for i := 0; i < AdapterReapplyEvery; i++ {
+	for i := 0; i < timing.AdapterReapplyEvery; i++ {
 		b.latidos <- time.Now()
 	}
 	esperaA(t, "se reaplicó el adaptador sin que Windows avisara", func() bool {
@@ -320,12 +321,12 @@ func TestElWatchdogTerminaAntesDelPlazoDeCore(t *testing.T) {
 	for _, d := range backoff {
 		total += d
 	}
-	if total >= domain.ReconnectLimit {
+	if total >= timing.ReconnectLimit {
 		t.Fatalf("la escalera del watchdog suma %v y el plazo de core es %v: core cerraría la sala a mitad de un reintento",
-			total, domain.ReconnectLimit)
+			total, timing.ReconnectLimit)
 	}
-	if Beat >= domain.HostSilenceLimit {
-		t.Fatalf("el latido (%v) no muestrea el plazo más corto (%v)", Beat, domain.HostSilenceLimit)
+	if timing.SupervisorBeat >= timing.HostSilenceLimit {
+		t.Fatalf("el latido (%v) no muestrea el plazo más corto (%v)", timing.SupervisorBeat, timing.HostSilenceLimit)
 	}
 }
 

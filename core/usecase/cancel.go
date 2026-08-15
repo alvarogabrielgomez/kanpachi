@@ -3,7 +3,8 @@ package usecase
 import (
 	"context"
 	"sync"
-	"time"
+
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // Cancelar una operación larga, que son dos: crear una sala y entrar a una.
@@ -104,13 +105,6 @@ func (s *Session) begin(ctx context.Context) (context.Context, func()) {
 	}
 }
 
-// cleanupGrace es cuánto se le da a la limpieza de una operación abortada.
-//
-// Es un tope y no una espera: lo normal es que cierre en milisegundos. Existe
-// para que un adaptador colgado no deje el candado de la sesión tomado para
-// siempre, que sería una app que no puede volver a intentar nada.
-const cleanupGrace = 30 * time.Second
-
 // cleanupContext da un contexto VIVO para deshacer lo que quedó a medias.
 //
 // # Por qué no vale el contexto de la operación
@@ -123,7 +117,7 @@ const cleanupGrace = 30 * time.Second
 //
 // `WithoutCancel` conserva los valores del contexto padre y corta su
 // cancelación, que es justo el reparto que hace falta. El plazo propio va
-// encima para que la limpieza no pueda colgarse. Ver [cleanupGrace].
+// encima para que la limpieza no pueda colgarse. Ver [timing.CleanupGrace].
 func cleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.WithoutCancel(ctx), cleanupGrace)
+	return context.WithTimeout(context.WithoutCancel(ctx), timing.CleanupGrace)
 }

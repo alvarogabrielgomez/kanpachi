@@ -2,43 +2,16 @@ package usecase
 
 import (
 	"context"
-	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 )
-
-// AnnounceInterval es cada cuánto el host REPITE el anuncio de sala.
-//
-// No es un latido nuevo y no contradice la decisión 23: es el mismo mensaje que
-// ya se manda en cada cambio de juego, de nombre y de miembros, repetido. La
-// conexión sigue siendo el latido para el caso normal, y esto existe para el
-// caso en que la conexión miente, o sea un socket TCP medio abierto que
-// sobrevive horas a una máquina apagada de golpe.
-//
-// Dos minutos son unos pocos cientos de bytes por miembro y por hora, y tres
-// anuncios perdidos caben dentro de [domain.HostSilenceLimit].
-const AnnounceInterval = 2 * time.Minute
-
-// RepublishInterval es cada cuánto el host vuelve a subirle la tarjeta al
-// registro mientras la sala siga abierta.
-//
-// El registro deja de resolver una sala a las seis horas de la última
-// publicación, y publicar refresca ese reloj Y el fijado de veintiún días que
-// reserva el invite ID. O sea que este latido hace las dos cosas: mantiene la
-// sala entrable mientras esté abierta, y mantiene el código en manos de su host.
-//
-// Una hora contra seis da SEIS intentos antes de que un fallo importe: para que
-// la tarjeta venza de verdad, el registro tiene que estar inalcanzable casi la
-// ventana entera. Y es tráfico despreciable contra su límite de treinta
-// peticiones por minuto: una por hora está cuatro órdenes de magnitud debajo.
-const RepublishInterval = time.Hour
 
 // announceLocked le cuenta a los presentes cómo está la sala.
 //
 // Lo llama el host después de todo lo que cambia algo que el invitado necesita
 // saber: elegir juego, quitarlo, renombrar la sala, y cada cambio de miembros,
 // porque quien acaba de entrar no estaba cuando se anunció lo anterior. Y cada
-// [AnnounceInterval], que es lo que hace medible el silencio del otro lado.
+// [timing.AnnounceInterval], que es lo que hace medible el silencio del otro lado.
 //
 // No es fatal que falle. Lo que se pierde es que la pantalla del otro muestre
 // el juego, y lo que NO se pierde es la sala: el túnel sigue, las reglas del

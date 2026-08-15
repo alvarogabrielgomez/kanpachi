@@ -10,6 +10,7 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // Los dobles de prueba de core.
@@ -873,7 +874,7 @@ func (p *mockSonda) Probe(ctx context.Context, at netip.AddrPort) (domain.ProbeO
 		}
 	}
 	if !ok {
-		return domain.ProbeSilent, domain.ProbeDeadline
+		return domain.ProbeSilent, timing.ProbeDeadline
 	}
 	return out, 12 * time.Millisecond
 }

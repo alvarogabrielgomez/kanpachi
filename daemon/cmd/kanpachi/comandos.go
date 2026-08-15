@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/daemon/transport/client"
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
 )
@@ -167,14 +168,6 @@ func cmdStatus(_ context.Context, op opciones, _ []string) error {
 	return conSala(op, protocol.MethodStatus, nil)
 }
 
-// refrescoDeWatch es cada cuánto se redibuja.
-//
-// Un segundo y no menos: lo que se mira ahí son plazos de minutos, y redibujar
-// más rápido solo consigue que la consola parpadee. Va muy por debajo del latido
-// del supervisor a propósito: esto enseña el estado ya cambiado, no compite con
-// quien lo cambia.
-const refrescoDeWatch = 1 * time.Second
-
 // cmdWatch redibuja el estado hasta que lo corten.
 //
 // # Reusa la conexión, y eso no es un ahorro cosmético
@@ -204,7 +197,7 @@ func cmdWatch(ctx context.Context, op opciones, _ []string) error {
 		select {
 		case <-ctx.Done():
 			return errInterrumpido
-		case <-time.After(refrescoDeWatch):
+		case <-time.After(timing.LiveViewRefresh):
 		}
 	}
 }

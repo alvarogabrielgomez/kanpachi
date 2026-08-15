@@ -16,25 +16,13 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
-// The budget of a call to the registry, and why there are two numbers.
-//
-// They are constants and not fields on purpose: `internal/arch/corte_test.go`
-// forbids exported setters over deadlines, and this is the same idea one layer
-// out. Nothing outside this package gets to widen them.
-//
-// `dialTimeout` is well inside `requestTimeout` because of where these calls
-// run from: `Open` and `Publish` are called with the session lock held, and
-// `Status()` takes that same lock to paint the screen. A seed that has gone
-// silent is the measured case on Windows, which does not bounce, it says
-// nothing. Without the shorter dial the UI would freeze for the whole ten
-// seconds waiting on a host that will never answer.
-const (
-	requestTimeout   = 10 * time.Second
-	dialTimeout      = 4 * time.Second
-	maxResponseBytes = 64 << 10
-)
+// The budget of a call to the registry lives in [timing], as
+// [timing.RegistryRequestTimeout] and [timing.RegistryDialTimeout]. What stays
+// here is the only limit of the three that is not measured in time.
+const maxResponseBytes = 64 << 10
 
 // connectFunc is the raw TCP dial, AFTER the address has been resolved and
 // checked. Injected so the tests can exercise the production path whole.
@@ -121,7 +109,7 @@ func deB64(s string) ([]byte, error) { return base64.RawURLEncoding.DecodeString
 // response size, and `CheckSeedAddr` over every resolved address.
 func newClient(dial connectFunc) *http.Client {
 	return &http.Client{
-		Timeout: requestTimeout,
+		Timeout: timing.RegistryRequestTimeout,
 		// A redirect is how a well-formed name reaches somewhere else entirely,
 		// and following one would step around the address check that the dialer
 		// just performed. The registry never redirects, so this only ever fires
@@ -138,7 +126,7 @@ func newClient(dial connectFunc) *http.Client {
 			ForceAttemptHTTP2:     true,
 			MaxIdleConns:          2,
 			IdleConnTimeout:       30 * time.Second,
-			TLSHandshakeTimeout:   dialTimeout,
+			TLSHandshakeTimeout:   timing.RegistryDialTimeout,
 			ExpectContinueTimeout: time.Second,
 		},
 	}
