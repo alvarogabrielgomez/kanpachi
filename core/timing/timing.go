@@ -44,6 +44,10 @@
 // La excepción es [AdapterReapplyEvery], que se cuenta en latidos: son dos
 // minutos escritos como ocho, así que es un reloj disfrazado de número.
 //
+// Tampoco van los presupuestos de las herramientas de medición de `internal`.
+// Cuánto aguanta `netcfgprobe` antes de rendirse es parte de esa medición, no
+// del producto, y traerlos acá los pondría al lado de plazos que sí lo son.
+//
 // # Por qué en core/ y no en internal/
 //
 // Porque los plazos son reglas del producto, no de quien lo publica. En
@@ -678,11 +682,44 @@ const (
 	// IGDWholeBudget es el techo de todo junto, por si la suma de plazos chicos
 	// se va de las manos con un router que contesta lento a cada paso.
 	IGDWholeBudget = 8 * time.Second
+	// IGDRetryGap separa los dos envíos del M-SEARCH. El multicast se pierde sin
+	// avisar y sin acuse, así que se manda dos veces; repetir cuesta nada.
+	IGDRetryGap = 150 * time.Millisecond
 )
 
 // PreflightProbeTimeout acota cada comprobación del arranque que sale del
 // proceso.
 const PreflightProbeTimeout = 5 * time.Second
+
+// ─── El seed, por dentro ─────────────────────────────────────────────────────
+
+// RegistrySweep es cada cuánto el registro descarta las salas cuyo fijado ya
+// venció.
+//
+// El intervalo es largo porque el vencimiento se comprueba TAMBIÉN al leer, así
+// que esto solo libera memoria y nunca decide qué se ve: una sala barrida y una
+// sala vencida sin barrer contestan lo mismo.
+const RegistrySweep = 10 * time.Minute
+
+// SeedShutdownGrace es cuánto se le da al servidor del registro para terminar
+// lo que tenga en vuelo antes de cortarlo.
+const SeedShutdownGrace = 10 * time.Second
+
+// SeedHealthPoll es cada cuánto se le vuelve a preguntar a `/healthz` mientras
+// se espera a que el servicio levante.
+//
+// Se pregunta POR EL PUERTO y no a una variable en memoria, que diría que sí
+// aunque el servidor estuviera atascado: ese es justo el caso que el watchdog
+// existe para detectar.
+const SeedHealthPoll = 500 * time.Millisecond
+
+// LobbyCountTimeout acota lo que el registro espera al motor cuando le pregunta
+// cuánta gente hay en un vestíbulo.
+//
+// Corto: el número es un adorno de la página y un matiz del mensaje de error del
+// cliente. Que llegue tarde no puede colgar una respuesta que sin él sigue
+// siendo correcta, y por eso viaja como -1 cuando no se pudo saber.
+const LobbyCountTimeout = 5 * time.Second
 
 // ─── Las caras y las herramientas ────────────────────────────────────────────
 
@@ -696,6 +733,17 @@ const PreflightProbeTimeout = 5 * time.Second
 // Lo usan `kanpachi watch` y el menú de `roomprobe`, que estuvieron escritos por
 // separado con el mismo número y casi el mismo párrafo.
 const LiveViewRefresh = 1 * time.Second
+
+// BundleCleanupRetry es cada cuánto un bundle portable reintenta borrar su
+// carpeta temporal al cerrarse.
+//
+// Lo que se está esperando es que Windows suelte un fichero que todavía tiene
+// abierto, así que reintentar sirve y esperar mucho no: pasados los intentos, la
+// carpeta se agenda para el arranque siguiente y nadie se entera.
+//
+// Está acá además porque el lanzador del producto y el de `roomprobe` son dos
+// copias del mismo bucle, y el número estaba escrito en las dos.
+const BundleCleanupRetry = 500 * time.Millisecond
 
 // UpgradeTimeout es el plazo total de un `upgrade`. Generoso porque incluye
 // bajar decenas de MB por la red de un servidor cualquiera.

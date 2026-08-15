@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"golang.org/x/sys/windows"
 )
 
@@ -313,7 +314,7 @@ func limpiar(dir string) {
 			// Un error que no es "está en uso" no se va a arreglar esperando.
 			break
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(timing.BundleCleanupRetry)
 	}
 
 	if err := borrarEnElProximoArranque(dir); err == nil {

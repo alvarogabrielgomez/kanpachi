@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"net"
 	"os/exec"
 	"sync"
@@ -118,7 +119,7 @@ func (c *Counter) portalResuelto(ctx context.Context) (string, error) {
 }
 
 func (c *Counter) refrescar(ctx context.Context) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, timing.LobbyCountTimeout)
 	defer cancel()
 
 	portal, err := c.portalResuelto(ctx)

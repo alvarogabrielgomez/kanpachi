@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/registry"
 	"github.com/accentiostudios/kanpachi/registry/setup"
 )
@@ -227,16 +228,15 @@ func cmdServe(args []string) error {
 	<-ctx.Done()
 	registry.Parando()
 	log.Print("kanpseed: shutting down")
-	cierre, cancelar := context.WithTimeout(context.Background(), 10*time.Second)
+	cierre, cancelar := context.WithTimeout(context.Background(), timing.SeedShutdownGrace)
 	defer cancelar()
 	return srv.Shutdown(cierre)
 }
 
-// barrer descarta salas cuyo fijado ya expiró. El intervalo es largo porque el
-// vencimiento se comprueba también al leer, así que esto solo libera memoria y
-// nunca decide qué se ve.
+// barrer descarta salas cuyo fijado ya expiró. Su cadencia y el porqué de que
+// sea larga están en [timing.RegistrySweep].
 func barrer(ctx context.Context, s *registry.Store) {
-	t := time.NewTicker(10 * time.Minute)
+	t := time.NewTicker(timing.RegistrySweep)
 	defer t.Stop()
 	for {
 		select {
@@ -278,7 +278,7 @@ func esperarSalud(cfg setup.Config, plazo time.Duration) error {
 			return nil
 		}
 		ultimo = err
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(timing.SeedHealthPoll)
 	}
 	return fmt.Errorf("the registry did not answer within %s: %w", plazo, ultimo)
 }

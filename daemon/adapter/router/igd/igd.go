@@ -166,7 +166,7 @@ func discover(ctx context.Context) (*url.URL, netip.Addr, error) {
 		if _, err := conn.WriteTo([]byte(query), target); err != nil {
 			return nil, netip.Addr{}, fmt.Errorf("mandando el M-SEARCH: %w", err)
 		}
-		time.Sleep(150 * time.Millisecond)
+		time.Sleep(timing.IGDRetryGap)
 	}
 
 	buf := make([]byte, 4096)
