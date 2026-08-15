@@ -158,7 +158,11 @@ try {
     $engine = Join-Path $outDir 'kanpachi-engine'
     if (-not (Test-Path $engine)) {
         $deb = Join-Path $outDir 'released.deb'
-        & gh release download --repo alvarogabrielgomez/kanpachi --pattern 'kanpachi-amd64.deb' --output $deb --clobber
+        # Sin --repo: `gh` lo saca del remoto de este clon. Escribirlo acá lo
+        # dejaría copiado fuera de internal/brand, que es donde vive el canal de
+        # publicación, y un fork acabaría bajando el .deb del repositorio
+        # original. Lo prohibe el guardián de marca, y con razón.
+        & gh release download --pattern 'kanpachi-amd64.deb' --output $deb --clobber
         if ($LASTEXITCODE -ne 0) { throw 'could not download the published .deb' }
         & bash -c "cd '$($outDir -replace '\\','/')' && ar x released.deb && tar xf data.tar.* ./usr/lib/kanpachi/kanpachi-engine && mv usr/lib/kanpachi/kanpachi-engine . && rm -rf usr data.tar.* control.tar.* debian-binary released.deb"
         if ($LASTEXITCODE -ne 0) { throw 'could not extract the engine from the .deb' }
