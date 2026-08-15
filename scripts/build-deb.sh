@@ -154,6 +154,31 @@ ok "builtin.json ($(grep -c '"id"' "$catalog") profiles)"
 install -m 0644 "$root/packaging/systemd/kanpachid.service" "$tree/lib/systemd/system/"
 install -m 0644 "$root/packaging/systemd/kanpachi-quarantine.service" "$tree/lib/systemd/system/"
 
+# The licences, and this is an obligation rather than tidiness.
+#
+# The package conveys `kanpachi-engine`, which carries EasyTier's LGPL-3.0 code
+# compiled into it, and conveying is conveying whether it goes to a stranger or
+# to a friend. What that owes is a visible notice, both licence texts -- the
+# LGPL-3.0 does not stand on its own, it is written as added permissions over
+# the GPLv3 -- and a pointer to the corresponding source. See
+# THIRD-PARTY-NOTICES.md, which is the notice and travels in the same directory.
+#
+# The copyright file is ASSEMBLED and not stored: its header lives in
+# packaging/debian/, and the AGPL text is pasted from the repository's own
+# LICENSE, indented the way DEP-5 wants it. A second copy of a licence text in
+# the tree is a second copy that can drift from the first.
+step "the licences"
+mkdir -p "$tree/usr/share/doc/kanpachi"
+{
+	cat "$root/packaging/debian/copyright"
+	sed -e 's/^$/./' -e 's/^/ /' "$root/LICENSE"
+} >"$tree/usr/share/doc/kanpachi/copyright"
+chmod 0644 "$tree/usr/share/doc/kanpachi/copyright"
+install -m 0644 "$root/THIRD-PARTY-NOTICES.md" "$tree/usr/share/doc/kanpachi/"
+install -m 0644 "$root/licenses/LGPL-3.0.txt" "$tree/usr/share/doc/kanpachi/"
+install -m 0644 "$root/licenses/GPL-3.0.txt" "$tree/usr/share/doc/kanpachi/"
+ok "copyright ($(wc -l <"$tree/usr/share/doc/kanpachi/copyright") lines), notices and the two GNU texts"
+
 sed "s/@VERSION@/$version/" "$root/packaging/debian/control" >"$tree/DEBIAN/control"
 for s in postinst prerm postrm; do
 	install -m 0755 "$root/packaging/debian/$s" "$tree/DEBIAN/$s"

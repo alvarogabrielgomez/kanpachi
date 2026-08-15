@@ -1,0 +1,41 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: kanpachi
+Upstream-Contact: Accentio Studios <alvaro@accentiostudios.com>
+Source: https://kanpachi.accentio.dev
+Comment: El texto completo de la AGPL-3.0 va al final de este fichero, y lo
+ pega build-deb.sh desde el LICENSE del repositorio para que no haya dos
+ copias que se puedan separar. El motor va aparte porque su licencia es otra;
+ ver THIRD-PARTY-NOTICES.md, que este paquete instala al lado.
+
+Files: *
+Copyright: 2026 Accentio Studios
+License: AGPL-3.0-or-later
+
+Files: usr/share/kanpachi/builtin.json
+Copyright: 2026 Accentio Studios
+License: CC0-1.0
+ Un perfil de juego dice qué puertos necesita ese juego, y nada más. Es un dato
+ y no un programa, así que va al dominio público: es la única parte del proyecto
+ donde se puede aportar sin tocar código privilegiado, y cobrarle obligaciones a
+ una lista de puertos sería un peaje sin nada que proteger.
+ .
+ El texto completo está en
+ https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+Files: usr/libexec/kanpachi/kanpachi-engine
+Copyright: 2026 Accentio Studios
+Copyright: 2021-2026 EasyTier Contributors
+License: LGPL-3.0-or-later
+ El motor se compila desde https://github.com/alvarogabrielgomez/kanpachi-engine
+ y lleva dentro código de EasyTier, del fork
+ https://github.com/alvarogabrielgomez/EasyTier sobre el tag v2.6.4 del original.
+ .
+ El fuente correspondiente son esos dos repositorios, públicos y con la versión
+ fijada por escrito, que es la vía de la sección 6(d) de la GPLv3.
+ .
+ En un sistema Debian el texto completo de la LGPL-3.0 está en
+ /usr/share/common-licenses/LGPL-3, y el de la GPLv3, que la LGPL necesita al
+ lado para sostenerse, en /usr/share/common-licenses/GPL-3. Este paquete además
+ instala las dos copias en /usr/share/doc/kanpachi/.
+
+License: AGPL-3.0-or-later

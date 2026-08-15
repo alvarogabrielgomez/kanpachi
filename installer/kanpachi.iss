@@ -64,6 +64,17 @@ ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 ; Un desinstalador a medias deja puertos bloqueados.
 UninstallDisplayIcon={app}\{#UiExe}
+; El aviso de licencias, ANTES de instalar.
+;
+; InfoBeforeFile y no LicenseFile, a proposito. LicenseFile pinta el "acepto /
+; no acepto" y bloquea el boton hasta marcarlo, y eso seria falso aca: la
+; AGPL y la LGPL conceden permisos, no los quitan, y ninguna exige aceptar
+; nada para USAR el programa. Pedir una aceptacion que la licencia no pide
+; ensena a la gente que estas pantallas son un tramite.
+;
+; Lo que si es obligacion es el aviso: repartir el motor reparte codigo LGPL,
+; y eso obliga a decirlo de forma visible. Esta pantalla es donde se dice.
+InfoBeforeFile=aviso-de-licencias.txt
 
 [Languages]
 Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"

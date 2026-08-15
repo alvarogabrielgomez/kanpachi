@@ -56,10 +56,13 @@ reason for something else in this README.
   the path. A seed can ask for a password to host on it, which is what stops
   strangers parking their rooms on your bandwidth; joining a room never asks for
   it, on any seed.
-- **Nothing hidden.** Every line of the client, the daemon, the engine and the
-  meeting server is public and builds from source, and so is every document that
-  explains why it is built that way — including the parts that say what Kanpachi
-  cannot do and where a hostile meeting server would still win.
+- **Nothing hidden, and nothing you have to take on trust.** Kanpachi is free
+  software under the **AGPL-3.0**. Every line of the client, the daemon, the
+  engine and the meeting server is public and builds from source, and so is
+  every document that explains why it is built that way — including the parts
+  that say what Kanpachi cannot do and where a hostile meeting server would
+  still win. The licence is the part that keeps the third bullet true: anyone
+  running a **modified** meeting server for other people owes them its source.
 
 The one to be precise about is the third. Peer-to-peer is not a slogan here: the
 tunnel is direct between the two routers whenever the routers allow it, and the
@@ -350,6 +353,19 @@ This section is intentionally short and points to auditable sources.
   - [scripts/measure-reset.ps1](scripts/measure-reset.ps1)
 
 There is no private source code in this project: all code and documentation are public.
+
+## License
+
+Kanpachi is free software: **[AGPL-3.0-or-later](LICENSE)**, with the game
+catalogue in **CC0-1.0**. AGPL and not GPL because one part of Kanpachi is a
+network service — anyone can run a meeting server, and §13 is what obliges a
+*modified* one to hand its source to the people using it.
+
+The full map of what is under which licence is in [LICENSES.md](LICENSES.md),
+and what ships alongside Kanpachi without being ours — the network engine under
+LGPL-3.0, and three Windows libraries — is in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), with the links to their
+corresponding source.
 
 ---
 

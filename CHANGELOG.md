@@ -15,6 +15,8 @@ This file is in English, like commit messages and release notes, because a relea
 ### Added
 
 - Read what the meeting server's HTTP surface actually is, in `registry/API.md`: every endpoint it has, what the optional hosting password does and does not cover, and what defends each thing ([271153f](https://github.com/alvarogabrielgomez/kanpachi/commit/271153f))
+- Use, study, change and share Kanpachi: it is free software under the AGPL-3.0, with the game catalogue in the public domain. Everything was already public to read; now there is a licence that says what you may do with it, and that obliges anyone running a *modified* meeting server for other people to hand them its source
+- See what ships alongside Kanpachi and under which licence before installing it, on a screen the installer shows and in `THIRD-PARTY-NOTICES.txt` next to the program: the network engine, where its source is, and the three Windows libraries that come with it
 
 ## [0.3.0] - 2026-08-14
 

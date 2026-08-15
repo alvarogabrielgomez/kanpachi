@@ -211,15 +211,19 @@ Del lado del fuente pasa lo mismo con el driver: `windivert` es una dependencia 
 
 Consecuencia práctica, y es la que importa: **la cuarentena del producto no puede apoyarse en que el motor sea incapaz.** Se apoya en el firewall y en que Kanpachi no encienda la bandera. Lo primero ya está en la decisión 4; lo segundo lo vigila `internal/arch/motor_test.go`.
 
-### Distribuirlos tiene una obligación, y hoy no se cumple
+### Distribución
 
-El instalador reparte los binarios de EasyTier, que son **LGPL-3.0** desde el 2025-06-07. Repartirlos, incluso entre amigos, es *convey* según la GPLv3 sección 0. Eso obliga a tres cosas que hoy no están:
+**Qué se reparte, exactamente, que esta sección decía mal.** Acá se leía «el instalador reparte los binarios de EasyTier», y no es así. El cliente no reparte `easytier-core` ni `easytier-cli`: corre su propio motor, y el seed los **descarga del release oficial** al instalarse, o sea que ahí quien reparte es EasyTier. Lo que sí se reparte, y obliga igual, es `kanpachi-engine`, que lleva el código de EasyTier compilado dentro, más las tres bibliotecas de Windows que vienen en el mismo paquete. La imprecisión importaba: apuntaba la obligación a un fichero que no viaja, y dejaba fuera el que sí.
 
-1. **Aviso visible** de que el producto incluye EasyTier y de bajo qué licencia.
-2. **Copia de la LGPL-3.0 y de la GPLv3.** Las dos, porque la LGPL-3.0 está redactada como un conjunto de permisos adicionales sobre la GPLv3 y no se sostiene sola. El repo de EasyTier ni siquiera incluye la GPLv3, así que hay que traerla de gnu.org.
-3. **Acceso al fuente correspondiente.** Se cumple barato por la sección 6(d): un enlace al tag `v2.6.4` del repo oficial, publicado junto a la descarga del instalador.
+EasyTier es **LGPL-3.0** desde el 2025-06-07. Repartir un binario que lleva ese código dentro es *convey* según la GPLv3 sección 0, y ocurre igual entre amigos que en una descarga pública. Eso obliga a tres cosas, y las tres están:
 
-**Falta además revisar las otras tres.** `WinDivert64.sys`, `wintun.dll` y `Packet.dll` no son de EasyTier y llevan licencias propias, con términos de redistribución que nadie miró todavía. `Packet.dll` viene del linaje WinPcap/Npcap, que es el más restrictivo de los tres. Es trabajo pendiente e independiente de qué motor se termine usando.
+1. **Aviso visible.** [`THIRD-PARTY-NOTICES.md`](../THIRD-PARTY-NOTICES.md), que viaja dentro del instalador y del `.deb`, y que el instalador enseña como `InfoBeforeFile` antes de instalar. No como `LicenseFile`: pedir un «acepto» que la licencia no exige enseña que esas pantallas son un trámite.
+2. **Copia de la LGPL-3.0 y de la GPLv3.** Las dos, porque la LGPL-3.0 está redactada como un conjunto de permisos adicionales sobre la GPLv3 y no se sostiene sola. El repo de EasyTier no incluye la GPLv3, así que las dos se descargaron de gnu.org y viven en `licenses/`.
+3. **Acceso al fuente correspondiente.** Por la sección 6(d): los repos del motor y del fork, públicos, más el tag `v2.6.4` del original. Van escritos en el aviso.
+
+**Y Kanpachi tiene licencia propia desde la misma fecha:** AGPL-3.0 para el repositorio entero, CC0 para el catálogo. El mapa completo está en [`LICENSES.md`](../LICENSES.md). No hay conflicto con la LGPL del motor porque no se enlaza con él: lo lanza como subproceso, que es la misma separación que existe por la licencia y por el `cgo`.
+
+**Falta todavía revisar las otras tres.** `WinDivert64.sys`, `wintun.dll` y `Packet.dll` no son de EasyTier y llevan licencias propias, con términos de redistribución que nadie miró. `Packet.dll` viene del linaje WinPcap/Npcap, que es el más restrictivo de los tres. El aviso las lista nombrando la pregunta exacta que hay que contestar de cada una, en vez de suponerles una licencia. Es trabajo pendiente e independiente de qué motor se termine usando, y su resultado puede obligar a sacar alguna del paquete.
 
 ### Los defaults del motor no son los nuestros
 

@@ -147,7 +147,22 @@ $copies = @(
     # from the start. The portable folder did copy it, so the payload that gets
     # packaged was the only one of the two ways of handing Kanpachi over that
     # was short a file.
-    @{ source = 'third_party\easytier\WinDivert64.sys';         name = 'WinDivert64.sys' }
+    @{ source = 'third_party\easytier\WinDivert64.sys';         name = 'WinDivert64.sys' },
+    # The licences, and they are an obligation rather than paperwork.
+    #
+    # The payload conveys kanpachi-engine.exe, which carries EasyTier's LGPL-3.0
+    # code compiled into it, and conveying is conveying whether it goes to a
+    # stranger or to a friend. What that owes is a visible notice, BOTH GNU texts
+    # -- the LGPL-3.0 is written as added permissions over the GPLv3 and does not
+    # stand on its own -- and a pointer to the corresponding source, which is
+    # what THIRD-PARTY-NOTICES carries.
+    #
+    # Renamed to .txt on the way in so that double-clicking one opens it instead
+    # of asking Windows which program should.
+    @{ source = 'LICENSE';                  name = 'LICENSE.txt' },
+    @{ source = 'THIRD-PARTY-NOTICES.md';   name = 'THIRD-PARTY-NOTICES.txt' },
+    @{ source = 'licenses\LGPL-3.0.txt';    name = 'LGPL-3.0.txt' },
+    @{ source = 'licenses\GPL-3.0.txt';     name = 'GPL-3.0.txt' }
 )
 foreach ($c in $copies) {
     $src = Join-Path $repo $c.source

@@ -1,0 +1,50 @@
+KANPACHI - LICENCIAS
+====================
+
+Kanpachi es software libre, bajo la licencia AGPL-3.0 o posterior.
+
+Eso significa que puedes usarlo, estudiarlo, modificarlo y compartirlo. Todo el
+codigo y toda la documentacion son publicos, y cualquiera puede reconstruir
+desde el fuente exactamente lo que estas instalando.
+
+Y significa una cosa mas, que es la razon de que sea AGPL y no GPL: quien
+levante un servidor de encuentro MODIFICADO y se lo ofrezca a otras personas
+tiene que entregarles el codigo de esa modificacion. El servidor de encuentro es
+la unica pieza de Kanpachi que corre en la maquina de otro, y esta licencia es
+lo que impide que una version alterada se reparta en silencio.
+
+El texto completo queda instalado en LICENSE.txt, dentro de la carpeta del
+programa.
+
+
+LO QUE SE INSTALA Y NO ES NUESTRO
+=================================
+
+Junto a Kanpachi se instala el motor de red, kanpachi-engine, bajo la licencia
+LGPL-3.0 o posterior. Lleva dentro codigo del proyecto EasyTier. Su fuente
+completo, con la version exacta que se uso para compilarlo, esta publicado y
+enlazado en THIRD-PARTY-NOTICES.txt.
+
+Los textos completos de la LGPL-3.0 y de la GPLv3, que la LGPL necesita al lado
+para sostenerse, quedan instalados como LGPL-3.0.txt y GPL-3.0.txt.
+
+Se instalan tambien tres bibliotecas de Windows que hacen falta para crear el
+adaptador de red virtual: wintun.dll, Packet.dll y WinDivert64.sys. Vienen del
+mismo paquete que el motor y cada una tiene sus propios terminos, listados en
+THIRD-PARTY-NOTICES.txt.
+
+
+DONDE ESTA TODO
+===============
+
+Despues de instalar, en la carpeta del programa:
+
+  LICENSE.txt                 la AGPL-3.0, texto completo
+  THIRD-PARTY-NOTICES.txt     que se reparte, bajo que licencia, y donde
+                              esta el fuente de cada cosa
+  LGPL-3.0.txt                texto completo
+  GPL-3.0.txt                 texto completo
+
+No hace falta que aceptes nada para usar Kanpachi: estas licencias te dan
+permisos, no te los quitan. Se muestran aca porque tienes derecho a saber que
+estas instalando.
