@@ -10,7 +10,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Added
 
-- Come back to the room you were in without pasting the code again: Kanpachi returns to it by itself the next time it starts. Closing Kanpachi, shutting the PC down and a power cut are not leaving, so all three come back. The only two things that stop it are pressing "salir de la sala" and being kicked — and being kicked does not take the room away, the button to go back is still there, it just does not go back on its own. It tries a few times over five minutes, in case the host boots after you do, and stops the moment the meeting server says that code is gone
+- Come back to the room you were in without pasting the code again: Kanpachi returns to it by itself the next time it starts. Closing Kanpachi, shutting the PC down and a power cut are not leaving, so all three come back. The only two things that stop it are pressing "salir de la sala" and being kicked — and being kicked does not take the room away, the button to go back is still there, it just does not go back on its own. It tries a few times over five minutes, in case the host boots after you do, and stops the moment the meeting server says that code is gone ([e2eafd6](https://github.com/alvarogabrielgomez/kanpachi/commit/e2eafd6))
 
 ### Fixed
 
