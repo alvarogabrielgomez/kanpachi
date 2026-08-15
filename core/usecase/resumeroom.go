@@ -205,17 +205,17 @@ func (s *Session) restoreGameLocked(ctx context.Context, gameID string) {
 	s.deps.Log.Info("juego repuesto de la sala anterior", "juego", gameID)
 }
 
-// noteGameLostLocked deja constancia de que la sala volvió sin su juego.
+// noteGameLostLocked records that the room came back without its game.
 //
-// **Era un `Log.Info` y tenía que ser una alerta.** El caso que lo motiva es el
-// host headless: la sala se reabre sola tras un reinicio, el perfil que tenía
-// activo ya no está, y la sala queda abierta y sin un solo puerto. Todo lo
-// demás funciona, así que nada se ve raro: la gente entra, el servidor de
-// Minecraft no contesta, y lo único que lo decía era una línea en el log de una
-// máquina que nadie mira. Basta con que `local.json` se corrompa para que
-// desaparezcan de golpe todos los perfiles hechos a mano.
+// **It was a `Log.Info` and it had to be an alert.** The case behind it is the
+// headless host: the room reopens by itself after a restart, the profile it had
+// active is gone, and the room ends up open with not a single port. Everything
+// else works, so nothing looks wrong: people join, the Minecraft server does not
+// answer, and the only thing saying so was a line in the log of a machine nobody
+// looks at. One corrupt `local.json` is enough to make every hand-made profile
+// disappear at once.
 //
-// La alerta es pegajosa, y la apaga elegir un juego. Ver [domain.AlertGameLost].
+// The alert is sticky, and picking a game clears it. See [domain.AlertGameLost].
 //
 // Asume el candado tomado.
 func (s *Session) noteGameLostLocked(gameID, motivo string) {

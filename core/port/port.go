@@ -732,31 +732,30 @@ type RoomDirectory interface {
 	// de la tarjeta se deriva del enlace, así que cualquiera que lo recibió
 	// puede fabricar una tarjeta que la página descifra.
 	Publish(ctx context.Context, id domain.InviteID, sealed []byte) error
-	// Close le dice al registro que esa sala se acabó, y es BEST-EFFORT.
+	// Close tells the registry that room is over, and it is BEST-EFFORT.
 	//
-	// # Qué cambia del otro lado
+	// # What changes at the far end
 	//
-	// La tarjeta caduca al instante, así que el código deja de resolver y quien
-	// lo pegue lo descubre en el primer segundo. El FIJADO se queda, o sea que
-	// el invite ID sigue siendo de este equipo y reabrir la misma sala con el
-	// mismo código sigue valiendo. Cerrar no es renunciar al código.
+	// The card expires at once, so the code stops resolving and whoever pastes
+	// it finds out in the first second. The PIN stays, which means the invite ID
+	// still belongs to this machine and reopening the same room under the same
+	// code is still good. Closing is not giving up the code.
 	//
-	// # Por qué best-effort, y qué significa acá
+	// # Why best-effort, and what that means here
 	//
-	// Porque cerrar la sala termina fuera de la sala pase lo que pase. Esta
-	// llamada corre en el camino de salir, y un registro caído no puede impedir
-	// que alguien cierre su propia sala: lo que cuesta que falle es que el
-	// código siga contestando hasta que venza su tarjeta, que es exactamente lo
-	// que pasaba siempre antes de que esto existiera. Quien llame anota el fallo
-	// y sigue.
+	// Because closing the room ends outside the room whatever happens. This call
+	// runs on the way out, and a registry that is down cannot stop somebody
+	// closing their own room: what a failure costs is the code answering until
+	// its card expires, which is exactly what happened every time before this
+	// existed. The caller logs it and carries on.
 	//
-	// Un intento y ninguno más. El límite de tasa del registro cuenta también
-	// las peticiones que fallan.
+	// One attempt and no more. The registry's rate limit counts the requests
+	// that fail too.
 	//
-	// La firma sale de `identity.key`, igual que en Publish, y va sobre
-	// [domain.RoomCloseMessage]: ata el cierre a ESE invite ID y a ESE instante,
-	// para que una copia grabada no pueda cerrar la sala que el host reabra
-	// mañana con el mismo código.
+	// The signature comes from `identity.key`, as in Publish, and goes over
+	// [domain.RoomCloseMessage]: it binds the close to THAT invite ID and THAT
+	// instant, so a recorded copy cannot close the room the host reopens
+	// tomorrow under the same code.
 	Close(ctx context.Context, id domain.InviteID) error
 	// Authenticate cambia una prueba de password por la credencial con la que
 	// este registro deja HOSPEDAR.

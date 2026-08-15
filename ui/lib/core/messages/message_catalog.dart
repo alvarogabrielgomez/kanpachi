@@ -113,10 +113,10 @@ abstract final class AppMessages {
           'Vuelve a aplicarla. Si el problema sigue, sal de la sala: '
           'eso cierra todo lo que Kanpachi abrió.',
     ),
-    // La única que avisa de puertos que NO están abiertos, y por eso el texto
-    // empieza diciendo que la sala está bien. Sin esa primera frase, el título
-    // se lee como una avería de la sala y no como lo que es: la sala funciona,
-    // el juego no está puesto, y la gente que entre no va a poder jugar.
+    // The only one that warns about ports that are NOT open, which is why the
+    // text opens by saying the room is fine. Without that first sentence the
+    // title reads as the room being broken instead of what it is: the room
+    // works, no game is set, and whoever joins will not be able to play.
     AlertKind.gameLost => const AppMessage(
       severity: MessageSeverity.warn,
       title: 'La sala volvió sin su juego',

@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Added
+
+- Come back to the room you were in without pasting the code again: Kanpachi returns to it by itself the next time it starts. Closing Kanpachi, shutting the PC down and a power cut are not leaving, so all three come back. The only two things that stop it are pressing "salir de la sala" and being kicked — and being kicked does not take the room away, the button to go back is still there, it just does not go back on its own. It tries a few times over five minutes, in case the host boots after you do, and stops the moment the meeting server says that code is gone
+
 ### Fixed
 
 - Get told a room is closed the moment you paste its code, instead of waiting twenty-one seconds for a message about the host reconnecting. Closing a room now tells the meeting server, so the code stops working right then. Renewing a code closes the old one too, which is what makes "renewing shuts the door" true when you press it rather than six hours later. Reopening your own room with the same code is untouched: what closing expires is the room's card, never the reservation of the code ([4fe32df](https://github.com/alvarogabrielgomez/kanpachi/commit/4fe32df))

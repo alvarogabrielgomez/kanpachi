@@ -362,37 +362,38 @@ func (s *Store) publishUnderLock(id domain.InviteID, hostKey ed25519.PublicKey, 
 	return nil
 }
 
-// retire caduca la tarjeta de una sala AHORA, dejando el fijado en pie.
+// retire expires a room's card NOW, leaving the pin standing.
 //
-// # Por qué caducar y no borrar la entrada
+// # Why expiring and not deleting the entry
 //
-// Porque son dos hechos distintos y el segundo no ocurrió. La sala se acabó, y
-// el invite ID **sigue siendo de su host**: borrar la entrada lo devolvería al
-// bote y reabriría la carrera que el fijado existe para cerrar, o sea que el ex
-// miembro que se quedó con el código llegaría primero. Caducando la tarjeta,
-// [Store.lookup] contesta que no existe al instante y [Store.publish] sigue
-// funcionando, que es exactamente la asimetría de TTLs que este almacén ya
-// tenía. Reabrir con el mismo código no se toca.
+// Because those are two different facts and the second one did not happen. The
+// room is over, and the invite ID **still belongs to its host**: deleting the
+// entry would hand it back to the pool and reopen the race the pin exists to
+// close, so the ex-member who kept the code would get there first. Expiring the
+// card makes [Store.lookup] answer that it does not exist from that instant while
+// [Store.publish] keeps working, which is exactly the TTL asymmetry this store
+// already had. Reopening under the same code is untouched.
 //
-// La tarjeta y su firma se vacían además de vencerse. El vencimiento ya alcanza
-// para que nadie las lea, y guardarlas sería conservar el nombre de una sala que
-// se acabó en un servidor que no tiene por qué recordarlo.
+// The card and its signature are emptied as well as expired. The expiry already
+// keeps anybody from reading them, and holding on to them would keep the name of
+// a room that is over on a server with no reason to remember it.
 //
-// # Lo que exige, y es lo mismo que publicar
+// # What it demands, and it is the same as publishing
 //
-// Que la entrada exista, y que la llave sea la que fijó ese invite ID la primera
-// vez. Sin lo segundo, cerrar salas ajenas sería una petición.
+// That the entry exists, and that the key is the one that pinned that invite ID
+// the first time. Without the second, closing somebody else's room would be a
+// request.
 func (s *Store) retire(id domain.InviteID, hostKey ed25519.PublicKey) error {
 	if err := s.retireUnderLock(id, hostKey); err != nil {
 		return err
 	}
-	// Fuera del lock, y solo cuando algo cambió. Ver [Store.respaldar].
+	// Outside the lock, and only when something changed. See [Store.respaldar].
 	s.respaldar()
 	return nil
 }
 
-// retireUnderLock es el cuerpo de [Store.retire]. Va aparte para que el respaldo
-// a disco ocurra con el lock ya soltado.
+// retireUnderLock is the body of [Store.retire]. It is separate so the mirror to
+// disk happens with the lock already released.
 func (s *Store) retireUnderLock(id domain.InviteID, hostKey ed25519.PublicKey) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -405,16 +406,16 @@ func (s *Store) retireUnderLock(id domain.InviteID, hostKey ed25519.PublicKey) e
 	if !r.HostKey.Equal(hostKey) {
 		return ErrPinned
 	}
-	// Ya cerrada es un no-op y NO un error. Cerrar lo llama el camino de salir de
-	// la sala, que es idempotente a propósito y lo invocan tres sitios.
+	// Already closed is a no-op and NOT an error. Closing hangs off the path out
+	// of a room, which is idempotent on purpose and which three places call.
 	r.Card = nil
 	r.Sig = nil
-	// Un segundo ATRÁS y no el instante exacto. [Store.lookup] descarta con
-	// `After(CardUntil)`, así que dejarlo en el ahora deja la sala resolviendo
-	// durante ese mismo segundo: el cierre tiene que valer desde la petición que
-	// lo pidió, no desde el tick siguiente. No se pone el cero porque
-	// [entradaSana] descarta las entradas con plazos vacíos, y eso se llevaría
-	// también el fijado, que es lo único que esto conserva a propósito.
+	// One second BACK and not the exact instant. [Store.lookup] discards with
+	// `After(CardUntil)`, so leaving it at now keeps the room resolving for that
+	// same second: the close has to hold from the request that asked for it, not
+	// from the next tick. Not the zero either, because [entradaSana] drops
+	// entries with empty deadlines and that would take the pin with it, which is
+	// the one thing this deliberately keeps.
 	r.CardUntil = s.currentTime().Add(-time.Second)
 	return nil
 }

@@ -167,23 +167,23 @@ func (s *Session) RotateInviteCode(ctx context.Context) (domain.RoomState, error
 		s.deps.Log.Warn("no se les pudo repartir el código nuevo a los presentes", "error", err)
 	}
 
-	// Y el código VIEJO se cierra en el registro, que es lo que hace cierto
-	// "renovar cierra la puerta" en el mismo instante en que se pulsa.
+	// And the OLD code is closed in the registry, which is what makes "renewing
+	// shuts the door" true at the instant somebody presses it.
 	//
-	// Sin esto tardaba hasta seis horas en serlo. El vestíbulo viejo ya no
-	// existe, porque se rehospedó unas líneas más arriba con el nombre nuevo, y
-	// aun así el registro seguía contestando que ese código existe: quien lo
-	// tuviera levantaba una red virtual, marcaba a una puerta que nadie iba a
-	// abrir, y esperaba el timeout del sistema operativo para nada. Renovar es
-	// **la** operación con la que un host cierra la puerta, así que era justo la
-	// que peor lo hacía.
+	// Without this it took up to six hours to become true. The old lobby is
+	// already gone, rehosted a few lines above under the new name, and the
+	// registry still answered that the code exists: whoever held it brought up a
+	// virtual network, dialled a door nobody was going to open, and waited out
+	// the operating system's timeout for nothing. Renewing is **the** operation a
+	// host shuts the door with, so it was the one doing it worst.
 	//
-	// Va al FINAL y no es fatal, por lo mismo que el reparto de arriba: el código
-	// nuevo ya es el bueno y la sala ya vive en él. Que falle deja el viejo
-	// resolviendo hasta que venza su tarjeta, que es lo que pasaba siempre.
+	// It goes LAST and it is not fatal, for the same reason as the handout above:
+	// the new code is already the good one and the room already lives in it. A
+	// failure leaves the old one resolving until its card expires, which is what
+	// always happened.
 	//
-	// El fijado del código viejo sobrevive, y da igual: era de esta misma
-	// máquina, y nadie va a reabrir con él porque la sala ya se mudó.
+	// The old code's pin survives, and it does not matter: it was this same
+	// machine's, and nobody is going to reopen with it because the room moved.
 	if err := dir.Close(ctx, old.InviteID); err != nil {
 		s.deps.Log.Warn("el código viejo no se pudo cerrar en el registro, así que va a "+
 			"seguir resolviendo hasta que venza su tarjeta",
@@ -229,7 +229,11 @@ func (s *Session) OnCodeRotated(ctx context.Context, r domain.Room) domain.RoomS
 
 	old := s.state.Room
 	s.state.Room = r
-	s.saveLastRoomLocked()
+	// The return stays ON, and this is the one path where saying so matters: the
+	// code changed under somebody who is still IN the room and never asked to
+	// leave. Writing false here would quietly cost them the way back for having
+	// been present when the host renewed.
+	s.saveLastRoomLocked(true)
 
 	s.deps.Log.Info("el host renovó el código de la sala",
 		"antes", old.InviteID.String(), "ahora", r.InviteID.String())

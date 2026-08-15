@@ -190,36 +190,35 @@ func (s *Server) publicar(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// cuerpoCerrar es lo que manda el host para cerrar su sala.
+// cuerpoCerrar is what the host sends to close its room.
 //
-// No lleva tarjeta, así que la firma no puede ir sobre ella como en publicar: va
-// sobre [domain.RoomCloseMessage], que ata la firma a ESE invite ID y a ESE
-// instante. `ts` viaja aparte porque el que comprueba tiene que rearmar los
-// mismos bytes, y con la marca dentro de la firma y fuera de ella no habría
-// forma de saber cuál se firmó.
+// It carries no card, so the signature cannot go over one the way publishing
+// does: it goes over [domain.RoomCloseMessage], which binds it to THAT invite ID
+// and THAT instant. `ts` travels separately because whoever checks has to
+// rebuild the same bytes, and with the stamp both inside and outside the
+// signature there would be no way to know which one was signed.
 type cuerpoCerrar struct {
 	HostKey string `json:"host_key"`
 	Sig     string `json:"sig"`
 	TS      int64  `json:"ts"`
 }
 
-// cerrar caduca la tarjeta de una sala que su host acaba de cerrar.
+// cerrar expires the card of a room its host has just closed.
 //
-// # Por qué existe, medido
+// # Why it exists, measured
 //
-// Sin esto la sala se acababa en la máquina del host y el registro no se
-// enteraba: el código seguía contestando "existe" hasta que venciera la tarjeta,
-// o sea hasta seis horas. Quien pegaba ese código levantaba el vestíbulo, marcaba
-// al host que ya no estaba, y se comía el timeout largo del sistema operativo
-// para terminar en un mensaje que hablaba de reconexión. Comprobado contra el
-// despliegue el 2026-08-15: veintidós segundos, de los cuales veintiuno eran el
-// marcado a una puerta que nadie iba a abrir.
+// Without it the room ended on the host's machine and the registry never heard:
+// the code kept answering "it exists" until the card expired, which is up to six
+// hours. Whoever pasted that code brought up the lobby, dialled a host that was
+// gone, and ate the operating system's long timeout to land on a message about
+// reconnecting. Checked against the deployment on 2026-08-15: twenty-two
+// seconds, twenty-one of them the dial to a door nobody was going to open.
 //
-// # Lo que NO hace, y es la mitad del diseño
+// # What it does NOT do, and that is half the design
 //
-// No borra la entrada. Caduca la tarjeta y deja el fijado en pie, así que el
-// invite ID sigue siendo de su host y reabrir la misma sala con el mismo código
-// sigue funcionando. Ver [Store.retire].
+// It does not delete the entry. It expires the card and leaves the pin standing,
+// so the invite ID still belongs to its host and reopening the same room under
+// the same code keeps working. See [Store.retire].
 func (s *Server) cerrar(w http.ResponseWriter, r *http.Request) {
 	id, ok := idDeRuta(w, r)
 	if !ok {
@@ -239,9 +238,9 @@ func (s *Server) cerrar(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, CodeBadRequest, "")
 		return
 	}
-	// El reloj se comprueba ANTES que la firma, y el orden importa poco para la
-	// seguridad y mucho para el coste: verificar Ed25519 es barato, y aun así no
-	// hay motivo para gastarlo en un mensaje que se va a rechazar por viejo.
+	// The clock is checked BEFORE the signature. The order matters little for
+	// security and some for cost: verifying Ed25519 is cheap, and there is still
+	// no reason to spend it on a message that is going to be rejected for age.
 	if err := domain.CheckRoomCloseTime(time.Unix(c.TS, 0), time.Now()); err != nil {
 		respondError(w, http.StatusBadRequest, CodeBadRequest, "")
 		return

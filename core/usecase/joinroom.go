@@ -181,7 +181,13 @@ func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickna
 
 	// La última sala se guarda al entrar y no al salir, así una muerte sucia
 	// del daemon tampoco la pierde.
-	s.saveLastRoomLocked()
+	//
+	// It is saved with the return switched ON. Entering is a deliberate act, so
+	// from here until somebody says otherwise this is where the machine belongs:
+	// a dirty death, closing Kanpachi or a power cut all end with the daemon
+	// coming back into this room. Only leaving on purpose, or being kicked, turns
+	// it off. See [domain.LastRoom.AutoReturn].
+	s.saveLastRoomLocked(true)
 
 	ok = true
 	s.deps.Log.Info("dentro de la sala",

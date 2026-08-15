@@ -400,7 +400,7 @@ type mockRegistry struct {
 	// publicaciones cuenta las llamadas a Publish, incluidas las que fallan. Es
 	// lo que distingue "no republicó" de "republicó y le contestaron que no".
 	publicaciones int
-	// cerrados son las salas que se cerraron en el registro, en orden.
+	// cerrados are the rooms closed in the registry, in order.
 	cerrados  []domain.InviteID
 	siguiente string
 	seed      string
@@ -519,11 +519,11 @@ func (r *mockRegistry) Publish(_ context.Context, _ domain.InviteID, sealed []by
 	return nil
 }
 
-// Close anota qué salas se cerraron en el registro, en orden.
+// Close records which rooms were closed in the registry, in order.
 //
-// Se anotan incluso cuando el falso está declarado caído: cerrar es best-effort
-// y lo que hay que poder comprobar es que se INTENTÓ, que es justo lo que
-// distingue "no lo llamó" de "lo llamó y el registro no contestó".
+// They are recorded even when the fake is declared down: closing is best-effort,
+// and what has to be assertable is that it was ATTEMPTED, which is exactly what
+// tells "never called it" apart from "called it and the registry did not answer".
 func (r *mockRegistry) Close(_ context.Context, id domain.InviteID) error {
 	r.mu.Lock()
 	r.cerrados = append(r.cerrados, id)

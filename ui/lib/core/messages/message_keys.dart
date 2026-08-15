@@ -54,11 +54,11 @@ enum AlertKind {
   /// el socket propio del host y jamás el mensaje de un miembro.
   canaryLeaking('canary_leaking'),
 
-  /// La sala se reabrió sola y su juego no se pudo reponer.
+  /// The room reopened by itself and its game could not be restored.
   ///
-  /// La única que habla de puertos que NO están abiertos. El caso es el host
-  /// que se reinicia: la sala vuelve con su código y sin su juego, así que la
-  /// gente entra y el servidor no responde.
+  /// The only one that talks about ports that are NOT open. The case is the host
+  /// that restarts: the room comes back with its code and without its game, so
+  /// people join and the server does not answer.
   gameLost('game_lost');
 
   const AlertKind(this.wire);

@@ -363,22 +363,23 @@ const (
 	// La levanta el socket propio del host y jamás el informe de un miembro. Un
 	// mensaje se puede mentir; que alguien haya llegado hasta el oyente, no.
 	AlertCanaryLeaking
-	// AlertGameLost: la sala se reabrió y su juego no se pudo reponer.
+	// AlertGameLost: the room reopened and its game could not be restored.
 	//
-	// **Es la única alerta que habla de puertos que NO están abiertos**, y por
-	// eso desentona en esta lista: las demás avisan de exposición de más. Está
-	// acá igual porque comparte lo único que define a una alerta en este
-	// producto, que es algo que anula la promesa si nadie lo mira.
+	// **It is the only alert that talks about ports that are NOT open**, which is
+	// why it sits oddly in this list: every other one reports too much exposure.
+	// It belongs here anyway, because it shares the one thing that defines an
+	// alert in this product, which is something that voids the promise if nobody
+	// looks at it.
 	//
-	// El caso que la motiva es el host headless. La sala vuelve sola tras un
-	// reinicio y el perfil que tenía activo ya no está en el catálogo, así que
-	// vuelve sin juego: la gente entra, el servidor no responde, y lo único que
-	// lo decía era una línea de log en una máquina que nadie mira. Ver
-	// [Session.restoreGameLocked].
+	// The case behind it is the headless host. The room comes back by itself
+	// after a restart and the profile it had active is no longer in the
+	// catalogue, so it comes back with no game: people join, the server does not
+	// answer, and the only thing saying so was a log line on a machine nobody
+	// looks at. See `Session.restoreGameLocked`.
 	//
-	// Pegajosa, y no puede ser de otra forma: describe algo que pasó al
-	// reabrir, y ninguna comprobación del barrido lo vuelve a medir. Lo que la
-	// apaga es elegir un juego, que es exactamente lo que hay que hacer.
+	// Sticky, and it cannot be otherwise: it describes something that happened
+	// while reopening, and nothing in the sweep measures it again. What clears it
+	// is picking a game, which is exactly what has to be done.
 	AlertGameLost
 )
 
@@ -429,9 +430,9 @@ func AllAlertKinds() []AlertKind {
 // a medir. Sin pegajosa, el barrido la borraría sesenta segundos después de la
 // única prueba que este producto sabe producir. Lo que la apaga es una ronda del
 // canario que midió y volvió limpia.
-// [AlertGameLost] SÍ es pegajosa, por lo mismo que el canario: cuenta lo que
-// pasó en el instante de reabrir la sala, y el barrido no reabre nada. La quita
-// elegir un juego, que es la acción que arregla el caso.
+// [AlertGameLost] IS sticky, for the same reason as the canary: it reports what
+// happened at the instant of reopening the room, and the sweep reopens nothing.
+// What clears it is picking a game, which is the action that fixes the case.
 func (k AlertKind) Sticky() bool {
 	return k == AlertLobbyConflict || k == AlertKickIncomplete ||
 		k == AlertCanaryLeaking || k == AlertGameLost

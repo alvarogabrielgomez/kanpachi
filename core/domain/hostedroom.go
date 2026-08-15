@@ -111,6 +111,35 @@ type LastRoom struct {
 	Name    string
 	Nick    Nickname
 	SavedAt time.Time
+
+	// AutoReturn says whether startup should go back into this room unasked.
+	//
+	// # Why a field is needed, when the file already exists
+	//
+	// Because this file is **never deleted**, not on leaving and not on being
+	// kicked: it is the LAST room and not the current one, and it exists precisely
+	// to be able to go back. So its presence says nothing about intent, unlike the
+	// host's room file, where being there IS the signal that the room is still
+	// theirs.
+	//
+	// # What switches it on and what switches it off
+	//
+	// Entering switches it on. Exactly two exits switch it off, and both are
+	// somebody deciding: pressing leave, and the host kicking. Everything else is
+	// the room ending without this side asking for it — closing Kanpachi, shutting
+	// the machine down, a power cut, twenty minutes with no host — and coming back
+	// is what the person expects.
+	//
+	// **Closing Kanpachi is not leaving the room.** Underneath it does the same
+	// thing, and it is not the same thing: shutting the program down is shutting
+	// the program down, and the next time it opens the room has to be where it was
+	// left.
+	//
+	// # Its zero is DO NOT return, deliberately
+	//
+	// A file written before this field existed recorded no intent, and walking
+	// into a room somebody left months ago is worse than doing nothing.
+	AutoReturn bool
 }
 
 // persistedRoomJSON es el esquema en disco. Cerrado, y cada campo con un tipo
@@ -135,6 +164,11 @@ type lastRoomJSON struct {
 	Name     string `json:"name"`
 	Nick     string `json:"nick"`
 	SavedAt  string `json:"saved_at"`
+	// AutoReturn without `omitempty`, on purpose. The false has to be WRITTEN into
+	// the file: it is what tells "you left the room" apart from a file written
+	// before this field existed, and those two only lead to the same place by
+	// coincidence. Writing it leaves the state readable by eye.
+	AutoReturn bool `json:"auto_return"`
 }
 
 // Encode serializa la sala del host.
@@ -236,11 +270,12 @@ func (l LastRoom) Encode() ([]byte, error) {
 		return nil, fmt.Errorf("%w: no hay invite ID que guardar", ErrPersistedShape)
 	}
 	return json.MarshalIndent(lastRoomJSON{
-		InviteID: l.Room.InviteID.String(),
-		Seed:     l.Room.Seed,
-		Name:     l.Name,
-		Nick:     l.Nick.String(),
-		SavedAt:  l.SavedAt.UTC().Format(time.RFC3339),
+		InviteID:   l.Room.InviteID.String(),
+		Seed:       l.Room.Seed,
+		Name:       l.Name,
+		Nick:       l.Nick.String(),
+		SavedAt:    l.SavedAt.UTC().Format(time.RFC3339),
+		AutoReturn: l.AutoReturn,
 	}, "", "  ")
 }
 
@@ -262,7 +297,10 @@ func DecodeLastRoom(raw []byte) (LastRoom, error) {
 	if err != nil {
 		return LastRoom{}, err
 	}
-	return LastRoom{Room: room, Name: ClampRoomName(j.Name), Nick: nick, SavedAt: saved}, nil
+	return LastRoom{
+		Room: room, Name: ClampRoomName(j.Name), Nick: nick,
+		SavedAt: saved, AutoReturn: j.AutoReturn,
+	}, nil
 }
 
 // decodeStrict es el rechazo de campos desconocidos, compartido por los dos

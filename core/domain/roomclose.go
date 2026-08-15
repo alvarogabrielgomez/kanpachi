@@ -6,54 +6,53 @@ import (
 	"time"
 )
 
-// Cerrar una sala en el registro: qué se firma, y por qué lleva un reloj.
+// Closing a room in the registry: what gets signed, and why it carries a clock.
 //
-// Vive en el dominio por lo mismo que [SeedAuthProof]: lo necesitan los dos
-// lados, el cliente para firmar y el registro para comprobar, y ninguno de los
-// dos puede preguntarle al otro cómo se arma. Una segunda versión de estos
-// bytes en el otro extremo es una firma que no valida y un cierre que nunca
-// ocurre.
+// It lives in the domain for the same reason as [SeedAuthProof]: both ends need
+// it, the client to sign and the registry to check, and neither can ask the
+// other how it is built. A second version of these bytes at the far end is a
+// signature that does not verify and a close that never happens.
 //
-// # Por qué el cierre se firma, si el registro ya tiene una puerta
+// # Why closing is signed, when the registry already has a door
 //
-// Porque la puerta es del OPERADOR del seed y esto es del HOST de la sala. Un
-// seed abierto no pide nada, y ahí el password no protege nada; un seed cerrado
-// lo pide a todo el que hospeda, o sea a cualquiera que tenga la credencial
-// compartida. Lo que dice que esta sala es tuya es la llave que el registro fijó
-// para ese invite ID la primera vez, igual que al publicar la tarjeta.
+// Because the door belongs to the seed's OPERATOR and this belongs to the room's
+// HOST. An open seed asks for nothing, so the password protects nothing there; a
+// closed one asks it of everybody who hosts, which is anybody holding the shared
+// credential. What says this room is yours is the key the registry pinned for
+// that invite ID the first time, exactly as when publishing the card.
 //
-// # Por qué lleva marca de tiempo, que la publicación no lleva
+// # Why it carries a timestamp, when publishing does not
 //
-// Porque cerrar es el único mensaje del que una copia grabada sigue sirviendo
-// más tarde. Publicar una tarjeta vieja deja la sala con una tarjeta vieja, que
-// es lo que ya había. Reproducir un cierre después de que el host REABRA la
-// misma sala con el mismo código mata una sala viva, y reabrir con el mismo
-// código es justo lo que el host headless hace en cada arranque. La marca es lo
-// que le pone fecha de caducidad a esa copia.
+// Because closing is the one message whose recorded copy keeps working later.
+// Publishing an old card leaves the room with an old card, which is what was
+// already there. Replaying a close after the host REOPENS the same room under the
+// same code kills a live room, and reopening under the same code is exactly what
+// a headless host does on every boot. The stamp is what gives that copy an
+// expiry date.
 
-// roomCloseLabel mantiene esta firma separada de cualquier otro uso de la misma
-// llave. Versionada, como el resto de separadores de dominio del proyecto.
+// roomCloseLabel keeps this signature apart from any other use of the same key.
+// Versioned, like every other domain separator in this project.
 const roomCloseLabel = "kanpachi/room-close/v1"
 
-// RoomCloseSkew es cuánto se le tolera al reloj del que firma.
+// RoomCloseSkew is how far off the signer's clock is allowed to be.
 //
-// Cinco minutos para los dos lados. No hay nada que sincronizar entre las dos
-// máquinas y un reloj de escritorio se va unos segundos sin que nadie lo note,
-// así que un margen corto convertiría el cierre en algo que falla según qué PC
-// lo pida. Más ancho no compra nada: lo que acota es cuánto vale una copia
-// grabada, y cinco minutos es mucho menos que las seis horas que dura la
-// tarjeta.
+// Five minutes in both directions. There is nothing to synchronise between the
+// two machines and a desktop clock drifts by seconds without anybody noticing,
+// so a narrow margin would turn closing into something that fails depending on
+// which PC asks. Wider buys nothing: what this bounds is how long a recorded
+// copy is worth anything, and five minutes is far less than the six hours a card
+// lives.
 const RoomCloseSkew = 5 * time.Minute
 
-// RoomCloseMessage arma los bytes que se firman para cerrar una sala.
+// RoomCloseMessage builds the bytes that are signed to close a room.
 //
-// El cero separa los tres campos y ninguno puede contenerlo: la etiqueta es una
-// constante, el invite ID sale del alfabeto de 32 símbolos, y el tiempo va en
-// ocho bytes de ancho fijo. Con eso la lectura es inequívoca sin prefijos de
-// longitud.
+// The zero byte separates the three fields and none of them can contain one: the
+// label is a constant, the invite ID comes from the 32-symbol alphabet, and the
+// time goes in eight fixed-width bytes. That makes the reading unambiguous with
+// no length prefixes.
 //
-// El invite ID va DENTRO, y sin él una firma buena de una sala serviría para
-// cerrar cualquier otra del mismo host.
+// The invite ID goes INSIDE, and without it a good signature for one room would
+// close any other room of the same host.
 func RoomCloseMessage(id InviteID, at time.Time) []byte {
 	raw := id.Raw()
 	msg := make([]byte, 0, len(roomCloseLabel)+1+len(raw)+1+8)
@@ -64,12 +63,12 @@ func RoomCloseMessage(id InviteID, at time.Time) []byte {
 	return binary.BigEndian.AppendUint64(msg, uint64(at.Unix()))
 }
 
-// CheckRoomCloseTime dice si esa marca de tiempo sigue sirviendo.
+// CheckRoomCloseTime says whether that stamp is still good.
 //
-// Rechaza por los dos lados y no solo por el pasado. Una marca en el futuro es
-// un reloj mal puesto o alguien alargándole la vida a una firma a propósito, y
-// las dos terminan igual: un mensaje que valdría más de lo que este código
-// acepta que valga nada.
+// It rejects on both sides and not only on the past. A stamp in the future is a
+// wrong clock or somebody extending a signature's life on purpose, and both end
+// the same way: a message worth more than this code is willing to let anything
+// be worth.
 func CheckRoomCloseTime(at, now time.Time) error {
 	d := now.Sub(at)
 	if d < 0 {

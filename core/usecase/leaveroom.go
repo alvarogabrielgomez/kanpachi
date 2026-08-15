@@ -191,6 +191,23 @@ func (s *Session) leaveLocked(
 		s.closeRoomInRegistryLocked(ctx)
 	}
 
+	// A guest's last room is rewritten with what THIS exit means, and the file
+	// itself stays either way. It is not deleted on the way out on purpose: it
+	// exists to be able to go back, and being kicked does not change that,
+	// because kicking is not banning.
+	//
+	// **Two exits switch the return off, and they are the two where somebody
+	// decided.** Pressing leave, from any of the four faces, and the host
+	// kicking. Everything else is the room ending without this side asking for
+	// it -- shutting down, closing Kanpachi, a power cut, twenty minutes with no
+	// host -- and coming back is what the person expects.
+	//
+	// Kicked keeps the file and loses the return, which is the whole of "kicking
+	// is not banning" in one line: the button to go back is still there, and the
+	// machine does not crawl back on its own ten seconds after the host threw it
+	// out. Entering again on purpose switches it back on.
+	s.saveLastRoomLocked(exit != domain.ExitUser && exit != domain.ExitKicked)
+
 	s.teardown(ctx)
 	s.hostSpec = domain.HostSpec{}
 	s.cardKey = [domain.CardKeyLen]byte{}
@@ -229,41 +246,42 @@ func (s *Session) leaveLocked(
 	return s.snapshot()
 }
 
-// closeRoomInRegistryLocked le dice al registro que esta sala se acabó.
+// closeRoomInRegistryLocked tells the registry this room is over.
 //
-// # Por qué hace falta decirlo, medido
+// # Why it has to be said, measured
 //
-// Porque cerrar la sala no llegaba al registro por ningún camino, y su entrada
-// solo moría de vieja. Durante hasta seis horas ese código seguía contestando
-// "existe": quien lo pegara levantaba el vestíbulo, marcaba a un host que ya no
-// estaba y se comía el timeout largo del sistema operativo para terminar en un
-// mensaje que hablaba de reconexión. Comprobado contra el despliegue el
-// 2026-08-15, veintidós segundos de los cuales veintiuno eran ese marcado.
+// Because closing the room reached the registry by no path at all, and its entry
+// only died of old age. For up to six hours that code kept answering "it
+// exists": whoever pasted it brought up a lobby, dialled a host that was gone,
+// and ate the operating system's long timeout to land on a message about
+// reconnecting. Checked against the deployment on 2026-08-15, twenty-two seconds
+// of which twenty-one were that dial.
 //
-// # Solo el HOST, y esa guarda es lo único que separa esto de un desastre
+// # Host ONLY, and that guard is all that separates this from a mess
 //
-// `leaveLocked` lo llaman los dos roles, y un invitado que sale llegaría acá con
-// el código de una sala que no es suya. No lo conseguiría, porque el registro
-// exige la firma de la llave que fijó ese invite ID, así que lo único que
-// lograría es un 403 por cada persona que sale de una sala. La guarda evita
-// gastar el límite de tasa de todos los invitados en peticiones que van a fallar.
+// `leaveLocked` runs for both roles, and a guest on the way out would arrive here
+// holding the code of a room that is not theirs. They would not get anywhere,
+// because the registry demands the signature of the key that pinned that invite
+// ID, so all they would achieve is a 403 for every person who leaves a room. The
+// guard is what keeps every guest's rate limit from being spent on requests that
+// are going to fail.
 //
-// # No es fatal, y no puede serlo
+// # Not fatal, and it cannot be
 //
-// Salir termina fuera de la sala pase lo que pase. Que el registro no conteste
-// cuesta que el código siga resolviendo hasta que venza su tarjeta, que es
-// exactamente lo que pasaba siempre antes de que esto existiera. Un intento y
-// ninguno más: el límite de tasa del registro cuenta también lo que falla.
+// Leaving ends outside the room whatever happens. A registry that does not answer
+// costs the code resolving until its card expires, which is exactly what happened
+// every time before this existed. One attempt and no more: the registry's rate
+// limit counts what fails too.
 //
 // Asume el candado tomado.
 func (s *Session) closeRoomInRegistryLocked(ctx context.Context) {
 	if !s.state.IsHost() || s.state.Room.InviteID.IsZero() {
 		return
 	}
-	// El registro que EMITIÓ este código, y no el propio. Suelen ser el mismo, y
-	// no tienen por qué: una sala reabierta del arranque anterior conserva su
-	// seed, y ese es el único registro donde su entrada existe. Es el mismo
-	// motivo por el que republicar la tarjeta lo toma de la sala.
+	// The registry that MINTED this code, and not our own. They are usually the
+	// same and they do not have to be: a room reopened from the previous run
+	// keeps its seed, and that is the only registry where its entry exists. Same
+	// reason republishing the card takes it from the room.
 	dir, err := s.deps.Directories.For(s.state.Room.Seed)
 	if err != nil {
 		s.deps.Log.Warn("no se pudo abrir el registro para cerrar la sala",

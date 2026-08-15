@@ -328,6 +328,15 @@ type salaFalsa struct {
 	// poder medir que el apagado la espera antes de cerrar la sala.
 	reabrirCuelga bool
 	errReabrir    error
+
+	// ultima is the guest's last room, and its zero means there is none. With
+	// AutoReturn off, which is the default, this fake does not go back to
+	// anything and the startup-order tests keep measuring only the order.
+	ultima    domain.LastRoom
+	hayUlt    bool
+	entradas  []string
+	errEntrar error
+	dentro    bool
 }
 
 func (s *salaFalsa) LeaveRoomOnShutdown(ctx context.Context) error {
@@ -352,6 +361,25 @@ func (s *salaFalsa) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
 		return domain.RoomState{}, ctx.Err()
 	}
 	return domain.RoomState{}, s.errReabrir
+}
+
+func (s *salaFalsa) LastRoom() (domain.LastRoom, bool) { return s.ultima, s.hayUlt }
+
+func (s *salaFalsa) JoinRoom(_ context.Context, input string, _ domain.Nickname) (domain.RoomState, error) {
+	s.orden.anota("volver-sala")
+	s.entradas = append(s.entradas, input)
+	if s.errEntrar != nil {
+		return domain.RoomState{}, s.errEntrar
+	}
+	s.dentro = true
+	return domain.RoomState{}, nil
+}
+
+func (s *salaFalsa) Status() domain.RoomState {
+	if !s.dentro {
+		return domain.RoomState{}
+	}
+	return domain.RoomState{Conn: domain.StateConnected}
 }
 
 type logMudo struct{}

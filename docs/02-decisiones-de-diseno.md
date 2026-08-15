@@ -378,6 +378,20 @@ Simétrico y mucho más chico. El invitado guarda **el código, el seed, el nomb
 
 El código guardado se mantiene vigente cuando el host lo renueva, porque se lo reparte a los presentes en ese mismo acto. Ver decisión 23.
 
+### Y vuelve SOLO, salvo que hayas dicho que te ibas
+
+El host reabre su sala en cada arranque sin que nadie se lo pida. El invitado tenía que pegar el código otra vez, y esa asimetría no tenía defensa: las dos máquinas estaban en la misma sala y solo una volvía.
+
+**Lo único que lo apaga es salir de la sala**, desde cualquiera de las cuatro caras: la ventana, el CLI, el asistente de terminal y la bandeja. Todo lo demás no es una salida. Cerrar Kanpachi por detrás hace lo mismo, y no es lo mismo: apagar el programa es apagar el programa, y al abrirlo la sala tiene que estar donde se la dejó. Lo mismo un reinicio, un corte de luz, o que el host desaparezca veinte minutos.
+
+La expulsión también lo apaga, y es la única de las dos que no es una decisión de esta máquina. **La sala guardada NO se borra al ser expulsado**, porque expulsar no es banear y el botón de volver sigue ahí: lo que se quita es que la máquina vuelva sola diez segundos después de que el host la echó. Volver a propósito lo vuelve a encender.
+
+**Por qué esto no rompe la invariante de confirmar.** «Nada que llegue de fuera de la app surte efecto sin confirmación dentro de la app» habla de lo que llega de FUERA, y lo que llega de fuera es un enlace que alguien pulsó en un navegador. Acá no llega nada: **esa sala ya se confirmó una vez, a propósito, y nadie dijo que se iba**. Es volver a una sala en la que esta máquina ya estaba. Es el mismo argumento por el que el host reabre la suya.
+
+La otra mitad del argumento es qué lleva el fichero. Un código y un nick, y nada que sirva para entrar: volver hace el mismo canje que la primera vez, así que **el host reemite la credencial y VE llegar a quien llega**. Un host que no quiere a esa máquina de vuelta la expulsa, o renueva el código.
+
+Se intenta cuatro veces, a los 0 s, 30 s, 2 min y 5 min, y después se deja. Cubre al amigo que enciende su PC antes que el host. Que el registro conteste **que esa sala no existe** corta la escalera en el acto: es el código renovado o la sala cerrada, y ninguna de las dos va a cambiar por marcar otra vez. Es una respuesta, no un timeout.
+
 ### Costos aceptados
 
 - **Entrar depende de que el host esté alcanzable en ese instante.** Si está reconectando, los ingresos fallan y hay que reintentar. Se gana control, se pierde robustez, y es un intercambio explícito.

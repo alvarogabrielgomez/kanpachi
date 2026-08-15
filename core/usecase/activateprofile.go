@@ -52,11 +52,11 @@ func (s *Session) ActivateProfile(ctx context.Context, gameID string) (domain.Ro
 		return domain.RoomState{}, err
 	}
 
-	// Y se apaga el aviso de la sala que volvió sin juego, que es pegajoso a
-	// propósito: nada del barrido lo vuelve a medir, así que lo tiene que quitar
-	// justo la acción que arregla el caso. Se quita también al dejar la sala sin
-	// juego a propósito, porque ahí la ausencia ya no es una pérdida, es una
-	// decisión. Ver [domain.AlertGameLost].
+	// And the warning about the room that came back with no game goes out. It is
+	// sticky on purpose: nothing in the sweep measures it again, so what has to
+	// clear it is the very action that fixes the case. It also clears when the
+	// room is deliberately left without a game, because then the absence is not a
+	// loss, it is a decision. See [domain.AlertGameLost].
 	s.state.DropAlerts(domain.AlertGameLost)
 
 	// Los ajustes del adaptador salen del perfil, así que cambiar de juego los

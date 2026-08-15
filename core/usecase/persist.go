@@ -50,16 +50,24 @@ func (s *Session) saveRoomLocked() {
 // No se borra al salir. Es la ÚLTIMA sala, no la actual, y que te hayan
 // expulsado tampoco la borra, porque expulsar no es banear.
 //
+// # autoReturn, and why it is a parameter rather than a constant
+//
+// Because the file never goes away, its presence says nothing about intent,
+// unlike the host's room file where being there IS the signal. Entering passes
+// true; leaving rewrites it with what that exit means. See
+// [domain.LastRoom.AutoReturn].
+//
 // Asume el candado tomado.
-func (s *Session) saveLastRoomLocked() {
+func (s *Session) saveLastRoomLocked(autoReturn bool) {
 	if s.state.IsHost() || !s.state.Conn.InRoom() || s.state.Room.InviteID.IsZero() {
 		return
 	}
 	raw, err := domain.LastRoom{
-		Room:    s.state.Room,
-		Name:    s.state.Name,
-		Nick:    s.nick,
-		SavedAt: s.deps.Clock.Now(),
+		Room:       s.state.Room,
+		Name:       s.state.Name,
+		Nick:       s.nick,
+		SavedAt:    s.deps.Clock.Now(),
+		AutoReturn: autoReturn,
 	}.Encode()
 	if err != nil {
 		s.deps.Log.Warn("no se pudo serializar la última sala", "error", err)
