@@ -10,7 +10,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Fixed
 
-- Find out when a room that reopened by itself came back without its game, instead of it being a line in a log nobody reads. A host that restarts brings its room back with the same code, and if the profile that was active is no longer in that machine's catalogue the room comes back with no ports open at all: everything looks fine, people join, and the server does not answer. The room now says so, and says the room itself is fine and the fix is to pick the game again
+- Find out when a room that reopened by itself came back without its game, instead of it being a line in a log nobody reads. A host that restarts brings its room back with the same code, and if the profile that was active is no longer in that machine's catalogue the room comes back with no ports open at all: everything looks fine, people join, and the server does not answer. The room now says so, and says the room itself is fine and the fix is to pick the game again ([5ff3516](https://github.com/alvarogabrielgomez/kanpachi/commit/5ff3516))
 
 ### Security
 
