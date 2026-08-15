@@ -5,6 +5,7 @@ import 'package:kanpachi_ui/core/design_system/atoms/app_glyphs.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/core/platform/system_browser.dart';
+import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
 
 /// Qué es un seed, y qué puede hacerte uno malo.
 ///
@@ -31,13 +32,6 @@ class SeedTrustBlock extends StatefulWidget {
   @override
   State<SeedTrustBlock> createState() => _SeedTrustBlockState();
 }
-
-/// Lo que tardan en moverse la flecha y el cuerpo del acordeón.
-///
-/// UNA constante para las dos, porque son el mismo gesto: con dos números el
-/// cuerpo terminaba de abrirse antes o después de que la flecha acabara de
-/// girar, y eso se ve aunque nadie sepa decir qué le pasa.
-const Duration _giro = Duration(milliseconds: 180);
 
 class _SeedTrustBlockState extends State<SeedTrustBlock> {
   bool _abierto = false;
@@ -84,7 +78,7 @@ class _SeedTrustBlockState extends State<SeedTrustBlock> {
               // El hijo se mantiene montado y se recorta con altura cero: sacar
               // el árbol y volver a meterlo no tiene qué animar.
               AnimatedSize(
-                duration: _giro,
+                duration: AppMotion.accordion,
                 curve: Curves.easeOutCubic,
                 alignment: Alignment.topCenter,
                 child: ClipRect(
@@ -113,11 +107,11 @@ class _SeedTrustBlockState extends State<SeedTrustBlock> {
                       // velocidad pareja.
                       child: AnimatedSlide(
                         offset: _abierto ? Offset.zero : const Offset(0, 0.25),
-                        duration: _giro,
+                        duration: AppMotion.accordion,
                         curve: Curves.easeOutCubic,
                         child: AnimatedOpacity(
                           opacity: _abierto ? 1 : 0,
-                          duration: _giro,
+                          duration: AppMotion.accordion,
                           curve: Curves.easeOutCubic,
                           child: _Prosa(
                             texto:
@@ -224,7 +218,7 @@ class _Cabecera extends StatelessWidget {
             ),
             AnimatedRotation(
               turns: abierto ? 0.5 : 0,
-              duration: _giro,
+              duration: AppMotion.accordion,
               curve: Curves.easeOutCubic,
               child: Icon(
                 Icons.keyboard_arrow_down_rounded,

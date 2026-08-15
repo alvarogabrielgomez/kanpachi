@@ -16,6 +16,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
+import 'package:kanpachi_ui/core/timing/app_timing.dart';
 
 /// El estado de la sesión: la sala, el catálogo y lo que se está aplicando.
 ///
@@ -76,13 +77,6 @@ class SessionCubit extends Cubit<SessionState> {
   /// end of the wait stops it. It used to depend on [SessionState.verbose] as
   /// well, and no longer does — see [_watchProgress].
   Timer? _pollingProgreso;
-
-  /// How often the steps are asked for.
-  ///
-  /// Fast enough that a step which lands mid-wait is seen while it still means
-  /// something, slow enough that a ninety-second creation costs a couple of
-  /// hundred round trips on a local pipe rather than thousands.
-  static const Duration _cadenciaProgreso = Duration(milliseconds: 400);
 
   /// Runs one user action and turns any failure into STATE.
   ///
@@ -263,7 +257,7 @@ class SessionCubit extends Cubit<SessionState> {
     // them there showed a room being closed at 95% for the 400 ms it takes the
     // first sample of the closing to land.
     emit(state.copyWith(clearProgress: true));
-    _pollingProgreso = Timer.periodic(_cadenciaProgreso, (_) async {
+    _pollingProgreso = Timer.periodic(kProgressBeat, (_) async {
       try {
         final Progress p = await _repository.progress();
         if (!isClosed) emit(state.copyWith(progress: p));
@@ -305,19 +299,13 @@ class SessionCubit extends Cubit<SessionState> {
   /// forma de saber es preguntar. Refrescar "al entrar a una pantalla" no
   /// alcanza porque el estado cambia sin que nadie entre a ninguna pantalla.
   ///
-  /// # Por qué se puede preguntar tan seguido
-  ///
-  /// Porque `status` no toca el candado de la sesión: lee la copia publicada,
-  /// que existe justo para esto. Así que el latido sigue contestando mientras
-  /// una creación de sala tiene la sesión tomada durante un minuto.
-  static const Duration _latido = Duration(seconds: 2);
 
   Timer? _pulso;
 
   /// Arranca el latido. Idempotente.
   void watchSession() {
     _pulso?.cancel();
-    _pulso = Timer.periodic(_latido, (_) => unawaited(_beat()));
+    _pulso = Timer.periodic(kSessionBeat, (_) => unawaited(_beat()));
     unawaited(_beat());
     // Una vez, fuera del latido. Es una llamada al daemon por el pipe local, no
     // a la red, y lo que trae no se mueve salvo que alguien lo escriba. Un

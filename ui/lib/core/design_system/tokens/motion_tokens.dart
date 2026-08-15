@@ -75,6 +75,24 @@ abstract final class AppMotion {
   /// convertiría en una cascada en vez de en una lista que crece.
   static const Duration stepIn = Duration(milliseconds: 220);
 
+  /// Lo que tardan en moverse la flecha y el cuerpo de un acordeón.
+  ///
+  /// UNA constante para las dos partes, porque son el mismo gesto: con dos
+  /// números el cuerpo terminaba de abrirse antes o después de que la flecha
+  /// acabara de girar, y eso se ve aunque nadie sepa decir qué le pasa.
+  static const Duration accordion = Duration(milliseconds: 180);
+
+  /// Cuánto se queda cada cuadro del icono de la bandeja.
+  ///
+  /// **Iguales es el parpadeo simétrico que se pidió.** Subir el del play y
+  /// bajar el del quieto lo convertiría en un latido, que cansa mucho menos en
+  /// una partida de tres horas, y por eso son dos constantes y no una.
+  static const Duration trayBlinkOn = Duration(milliseconds: 900);
+  static const Duration trayBlinkOff = Duration(milliseconds: 900);
+
+  /// Cuánto tiene que quedarse el puntero encima antes de que salga un tooltip.
+  static const Duration tooltipDelay = Duration(milliseconds: 500);
+
   static const Curve enter = Curves.easeOut;
   static const Curve standard = Curves.easeInOut;
 

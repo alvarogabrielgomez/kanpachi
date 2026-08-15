@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:kanpachi_ui/core/platform/app_preferences.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:kanpachi_ui/core/timing/app_timing.dart';
 
 /// Remembers how big the window was, so the next run opens the same size.
 ///
@@ -39,14 +40,6 @@ class WindowSizeMemory extends StatefulWidget {
 
 class _WindowSizeMemoryState extends State<WindowSizeMemory>
     with WindowListener {
-  /// How long after the last resize event the size is written.
-  ///
-  /// Dragging an edge fires a resize per frame, so writing on each one would
-  /// be a hundred disk writes for one drag. Waiting for the drag to stop turns
-  /// that into a single one, and half a second is well under how long anybody
-  /// takes to close the window after resizing it.
-  static const Duration _settle = Duration(milliseconds: 500);
-
   Timer? _pending;
 
   @override
@@ -92,7 +85,7 @@ class _WindowSizeMemoryState extends State<WindowSizeMemory>
 
   void _remember() {
     _pending?.cancel();
-    _pending = Timer(_settle, () async {
+    _pending = Timer(kWindowSizeSettle, () async {
       if (await windowManager.isMaximized()) return;
       final Size size = await windowManager.getSize();
       await widget.preferences?.setWindowSize(size);

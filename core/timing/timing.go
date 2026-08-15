@@ -555,7 +555,12 @@ const PipeIdleWait = 10 * time.Minute
 // [ControlWriteWait]. Un cliente que deja de leer no puede congelar al daemon.
 const PipeWriteWait = 5 * time.Second
 
-// PipeDefaultTimeout es cuánto espera el CLIENTE una respuesta.
+// PipeDefaultTimeout es cuánto espera el CLIENTE de Go una respuesta.
+//
+// **La ventana tiene su gemelo y no se puede compartir**, porque es otro
+// lenguaje: `kDefaultTimeout` y su tabla `kMethodTimeouts`, en
+// `ui/lib/core/timing/app_timing.dart`. Es el mismo pipe y la misma paciencia,
+// escrita dos veces. Si se toca una, se toca la otra.
 //
 // Noventa segundos, y el número no es prudencia genérica: el techo real lo pone
 // el motor, con [AddressDeadline] por adaptador, y crear una sala levanta DOS

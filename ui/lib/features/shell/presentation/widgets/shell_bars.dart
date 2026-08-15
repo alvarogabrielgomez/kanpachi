@@ -512,7 +512,7 @@ class _RightSlotState extends State<_RightSlot> {
           ? 'El servidor de encuentro donde abres tus salas. Pulsa para '
                 'cambiarlo.'
           : 'Tu adaptador virtual y tu dirección dentro de esta sala.',
-      waitDuration: const Duration(milliseconds: 500),
+      waitDuration: AppMotion.tooltipDelay,
       child: MouseRegion(
         cursor: widget.isSeed
             ? SystemMouseCursors.click

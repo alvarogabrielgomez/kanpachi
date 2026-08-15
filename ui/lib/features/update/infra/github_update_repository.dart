@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:kanpachi_ui/core/brand.dart';
 import 'package:kanpachi_ui/features/update/domain/repositories/update_repository.dart';
+import 'package:kanpachi_ui/core/timing/app_timing.dart';
 
 /// Asks the update channel which version is the latest.
 ///
@@ -25,10 +26,11 @@ import 'package:kanpachi_ui/features/update/domain/repositories/update_repositor
 /// showing a line at the bottom of the window; there is nothing it could do with
 /// the difference between a socket error and a captive portal answering HTML.
 class GithubUpdateRepository implements UpdateRepository {
-  const GithubUpdateRepository({this.timeout = const Duration(seconds: 5)});
+  const GithubUpdateRepository({this.timeout = kUpdateCheckTimeout});
 
-  /// Short, and applied to each step. Somebody is waiting for this answer, and
-  /// a slow one is worth less than the socket it holds open.
+  /// El plazo de cada paso. Ver [kUpdateCheckTimeout], que es el valor por
+  /// omisión y el porqué; entra por parámetro solo para que los tests lo
+  /// acorten.
   final Duration timeout;
 
   @override

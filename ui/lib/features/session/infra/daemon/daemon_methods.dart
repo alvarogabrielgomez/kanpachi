@@ -10,6 +10,8 @@
 /// outside it, and it does so BEFORE checking the greeting.
 library;
 
+import 'package:kanpachi_ui/core/timing/app_timing.dart';
+
 /// The 27 methods, with the exact name that travels on the wire.
 abstract final class DaemonMethods {
   static const String hello = 'hello';
@@ -106,10 +108,6 @@ abstract final class DaemonMethods {
   /// fingerprint it has to show comes from here. Asking consumes nothing.
   static const String previewInvite = 'preview_invite';
 }
-
-/// The default budget: what something answered from memory or with one small
-/// disk write takes.
-const Duration kDefaultTimeout = Duration(seconds: 10);
 
 /// How long each method gets, when it is not the default.
 ///

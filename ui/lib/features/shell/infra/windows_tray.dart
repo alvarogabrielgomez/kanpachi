@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:kanpachi_ui/core/platform/app_log.dart';
 import 'package:kanpachi_ui/features/shell/domain/tray_presence.dart';
 import 'package:tray_manager/tray_manager.dart';
+import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
 
 /// El icono de la bandeja de Windows, con el menú que dibuja el diseño.
 ///
@@ -41,13 +42,6 @@ class WindowsTray with TrayListener implements TrayPresence {
 
   static const String _iconoQuieto = 'assets/logo/tray_icon.ico';
   static const String _iconoConPlay = 'assets/logo/tray_icon_play.ico';
-
-  /// Cuánto se queda cada cuadro. **Iguales es el parpadeo simétrico que se
-  /// pidió**, y están separados a propósito: subir [_duraConPlay] y bajar
-  /// [_duraQuieto] convierte el parpadeo en un latido, que cansa mucho menos en
-  /// una partida de tres horas. Cambiarlo es cambiar un número.
-  static const Duration _duraConPlay = Duration(milliseconds: 900);
-  static const Duration _duraQuieto = Duration(milliseconds: 900);
 
   Timer? _parpadeo;
   bool _mostrandoPlay = false;
@@ -127,7 +121,9 @@ class WindowsTray with TrayListener implements TrayPresence {
   /// Un temporizador de UNA vez por cuadro, y no `Timer.periodic`, para que los
   /// dos cuadros puedan durar distinto sin cambiar la forma de esto.
   void _programarSiguiente() {
-    final Duration cuanto = _mostrandoPlay ? _duraConPlay : _duraQuieto;
+    final Duration cuanto = _mostrandoPlay
+        ? AppMotion.trayBlinkOn
+        : AppMotion.trayBlinkOff;
     _parpadeo = Timer(cuanto, () async {
       if (_parpadeo == null || !_puesto) return;
       _mostrandoPlay = !_mostrandoPlay;
