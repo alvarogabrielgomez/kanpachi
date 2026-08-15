@@ -741,6 +741,14 @@ type LastRoomView struct {
 	Name    string `json:"name"`
 	Nick    string `json:"nick"`
 	SavedAt string `json:"saved_at,omitempty"`
+
+	// AutoReturn is whether this machine goes back by itself.
+	//
+	// It did not use to travel, and without it a face could show the room but not
+	// the one thing somebody actually wants to know about it: whether anything is
+	// going to happen on its own. The file outlives leaving and being kicked, so
+	// its presence says nothing — only this does.
+	AutoReturn bool `json:"auto_return"`
 }
 
 // Los nombres de los enums. Cadenas y no números, para que agregar una

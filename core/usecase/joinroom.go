@@ -35,7 +35,18 @@ func (s *Session) JoinRoom(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.clearTheWayLocked(ctx, replace); err != nil {
+	// El parseo es la frontera de entrada hostil del producto: acepta las seis
+	// formas documentadas y rechaza entero cualquier otra cosa. Que ocurra
+	// ANTES de la transición importa, porque un código mal pegado no tiene por
+	// qué mover la máquina de estados.
+	//
+	// Y va antes del gate porque el gate necesita saber A DÓNDE se entra: volver
+	// a la sala a la que ya se estaba volviendo no desplaza nada.
+	room, err := domain.ParseRoom(input)
+	if err != nil {
+		return domain.RoomState{}, err
+	}
+	if err := s.clearTheWayLocked(ctx, room, replace); err != nil {
 		return domain.RoomState{}, err
 	}
 	if nick.IsZero() {
@@ -47,16 +58,7 @@ func (s *Session) JoinRoom(
 	ctx, soltar := s.begin(ctx)
 	defer soltar()
 
-	// El parseo es la frontera de entrada hostil del producto: acepta las seis
-	// formas documentadas y rechaza entero cualquier otra cosa. Que ocurra
-	// ANTES de la transición importa, porque un código mal pegado no tiene por
-	// qué mover la máquina de estados.
 	s.deps.Progress.Begin("entrar a la sala")
-	s.deps.Progress.Step(domain.ScopeDaemon, "leyendo el código pegado")
-	room, err := domain.ParseRoom(input)
-	if err != nil {
-		return domain.RoomState{}, err
-	}
 	s.deps.Progress.Stepf(domain.ScopeDaemon, "código válido: %s, servido por %s", room.InviteID, room.Seed)
 
 	if err := s.state.Transition(domain.StateResolving, "el usuario pegó un código"); err != nil {

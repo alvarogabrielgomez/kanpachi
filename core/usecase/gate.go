@@ -49,14 +49,31 @@ func (s *Session) Displacement() domain.Displacement {
 	return s.displacementLocked()
 }
 
-// displacementLocked is the rule, in ONE place.
+// displacementLocked is what entering ANY room would cost. It is what the
+// snapshot publishes, because a status cannot know where somebody is headed.
+//
+// Asume el candado tomado.
+func (s *Session) displacementLocked() domain.Displacement {
+	return s.displacementForLocked(domain.Room{})
+}
+
+// displacementForLocked is the rule, in ONE place, against a known destination.
+//
+// # Why the destination matters
+//
+// Because going back to the room you are already going back to displaces
+// NOTHING, and asking about it would be asking somebody to confirm that they
+// want what they already have. It is the difference between "try now" and
+// "change rooms", and without this they would look the same from here.
+//
+// A zero destination matches nothing, which is what makes it mean "anywhere".
 //
 // The order matters and is not arbitrary: being in a room wins over being on the
 // way back, because they cannot both be true and the first is the one that costs
 // somebody else something.
 //
 // Asume el candado tomado.
-func (s *Session) displacementLocked() domain.Displacement {
+func (s *Session) displacementForLocked(hacia domain.Room) domain.Displacement {
 	if s.state.Conn.InRoom() {
 		kind := domain.DisplaceLeaveRoom
 		otros := 0
@@ -75,7 +92,7 @@ func (s *Session) displacementLocked() domain.Displacement {
 			Members: otros,
 		}
 	}
-	if r := s.returningLocked(); r.Returning() {
+	if r := s.returningLocked(); r.Returning() && r.Room != hacia {
 		return domain.Displacement{
 			Kind: domain.DisplaceStopReturning,
 			Room: r.Room,
@@ -102,8 +119,8 @@ func (s *Session) displacementLocked() domain.Displacement {
 // there is no gap to fit through.
 //
 // Asume el candado tomado.
-func (s *Session) clearTheWayLocked(ctx context.Context, replace bool) error {
-	d := s.displacementLocked()
+func (s *Session) clearTheWayLocked(ctx context.Context, hacia domain.Room, replace bool) error {
+	d := s.displacementForLocked(hacia)
 	if !d.Any() {
 		return nil
 	}

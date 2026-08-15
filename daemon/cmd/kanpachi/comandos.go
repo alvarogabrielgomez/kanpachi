@@ -60,7 +60,7 @@ func init() {
 			correr: cmdHost},
 		"join": {args: "<code|link>", breve: "enter someone else's room",
 			correr: cmdJoin},
-		"leave": {breve: "close the room if you are the host, leave if you are a guest",
+		"leave": {breve: "close your room, leave someone else's, or stop going back to the last one",
 			correr: cmdLeave},
 		"link": {breve: "the invite link, to copy and hand out",
 			correr: cmdLink},
@@ -215,6 +215,12 @@ func cmdHost(_ context.Context, op opciones, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Abrir una sala desplaza lo mismo que entrar a una ajena, y pasa por la
+	// misma compuerta: quien ya hospeda una la estaría cerrando.
+	replace, err := confirmarDesplazamiento(op, sinPreguntar)
+	if err != nil {
+		return err
+	}
 	// El registro se lee y se confirma ANTES de anunciar el minuto de espera.
 	// Preguntar después de "esto tarda un minuto" haría que la pregunta pareciera
 	// parte de la espera, y lo que se está decidiendo es si empezarla.
@@ -239,7 +245,8 @@ func cmdHost(_ context.Context, op opciones, args []string) error {
 	return conSala(op, protocol.MethodCreateRoom, struct {
 		Nickname string `json:"nickname"`
 		Name     string `json:"name"`
-	}{nick, nombre})
+		Replace  bool   `json:"replace,omitempty"`
+	}{nick, nombre, replace})
 }
 
 // cmdJoin pasa el texto TAL CUAL lo pegó la persona.
@@ -264,6 +271,13 @@ func cmdJoin(_ context.Context, op opciones, args []string) error {
 	// explicar qué le falta a ese código es el daemon, que es la frontera de
 	// entrada hostil. Preguntar por un registro que no se pudo leer sería
 	// nombrar una máquina inventada.
+	// Lo que estorba se pregunta ANTES que el registro, y el orden importa: si
+	// alguien va a decir que no, que lo diga antes de haber leído un párrafo
+	// sobre una máquina que ya no va a usar.
+	replace, err := confirmarDesplazamiento(op, sinPreguntar)
+	if err != nil {
+		return err
+	}
 	if seed := registroDelCódigo(args[0]); seed != "" {
 		if err := confiarEnElRegistro(op, seed, "Entering that room", sinPreguntar); err != nil {
 			return err
@@ -275,7 +289,8 @@ func cmdJoin(_ context.Context, op opciones, args []string) error {
 	return conSala(op, protocol.MethodJoinRoom, struct {
 		Code     string `json:"code"`
 		Nickname string `json:"nickname"`
-	}{args[0], nick})
+		Replace  bool   `json:"replace,omitempty"`
+	}{args[0], nick, replace})
 }
 
 func cmdLeave(_ context.Context, op opciones, _ []string) error {
@@ -571,7 +586,15 @@ func cmdLast(_ context.Context, op opciones, _ []string) error {
 		return nil
 	}
 	fmt.Printf("  %s  %s@%s  (as %s)\n", v.Room.Name, v.Room.Code, v.Room.Seed, v.Room.Nick)
-	fmt.Printf("\n  To go back:  kanpachi join %s@%s\n", v.Room.Code, v.Room.Seed)
+	// Whether it comes back on its own is the one thing worth knowing about a
+	// saved room, and the file's presence does not say it: it outlives leaving
+	// and being kicked alike. Only the flag does.
+	if v.Room.AutoReturn {
+		fmt.Println("\n  Kanpachi is going back to it by itself. `kanpachi leave` stops that.")
+		return nil
+	}
+	fmt.Printf("\n  It does not go back on its own. To go back:  kanpachi join %s@%s\n",
+		v.Room.Code, v.Room.Seed)
 	return nil
 }
 

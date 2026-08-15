@@ -34,7 +34,9 @@ func (s *Session) CreateRoom(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.clearTheWayLocked(ctx, replace); err != nil {
+	// Sin destino: una sala nueva no puede ser la que ya se tenía, así que acá
+	// todo lo que estorbe estorba de verdad.
+	if err := s.clearTheWayLocked(ctx, domain.Room{}, replace); err != nil {
 		return domain.RoomState{}, err
 	}
 	if nick.IsZero() {

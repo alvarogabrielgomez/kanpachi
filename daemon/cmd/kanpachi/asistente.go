@@ -57,7 +57,7 @@ func asistente(ctx context.Context, op opciones) error {
 		}
 		var siguiente error
 		if st.Conn == "idle" || st.Conn == "" {
-			siguiente = menuSinSala(ctx, op)
+			siguiente = menuSinSala(ctx, op, st)
 		} else {
 			siguiente = menuConSala(ctx, op, st)
 		}
@@ -89,17 +89,26 @@ func estadoParaElMenú(op opciones) (protocol.RoomView, error) {
 
 // ─── Sin sala ────────────────────────────────────────────────────────────────
 
-func menuSinSala(ctx context.Context, op opciones) error {
+func menuSinSala(ctx context.Context, op opciones, st protocol.RoomView) error {
 	limpiarPantalla(os.Stdout)
 	fmt.Println(raya)
 	fmt.Printf("  KANPACHI %-20s channel: %s\n", Version, op.canal)
 	fmt.Println(raya)
 	fmt.Println()
 
+	// El estado se PINTA, y hasta ahora esta rama era la única boca que no lo
+	// hacía: el asistente enseñaba el menú sin decir por qué terminó lo anterior
+	// ni que se está volviendo a una sala. Es el mismo renderizador que usan
+	// `status` y `watch`, no una segunda versión.
+	pintarSala(os.Stdout, st)
+	fmt.Println()
+
 	const (
 		abrir     = "Open a room"
 		entrar    = "Enter someone else's room"
 		volver    = "Go back to the last room I entered"
+		ahora     = "Try going back now"
+		dejarlo   = "Stop going back to that room"
 		reanudar  = "Reopen the room left from the previous start"
 		descartar = "Forget that pending room"
 		juegos    = "See the game catalog"
@@ -109,12 +118,25 @@ func menuSinSala(ctx context.Context, op opciones) error {
 		salir     = "Quit"
 	)
 
-	opciones := []string{abrir, entrar}
+	// Volviendo, las dos entradas que importan van PRIMERO, porque es lo que
+	// está pasando ahora mismo. Y `volver` desaparece: ofrecer «vuelve» a quien
+	// ya está volviendo es ofrecer lo que ya tiene.
+	volviendo := st.Returning != nil
+	var opciones []string
+	if volviendo {
+		opciones = append(opciones, ahora, dejarlo)
+	}
+	opciones = append(opciones, abrir, entrar)
 	if hay, _ := haySalaPendiente(op); hay {
 		opciones = append(opciones, reanudar, descartar)
 	}
-	if hay, _ := hayÚltimaSala(op); hay {
-		opciones = append(opciones, volver)
+	// La pregunta solo se hace si puede cambiar algo. Este menú abre una conexión
+	// por cada una de estas comprobaciones, de las ocho que hay, y volviendo la
+	// respuesta ya la trajo el estado.
+	if !volviendo {
+		if hay, _ := hayÚltimaSala(op); hay {
+			opciones = append(opciones, volver)
+		}
 	}
 	opciones = append(opciones, juegos, comprobar, actualiza, nombre, salir)
 
@@ -138,8 +160,15 @@ func menuSinSala(ctx context.Context, op opciones) error {
 			return err
 		}
 		return conAviso(ctx, op, cmdJoin(ctx, op, []string{pegado}))
-	case volver:
+	case volver, ahora:
+		// El mismo camino para las dos, y no es pereza: «volver» y «probar ahora»
+		// son literalmente lo mismo, entrar con el código guardado. Lo único que
+		// cambia es que en el segundo caso ya había un reloj contándolo. La
+		// compuerta no pregunta nada, porque volver a donde ya se está volviendo
+		// no desplaza nada.
 		return conAviso(ctx, op, volverALaÚltima(ctx, op))
+	case dejarlo:
+		return conAviso(ctx, op, cmdLeave(ctx, op, nil))
 	case reanudar:
 		return conAviso(ctx, op, cmdResume(ctx, op, nil))
 	case descartar:
@@ -227,6 +256,7 @@ func menuConSala(ctx context.Context, op opciones, st protocol.RoomView) error {
 		juego     = "Activate a game profile"
 		cerrarJue = "Close the game ports"
 		comprobar = "Check the system"
+		otraSala  = "Enter another room"
 		cerrar    = "Close the room"
 		salirSala = "Leave the room"
 		salir     = "Quit the wizard (the room stays open)"
@@ -249,6 +279,12 @@ func menuConSala(ctx context.Context, op opciones, st protocol.RoomView) error {
 		}
 	}
 	opciones = append(opciones, comprobar)
+	// Cambiar de sala con una abierta es el caso que en la ventana NO existe,
+	// porque allá estar dentro te lleva a la pantalla de la sala y no hay campo
+	// de código. Acá la terminal es la interfaz, y lo que se puede escribir como
+	// `kanpachi join <otro>` tiene que poder elegirse. La confirmación la pone la
+	// compuerta, con la frase que le toque según se salga o se cierre.
+	opciones = append(opciones, otraSala)
 	if st.Role == "host" {
 		opciones = append(opciones, cerrar)
 	} else {
@@ -286,6 +322,13 @@ func menuConSala(ctx context.Context, op opciones, st protocol.RoomView) error {
 		return conAviso(ctx, op, cmdGame(ctx, op, nil))
 	case comprobar:
 		return menuDeComprobaciones(ctx, op)
+	case otraSala:
+		pegado, err := texto("Paste the link or the code of the room you want to enter:",
+			"Entering it means leaving this one. You get asked before anything happens.", "")
+		if err != nil {
+			return err
+		}
+		return conAviso(ctx, op, cmdJoin(ctx, op, []string{pegado}))
 	case cerrar, salirSala:
 		return conAviso(ctx, op, cmdLeave(ctx, op, nil))
 	case salir:

@@ -38,11 +38,48 @@ func limpiarPantalla(w io.Writer) { fmt.Fprint(w, "\033[H\033[J") }
 const raya = "  ────────────────────────────────────────────────────────────────"
 
 // pintarSala es la pantalla principal.
+// pintarVuelta paints a machine on its way back into a room it was in.
+//
+// # It goes where "no room is open" goes, and that is not a contradiction
+//
+// Going back is NOT being in a room: there is no tunnel, no ports and no
+// members, and `Conn` says `idle` throughout. What there is is a standing intent
+// and a clock. So it belongs under that line rather than in the room block, and
+// the two things it has to say are where it is going and when it tries next.
+//
+// The registry being silent is called out separately because it is a different
+// cause for the same wait: "nobody is hosting yet" and "the meeting server is
+// not answering" send somebody to look in different places.
+func pintarVuelta(w io.Writer, v *protocol.ReturningView, seedCaido bool) {
+	nombre := v.Name
+	if nombre == "" {
+		nombre = "(unnamed)"
+	}
+	fmt.Fprintf(w, "  Going back to  %s  %s@%s\n", nombre, v.Code, v.Seed)
+
+	cuando := "now"
+	if v.NextInMS > 0 {
+		cuando = "in " + milis(v.NextInMS)
+	}
+	fmt.Fprintf(w, "  Attempt %d, next %s.\n", v.Attempts+1, cuando)
+	switch {
+	case seedCaido:
+		fmt.Fprintln(w, "  The meeting server is not answering, so nothing is being decided yet.")
+	case v.Reason != "":
+		fmt.Fprintf(w, "  Last: %s\n", v.Reason)
+	}
+	fmt.Fprintln(w, "\n  `kanpachi leave` stops going back. `kanpachi join <code>` enters another room.")
+}
+
 func pintarSala(w io.Writer, st protocol.RoomView) {
 	if st.Conn == "idle" || st.Conn == "" {
 		fmt.Fprintln(w, "  No room is open.")
 		if st.LastExit != "" {
 			fmt.Fprintf(w, "  The last one ended: %s\n", motivoDeSalida(st.LastExit))
+		}
+		if st.Returning != nil {
+			pintarVuelta(w, st.Returning, st.SeedDown)
+			return
 		}
 		fmt.Fprintln(w, "\n  `kanpachi host` opens one. `kanpachi join <code>` enters someone else's.")
 		return
@@ -79,6 +116,14 @@ func pintarSala(w io.Writer, st protocol.RoomView) {
 		// pantalla lo delataría.
 		fmt.Fprintln(w, "  WARNING  the registry no longer knows this code: nobody new can join.")
 		fmt.Fprintln(w, "           `kanpachi rotate` fixes it, and voids the links you handed out.")
+	}
+	if st.SeedDown && !st.CodeLost {
+		// The transient sibling of CodeLost, and the terminal painted NEITHER of
+		// them until now — it travelled on the wire and no face read it. Same
+		// consequence, opposite cure: this one clears up by itself, so it says so
+		// rather than pointing at a command.
+		fmt.Fprintln(w, "  WARNING  the registry is not answering, so nobody new can join right now.")
+		fmt.Fprintln(w, "           Whoever is already in stays in. It clears up on its own.")
 	}
 	if st.LocalIP != "" {
 		fmt.Fprintf(w, "  Your IP  %s", st.LocalIP)

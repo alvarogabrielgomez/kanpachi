@@ -606,6 +606,7 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 		}{true, LastRoomView{
 			Code: last.Room.InviteID.String(), Seed: last.Room.Seed,
 			Name: last.Name, Nick: last.Nick.String(), SavedAt: stamp(last.SavedAt),
+			AutoReturn: last.AutoReturn,
 		}})
 
 	case MethodProgress:
