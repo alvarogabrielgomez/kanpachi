@@ -17,6 +17,10 @@ This file is in English, like commit messages and release notes, because a relea
 - Use, study, change and share Kanpachi: it is free software under the AGPL-3.0, with the game catalogue in the public domain. Everything was already public to read; now there is a licence that says what you may do with it, and that obliges anyone running a *modified* meeting server for other people to hand them its source ([3ade2f8](https://github.com/alvarogabrielgomez/kanpachi/commit/3ade2f8))
 - See what ships alongside Kanpachi and under which licence before installing it, on a screen the installer shows and in `THIRD-PARTY-NOTICES.txt` next to the program: the network engine, where its source is, and the three Windows libraries that come with it ([3ade2f8](https://github.com/alvarogabrielgomez/kanpachi/commit/3ade2f8))
 
+### Changed
+
+- Stop calling your own room "pending" where Kanpachi writes it down, because nothing is pending anybody's decision: `kanpachi pending` heads it "Saved room", and the window answers "esta máquina no tiene ninguna sala guardada" instead of "no quedó ninguna sala a medio cerrar del arranque anterior". The room comes back by itself on every start, and reopening it by hand is what is left for when that fails ([3782c9f](https://github.com/alvarogabrielgomez/kanpachi/commit/3782c9f))
+
 ### Fixed
 
 - Keep using a room's code while its host is switched off, instead of it going dead after six hours. A room now ends for two reasons and neither of them is silence: somebody closed it, or nobody hosted it for three weeks. A server that spends the night down, a PC that reboots, a power cut — the code you handed out still works when the host comes back, and the invitation page keeps showing the room's real name instead of falling back to a generic one ([4819d8a](https://github.com/alvarogabrielgomez/kanpachi/commit/4819d8a))
