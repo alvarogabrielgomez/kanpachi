@@ -216,6 +216,10 @@ After installation:
   kanpseed nginx
   ```
 
+The seed's whole HTTP surface — every endpoint, the optional hosting password,
+and what defends each thing — is documented in
+[registry/API.md](registry/API.md).
+
 ### What The Seed Web Page Is For
 
 The invite page is a lightweight entry point for users opening a room link.
@@ -276,6 +280,7 @@ This section is intentionally short and points to auditable sources.
 - What changed in each release: [CHANGELOG.md](CHANGELOG.md)
 - Security promise and scope: [kanpachi-protection.md](kanpachi-protection.md)
 - What the meeting server does, sees and stores: [kanpachi-seed.md](kanpachi-seed.md)
+- The seed's HTTP API, endpoint by endpoint: [registry/API.md](registry/API.md)
 - Architecture and process boundaries: [docs/03-arquitectura.md](docs/03-arquitectura.md)
 - Engine behavior and non-listening model: [kanpachi-engine README](https://github.com/alvarogabrielgomez/kanpachi-engine)
 - EasyTier fork rationale and minimal diff record: [EasyTier/FORK.md](https://github.com/alvarogabrielgomez/EasyTier/blob/kanpachi/FORK.md)

@@ -10,7 +10,11 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Security
 
-- Rate limit the invitation page, which resolves invite codes exactly like the API does and was answering at any rate anybody asked for. A live code came back with the room card embedded in the page and a dead one came back empty, so walking the eight-character space was a matter of skipping the endpoint that counts and asking the page instead. Both now share one budget per address, so moving to the other route buys nothing
+- Rate limit the invitation page, which resolves invite codes exactly like the API does and was answering at any rate anybody asked for. A live code came back with the room card embedded in the page and a dead one came back empty, so walking the eight-character space was a matter of skipping the endpoint that counts and asking the page instead. Both now share one budget per address, so moving to the other route buys nothing ([1f83c0f](https://github.com/alvarogabrielgomez/kanpachi/commit/1f83c0f))
+
+### Added
+
+- Read what the meeting server's HTTP surface actually is, in `registry/API.md`: every endpoint it has, what the optional hosting password does and does not cover, and what defends each thing
 
 ## [0.3.0] - 2026-08-14
 

@@ -104,9 +104,10 @@ The room in that dump is called `NOMBRE DE SALA SECRETO` and its host is `Humber
 appears in the file, because the card arrived sealed.
 
 **There are no addresses in that file, and there is no access log.** The only thing the registry does
-with a client's IP address is count requests against a sliding window, in memory, evicted as it goes
+with a client's IP address is count requests against a fixed window, in memory, evicted as it goes
 — thirty a minute in general, five a minute against the hosting password
-([`registry/http.go`](registry/http.go)). Nothing writes it down.
+([`registry/http.go`](registry/http.go)). Nothing writes it down. Every endpoint the whole HTTP
+surface has, and what guards each one, is in [`registry/API.md`](registry/API.md).
 
 One honest caveat: the engine keeps its own console log, at `info` level, on the operator's machine.
 Any server operator can, at minimum, see the addresses currently connected to their own server —
