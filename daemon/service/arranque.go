@@ -182,9 +182,13 @@ func Start(ctx context.Context, d Deps) (*Runtime, error) {
 // machine opened it and it is still theirs. Closing it is a button, and whoever
 // presses it deletes the file, so this finds nothing to reopen.
 //
-// **Worth saying out loud:** reopening the room also reopens the game ports of
-// whatever profile was active. That is what a server wants, and it is what the
-// gate and the quarantine bound.
+// **Worth saying out loud, and this line used to overstate it:** reopening
+// restores the game profile that was active, so its ports come back as soon as
+// there is somebody to open them towards. It comes back with NOTHING open. The
+// rules are recomputed from the live member table rather than read off the
+// disk, and [domain.BuildRuleSet] returns the empty set when there is no member
+// to name, because there is no way to write "anybody". That is what a server
+// wants, and it is what the gate and the quarantine bound.
 func (r *Runtime) reabrirLaSala(ctx context.Context) {
 	if r.deps.Sala == nil {
 		return

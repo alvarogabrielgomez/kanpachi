@@ -34,6 +34,66 @@ If the room directory service is unavailable, the room can still work. What degr
 See the protection statement: [kanpachi-protection.md](kanpachi-protection.md), and what the
 meeting server does, sees and stores: [kanpachi-seed.md](kanpachi-seed.md).
 
+## No Account, No Bill, Nobody In The Middle
+
+Four things Kanpachi does not have. Each one is a decision, and each one is the
+reason for something else in this README.
+
+- **No account.** There is nothing to sign up for, no email, no password to
+  recover. What identifies a machine is a key it generates itself and never
+  sends anywhere, and what identifies a room is a code somebody pastes into a
+  chat. Nothing was ever collected, so nothing can be handed over, breached or
+  sold later.
+- **No paid tier, and nobody counting heads.** A room addresses a `/24`, which
+  is 253 places, and no code anywhere asks who is paying for them. On other
+  virtual-LAN services the number of people in your room is a price, and hosting
+  while nobody is sitting at the machine is the feature behind the subscription.
+  Here they are just how the thing works.
+- **No server you are required to use.** The meeting server is a one-line
+  install on any Linux box, and the seed's name travels **inside** the invite
+  code — `A7K2-M9QX@seed.example.com` — so the code says which registry it means
+  and two seeds are two unrelated worlds. Run your own and nothing of ours is on
+  the path. A seed can ask for a password to host on it, which is what stops
+  strangers parking their rooms on your bandwidth; joining a room never asks for
+  it, on any seed.
+- **Nothing hidden.** Every line of the client, the daemon, the engine and the
+  meeting server is public and builds from source, and so is every document that
+  explains why it is built that way — including the parts that say what Kanpachi
+  cannot do and where a hostile meeting server would still win.
+
+The one to be precise about is the third. Peer-to-peer is not a slogan here: the
+tunnel is direct between the two routers whenever the routers allow it, and the
+seed is only a meeting point that steps out of the way. When a direct path
+cannot be built, packets fall back to travelling through the seed, still
+encrypted end to end with a key that machine was never given, and the app says
+the room is degraded rather than hiding it.
+
+## Hosting 24/7, With Nobody At The Keyboard
+
+The Linux daemon is built for the machine that is always on: a game server on a
+VPS, running as a systemd service, with no window and nobody logged in.
+
+It reopens its own room at startup. Not a prompt, not a script somebody has to
+remember — when the daemon comes up and finds a room that was never closed, it
+brings it back with **the same invite code, the same network identity, the same
+subnet and the same game profile**, and republishes the room card so the
+invitation page keeps showing the real room instead of a generic one
+([`daemon/service/arranque.go`](daemon/service/arranque.go),
+[`core/usecase/resumeroom.go`](core/usecase/resumeroom.go)).
+
+That covers a reboot, a power cut, and an `apt upgrade` that restarts the
+service. Shutting down and closing the room are two different events on purpose:
+only somebody pressing "close the room" deletes the file, so reopening can never
+resurrect a room you meant to end. The invite code you pasted into the group
+chat in March still works in June, without anybody touching the server in
+between.
+
+Worth being precise about what this does not change: the reopened room comes
+back with **no ports open**. Rules are recalculated from who is actually
+present, and with nobody there the desired set is empty. The game profile is
+restored, the ports it asks for are not opened until there is somebody to open
+them towards.
+
 ## Screenshots
 
 <p align="center">
