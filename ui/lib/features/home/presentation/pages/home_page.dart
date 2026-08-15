@@ -222,8 +222,7 @@ class _HomeScreenState extends State<HomeScreen> {
             if (session.savedRoom != null && !session.hasRoom) ...<Widget>[
               SavedRoomNotice(
                 pending: session.savedRoom!,
-                onReopen: () =>
-                    context.read<SessionCubit>().resumeSavedRoom(),
+                onReopen: () => context.read<SessionCubit>().resumeSavedRoom(),
                 onDiscard: () =>
                     context.read<SessionCubit>().discardSavedRoom(),
               ),

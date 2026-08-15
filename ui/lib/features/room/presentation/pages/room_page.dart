@@ -96,9 +96,7 @@ class _RoomScreenState extends State<RoomScreen> {
           // El usuario puede no abrir jamás la pantalla de exposición, y una
           // protección que dejó de contener no puede esperar a que vaya a
           // buscarla. La banda se pinta sola cuando no hay alarma.
-          if (session.health.kinds.contains(
-            AlertKind.gateLeaking,
-          )) ...<Widget>[
+          if (session.health.kinds.contains(AlertKind.gateLeaking)) ...<Widget>[
             CanaryAlarm(
               alerts: session.health.kinds,
               check: session.health.canary,

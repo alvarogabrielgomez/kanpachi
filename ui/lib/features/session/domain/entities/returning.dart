@@ -54,7 +54,9 @@ class Returning {
       code: code,
       seed: crudo['seed'] as String? ?? '',
       name: crudo['name'] as String? ?? '',
-      nextIn: Duration(milliseconds: (crudo['next_in_ms'] as num?)?.toInt() ?? 0),
+      nextIn: Duration(
+        milliseconds: (crudo['next_in_ms'] as num?)?.toInt() ?? 0,
+      ),
       attempts: (crudo['attempts'] as num?)?.toInt() ?? 0,
       reason: crudo['reason'] as String? ?? '',
     );
