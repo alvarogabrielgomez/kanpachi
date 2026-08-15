@@ -52,7 +52,14 @@ enum AlertKind {
   /// Es la única que sale de una medición POR LA RED, y la única que ve el caso
   /// que ninguna otra puede ver: el filtro existe y no contiene nada. La levanta
   /// el socket propio del host y jamás el mensaje de un miembro.
-  canaryLeaking('canary_leaking');
+  canaryLeaking('canary_leaking'),
+
+  /// La sala se reabrió sola y su juego no se pudo reponer.
+  ///
+  /// La única que habla de puertos que NO están abiertos. El caso es el host
+  /// que se reinicia: la sala vuelve con su código y sin su juego, así que la
+  /// gente entra y el servidor no responde.
+  gameLost('game_lost');
 
   const AlertKind(this.wire);
 

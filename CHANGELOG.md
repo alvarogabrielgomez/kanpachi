@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Fixed
+
+- Find out when a room that reopened by itself came back without its game, instead of it being a line in a log nobody reads. A host that restarts brings its room back with the same code, and if the profile that was active is no longer in that machine's catalogue the room comes back with no ports open at all: everything looks fine, people join, and the server does not answer. The room now says so, and says the room itself is fine and the fix is to pick the game again
+
 ### Security
 
 - Rate limit the invitation page, which resolves invite codes exactly like the API does and was answering at any rate anybody asked for. A live code came back with the room card embedded in the page and a dead one came back empty, so walking the eight-character space was a matter of skipping the endpoint that counts and asking the page instead. Both now share one budget per address, so moving to the other route buys nothing ([1f83c0f](https://github.com/alvarogabrielgomez/kanpachi/commit/1f83c0f))

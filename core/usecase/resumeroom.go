@@ -192,17 +192,42 @@ func (s *Session) restoreGameLocked(ctx context.Context, gameID string) {
 	}
 	p, ok := s.catalog.Find(gameID)
 	if !ok {
-		s.deps.Log.Info("el juego que estaba activo ya no está en el catálogo", "juego", gameID)
+		s.noteGameLostLocked(gameID, "ya no está en el catálogo de esta máquina")
 		return
 	}
 	s.state.Game = p
 	if err := s.applyPolicy(ctx); err != nil {
 		s.state.Game = domain.GameProfile{}
-		s.deps.Log.Warn("no se pudieron reponer las reglas del juego anterior", "juego", gameID, "error", err)
+		s.noteGameLostLocked(gameID, fmt.Sprintf("no se pudieron reponer sus reglas: %v", err))
 		return
 	}
 	s.configureAdapter(ctx)
 	s.deps.Log.Info("juego repuesto de la sala anterior", "juego", gameID)
+}
+
+// noteGameLostLocked deja constancia de que la sala volvió sin su juego.
+//
+// **Era un `Log.Info` y tenía que ser una alerta.** El caso que lo motiva es el
+// host headless: la sala se reabre sola tras un reinicio, el perfil que tenía
+// activo ya no está, y la sala queda abierta y sin un solo puerto. Todo lo
+// demás funciona, así que nada se ve raro: la gente entra, el servidor de
+// Minecraft no contesta, y lo único que lo decía era una línea en el log de una
+// máquina que nadie mira. Basta con que `local.json` se corrompa para que
+// desaparezcan de golpe todos los perfiles hechos a mano.
+//
+// La alerta es pegajosa, y la apaga elegir un juego. Ver [domain.AlertGameLost].
+//
+// Asume el candado tomado.
+func (s *Session) noteGameLostLocked(gameID, motivo string) {
+	detalle := fmt.Sprintf(
+		"la sala se reabrió sin el juego que tenía activo, %s: %s. "+
+			"La sala está abierta y sin ningún puerto, así que quien entre no va a poder jugar.\n\n"+
+			"Qué hacer: vuelve a elegir el juego", gameID, motivo)
+	s.state.Alerts = append(s.state.Alerts, domain.Alert{
+		Kind:   domain.AlertGameLost,
+		Detail: detalle,
+	})
+	s.deps.Log.Warn("la sala se reabrió sin su juego", "juego", gameID, "motivo", motivo)
 }
 
 // republishCardLocked vuelve a subir la tarjeta que ya estaba publicada.

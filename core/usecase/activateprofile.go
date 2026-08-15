@@ -52,6 +52,13 @@ func (s *Session) ActivateProfile(ctx context.Context, gameID string) (domain.Ro
 		return domain.RoomState{}, err
 	}
 
+	// Y se apaga el aviso de la sala que volvió sin juego, que es pegajoso a
+	// propósito: nada del barrido lo vuelve a medir, así que lo tiene que quitar
+	// justo la acción que arregla el caso. Se quita también al dejar la sala sin
+	// juego a propósito, porque ahí la ausencia ya no es una pérdida, es una
+	// decisión. Ver [domain.AlertGameLost].
+	s.state.DropAlerts(domain.AlertGameLost)
+
 	// Los ajustes del adaptador salen del perfil, así que cambiar de juego los
 	// cambia. Sin juego, AdapterStateFor los devuelve todos apagados, que es
 	// lo que hace que quitar el juego revierta las rutas sin que nadie tenga

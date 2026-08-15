@@ -742,6 +742,8 @@ func alertName(k domain.AlertKind) string {
 		return "audit_failed"
 	case domain.AlertCanaryLeaking:
 		return "canary_leaking"
+	case domain.AlertGameLost:
+		return "game_lost"
 	default:
 		// Que este caso exista no lo vuelve aceptable: una alerta que llega como
 		// "unknown" no la pinta nadie, así que el módulo de exposición avisa al

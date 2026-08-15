@@ -113,6 +113,19 @@ abstract final class AppMessages {
           'Vuelve a aplicarla. Si el problema sigue, sal de la sala: '
           'eso cierra todo lo que Kanpachi abrió.',
     ),
+    // La única que avisa de puertos que NO están abiertos, y por eso el texto
+    // empieza diciendo que la sala está bien. Sin esa primera frase, el título
+    // se lee como una avería de la sala y no como lo que es: la sala funciona,
+    // el juego no está puesto, y la gente que entre no va a poder jugar.
+    AlertKind.gameLost => const AppMessage(
+      severity: MessageSeverity.warn,
+      title: 'La sala volvió sin su juego',
+      body:
+          'La sala está abierta y con el mismo código de siempre. Lo que '
+          'no se pudo reponer es el juego que tenía activo, así que no '
+          'hay ningún puerto abierto y quien entre no va a poder jugar.',
+      hint: 'Vuelve a elegir el juego.',
+    ),
   };
 
   /// Lo que se le cuenta al usuario sobre una regla de firewall que Kanpachi no
