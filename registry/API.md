@@ -314,11 +314,25 @@ On the client side, the adapter brings its own refusals ([`client.go`](../daemon
 
 ## Known limitations, measured on 2026-08-15
 
-Both came out of the same test: open a room, close the room, and try to enter with the code still in hand. The third thing that test turned up, the page without a limiter, is fixed and documented above.
+Both came out of the same test: open a room, close the room, and try to enter with the code still in hand. Two other things that test turned up are fixed and documented above — the page without a limiter, and a closed room still resolving.
 
-1. **The ghost room, now only when the close was dirty.** Closing a room tells the registry, so a room somebody closed on purpose stops resolving in the same second. What is still open is the close nobody got to make: a power cut, a killed VPS, a process that died. There the code answers "it exists" until the card expires, up to 6 hours, and the guest brings up a lobby and dials a host that is not coming back, which costs the operating system's connect timeout — about twenty-one seconds on Windows.
+1. **`members` measures the lobby, not the room.** The host stays in the rendezvous network while hosting and the guest leaves it as soon as it collects the credential, so the real number is "the host plus whoever is entering right now". As "how many people are in" it is a bad number; as a signal for "the host is at the door" it is exact, and nothing in the client reads it.
+2. **A room served before the registry kept signatures comes back unsigned**, and the client treats it as unverified rather than forged. That is the truth about it and it is the right call, and it is still a room whose card nothing vouches for.
 
-   **That wait is deliberately left alone, and bounding it would be the wrong fix.** A slow link, a high RTT or a machine that is paging can legitimately take that long, and cutting at five seconds turns a slow host into a missing one — which matters most exactly where the connections are worst. What was wrong was never the duration, it was that the wait was mute: the screen sat frozen on the previous line and what came out at the end was a raw `connectex` string. The dial now announces itself and says how long it can take, so a wait that is working looks like one.
-2. **`members` measures the lobby, not the room.** The host stays in the rendezvous network while hosting and the guest leaves it as soon as it collects the credential, so the real number is "the host plus whoever is entering right now". As "how many people are in" it is a bad number; as a signal for "the host is at the door" it is exact, and in the test it said `0` while the daemon's `checkRoomExists` carried on without reading it.
+Neither touches containment or the real network's secret.
 
-Neither touches containment or the real network's secret: they are failures of answer-truthfulness and of waiting time, not of access.
+## What is NOT a limitation, and reads like one
+
+**An entry outliving a host that died dirty is the design, not a leak.** A power cut, a killed VPS or a process that died are not a room ending: the host reopens by itself on its next start, with the same code, the same network identity and the same profile, and republishes its card on the way. Peers come back whenever they come back. The entry surviving is exactly what makes that possible — expiring it eagerly would break the case it exists to serve.
+
+Three windows govern it, and they are deliberately different lengths:
+
+| Host away for | What the code does |
+|---|---|
+| Up to ~6 hours | Keeps resolving. A guest reaches the lobby and waits on a host that is not there yet |
+| More than 6 hours | Stops resolving, because the card expired. The moment the host reopens, republishing brings it back for everybody holding the code |
+| More than 21 days | The pin is swept and the entry is gone. Reopening answers that the room does not exist |
+
+So `CardTTL` does not bound how long the host has to come back — the pin gives it three weeks. What it bounds is how long a **guest** can resolve the code while nobody is hosting, which is a different question with a different right answer.
+
+**And the dial that costs the operating system's connect timeout is not a defect either.** With no host at the far end, a guest brings up the lobby and waits about twenty-one seconds on Windows. Bounding that would be the wrong fix: a slow link, a high RTT or a machine that is paging take that long with everything working, and cutting at five seconds turns a slow host into a missing one — hardest exactly where connections are worst. What was actually wrong was that the wait was mute, with the screen frozen on the previous line and a raw `connectex` string at the end. The dial announces itself now and says how long it can take.

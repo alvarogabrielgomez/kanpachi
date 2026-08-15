@@ -1017,9 +1017,23 @@ Ahora el host lo dice al cerrar, con `DELETE /api/i/{id}`, y renovar el código 
 
 **La petición va firmada y fechada.** Firmada con la llave que fijó ese invite ID, igual que publicar, porque lo que dice que la sala es tuya no es el password del seed: ese es del operador y un seed abierto no lo pide. Y fechada, con cinco minutos de tolerancia, porque **cerrar es el único mensaje cuya copia grabada sigue sirviendo más tarde**: publicar una tarjeta vieja deja una tarjeta vieja, y reproducir un cierre después de que el host reabra mata una sala viva.
 
-Lo que sigue sin cubrir es el cierre que nadie llegó a hacer, o sea el corte de luz y el proceso matado. Ahí la entrada muere de vieja como siempre, y el invitado paga el timeout de conexión del sistema operativo, unos veintiún segundos en Windows.
+### El cierre que nadie llegó a hacer NO se cubre, y es a propósito
 
-**Esa espera se deja como está, y acotarla sería el arreglo equivocado.** Un enlace lento, un RTT alto o una máquina paginando tardan eso con todo funcionando, así que cortar a los cinco segundos convierte a un host lento en un host que no está, y pega más fuerte justo donde las conexiones son peores. Lo que estaba mal nunca fue la duración: era que la espera fuera muda, con la pantalla clavada en el paso anterior y un `connectex` crudo al final. El marcado ahora se anuncia y dice cuánto puede tardar. Una espera que declara su largo se lee como trabajo, y la misma espera sin anunciar se lee como un cuelgue.
+Un corte de luz, un VPS matado o un proceso muerto **no son una sala que se acabó**. El host se reabre solo en su arranque siguiente, con el mismo código, la misma identidad de red y el mismo perfil, y republica su tarjeta de paso. Los invitados vuelven cuando vuelvan. **Que la entrada sobreviva es justo lo que hace posible ese caso**, así que caducarla ahí rompería lo que existe para servir.
+
+Son tres ventanas, y sus largos son distintos a propósito:
+
+| El host lleva fuera | Qué hace el código |
+|---|---|
+| Hasta ~6 h | Sigue resolviendo. El invitado llega al vestíbulo y espera a un host que todavía no está |
+| Más de 6 h | Deja de resolver, porque venció la tarjeta. En cuanto el host reabre, republicar la repone para todo el que tenga el código |
+| Más de 21 días | Se barre el fijado y la entrada se va. Reabrir contesta que esa sala no existe |
+
+O sea que `CardTTL` **no acota cuánto tiene el host para volver**, que son las tres semanas del fijado. Acota cuánto tiempo un INVITADO puede resolver ese código mientras nadie hospeda, que es otra pregunta con otra respuesta correcta. Una sala viva no vence nunca: se republica cada hora contra unas seis de vida.
+
+El invitado, por su lado, reintenta en cada arranque de Kanpachi mientras su marca de volver siga encendida. Nadie tiene que acordarse de nada: el host vuelve cuando puede y los invitados aparecen cuando aparecen.
+
+**Y el marcado que cuesta el timeout del sistema operativo tampoco es un defecto.** Sin host del otro lado, el invitado levanta el vestíbulo y espera unos veintiún segundos en Windows. Acotarlo sería el arreglo equivocado: un enlace lento, un RTT alto o una máquina paginando tardan eso con todo funcionando, así que cortar a los cinco segundos convierte a un host lento en un host que no está, y pega más fuerte justo donde las conexiones son peores. Lo que estaba mal era que la espera fuera muda, con la pantalla clavada en el paso anterior y un `connectex` crudo al final. El marcado ahora se anuncia y dice cuánto puede tardar.
 
 ### El contador sale de EasyTier, verificado
 
