@@ -24,12 +24,18 @@ import (
 // error. Sin eso, anotar el fallo en el diario obligaría a tocar cada uno de
 // los catorce `return` de aquí abajo, y el que se olvidara sería el único que
 // no dejaría rastro.
-func (s *Session) CreateRoom(ctx context.Context, nick domain.Nickname, roomName string) (estado domain.RoomState, err error) {
+//
+// `replace` is somebody having said that leaving whatever is in the way is fine.
+// It goes through the same gate as entering somebody else's room, because it is
+// the same question: see [Session.clearTheWayLocked].
+func (s *Session) CreateRoom(
+	ctx context.Context, nick domain.Nickname, roomName string, replace bool,
+) (estado domain.RoomState, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.state.Conn.InRoom() {
-		return domain.RoomState{}, ErrBusy
+	if err := s.clearTheWayLocked(ctx, replace); err != nil {
+		return domain.RoomState{}, err
 	}
 	if nick.IsZero() {
 		return domain.RoomState{}, domain.ErrNicknameEmpty

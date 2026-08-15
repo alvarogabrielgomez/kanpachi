@@ -25,12 +25,18 @@ import (
 // reintentar. Se gana poder revocar y renovar, se pierde robustez.
 // Los resultados van con NOMBRE para que el cierre diferido pueda anotar el
 // error en el diario sin tocar cada `return`. Mismo motivo que en CreateRoom.
-func (s *Session) JoinRoom(ctx context.Context, input string, nick domain.Nickname) (estado domain.RoomState, err error) {
+//
+// `replace` is somebody having said that leaving whatever is in the way is fine.
+// Without it, anything in the way is refused, which is the behaviour that has
+// always been right; see [Session.clearTheWayLocked].
+func (s *Session) JoinRoom(
+	ctx context.Context, input string, nick domain.Nickname, replace bool,
+) (estado domain.RoomState, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.state.Conn.InRoom() {
-		return domain.RoomState{}, ErrBusy
+	if err := s.clearTheWayLocked(ctx, replace); err != nil {
+		return domain.RoomState{}, err
 	}
 	if nick.IsZero() {
 		return domain.RoomState{}, domain.ErrNicknameEmpty

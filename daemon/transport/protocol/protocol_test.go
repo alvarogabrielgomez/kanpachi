@@ -489,11 +489,11 @@ func (a *apiFalsa) Now() time.Time { return a.ahora }
 func (a *apiFalsa) Status() domain.RoomState { return a.estado }
 func (a *apiFalsa) MissingGame() string      { return "" }
 
-func (a *apiFalsa) CreateRoom(context.Context, domain.Nickname, string) (domain.RoomState, error) {
+func (a *apiFalsa) CreateRoom(context.Context, domain.Nickname, string, bool) (domain.RoomState, error) {
 	return a.estado, nil
 }
 
-func (a *apiFalsa) JoinRoom(context.Context, string, domain.Nickname) (domain.RoomState, error) {
+func (a *apiFalsa) JoinRoom(context.Context, string, domain.Nickname, bool) (domain.RoomState, error) {
 	return a.estado, nil
 }
 

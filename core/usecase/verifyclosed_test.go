@@ -15,7 +15,7 @@ import (
 
 func TestLeavingVerifiesNothingSurvivedThePurge(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -51,7 +51,7 @@ func TestLeavingVerifiesNothingSurvivedThePurge(t *testing.T) {
 
 func TestLeavingCleanlySaysNothing(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -67,7 +67,7 @@ func TestLeavingCleanlySaysNothing(t *testing.T) {
 
 func TestNotBeingAbleToVerifyIsReported(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas"); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
 		t.Fatal(err)
 	}
 

@@ -203,7 +203,10 @@ func (s *Session) Return(ctx context.Context) {
 
 	defer cancel()
 	code := last.Room.InviteID.String() + "@" + last.Room.Seed
-	_, err := s.JoinRoom(ctx, code, last.Nick)
+	// `replace` is false, and firmly. An automatic return never displaces
+	// anything: if somebody is in a room by now, this attempt is the one that
+	// gives way. It comes back as [ErrBusy] and gets no turn.
+	_, err := s.JoinRoom(ctx, code, last.Nick, false)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

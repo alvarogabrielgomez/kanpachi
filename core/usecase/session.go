@@ -606,9 +606,10 @@ func (s *Session) IssuedAddresses() []netip.Addr {
 // Asume el candado tomado.
 func (s *Session) snapshot() domain.RoomState {
 	out := s.state.Clone()
-	// Going back is DERIVED and it is derived HERE, on the way out, never stored
-	// in the live state. See [domain.RoomState.Returning].
+	// Both of these are DERIVED and derived HERE, on the way out, never stored in
+	// the live state. See [domain.RoomState.Returning].
 	out.Returning = s.returningLocked()
+	out.Displaces = s.displacementLocked()
 	s.published.Store(&out)
 	// El enlace se publica ACÁ, que es el único sitio donde el estado y la
 	// clave de la tarjeta se leen juntos con el candado tomado.

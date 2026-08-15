@@ -35,7 +35,20 @@ func (s *Session) LeaveRoom(ctx context.Context) domain.RoomState {
 		s.stopReturningLocked()
 		return s.snapshot()
 	}
+	s.leaveRoomLocked(ctx)
+	return s.snapshot()
+}
 
+// leaveRoomLocked es el cuerpo de [Session.LeaveRoom].
+//
+// Va aparte porque lo comparte con el gate: entrar a otra sala teniendo una
+// abierta sale de la primera, y tiene que salir POR EL MISMO CAMINO, con el
+// mismo aviso a los miembros y la misma comprobación de que no quedó nada
+// abierto. Dos formas de salir de una sala es cómo se consigue que una de las
+// dos olvide cerrar algo. Ver [Session.clearTheWayLocked].
+//
+// Asume el candado tomado.
+func (s *Session) leaveRoomLocked(ctx context.Context) {
 	// El diario, **solo si de verdad hay sala de la que salir**.
 	//
 	// La guarda no es celo: salir es idempotente y lo llaman tres sitios, así
@@ -81,7 +94,6 @@ func (s *Session) LeaveRoom(ctx context.Context) domain.RoomState {
 	s.deps.Progress.Step(domain.ScopeFirewall, "comprobando que no quedó ningún puerto abierto")
 	s.verifyClosedLocked(ctx)
 	s.deps.Progress.Step(domain.ScopeDaemon, "fuera de la sala")
-	return s.snapshot()
 }
 
 // OnRoomNotice aplica un aviso del host. Lo llama el supervisor cuando llega

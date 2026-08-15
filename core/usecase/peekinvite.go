@@ -60,6 +60,16 @@ type InvitePreview struct {
 	// the screen shows it, the button stays. See [domain.HostVerdict].
 	Verdict domain.HostVerdict
 	Known   domain.KnownHost
+
+	// Displaces is what entering THIS room would cost right now, and its zero is
+	// the ordinary "nothing".
+	//
+	// It travels here rather than being worked out by whoever asks, because
+	// three faces working it out separately is three copies of one rule. And it
+	// travels HERE specifically because this is already the call a face makes
+	// just before building its confirmation, so the question on screen can name
+	// what is at stake without a second round trip. See [domain.Displacement].
+	Displaces domain.Displacement
 }
 
 // HasCard dice si la tarjeta trae algo que enseñar.
@@ -87,7 +97,7 @@ func (s *Session) PeekInvite(ctx context.Context, link string) (InvitePreview, e
 	if err != nil {
 		return InvitePreview{}, err
 	}
-	out := InvitePreview{Room: room}
+	out := InvitePreview{Room: room, Displaces: s.Displacement()}
 
 	// Se le pregunta AL REGISTRO DEL ENLACE, sea cual sea. Antes había una rama
 	// que enseñaba sin tarjeta cuando el seed no era el nuestro, porque el

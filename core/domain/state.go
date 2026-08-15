@@ -276,6 +276,18 @@ type RoomState struct {
 	// se ven exactamente igual desde la pantalla de inicio.
 	LastExit ExitReason
 
+	// Displaces is what entering a room would cost right now, and its zero is
+	// "nothing", which is the ordinary case.
+	//
+	// It rides in the state because every face already asks for the state, and
+	// because working it out is the daemon's job: three faces each deciding when
+	// to ask for confirmation is three copies of one rule, drifting. See
+	// [Displacement].
+	//
+	// **A projection, like [RoomState.Returning].** Computed on the way out of a
+	// snapshot, never stored.
+	Displaces Displacement
+
 	// Returning is the room this machine is on its way back into. Its zero means
 	// it is not going back anywhere. See [ReturnAttempt].
 	//

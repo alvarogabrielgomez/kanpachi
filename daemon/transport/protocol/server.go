@@ -27,8 +27,11 @@ type API interface {
 	Status() domain.RoomState
 	MissingGame() string
 
-	CreateRoom(ctx context.Context, nick domain.Nickname, roomName string) (domain.RoomState, error)
-	JoinRoom(ctx context.Context, input string, nick domain.Nickname) (domain.RoomState, error)
+	// The `replace` on both is the caller saying that leaving whatever is in the
+	// way is fine. False refuses, with an error that NAMES what was in the way so
+	// the caller can ask about it. See [usecase.ErrWouldDisplace].
+	CreateRoom(ctx context.Context, nick domain.Nickname, roomName string, replace bool) (domain.RoomState, error)
+	JoinRoom(ctx context.Context, input string, nick domain.Nickname, replace bool) (domain.RoomState, error)
 	LeaveRoom(ctx context.Context) domain.RoomState
 	ActivateProfile(ctx context.Context, gameID string) (domain.RoomState, error)
 	KickMember(ctx context.Context, ip netip.Addr) (domain.RoomState, error)
@@ -302,6 +305,10 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 		p, e := decodeStrict[struct {
 			Nickname string `json:"nickname"`
 			Name     string `json:"name"`
+			// Replace is the caller saying that leaving whatever is in the way is
+			// fine. Its zero refuses, which is what makes forgetting to send it
+			// safe rather than destructive.
+			Replace bool `json:"replace,omitempty"`
 		}](req.Params)
 		if e != nil {
 			return nil, e
@@ -310,13 +317,14 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 		if err != nil {
 			return nil, errorFor(err)
 		}
-		st, err := s.api.CreateRoom(ctx, nick, p.Name)
+		st, err := s.api.CreateRoom(ctx, nick, p.Name, p.Replace)
 		return s.roomOrErr(st, err)
 
 	case MethodJoinRoom:
 		p, e := decodeStrict[struct {
 			Code     string `json:"code"`
 			Nickname string `json:"nickname"`
+			Replace  bool   `json:"replace,omitempty"`
 		}](req.Params)
 		if e != nil {
 			return nil, e
@@ -325,7 +333,7 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 		if err != nil {
 			return nil, errorFor(err)
 		}
-		st, err := s.api.JoinRoom(ctx, p.Code, nick)
+		st, err := s.api.JoinRoom(ctx, p.Code, nick, p.Replace)
 		return s.roomOrErr(st, err)
 
 	case MethodLeaveRoom:
@@ -642,6 +650,7 @@ func (s *Server) invite(ctx context.Context, link string) InviteView {
 	v.KnownNick = p.Known.Nick
 	v.KnownFingerprint = domain.Fingerprint(p.Known.Key)
 	v.KnownRooms = p.Known.Rooms
+	v.Displaces = displacesView(p.Displaces)
 	return v
 }
 

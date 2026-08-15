@@ -114,6 +114,14 @@ type RoomView struct {
 	// that is the point, because the code field is available and a person can
 	// change their mind.
 	Returning *ReturningView `json:"returning,omitempty"`
+
+	// Displaces is what entering a room would cost right now, omitted when the
+	// answer is "nothing".
+	//
+	// It rides in the status every face already asks for, so a face never has to
+	// work out for itself whether to confirm. `kanpachi host` in particular has
+	// no code to preview, so this is the only place it could come from.
+	Displaces *DisplacesView `json:"displaces,omitempty"`
 }
 
 // ReturningView is a machine on its way back into a room it was in.
@@ -189,6 +197,44 @@ type InviteView struct {
 	KnownNick        string `json:"known_nick,omitempty"`
 	KnownFingerprint string `json:"known_fingerprint,omitempty"`
 	KnownRooms       int    `json:"known_rooms,omitempty"`
+
+	// Displaces is what entering this room would cost right now, and it is
+	// omitted when the answer is "nothing", which is most of the time.
+	//
+	// It rides here because this is the call a face already makes just before
+	// building its confirmation, so the question on screen can name what is at
+	// stake without a second round trip.
+	Displaces *DisplacesView `json:"displaces,omitempty"`
+}
+
+// DisplacesView is what would have to give way for somebody to enter a room.
+//
+// The daemon works it out and every face renders it, because the alternative is
+// three copies of the same rule drifting apart. Asking is each face's own job:
+// the daemon has no window and no terminal to ask in.
+type DisplacesView struct {
+	// Kind is `leave_room`, `close_room` or `stop_returning`.
+	Kind string `json:"kind"`
+	Code string `json:"code"`
+	Seed string `json:"seed"`
+	Name string `json:"name,omitempty"`
+	// Members is how many OTHER people drop, and only `close_room` fills it.
+	Members int `json:"members,omitempty"`
+}
+
+// displacesView turns the domain answer into the wire one, or nil when there is
+// nothing in the way.
+func displacesView(d domain.Displacement) *DisplacesView {
+	if !d.Any() {
+		return nil
+	}
+	return &DisplacesView{
+		Kind:    d.Kind.String(),
+		Code:    d.Room.InviteID.String(),
+		Seed:    d.Room.Seed,
+		Name:    d.Name,
+		Members: d.Members,
+	}
 }
 
 type PeerView struct {
@@ -235,10 +281,11 @@ func roomView(st domain.RoomState, missing string, now time.Time) RoomView {
 			MTU:          st.Net.MTU,
 			SubnetReason: st.Net.SubnetReason,
 		},
-		Alerts:   make([]AlertView, 0, len(st.Alerts)),
-		LastExit: exitName(st.LastExit),
-		CodeLost: st.CodeLost,
-		SeedDown: st.SeedDown,
+		Alerts:    make([]AlertView, 0, len(st.Alerts)),
+		LastExit:  exitName(st.LastExit),
+		CodeLost:  st.CodeLost,
+		SeedDown:  st.SeedDown,
+		Displaces: displacesView(st.Displaces),
 	}
 	if !st.Room.InviteID.IsZero() {
 		v.Code = st.Room.InviteID.String()
