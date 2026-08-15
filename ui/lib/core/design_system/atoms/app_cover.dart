@@ -35,8 +35,18 @@ class AppCover extends StatelessWidget {
     required this.radius,
     this.imageUrl,
     this.badge,
+    this.ratio,
     super.key,
   });
+
+  /// La forma de la cabecera apaisada de Steam, 460×215.
+  ///
+  /// Vive acá y no en `SteamArt` porque el candado de `import_purity_test`
+  /// prohíbe que `core/` importe una feature, y porque lo que este número
+  /// describe es el HUECO: un hueco ancho que recibe una imagen de 2.14 y se
+  /// dibuja a 1.45 no encoge la imagen, le come los lados, y lo que se pierde
+  /// es justo el borde donde los carteles ponen el título.
+  static const double landscapeRatio = 460 / 215;
 
   // El radio va por constructor y no calculado del alto: el diseño lo escala
   // con el tamaño del hueco (6 / 7 / 8 / 10), y una cadena de ternarios sobre
@@ -44,31 +54,51 @@ class AppCover extends StatelessWidget {
   const AppCover.thumb({super.key, this.imageUrl, this.badge})
     : width = 34,
       height = 46,
+      ratio = null,
       radius = AppRadius.allXs;
 
+  /// La rejilla del catálogo: ocupa el ancho de su ficha, y el alto sale de la
+  /// forma de la imagen. Ver [ratio].
   const AppCover.grid({super.key, this.imageUrl, this.badge})
     : width = double.infinity,
       height = 104,
+      ratio = landscapeRatio,
       radius = AppRadius.allSm;
 
   const AppCover.room({super.key, this.imageUrl, this.badge})
     : width = 44,
       height = 60,
+      ratio = null,
       radius = AppRadius.all7;
 
   const AppCover.dialog({super.key, this.imageUrl, this.badge})
     : width = 52,
       height = 70,
+      ratio = null,
       radius = AppRadius.allSm;
 
   /// La vista previa del alta manual: ocupa el ancho y es la más grande.
   const AppCover.preview({super.key, this.imageUrl, this.badge})
     : width = double.infinity,
       height = 150,
+      ratio = landscapeRatio,
       radius = AppRadius.all10;
 
   final double width;
+
+  /// El alto FIJO de los huecos de tamaño fijo, y el alto NOMINAL de los que
+  /// van por [ratio], donde solo decide la tipografía del hueco vacío.
   final double height;
+
+  /// La forma del hueco, cuando su ancho lo pone quien lo contiene.
+  ///
+  /// Los dos huecos anchos crecen y encogen con la ventana, así que un alto
+  /// fijo es una relación distinta en cada tamaño y solo una acierta. Con la
+  /// relación puesta, la imagen entra entera a cualquier ancho.
+  ///
+  /// Null en los cuatro huecos de tamaño fijo, que sí saben lo que miden.
+  final double? ratio;
+
   final BorderRadius radius;
 
   /// La imagen que llena el hueco. Null es un juego sin portada que pedir.
@@ -80,59 +110,67 @@ class AppCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String? url = imageUrl;
-    final Widget box = SizedBox(
-      width: width,
-      height: height,
-      child: url == null
-          ? _Hueco(radius: radius, height: height)
-          : ClipRRect(
-              borderRadius: radius,
-              child: Image.network(
-                url,
-                fit: BoxFit.cover,
-                width: width,
-                height: height,
-                // **Aparece cuando llega, sin parpadeo.** `frameBuilder` corre
-                // también con la imagen ya cacheada, y ahí `wasSynchronouslyLoaded`
-                // dice que no hay nada que animar: volver a atenuar una portada
-                // que ya estaba en memoria es lo que hace que una lista parpadee
-                // al desplazarla.
-                frameBuilder:
-                    (
-                      BuildContext context,
-                      Widget child,
-                      int? frame,
-                      bool yaEstaba,
-                    ) {
-                      if (yaEstaba) return child;
-                      return AnimatedOpacity(
-                        opacity: frame == null ? 0 : 1,
-                        duration: AppMotion.hover,
-                        curve: AppMotion.enter,
-                        child: child,
-                      );
-                    },
-                // Mientras viaja, y cuando no llega, el MISMO hueco. Sin ruedita:
-                // son once imágenes de sesenta kilobytes en una rejilla, y once
-                // ruedecitas girando a la vez dicen «la app está trabajando»
-                // sobre algo que es decoración.
-                loadingBuilder:
-                    (
-                      BuildContext context,
-                      Widget child,
-                      ImageChunkEvent? progreso,
-                    ) => progreso == null
-                    ? child
-                    : _Hueco(radius: radius, height: height),
-                // Sin red, con la imagen retirada del CDN o con un identificador
-                // que no existe, se cae al hueco. Un juego no se deja de poder
-                // elegir porque su portada no cargue.
-                errorBuilder:
-                    (BuildContext context, Object error, StackTrace? _) =>
-                        _Hueco(radius: radius, height: height),
-              ),
+    final double? r = ratio;
+    final Widget contenido = url == null
+        ? _Hueco(radius: radius, height: height)
+        : ClipRRect(
+            borderRadius: radius,
+            child: Image.network(
+              url,
+              fit: BoxFit.cover,
+              // Sin medidas cuando manda la relación: el hueco ya llega con
+              // restricciones ajustadas y la imagen las llena. Repetirlas
+              // sería fijar otra vez el alto que este widget existe para no
+              // fijar.
+              width: r == null ? width : null,
+              height: r == null ? height : null,
+              // **Aparece cuando llega, sin parpadeo.** `frameBuilder` corre
+              // también con la imagen ya cacheada, y ahí `wasSynchronouslyLoaded`
+              // dice que no hay nada que animar: volver a atenuar una portada
+              // que ya estaba en memoria es lo que hace que una lista parpadee
+              // al desplazarla.
+              frameBuilder:
+                  (
+                    BuildContext context,
+                    Widget child,
+                    int? frame,
+                    bool yaEstaba,
+                  ) {
+                    if (yaEstaba) return child;
+                    return AnimatedOpacity(
+                      opacity: frame == null ? 0 : 1,
+                      duration: AppMotion.hover,
+                      curve: AppMotion.enter,
+                      child: child,
+                    );
+                  },
+              // Mientras viaja, y cuando no llega, el MISMO hueco. Sin ruedita:
+              // son once imágenes de sesenta kilobytes en una rejilla, y once
+              // ruedecitas girando a la vez dicen «la app está trabajando»
+              // sobre algo que es decoración.
+              loadingBuilder:
+                  (
+                    BuildContext context,
+                    Widget child,
+                    ImageChunkEvent? progreso,
+                  ) => progreso == null
+                  ? child
+                  : _Hueco(radius: radius, height: height),
+              // Sin red, con la imagen retirada del CDN o con un identificador
+              // que no existe, se cae al hueco. Un juego no se deja de poder
+              // elegir porque su portada no cargue.
+              errorBuilder:
+                  (BuildContext context, Object error, StackTrace? _) =>
+                      _Hueco(radius: radius, height: height),
             ),
-    );
+          );
+
+    // Con relación, el ancho lo pone quien contiene y el alto sale de la forma.
+    // Sin ella, las dos medidas son de este widget.
+    final Widget box = r == null
+        ? SizedBox(width: width, height: height, child: contenido)
+        : AspectRatio(aspectRatio: r, child: contenido);
+
     if (badge == null) return box;
     return Stack(
       children: <Widget>[

@@ -27,6 +27,10 @@ This file is in English, like commit messages and release notes, because a relea
 - Take the cover from the Steam id the profile already carries for detection, instead of a link written into each profile: a URL inside a file nobody re-reads is a link that expires, copied into every profile anyone shares ([5bf4a72](https://github.com/alvarogabrielgomez/kanpachi/commit/5bf4a72))
 - Say SIN PORTADA in the hole of a game that has none — two of the eleven profiles that ship with Kanpachi are not on Steam — instead of naming a site the covers never came from ([5bf4a72](https://github.com/alvarogabrielgomez/kanpachi/commit/5bf4a72))
 
+### Fixed
+
+- See the covers whole where they are shown wide — the game picker and the preview of a game added by hand — instead of with both sides cut off. The hole was 104 pixels tall at whatever width the window handed it, and the art it receives is 460×215, so the picture was scaled to fill and what got trimmed was the edge where the posters carry their title ([PENDIENTE](https://github.com/alvarogabrielgomez/kanpachi/commit/PENDIENTE))
+
 ## [0.2.2] - 2026-08-14
 
 ### Added
