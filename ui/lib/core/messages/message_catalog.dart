@@ -102,7 +102,7 @@ abstract final class AppMessages {
     // callado, y esto aparece porque no aguantó. Un texto que solo dijera
     // "pulsa el botón" dejaría al usuario creyendo que nada pasó hasta que
     // él hiciera algo.
-    AlertKind.canaryLeaking => const AppMessage(
+    AlertKind.gateLeaking => const AppMessage(
       severity: MessageSeverity.warn,
       title: 'Tu protección no está conteniendo',
       body:

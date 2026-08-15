@@ -35,7 +35,7 @@ func (s *Session) RotateInviteCode(ctx context.Context) (domain.RoomState, error
 
 	old := s.state.Room
 
-	card := domain.RoomCard{Host: s.nick, Room: s.state.Name}
+	card := domain.RoomCard{Host: s.nick, Name: s.state.Name}
 	sealed, key, err := domain.SealRoomCard(card, s.deps.Rand)
 	if err != nil {
 		return domain.RoomState{}, err
@@ -179,14 +179,14 @@ func (s *Session) RotateInviteCode(ctx context.Context) (domain.RoomState, error
 	//
 	// It goes LAST and it is not fatal, for the same reason as the handout above:
 	// the new code is already the good one and the room already lives in it. A
-	// failure leaves the old one resolving until its card expires, which is what
-	// always happened.
+	// failure leaves the old one resolving until the sweep takes it, three weeks
+	// after the last time anybody hosted it, which is what always happened.
 	//
 	// The old code's pin survives, and it does not matter: it was this same
 	// machine's, and nobody is going to reopen with it because the room moved.
-	if err := dir.Close(ctx, old.InviteID); err != nil {
+	if err := dir.Retire(ctx, old.InviteID); err != nil {
 		s.deps.Log.Warn("el código viejo no se pudo cerrar en el registro, así que va a "+
-			"seguir resolviendo hasta que venza su tarjeta",
+			"seguir resolviendo hasta que el barrido se lleve la sala",
 			"código", old.InviteID.String(), "error", err)
 	}
 
@@ -260,7 +260,7 @@ func (s *Session) RenameRoom(ctx context.Context, name string) (domain.RoomState
 	s.announceLocked(ctx)
 	s.saveRoomLocked()
 
-	sealed, key, err := domain.SealRoomCard(domain.RoomCard{Host: s.nick, Room: s.state.Name}, s.deps.Rand)
+	sealed, key, err := domain.SealRoomCard(domain.RoomCard{Host: s.nick, Name: s.state.Name}, s.deps.Rand)
 	if err != nil {
 		return domain.RoomState{}, err
 	}

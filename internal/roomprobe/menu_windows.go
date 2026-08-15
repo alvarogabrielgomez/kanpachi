@@ -195,7 +195,7 @@ func mirarAntesDeEntrar(ctx context.Context, e entorno, pegado string) {
 		return
 	}
 	fmt.Println()
-	fmt.Println("  Sala:      ", oVacio(previa.Card.Room, "(no se pudo abrir la tarjeta)"))
+	fmt.Println("  Sala:      ", oVacio(previa.Card.Name, "(no se pudo abrir la tarjeta)"))
 	fmt.Println("  Se ident.: ", oVacio(previa.Card.Host.String(), "(sin nick)"))
 	fmt.Println("  Tarjeta:   ", nombreDeConfianza(previa.Trust))
 	fmt.Println("  Huella:    ", oVacio(previa.Fingerprint, "(sin firma verificada)"))
@@ -208,7 +208,7 @@ func mirarAntesDeEntrar(ctx context.Context, e entorno, pegado string) {
 		fmt.Println("      Se entra igual, que es lo que hace el producto. El aviso avisa.")
 	}
 	e.log.Info("previsualización del enlace antes de entrar",
-		"sala", previa.Card.Room, "nick", previa.Card.Host.String(),
+		"sala", previa.Card.Name, "nick", previa.Card.Host.String(),
 		"tarjeta", nombreDeConfianza(previa.Trust),
 		"huella", previa.Fingerprint,
 		"veredicto", previa.Verdict.String(),
@@ -220,7 +220,7 @@ func nombreDeConfianza(t domain.CardTrust) string {
 	switch t {
 	case domain.CardSigned:
 		return "firmada por la llave que el registro fijó"
-	case domain.CardForged:
+	case domain.CardUnbacked:
 		return "NO valida contra la llave fijada: ese registro sirve algo que su propia llave no respalda"
 	default:
 		return "sin firma que comprobar (registro viejo, o sin llave fijada)"

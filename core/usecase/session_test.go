@@ -163,7 +163,7 @@ func TestElEnlaceLlevaLaClaveDeLaTarjeta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("la clave del enlace no abre la tarjeta que se depositó: %v", err)
 	}
-	if card.Room != "Los panas" || card.Host.String() != "alvaro" {
+	if card.Name != "Los panas" || card.Host.String() != "alvaro" {
 		t.Fatalf("la tarjeta dice otra cosa: %+v", card)
 	}
 }

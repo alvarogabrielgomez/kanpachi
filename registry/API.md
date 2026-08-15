@@ -71,7 +71,7 @@ Response `200`:
 
 Two absences that mean something, and both are deliberate ([`http.go`](http.go), `vista`):
 
-- `sig` is omitted when there is none. A room written before the registry started keeping signatures comes back from disk without one, and omitting it tells the truth, "I do not have it". An empty string would say "it is unsigned", which is a different claim and a false one. The client treats it as `CardUnverified`, never as forged.
+- `sig` is omitted when there is none. A room written before the registry started keeping signatures comes back from disk without one, and omitting it tells the truth, "I do not have it". An empty string would say "it is unsigned", which is a different claim and a false one. The client treats it as `CardUnverified`, never as a card the pinned key does not back.
 - `members` is omitted when the counter has never managed to talk to the engine. A zero would be the claim "there is nobody", and it would be false; absent says "I do not know". The client decodes into a pointer and turns the absence into `-1` ([`directory.go`](../daemon/adapter/directory/directory.go)).
 
 The count comes from `easytier-cli peer list-foreign` against the loopback RPC portal, polled every 3 seconds and cached ([`counter.go`](counter.go)): a flood of visitors does not turn into a flood of child processes. That JSON has peer IDs and addresses in it and no nicknames: nicknames travel inside the encrypted network and the seed relays without decrypting.
@@ -321,7 +321,7 @@ On the client side, the adapter brings its own refusals ([`client.go`](../daemon
 Both came out of the same test: open a room, close the room, and try to enter with the code still in hand. Two other things that test turned up are fixed and documented above — the page without a limiter, and a closed room still resolving.
 
 1. **`members` measures the lobby, not the room.** The host stays in the rendezvous network while hosting and the guest leaves it as soon as it collects the credential, so the real number is "the host plus whoever is entering right now". As "how many people are in" it is a bad number; as a signal for "the host is at the door" it is exact. Two places read it, and this line used to claim nobody did: the invitation page paints it as "N en la sala", which is the bad reading, and the daemon carries it to `InviteLookup.Members`, which is the exact one — a zero there is how a failed join can say "that room exists, its host is not connected right now" instead of a generic error.
-2. **A room served before the registry kept signatures comes back unsigned**, and the client treats it as unverified rather than forged. That is the truth about it and it is the right call, and it is still a room whose card nothing vouches for.
+2. **A room served before the registry kept signatures comes back unsigned**, and the client treats it as unverified rather than as one the pinned key does not back. That is the truth about it and it is the right call, and it is still a room whose card nothing vouches for.
 
 Neither touches containment or the real network's secret.
 

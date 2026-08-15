@@ -440,7 +440,7 @@ func verFirmaDelRegistro(ctx context.Context, m medidor, code domain.InviteID, s
 	switch vista.Trust() {
 	case domain.CardSigned:
 		m.bien("la tarjeta VALIDA contra la llave que ese registro fijó")
-	case domain.CardForged:
+	case domain.CardUnbacked:
 		m.mal("la tarjeta NO valida contra la llave fijada: ese registro sirve algo que su propia llave no respalda")
 	default:
 		m.nota("no hay con qué comprobar la tarjeta, así que queda «sin verificar»")

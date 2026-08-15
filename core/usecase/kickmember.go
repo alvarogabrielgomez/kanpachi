@@ -238,7 +238,7 @@ func (s *Session) controlScope() domain.ControlScope {
 		Members: s.authorizedControlIPsLocked(),
 		// THIS room's rendezvous network, which is what the host signs when it
 		// issues a credential. Empty on a guest, which issues nothing.
-		Rendezvous: s.hostSpec.Rendezvous.NetworkName(),
+		RendezvousName: s.hostSpec.Rendezvous.NetworkName(),
 	}
 }
 

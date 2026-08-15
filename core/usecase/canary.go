@@ -168,7 +168,7 @@ func (s *Session) canaryPlanLocked(ctx context.Context, afterApply bool) (canary
 		return canaryPlan{}, false
 	}
 
-	alarmed := s.state.HasAlert(domain.AlertCanaryLeaking)
+	alarmed := s.state.HasAlert(domain.AlertGateLeaking)
 	if alarmed && !afterApply {
 		return canaryPlan{}, false
 	}
@@ -299,7 +299,7 @@ func (s *Session) foldCanaryLocked(ctx context.Context, plan canaryPlan, check d
 	case check.Verdict() == domain.CanaryLeaking:
 		// Se quita siempre antes de decidir, así cinco rondas con fuga no apilan
 		// cinco filas idénticas en la pantalla.
-		s.state.DropAlerts(domain.AlertCanaryLeaking)
+		s.state.DropAlerts(domain.AlertGateLeaking)
 
 		if s.canaryRepairs < CanaryRepairLimit {
 			s.canaryRepairs++
@@ -314,7 +314,7 @@ func (s *Session) foldCanaryLocked(ctx context.Context, plan canaryPlan, check d
 		s.deps.Log.Error("la protección no aguantó la reposición",
 			"puerto", check.Port, "preguntados", len(check.Asked))
 		s.state.Alerts = append(s.state.Alerts, domain.Alert{
-			Kind: domain.AlertCanaryLeaking,
+			Kind: domain.AlertGateLeaking,
 			Detail: fmt.Sprintf(
 				"alguien de la sala alcanzó el puerto %d de esta máquina, y se repuso la protección sin que aguantara",
 				check.Port),
@@ -322,7 +322,7 @@ func (s *Session) foldCanaryLocked(ctx context.Context, plan canaryPlan, check d
 
 	case check.ClearsAlarm():
 		s.canaryRepairs = 0
-		s.state.DropAlerts(domain.AlertCanaryLeaking)
+		s.state.DropAlerts(domain.AlertGateLeaking)
 	}
 	// [domain.CanaryUnconfirmed], [domain.CanaryMismatch] y el cero NO TOCAN
 	// NADA, y es deliberado. Si "sin confirmar" apagara la alarma, un miembro

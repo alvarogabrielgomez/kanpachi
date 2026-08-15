@@ -52,7 +52,11 @@ enum AlertKind {
   /// Es la única que sale de una medición POR LA RED, y la única que ve el caso
   /// que ninguna otra puede ver: el filtro existe y no contiene nada. La levanta
   /// el socket propio del host y jamás el mensaje de un miembro.
-  canaryLeaking('canary_leaking'),
+  /// **El nombre de cable está congelado.** Dice `canary` porque el sensor
+  /// que la levanta es el canario; lo que falla es la COMPUERTA, y por eso el
+  /// nombre de acá dice eso. Cambiar la cadena rompería a toda ventana más
+  /// vieja que el daemon que la sirve.
+  gateLeaking('canary_leaking'),
 
   /// The room reopened by itself and its game could not be restored.
   ///

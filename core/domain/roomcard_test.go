@@ -50,7 +50,7 @@ func TestVectorDoradoDeLaTarjeta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("el vector dorado no se descifra: el formato cambió y la página de invitación ya no lee la tarjeta: %v", err)
 	}
-	if card.Host.String() != "alvaro" || card.Room != tarjetaDoradaSea {
+	if card.Host.String() != "alvaro" || card.Name != tarjetaDoradaSea {
 		t.Fatalf("el vector dorado se descifra a otra cosa: %+v", card)
 	}
 	if len(blob) <= cardNonceLen {
@@ -62,7 +62,7 @@ func TestVectorDoradoDeLaTarjeta(t *testing.T) {
 // llamada a decrypt. Se comprueba aparte del vector para que el fallo diga
 // cuál de las dos cosas se rompió.
 func TestElNonceVaDelanteYMideDoce(t *testing.T) {
-	blob, key, err := SealRoomCard(RoomCard{Host: nick(t, "alvaro"), Room: "x"}, rand.Reader)
+	blob, key, err := SealRoomCard(RoomCard{Host: nick(t, "alvaro"), Name: "x"}, rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestElNonceVaDelanteYMideDoce(t *testing.T) {
 }
 
 func TestLaTarjetaManipuladaSeDescartaEntera(t *testing.T) {
-	blob, key, err := SealRoomCard(RoomCard{Host: nick(t, "alvaro"), Room: "Los panas"}, rand.Reader)
+	blob, key, err := SealRoomCard(RoomCard{Host: nick(t, "alvaro"), Name: "Los panas"}, rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestLaTarjetaManipuladaSeDescartaEntera(t *testing.T) {
 }
 
 func TestLaClaveEquivocadaNoDescifra(t *testing.T) {
-	blob, _, err := SealRoomCard(RoomCard{Host: nick(t, "alvaro"), Room: "Los panas"}, rand.Reader)
+	blob, _, err := SealRoomCard(RoomCard{Host: nick(t, "alvaro"), Name: "Los panas"}, rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func sellarCrudo(t *testing.T, plano string) ([]byte, [CardKeyLen]byte, error) {
 }
 
 func TestLaTarjetaNoPasaDelTope(t *testing.T) {
-	_, _, err := SealRoomCard(RoomCard{Host: nick(t, "alvaro"), Room: strings.Repeat("x", 600)}, rand.Reader)
+	_, _, err := SealRoomCard(RoomCard{Host: nick(t, "alvaro"), Name: strings.Repeat("x", 600)}, rand.Reader)
 	if !errors.Is(err, ErrCardTooBig) {
 		t.Fatalf("una sala con un nombre de 600 caracteres pasó: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestElNombreDeSalaSeAcotaAlAbrir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(card.Room) != MaxRoomNameLen {
-		t.Fatalf("el nombre salió con %d caracteres", len(card.Room))
+	if len(card.Name) != MaxRoomNameLen {
+		t.Fatalf("el nombre salió con %d caracteres", len(card.Name))
 	}
 }

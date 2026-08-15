@@ -354,7 +354,7 @@ func (s *Session) checkRoomExists(ctx context.Context, room domain.Room) (domain
 		// it pinned itself does not back, so it is compromised. It goes to the
 		// log in those words, and the screen that shows it is the link screen,
 		// which is where somebody can still decide.
-		if vista.Trust() == domain.CardForged {
+		if vista.Trust() == domain.CardUnbacked {
 			s.deps.Log.Error("el registro sirve una tarjeta que su propia llave fijada no respalda",
 				"código", room.InviteID.String(), "seed", room.Seed)
 			s.deps.Progress.Step(domain.ScopeSeed, "ojo: la tarjeta de esa sala no valida contra la llave del registro")
@@ -424,8 +424,8 @@ func (s *Session) exchangeForCredential(
 		// signed against, and which key it is checked with. The key was pinned
 		// by the registry; the network name was derived by this machine from the
 		// code that was pasted into it.
-		Rendezvous:    rdv.NetworkName(),
-		ExpectHostKey: hostKey,
+		RendezvousName: rdv.NetworkName(),
+		ExpectHostKey:  hostKey,
 	})
 	if err != nil {
 		return domain.Credential{}, fmt.Errorf("el host no emitió la credencial: %w", err)

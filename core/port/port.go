@@ -753,14 +753,19 @@ type RoomDirectory interface {
 	// de la tarjeta se deriva del enlace, así que cualquiera que lo recibió
 	// puede fabricar una tarjeta que la página descifra.
 	Publish(ctx context.Context, id domain.InviteID, sealed []byte) error
-	// Close tells the registry that room is over, and it is BEST-EFFORT.
+	// Retire tells the registry that room is over, and it is BEST-EFFORT.
+	//
+	// **It is not one of the `Close() error` that release a resource.** This one
+	// mutates state on another machine and closes nothing here, which is why it
+	// does not carry that name.
 	//
 	// # What changes at the far end
 	//
-	// The card expires at once, so the code stops resolving and whoever pastes
-	// it finds out in the first second. The PIN stays, which means the invite ID
-	// still belongs to this machine and reopening the same room under the same
-	// code is still good. Closing is not giving up the code.
+	// The room is marked closed and its card and signature are emptied, so the
+	// code stops resolving and whoever pastes it finds out in the first second.
+	// The PIN stays, which means the invite ID still belongs to this machine and
+	// reopening the same room under the same code is still good. Closing is not
+	// giving up the code.
 	//
 	// # Why best-effort, and what that means here
 	//
@@ -777,7 +782,7 @@ type RoomDirectory interface {
 	// [domain.RoomCloseMessage]: it binds the close to THAT invite ID and THAT
 	// instant, so a recorded copy cannot close the room the host reopens
 	// tomorrow under the same code.
-	Close(ctx context.Context, id domain.InviteID) error
+	Retire(ctx context.Context, id domain.InviteID) error
 	// Authenticate cambia una prueba de password por la credencial con la que
 	// este registro deja HOSPEDAR.
 	//

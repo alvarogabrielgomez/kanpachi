@@ -252,7 +252,7 @@ func (s *Session) CreateRoom(
 func (s *Session) publishCard(ctx context.Context, nick domain.Nickname, roomName string) (domain.Room, [domain.CardKeyLen]byte, []byte, error) {
 	var key [domain.CardKeyLen]byte
 
-	card := domain.RoomCard{Host: nick, Room: domain.ClampRoomName(roomName)}
+	card := domain.RoomCard{Host: nick, Name: domain.ClampRoomName(roomName)}
 	sealed, key, err := domain.SealRoomCard(card, s.deps.Rand)
 	if err != nil {
 		return domain.Room{}, key, nil, err

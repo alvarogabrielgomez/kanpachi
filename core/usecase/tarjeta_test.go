@@ -208,9 +208,9 @@ func TestRenombrarDejaLaClaveYLaTarjetaConsistentesEnDisco(t *testing.T) {
 	if err != nil {
 		t.Fatalf("la clave guardada no abre la tarjeta guardada: %v", err)
 	}
-	if tarjeta.Room != "Los panas 2" {
+	if tarjeta.Name != "Los panas 2" {
 		t.Errorf("en disco quedó la tarjeta de %q y la sala se llama %q",
-			tarjeta.Room, guardada.Name)
+			tarjeta.Name, guardada.Name)
 	}
 	if string(guardada.Card) != string(b.registry.publicado) {
 		t.Error("lo guardado no es lo que se publicó al renombrar")

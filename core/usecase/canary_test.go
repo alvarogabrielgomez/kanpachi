@@ -77,7 +77,7 @@ func TestLaPrimeraFugaSeReparaSolaYNoAvisa(t *testing.T) {
 		t.Error("no se repuso la protección: la reparación automática es lo que hace que " +
 			"ignorar el aviso no cueste protección")
 	}
-	if tieneAlerta(b.session.Status(), domain.AlertCanaryLeaking) {
+	if tieneAlerta(b.session.Status(), domain.AlertGateLeaking) {
 		t.Error("avisó a la primera. La primera vez se repara callado y se deja que la " +
 			"ronda siguiente juzgue")
 	}
@@ -95,7 +95,7 @@ func TestLaSegundaFugaSeguidaLevantaLaAlarmaYDetieneLasRondas(t *testing.T) {
 	tocarAlAbrir(b)
 	b.session.RunCanaryRound(ctx(), true)
 
-	if !tieneAlerta(b.session.Status(), domain.AlertCanaryLeaking) {
+	if !tieneAlerta(b.session.Status(), domain.AlertGateLeaking) {
 		t.Fatal("dos fugas seguidas y ninguna alarma")
 	}
 
@@ -117,7 +117,7 @@ func TestLaAlarmaDelCanarioSobreviveAlBarridoDeAlertas(t *testing.T) {
 
 	b.session.RefreshAlerts(ctx())
 
-	if !tieneAlerta(b.session.Status(), domain.AlertCanaryLeaking) {
+	if !tieneAlerta(b.session.Status(), domain.AlertGateLeaking) {
 		t.Fatal("el barrido se llevó la alarma. Es pegajosa porque describe algo que se " +
 			"MIDIÓ por la red y que nada del barrido vuelve a medir")
 	}
@@ -144,7 +144,7 @@ func TestUnInformeQueDiceQueLlegoNoLevantaLaAlarma(t *testing.T) {
 	if check.Verdict() != domain.CanaryMismatch {
 		t.Fatalf("veredicto = %v, se esperaba CanaryMismatch", check.Verdict())
 	}
-	if tieneAlerta(b.session.Status(), domain.AlertCanaryLeaking) {
+	if tieneAlerta(b.session.Status(), domain.AlertGateLeaking) {
 		t.Fatal("un miembro consiguió alarmar al host mandando un mensaje. La alarma " +
 			"sale del socket propio y de nada más")
 	}
@@ -220,7 +220,7 @@ func TestUnaRondaQueNadieContestaNoApagaLaAlarma(t *testing.T) {
 	if check.Verdict() != domain.CanaryUnconfirmed {
 		t.Fatalf("veredicto = %v, se esperaba CanaryUnconfirmed", check.Verdict())
 	}
-	if !tieneAlerta(b.session.Status(), domain.AlertCanaryLeaking) {
+	if !tieneAlerta(b.session.Status(), domain.AlertGateLeaking) {
 		t.Fatal("quedándose callados le apagaron la alarma al host, y esa alarma se " +
 			"había establecido con certeza")
 	}
@@ -235,7 +235,7 @@ func TestTrasReponerLaProteccionUnaRondaLimpiaBorraLaAlarma(t *testing.T) {
 		t.Fatalf("ReapplyProtection: %v", err)
 	}
 	// Reponer no apaga nada por sí solo: apagar sin comprobar sería esconder.
-	if !tieneAlerta(b.session.Status(), domain.AlertCanaryLeaking) {
+	if !tieneAlerta(b.session.Status(), domain.AlertGateLeaking) {
 		t.Fatal("reponer apagó la alarma sin haber comprobado nada")
 	}
 
@@ -254,7 +254,7 @@ func TestTrasReponerLaProteccionUnaRondaLimpiaBorraLaAlarma(t *testing.T) {
 	if check.Verdict() != domain.CanaryClean {
 		t.Fatalf("veredicto = %v, se esperaba CanaryClean", check.Verdict())
 	}
-	if tieneAlerta(b.session.Status(), domain.AlertCanaryLeaking) {
+	if tieneAlerta(b.session.Status(), domain.AlertGateLeaking) {
 		t.Fatal("una ronda limpia no apagó la alarma")
 	}
 }
@@ -376,7 +376,7 @@ func TestUnaRondaDeUnaSalaViejaNoEscribeEnLaNueva(t *testing.T) {
 	}
 
 	st := b.session.Status()
-	if tieneAlerta(st, domain.AlertCanaryLeaking) {
+	if tieneAlerta(st, domain.AlertGateLeaking) {
 		t.Fatal("una ronda de una sala que ya se cerró dejó una alarma colgada en el " +
 			"estado nuevo")
 	}
@@ -498,7 +498,7 @@ func alarmar(t *testing.T, b *bank) {
 		tocarAlAbrir(b)
 		b.session.RunCanaryRound(context.Background(), true)
 	}
-	if !tieneAlerta(b.session.Status(), domain.AlertCanaryLeaking) {
+	if !tieneAlerta(b.session.Status(), domain.AlertGateLeaking) {
 		t.Fatalf("no se pudo dejar la alarma encendida")
 	}
 }

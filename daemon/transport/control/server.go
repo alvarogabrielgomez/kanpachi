@@ -276,7 +276,7 @@ func (s *server) issue(req credentialRequestMsg) credentialResponseMsg {
 	// código nuevo si el host lo renueva.
 	s.mu.Lock()
 	s.keys[cred.VirtualIP] = req.PublicKey
-	rdv := s.scope.Rendezvous
+	rdv := s.scope.RendezvousName
 	s.mu.Unlock()
 
 	resp := credentialResponseMsg{Sealed: sellado}

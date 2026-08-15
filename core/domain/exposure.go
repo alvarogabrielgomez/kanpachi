@@ -307,7 +307,7 @@ type ControlScope struct {
 	// sala: la llave efímera del invitado vive toda la sesión, así que sin esto
 	// una respuesta grabada en la sala A abriría igual en la sala B. Ver
 	// [Rendezvous] y el canje del paso 5.
-	Rendezvous string
+	RendezvousName string
 }
 
 // AlertKind es el conjunto cerrado de cosas que Kanpachi no controla y que
@@ -352,7 +352,7 @@ const (
 	// contesta en la mayoría de las máquinas, y una alerta encendida en todas
 	// partes deja de significar algo.
 	AlertAuditFailed
-	// AlertCanaryLeaking: la compuerta NO está conteniendo el adaptador, y se
+	// AlertGateLeaking: la compuerta NO está conteniendo el adaptador, y se
 	// intentó reponerla sin que aguantara.
 	//
 	// Es la única alerta que sale de una medición POR LA RED, y la única que ve
@@ -362,7 +362,7 @@ const (
 	//
 	// La levanta el socket propio del host y jamás el informe de un miembro. Un
 	// mensaje se puede mentir; que alguien haya llegado hasta el oyente, no.
-	AlertCanaryLeaking
+	AlertGateLeaking
 	// AlertGameLost: the room reopened and its game could not be restored.
 	//
 	// **It is the only alert that talks about ports that are NOT open**, which is
@@ -405,7 +405,7 @@ func AllAlertKinds() []AlertKind {
 		AlertLobbyConflict,
 		AlertKickIncomplete,
 		AlertAuditFailed,
-		AlertCanaryLeaking,
+		AlertGateLeaking,
 		AlertGameLost,
 	}
 }
@@ -425,7 +425,7 @@ func AllAlertKinds() []AlertKind {
 // solo [RoomState.DropAlerts] la quitaría y nadie tiene motivo para llamarla. Se
 // recalcula, así que en cuanto la consulta vuelve a contestar, el aviso se va
 // solo.
-// [AlertCanaryLeaking] SÍ es pegajosa, y por el motivo opuesto: describe algo
+// [AlertGateLeaking] SÍ es pegajosa, y por el motivo opuesto: describe algo
 // que el host MIDIÓ desde la red, y nada de lo que corre en el barrido lo vuelve
 // a medir. Sin pegajosa, el barrido la borraría sesenta segundos después de la
 // única prueba que este producto sabe producir. Lo que la apaga es una ronda del
@@ -435,7 +435,7 @@ func AllAlertKinds() []AlertKind {
 // What clears it is picking a game, which is the action that fixes the case.
 func (k AlertKind) Sticky() bool {
 	return k == AlertLobbyConflict || k == AlertKickIncomplete ||
-		k == AlertCanaryLeaking || k == AlertGameLost
+		k == AlertGateLeaking || k == AlertGameLost
 }
 
 // Alert es un hallazgo del módulo de exposición.

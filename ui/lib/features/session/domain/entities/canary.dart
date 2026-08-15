@@ -66,7 +66,7 @@ class CanaryCheck {
   /// Si esto tiene que llegar a la pantalla del usuario.
   ///
   /// **Es información, no la alarma.** La alarma la decide el daemon y llega
-  /// como `AlertKind.canaryLeaking`, y solo aparece cuando ya intentó reponer la
+  /// como `AlertKind.gateLeaking`, y solo aparece cuando ya intentó reponer la
   /// protección y no aguantó. Una fuga reparada sola no tiene que pintar nada:
   /// enterar al usuario de un problema ya arreglado es enseñarle a ignorar los
   /// avisos.

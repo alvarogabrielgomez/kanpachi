@@ -190,7 +190,7 @@ func entradaSana(raw string, r *Room, ahora time.Time) bool {
 		return false
 	case len(r.Card) > MaxCardBytes:
 		return false
-	case r.Rendezvous == "":
+	case r.RendezvousName == "":
 		return false
 	case r.PinUntil.IsZero():
 		return false

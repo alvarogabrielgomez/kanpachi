@@ -80,7 +80,7 @@ type InvitePreview struct {
 }
 
 // HasCard dice si la tarjeta trae algo que enseñar.
-func (p InvitePreview) HasCard() bool { return p.Card.Room != "" || !p.Card.Host.IsZero() }
+func (p InvitePreview) HasCard() bool { return p.Card.Name != "" || !p.Card.Host.IsZero() }
 
 // PeekInvite mira qué hay detrás de un enlace, sin tocar la sesión.
 //
@@ -145,7 +145,7 @@ func (s *Session) PeekInvite(ctx context.Context, link string) (InvitePreview, e
 	// informative as "the signature validates", and both are decided here,
 	// before the fragment is looked at.
 	out.Trust = vista.Trust()
-	if out.Trust == domain.CardForged {
+	if out.Trust == domain.CardUnbacked {
 		// It is not opened. Showing the name of a room that the key that
 		// registry pinned does not back means painting on screen whatever a
 		// compromised registry wanted read, and this screen exists precisely so

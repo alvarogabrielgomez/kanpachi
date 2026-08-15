@@ -295,8 +295,9 @@ func (s *Session) leaveLocked(
 // # Not fatal, and it cannot be
 //
 // Leaving ends outside the room whatever happens. A registry that does not answer
-// costs the code resolving until its card expires, which is exactly what happened
-// every time before this existed. One attempt and no more: the registry's rate
+// costs the code resolving until the sweep takes the room, three weeks after the
+// last time anybody hosted it, which is exactly what happened every time before
+// this existed. One attempt and no more: the registry's rate
 // limit counts what fails too.
 //
 // Asume el candado tomado.
@@ -314,7 +315,7 @@ func (s *Session) closeRoomInRegistryLocked(ctx context.Context) {
 			"seed", s.state.Room.Seed, "error", err)
 		return
 	}
-	if err := dir.Close(ctx, s.state.Room.InviteID); err != nil {
+	if err := dir.Retire(ctx, s.state.Room.InviteID); err != nil {
 		s.deps.Log.Warn("el registro no aceptó el cierre de la sala, así que el código "+
 			"va a seguir resolviendo hasta que venza su tarjeta",
 			"código", s.state.Room.InviteID.String(), "error", err)

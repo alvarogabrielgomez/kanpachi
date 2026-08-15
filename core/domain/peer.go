@@ -219,7 +219,7 @@ type CredentialRequest struct {
 	// Viaja para poder comprobar la firma del host contra el mismo transcript
 	// que él firmó. Vacío en el lado del HOST, que lo saca de su propia sala:
 	// firmar lo que dijo el que pregunta sería firmar datos ajenos.
-	Rendezvous string
+	RendezvousName string
 
 	// ExpectHostKey es la llave larga contra la que se verifica la respuesta:
 	// la que el registro FIJÓ para este invite ID la primera vez que la vio.

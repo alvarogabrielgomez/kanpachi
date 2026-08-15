@@ -55,7 +55,7 @@ void main() {
   ) async {
     await pinta(
       tester,
-      alerts: <AlertKind>[AlertKind.canaryLeaking],
+      alerts: <AlertKind>[AlertKind.gateLeaking],
       check: fuga(),
     );
 
@@ -96,7 +96,7 @@ void main() {
   ) async {
     await pinta(
       tester,
-      alerts: <AlertKind>[AlertKind.canaryLeaking],
+      alerts: <AlertKind>[AlertKind.gateLeaking],
       check: const CanaryCheck(
         measured: true,
         verdict: CanaryVerdict.unconfirmed,
@@ -118,7 +118,7 @@ void main() {
   ) async {
     await pinta(
       tester,
-      alerts: <AlertKind>[AlertKind.canaryLeaking],
+      alerts: <AlertKind>[AlertKind.gateLeaking],
       check: fuga(port: 49876),
     );
 
@@ -136,7 +136,7 @@ void main() {
   ) async {
     await pinta(
       tester,
-      alerts: <AlertKind>[AlertKind.canaryLeaking],
+      alerts: <AlertKind>[AlertKind.gateLeaking],
       check: const CanaryCheck(
         measured: true,
         verdict: CanaryVerdict.leaking,
@@ -151,7 +151,7 @@ void main() {
   testWidgets('una comprobación ciega enseña la alarma sin inventar detalle', (
     WidgetTester tester,
   ) async {
-    await pinta(tester, alerts: <AlertKind>[AlertKind.canaryLeaking]);
+    await pinta(tester, alerts: <AlertKind>[AlertKind.gateLeaking]);
 
     expect(find.text(tituloAlarma), findsOneWidget);
     expect(find.textContaining('Comprobado'), findsNothing);
@@ -164,7 +164,7 @@ void main() {
         theme: AppTheme.light(),
         home: Scaffold(
           body: CanaryAlarm(
-            alerts: const <AlertKind>[AlertKind.canaryLeaking],
+            alerts: const <AlertKind>[AlertKind.gateLeaking],
             check: fuga(),
             onReapply: () async => pulsaciones++,
           ),
@@ -190,7 +190,7 @@ void main() {
         theme: AppTheme.light(),
         home: Scaffold(
           body: CanaryAlarm(
-            alerts: const <AlertKind>[AlertKind.canaryLeaking],
+            alerts: const <AlertKind>[AlertKind.gateLeaking],
             check: fuga(),
             busy: true,
             onReapply: () async => pulsaciones++,

@@ -641,7 +641,7 @@ func (s *Server) invite(ctx context.Context, link string) InviteView {
 	}
 	v.Code = p.Room.InviteID.String()
 	v.Seed = p.Room.Seed
-	v.Room = p.Card.Room
+	v.Room = p.Card.Name
 	v.Host = p.Card.Host.String()
 	v.Unknown = p.Unknown
 	v.Fingerprint = p.Fingerprint

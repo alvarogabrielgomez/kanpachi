@@ -174,7 +174,7 @@ class _ExposurePageState extends State<ExposurePage> {
             busy: widget.reapplying,
             onReapply: reapply,
           ),
-          if (widget.alerts.contains(AlertKind.canaryLeaking))
+          if (widget.alerts.contains(AlertKind.gateLeaking))
             const SizedBox(height: AppSpacing.lg),
         ],
         _Header(report: report, busy: _loading, onRefresh: _refresh),

@@ -121,7 +121,7 @@ func tarjetaDePrueba(t *testing.T, sala string) ([]byte, [domain.CardKeyLen]byte
 	if err != nil {
 		t.Fatal(err)
 	}
-	sellada, clave, err := domain.SealRoomCard(domain.RoomCard{Host: nick, Room: sala}, rand.Reader)
+	sellada, clave, err := domain.SealRoomCard(domain.RoomCard{Host: nick, Name: sala}, rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,8 +172,8 @@ func TestContratoAbrirBuscarYPublicar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tarjeta.Room != "Los panas" {
-		t.Errorf("la tarjeta descifrada dice %q", tarjeta.Room)
+	if tarjeta.Name != "Los panas" {
+		t.Errorf("la tarjeta descifrada dice %q", tarjeta.Name)
 	}
 
 	// Y publicar encima la reemplaza.
@@ -192,8 +192,8 @@ func TestContratoAbrirBuscarYPublicar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tarjeta2.Room != "Los panas 2" {
-		t.Errorf("tras publicar, la tarjeta dice %q", tarjeta2.Room)
+	if tarjeta2.Name != "Los panas 2" {
+		t.Errorf("tras publicar, la tarjeta dice %q", tarjeta2.Name)
 	}
 }
 

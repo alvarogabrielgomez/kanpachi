@@ -847,7 +847,10 @@ func alertName(k domain.AlertKind) string {
 		return "kick_incomplete"
 	case domain.AlertAuditFailed:
 		return "audit_failed"
-	case domain.AlertCanaryLeaking:
+	case domain.AlertGateLeaking:
+		// El nombre de cable está CONGELADO. Dice `canary` porque el sensor que
+		// la levanta es el canario; lo que falla es la compuerta, y eso es lo
+		// que dice el nombre del dominio.
 		return "canary_leaking"
 	case domain.AlertGameLost:
 		return "game_lost"

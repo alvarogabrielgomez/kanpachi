@@ -83,7 +83,8 @@ var (
 // fragmento de la URL, que el navegador no manda al servidor. Ver decisión 17.
 type RoomCard struct {
 	Host Nickname
-	Room string
+	// Name is the room's VISIBLE name. The wire key stays `room`, in cardJSON.
+	Name string
 }
 
 // cardJSON es la forma que la página espera dentro del texto cifrado. Las
@@ -104,7 +105,7 @@ type cardJSON struct {
 // El blob es nonce || ciphertext, en ese orden, porque es lo que hace la
 // página: `crypto.subtle.decrypt({iv: blob.slice(0,12)}, k, blob.slice(12))`.
 func SealRoomCard(card RoomCard, rand io.Reader) (blob []byte, key [CardKeyLen]byte, err error) {
-	plain, err := json.Marshal(cardJSON{Host: card.Host.String(), Room: card.Room})
+	plain, err := json.Marshal(cardJSON{Host: card.Host.String(), Room: card.Name})
 	if err != nil {
 		return nil, key, fmt.Errorf("domain: serializando la tarjeta: %w", err)
 	}
@@ -166,7 +167,7 @@ func OpenRoomCard(blob []byte, key [CardKeyLen]byte) (RoomCard, error) {
 	// El nombre de la sala también se acota. Es texto libre que escribió otra
 	// máquina y termina en la pantalla de alguien: el tope de 512 bytes del
 	// sobre no lo acota solo, porque un nombre de 400 caracteres cabe.
-	return RoomCard{Host: nick, Room: ClampRoomName(j.Room)}, nil
+	return RoomCard{Host: nick, Name: ClampRoomName(j.Room)}, nil
 }
 
 func newCardGCM(key []byte) (cipher.AEAD, error) {
@@ -235,14 +236,14 @@ const (
 	// CardSigned means the signature validates against the key that registry
 	// pinned.
 	CardSigned
-	// CardForged means there is a signature, there is a key, and they do not
+	// CardUnbacked means there is a signature, there is a key, and they do not
 	// match.
 	//
 	// It does not mean "somebody tampered with the bytes on the wire": a
 	// tampered card does not open at all, because AES-GCM authenticates. It
 	// means **the registry is serving a card that the key it pinned itself does
 	// not back**, which can only happen if that registry is compromised.
-	CardForged
+	CardUnbacked
 )
 
 // InviteLookup is what a registry answers about an invite ID.
@@ -256,7 +257,12 @@ type InviteLookup struct {
 	// Members is how many people are in, or -1 when the registry declined to
 	// say.
 	Members int
-	// HostKey is the long-term key that registry PINNED for this invite ID.
+	// HostKey is the long-term key THIS ANSWER carried for this invite ID.
+	//
+	// The wording matters: it is what that registry says it pinned, not a fact
+	// checked from here. A compromised one can serve its own. What notices is
+	// the fingerprint book of decision 25, which remembers the key this host
+	// arrived with the previous times.
 	HostKey []byte
 	// Sig is the signature the card was deposited with.
 	Sig []byte
@@ -278,5 +284,5 @@ func (l InviteLookup) Trust() CardTrust {
 	if ed25519.Verify(ed25519.PublicKey(l.HostKey), l.Sealed, l.Sig) {
 		return CardSigned
 	}
-	return CardForged
+	return CardUnbacked
 }

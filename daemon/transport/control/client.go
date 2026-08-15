@@ -182,9 +182,9 @@ func (c *Channel) RequestCredential(ctx context.Context, req domain.CredentialRe
 		return domain.Credential{}, ErrNotDialed
 	}
 	sobre, err := wrap(KindCredentialRequest, credentialRequestMsg{
-		Name:       req.Name.String(),
-		PublicKey:  cli.llaves.pub[:],
-		Rendezvous: req.Rendezvous,
+		Name:           req.Name.String(),
+		PublicKey:      cli.llaves.pub[:],
+		RendezvousName: req.RendezvousName,
 	})
 	if err != nil {
 		return domain.Credential{}, err
@@ -543,7 +543,7 @@ func verifySignature(keys keyPair, resp credentialResponseMsg, req domain.Creden
 		return fmt.Errorf("quien contestó en el vestíbulo no es el host de esa sala: " +
 			"la llave con la que firmó no es la que el registro tiene fijada para ese código")
 	}
-	msg := credentialTranscript(req.Rendezvous, keys.pub[:], resp.Sealed)
+	msg := credentialTranscript(req.RendezvousName, keys.pub[:], resp.Sealed)
 	if !ed25519.Verify(ed25519.PublicKey(req.ExpectHostKey), msg, resp.Sig) {
 		return fmt.Errorf("la credencial no la firmó el host de esa sala, " +
 			"o no es la respuesta a este pedido")

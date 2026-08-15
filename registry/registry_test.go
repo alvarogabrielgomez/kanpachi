@@ -79,8 +79,8 @@ func TestEmitirYResolver(t *testing.T) {
 	if !bytes.Equal(sala.Card, card) {
 		t.Errorf("la tarjeta volvió distinta: %q", sala.Card)
 	}
-	if want := domain.DeriveRendezvous(id).NetworkName(); sala.Rendezvous != want {
-		t.Errorf("red = %q, se esperaba %q: el registro tiene que derivarla, no creerle al host", sala.Rendezvous, want)
+	if want := domain.DeriveRendezvous(id).NetworkName(); sala.RendezvousName != want {
+		t.Errorf("red = %q, se esperaba %q: el registro tiene que derivarla, no creerle al host", sala.RendezvousName, want)
 	}
 }
 
@@ -101,7 +101,7 @@ func TestElRegistroNoPuedeLeerLaTarjeta(t *testing.T) {
 	if !bytes.Equal(sala.Card, card) {
 		t.Fatal("la tarjeta se transformó: el registro debe tratarla como bytes opacos")
 	}
-	if strings.Contains(sala.Rendezvous, "La Guarida") {
+	if strings.Contains(sala.RendezvousName, "La Guarida") {
 		t.Fatal("el nombre de la sala se filtró al identificador de red")
 	}
 }

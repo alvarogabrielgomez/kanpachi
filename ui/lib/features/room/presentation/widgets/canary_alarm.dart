@@ -46,12 +46,12 @@ class CanaryAlarm extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!alerts.contains(AlertKind.canaryLeaking)) {
+    if (!alerts.contains(AlertKind.gateLeaking)) {
       return const SizedBox.shrink();
     }
 
     return AppMessageNotice(
-      message: AppMessages.alert(AlertKind.canaryLeaking, detail: _detalle),
+      message: AppMessages.alert(AlertKind.gateLeaking, detail: _detalle),
       actions: <Widget>[
         ReapplyProtectionButton(
           onPressed: busy ? null : () => onReapply(),

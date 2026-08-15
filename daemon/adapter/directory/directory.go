@@ -251,7 +251,7 @@ func (d *Directory) Reachable(ctx context.Context) error {
 // room in both directions. A machine whose clock is minutes out cannot close its
 // room here, and it is the correct way to fail: the alternative is a recorded
 // request that stays good forever.
-func (d *Directory) Close(ctx context.Context, id domain.InviteID) error {
+func (d *Directory) Retire(ctx context.Context, id domain.InviteID) error {
 	priv, err := d.llave()
 	if err != nil {
 		return err

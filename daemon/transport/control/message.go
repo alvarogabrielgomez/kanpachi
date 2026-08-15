@@ -99,7 +99,7 @@ type credentialRequestMsg struct {
 	// another room produces a signature that does not validate on the other
 	// side, which is exactly what should happen. Empty on an older guest, and
 	// then there is nothing to check. See [credentialTranscript].
-	Rendezvous string `json:"rendezvous,omitempty"`
+	RendezvousName string `json:"rendezvous,omitempty"`
 }
 
 // credentialResponseMsg lleva la credencial SELLADA, o el motivo del rechazo.

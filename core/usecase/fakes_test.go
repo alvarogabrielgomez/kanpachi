@@ -524,7 +524,7 @@ func (r *mockRegistry) Publish(_ context.Context, _ domain.InviteID, sealed []by
 // They are recorded even when the fake is declared down: closing is best-effort,
 // and what has to be assertable is that it was ATTEMPTED, which is exactly what
 // tells "never called it" apart from "called it and the registry did not answer".
-func (r *mockRegistry) Close(_ context.Context, id domain.InviteID) error {
+func (r *mockRegistry) Retire(_ context.Context, id domain.InviteID) error {
 	r.mu.Lock()
 	r.cerrados = append(r.cerrados, id)
 	r.mu.Unlock()
