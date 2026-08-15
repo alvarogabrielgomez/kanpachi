@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.3.0] - 2026-08-14
+
 ### Security
 
 - Refuse a credential in the lobby that is not signed by the host of that room. Anybody holding the invite code could sit on the host's lobby address and answer the request first, and what that got them is your machine joining THEIR network while it believes it is in your friends' one — with the game's ports opened towards it. The host now signs its answer with the long-term key of its installation, bound to the room and to that one request, and the guest checks it against the key the meeting server pinned for that code ([c84c683](https://github.com/alvarogabrielgomez/kanpachi/commit/c84c683))
@@ -29,7 +31,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Fixed
 
-- See the covers whole where they are shown wide — the game picker and the preview of a game added by hand — instead of with both sides cut off. The hole was 104 pixels tall at whatever width the window handed it, and the art it receives is 460×215, so the picture was scaled to fill and what got trimmed was the edge where the posters carry their title ([PENDIENTE](https://github.com/alvarogabrielgomez/kanpachi/commit/PENDIENTE))
+- See the covers whole where they are shown wide — the game picker and the preview of a game added by hand — instead of with both sides cut off. The hole was 104 pixels tall at whatever width the window handed it, and the art it receives is 460×215, so the picture was scaled to fill and what got trimmed was the edge where the posters carry their title ([ba7c00b](https://github.com/alvarogabrielgomez/kanpachi/commit/ba7c00b))
 
 ## [0.2.2] - 2026-08-14
 
@@ -263,6 +265,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.3.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.3.0
 [0.2.2]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.2.2
 [0.2.1]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.2.1
 [0.2.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.2.0
