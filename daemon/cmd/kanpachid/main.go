@@ -28,6 +28,7 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/service"
 	"github.com/accentiostudios/kanpachi/daemon/transport/pipe"
 	"github.com/accentiostudios/kanpachi/daemon/wiring"
+	"github.com/accentiostudios/kanpachi/internal/layout"
 )
 
 func main() {
@@ -49,7 +50,7 @@ func main() {
 	// Aparte de `--data` a propósito: el bundle portable manda los datos a una
 	// carpeta temporal que borra al salir, y el log NO puede morir con ella. Ver
 	// [carpetaDelLog].
-	dirLog := flag.String("log", "", "carpeta del log. Vacío usa <datos>\\"+LogDir)
+	dirLog := flag.String("log", "", "carpeta del log. Vacío usa <datos>\\"+layout.LogDir)
 	// El nombre del pipe se puede cambiar SOLO en modo consola, y existe por una
 	// razón concreta: el de producción vive bajo ProtectedPrefix\Administrators,
 	// que Windows no deja crear sin elevar. Sin esta bandera, probar el saludo,

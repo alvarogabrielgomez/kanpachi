@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/accentiostudios/kanpachi/internal/layout"
 )
 
 // imprescindibles son los que se comprueban POR SU NOMBRE después de extraer.
@@ -35,29 +37,6 @@ var imprescindibles = []string{
 
 // elQueSeCorre es el daemon portable, que abre la interfaz por su cuenta.
 const elQueSeCorre = "kanpachid.exe"
-
-// nombreDelLog es el archivo que esto existe para dejar. Tiene que decir lo
-// mismo que `LogFile` en `daemon/cmd/kanpachid/log.go`.
-const nombreDelLog = "kanpachi.log"
-
-// nombreDeDatos es la carpeta de estado, JUNTO AL EJECUTABLE que alguien abrió.
-//
-// Tiene que decir lo mismo que `PortableDataDir` en
-// `daemon/cmd/kanpachid/portable.go`, que es de `package main` y no se puede
-// importar. Se copia por lo mismo que [nombreDelLog].
-//
-// # Por qué se pasa a mano en vez de deducirse del marcador
-//
-// Porque el marcador viaja DENTRO de la carga, así que acaba en el directorio
-// temporal, y eso es lo que el daemon miraba: escribía su llave, su token y su
-// sala ahí, y `limpiar` borraba la carpeta entera al cerrar. Cada arranque
-// estrenaba identidad, y las extracciones que no se pudieron borrar quedaron
-// tiradas en el temporal con la llave dentro.
-//
-// La carpeta desde donde alguien abrió esto es lo único que sobrevive al
-// cierre, y es la que esa persona sabe encontrar. Es la misma decisión que ya
-// estaba tomada para el log, con el mismo motivo.
-const nombreDeDatos = "kanpachi-data"
 
 func correr() error {
 	if !hayCarga {
@@ -181,7 +160,7 @@ func rutaDelLog() string {
 	if err != nil {
 		return ""
 	}
-	ruta := filepath.Join(dir, nombreDelLog)
+	ruta := filepath.Join(dir, layout.LogFile)
 	if _, err := os.Stat(ruta); err != nil {
 		return ""
 	}
@@ -249,8 +228,20 @@ func extraer(dir string) error {
 //     aparecería el icono de la bandeja y ninguna ventana.
 //   - `--log`: la razón entera por la que esa bandera existe. Ver el doc del
 //     paquete.
-//   - `--data`: junto al ejecutable y no en el temporal que se borra. Ver
-//     [nombreDeDatos], que es donde está el motivo entero.
+//   - `--data`: junto al ejecutable y no en el temporal que se borra. El
+//     nombre de la carpeta sale de [layout.PortableDataDir].
+//
+// # Por qué la carpeta de datos se pasa a mano en vez de deducirse del marcador
+//
+// Porque el marcador viaja DENTRO de la carga, así que acaba en el directorio
+// temporal, y eso es lo que el daemon miraba: escribía su llave, su token y su
+// sala ahí, y `limpiar` borraba la carpeta entera al cerrar. Cada arranque
+// estrenaba identidad, y las extracciones que no se pudieron borrar quedaron
+// tiradas en el temporal con la llave dentro.
+//
+// La carpeta desde donde alguien abrió esto es lo único que sobrevive al cierre,
+// y es la que esa persona sabe encontrar. Es la misma decisión que ya estaba
+// tomada para el log, con el mismo motivo.
 //
 // La interfaz ya no lo deduce por su cuenta: el daemon se lo dice al lanzarla,
 // por la misma vía que el log. Deducirlo cada uno por su lado era correcto
@@ -260,7 +251,7 @@ func argumentos(dirBundle string) []string {
 	return []string{
 		"--daemon", "--show",
 		"--log", dirBundle,
-		"--data", filepath.Join(dirBundle, nombreDeDatos),
+		"--data", filepath.Join(dirBundle, layout.PortableDataDir),
 	}
 }
 

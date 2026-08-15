@@ -50,7 +50,11 @@ func ClampRoomName(s string) string {
 	return string(r[:MaxRoomNameLen])
 }
 
-// MaxCardBytes es el tope que el registro también aplica del otro lado.
+// MaxCardBytes es el tope de la tarjeta, y es EL MISMO a los dos lados.
+//
+// El registro lo aplica leyendo esta constante, no una copia suya: dos topes
+// con el mismo nombre y el mismo número, sin nada que obligara a que
+// coincidieran, es como se consigue que uno suba y el otro no.
 //
 // La tarjeta lleva un nick de hasta 12 caracteres y un nombre de sala corto,
 // así que 512 sobra. Existe para que el registro no se convierta en

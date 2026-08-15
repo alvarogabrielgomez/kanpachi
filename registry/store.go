@@ -49,18 +49,23 @@ import (
 // card stopped gating resolution, and one constant answers both.
 const RoomTTL = 21 * 24 * time.Hour
 
-// MaxCardBytes acota lo que un host puede depositar. La tarjeta lleva un nick
-// de 12 caracteres y un nombre de sala corto, cifrados: 512 bytes sobran. El
-// tope existe porque este endpoint está abierto a internet y el registro vive
-// en memoria, o sea que sin él una tarjeta es un vector de agotamiento.
-const MaxCardBytes = 512
+// El tope de la tarjeta y su error salen del DOMINIO, y son los mismos que el
+// host aplica antes de mandarla.
+//
+// Estuvieron declarados acá también, con el mismo 512 y sin nada que obligara a
+// que coincidieran: dos topes que se llaman igual y no se comprueban entre sí es
+// la forma exacta de que uno suba y el otro no, y el síntoma sería un host que
+// deposita bien y un registro que lo rechaza. Este paquete ya importaba el
+// dominio.
+const MaxCardBytes = domain.MaxCardBytes
+
+var ErrCardTooBig = domain.ErrCardTooBig
 
 var (
-	ErrNotFound   = errors.New("esa sala no existe")
-	ErrPinned     = errors.New("ese invite ID pertenece a otra llave")
-	ErrBadSig     = errors.New("la firma no valida contra la llave que trae")
-	ErrCardTooBig = errors.New("la tarjeta pasa del tope")
-	ErrExhausted  = errors.New("no se pudo emitir un invite ID libre")
+	ErrNotFound  = errors.New("esa sala no existe")
+	ErrPinned    = errors.New("ese invite ID pertenece a otra llave")
+	ErrBadSig    = errors.New("la firma no valida contra la llave que trae")
+	ErrExhausted = errors.New("no se pudo emitir un invite ID libre")
 )
 
 // Room es lo que el registro sabe de una sala. Es deliberadamente poco.

@@ -6,9 +6,13 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/accentiostudios/kanpachi/internal/layout"
 )
 
-// LogDir y LogFile son dónde queda escrito, dentro del directorio de datos.
+// El log va a `<datos>\logs\kanpachi.log`, y los dos nombres viven en
+// [layout] porque el lanzador portable también los necesita para encontrar lo
+// que este fichero deja.
 //
 // En un subdirectorio y no sueltos: el directorio de datos ya tiene una docena
 // de archivos de estado, y el log más su copia anterior son ruido ahí. **El
@@ -20,10 +24,6 @@ import (
 // Estuvo un rato junto al ejecutable, para que quien tiene que mandar el log
 // no tuviera que destapar una carpeta oculta en el Explorador. Se volvió acá a
 // pedido: el directorio de datos es del daemon, y el de instalación no.
-const (
-	LogDir  = "logs"
-	LogFile = "kanpachi.log"
-)
 
 // maxLogBytes es cuándo se rota.
 //
@@ -89,7 +89,7 @@ func nuevoLogArchivo(carpeta string) *logArchivo {
 	// Quedarse sin daemon por no poder escribir un log sería cambiar un
 	// problema de diagnóstico por uno de producto.
 	_ = os.MkdirAll(carpeta, 0o700)
-	l := &logArchivo{ruta: filepath.Join(carpeta, LogFile)}
+	l := &logArchivo{ruta: filepath.Join(carpeta, layout.LogFile)}
 	l.abrir()
 	return l
 }
@@ -112,7 +112,7 @@ func carpetaDelLog(datos, pedida string) string {
 	if pedida != "" {
 		return pedida
 	}
-	return filepath.Join(datos, LogDir)
+	return filepath.Join(datos, layout.LogDir)
 }
 
 // bom es la marca de orden de bytes de UTF-8.

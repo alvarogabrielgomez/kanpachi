@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/accentiostudios/kanpachi/internal/layout"
 )
 
 // El modo PORTABLE: una carpeta que se copia y funciona.
@@ -45,16 +47,6 @@ const (
 	// carpeta en un Kanpachi portable. Su contenido no se lee.
 	PortableMarker = "kanpachi.portable"
 
-	// PortableDataDir es el subdirectorio de datos dentro de esa carpeta.
-	//
-	// **No se llama `data`, y eso está medido.** El bundle de Windows de Flutter
-	// trae su propio `data\` con `icudtl.dat`, `app.so` y `flutter_assets\`, y en
-	// una carpeta portable los dos ejecutables viven en el mismo directorio: se
-	// mezclaban. El daemon habría escrito su token y su llave dentro de los
-	// recursos de la interfaz, y limpiar los datos se habría llevado por delante
-	// los assets. Salió corriendo el script, no leyendo el código.
-	PortableDataDir = "kanpachi-data"
-
 	// ArgDaemon es con lo que el lanzador se relanza a sí mismo para SER el
 	// daemon de la carpeta portable.
 	//
@@ -86,7 +78,7 @@ func dirDeDatos(datos string) string {
 		return datos
 	}
 	if esPortable() {
-		return filepath.Join(dirDelBinario(), PortableDataDir)
+		return filepath.Join(dirDelBinario(), layout.PortableDataDir)
 	}
 	return defaultDataDir()
 }

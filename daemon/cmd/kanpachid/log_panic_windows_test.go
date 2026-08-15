@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/accentiostudios/kanpachi/internal/layout"
 )
 
 // hijoEnv es la variable que convierte esta prueba en el proceso que se muere.
@@ -58,7 +60,7 @@ func TestUnPánicoDelDaemonQuedaEnElLog(t *testing.T) {
 	// error, es lo que dejó escrito.
 	_ = cmd.Run()
 
-	crudo, err := os.ReadFile(filepath.Join(dir, LogDir, LogFile))
+	crudo, err := os.ReadFile(filepath.Join(dir, layout.LogDir, layout.LogFile))
 	if err != nil {
 		t.Fatalf("el hijo no dejó ningún log: %v", err)
 	}
@@ -95,7 +97,7 @@ func TestLaCarpetaPedidaSeUsaTalCual(t *testing.T) {
 // TestSinCarpetaPedidaVaAlSubdirectorioDeSiempre es la otra mitad: el producto
 // instalado no cambia de sitio por existir la bandera.
 func TestSinCarpetaPedidaVaAlSubdirectorioDeSiempre(t *testing.T) {
-	quiero := filepath.Join("C:\\datos", LogDir)
+	quiero := filepath.Join("C:\\datos", layout.LogDir)
 	if got := carpetaDelLog("C:\\datos", ""); got != quiero {
 		t.Errorf("sin --log se esperaba %q y salió %q", quiero, got)
 	}
