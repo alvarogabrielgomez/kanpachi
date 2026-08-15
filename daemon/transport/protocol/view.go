@@ -105,6 +105,37 @@ type RoomView struct {
 	// cierto, los dos botones van a fallar, y la pantalla puede decirlo antes de
 	// que alguien escriba un código.
 	SeedDown bool `json:"seed_down"`
+
+	// Returning is the room this machine is on its way back into, if it is.
+	//
+	// Omitted when it is not, so a face can tell the two apart without a second
+	// boolean: this is the same reason [InviteView] has no `has` flag. Being on
+	// the way back is NOT being in a room — `Conn` says `idle` throughout — and
+	// that is the point, because the code field is available and a person can
+	// change their mind.
+	Returning *ReturningView `json:"returning,omitempty"`
+}
+
+// ReturningView is a machine on its way back into a room it was in.
+//
+// # Not to be confused with the two neighbours it sounds like
+//
+// `Conn: "reconnecting"` is a tunnel that dropped while INSIDE a live room, and
+// it is bounded. `Rejoining` is a guest asking its host for a credential again,
+// also from inside. This is being in no room at all and still trying, with no
+// cap: what ends it is the room ceasing to exist, or a person saying so.
+type ReturningView struct {
+	Code string `json:"code"`
+	Seed string `json:"seed"`
+	Name string `json:"name,omitempty"`
+
+	// NextInMS is how long until the next attempt. Zero means one is running
+	// right now.
+	NextInMS int64 `json:"next_in_ms"`
+	// Attempts counts what has been tried. It bounds nothing.
+	Attempts int `json:"attempts"`
+	// Reason is why the last attempt failed, empty before the first one.
+	Reason string `json:"reason,omitempty"`
 }
 
 // InviteView es lo que trajo un enlace `kanpachi://`, ya resuelto.
@@ -233,6 +264,24 @@ func roomView(st domain.RoomState, missing string, now time.Time) RoomView {
 	}
 	if !st.ReconnectingSince.IsZero() {
 		v.ReconnectingForMS = now.Sub(st.ReconnectingSince).Milliseconds()
+	}
+	if st.Returning.Returning() {
+		r := st.Returning
+		// Clamped at zero rather than sent negative: an overdue attempt has not
+		// happened yet, and "-3s" on a screen reads as a bug rather than as a beat
+		// that has not come round.
+		espera := int64(0)
+		if !r.NextAt.IsZero() && r.NextAt.After(now) {
+			espera = r.NextAt.Sub(now).Milliseconds()
+		}
+		v.Returning = &ReturningView{
+			Code:     r.Room.InviteID.String(),
+			Seed:     r.Room.Seed,
+			Name:     r.Name,
+			NextInMS: espera,
+			Attempts: r.Attempts,
+			Reason:   r.Reason,
+		}
 	}
 	for _, p := range st.Peers {
 		v.Peers = append(v.Peers, PeerView{

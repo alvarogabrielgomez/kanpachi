@@ -275,7 +275,57 @@ type RoomState struct {
 	// Sin esto, que te expulsen, que el host desaparezca y salir por tu cuenta
 	// se ven exactamente igual desde la pantalla de inicio.
 	LastExit ExitReason
+
+	// Returning is the room this machine is on its way back into. Its zero means
+	// it is not going back anywhere. See [ReturnAttempt].
+	//
+	// **It is a projection and never a stored value.** Nothing writes it into the
+	// live state: it is computed when a snapshot goes out, from the saved room on
+	// disk and the clocks of the attempt. Setting it here would be a latch, and a
+	// latch is how a machine ends up going back to a room nobody wants any more.
+	Returning ReturnAttempt
 }
+
+// ReturnAttempt is a machine on its way back into a room it was in.
+//
+// # What it is NOT
+//
+// It is not [StateReconnecting], which is a tunnel that dropped while still
+// INSIDE a live room and is bounded by [ReconnectLimit]. It is not `Rejoining`
+// either, which is a guest asking its host for a credential again, also from
+// inside. This is being in no room at all and still trying, with no cap: what
+// ends it is the room ceasing to exist, or a person saying so.
+//
+// # Where it comes from
+//
+// Not from an event. It is DERIVED, on every snapshot, from three facts that are
+// all already true somewhere else: not being in a room, having a saved last
+// room, and that room's `AutoReturn` being on. Same discipline as `Degraded`,
+// which is recomputed from the member table and never remembered.
+//
+// The intent behind it is written when somebody ENTERS a room successfully, and
+// only then. Retrying is for getting back somewhere you were, never for getting
+// into somewhere that never let you in.
+type ReturnAttempt struct {
+	// Room and Name come from the saved room, and are what a screen needs to say
+	// where it is going.
+	Room Room
+	Name string
+
+	// NextAt is when the next attempt is due. Zero while one is running.
+	NextAt time.Time
+
+	// Attempts counts what has been tried, for the screen. It does not bound
+	// anything: there is no number of failures that means the room is gone.
+	Attempts int
+
+	// Reason is why the last attempt failed, in the daemon's own words. Empty
+	// before the first one.
+	Reason string
+}
+
+// Returning says whether this machine is on its way back into a room.
+func (r ReturnAttempt) Returning() bool { return !r.Room.InviteID.IsZero() }
 
 // Clone devuelve una copia que no comparte nada mutable con el original.
 //

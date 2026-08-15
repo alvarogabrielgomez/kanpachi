@@ -62,17 +62,22 @@ func (s *Session) saveLastRoomLocked(autoReturn bool) {
 	if s.state.IsHost() || !s.state.Conn.InRoom() || s.state.Room.InviteID.IsZero() {
 		return
 	}
-	raw, err := domain.LastRoom{
+	last := domain.LastRoom{
 		Room:       s.state.Room,
 		Name:       s.state.Name,
 		Nick:       s.nick,
 		SavedAt:    s.deps.Clock.Now(),
 		AutoReturn: autoReturn,
-	}.Encode()
+	}
+	raw, err := last.Encode()
 	if err != nil {
 		s.deps.Log.Warn("no se pudo serializar la última sala", "error", err)
 		return
 	}
+	// The cache goes with the file, and BEFORE the write is judged: whether this
+	// machine is going back is answered from memory on every snapshot, and a disk
+	// that failed is not a reason to answer it wrong. See [Session.last].
+	s.last, s.hasLast = last, true
 	if err := s.deps.State.SaveLast(raw); err != nil {
 		s.deps.Log.Warn("no se pudo guardar la última sala en disco", "error", err)
 	}
@@ -87,14 +92,7 @@ func (s *Session) saveLastRoomLocked(autoReturn bool) {
 // El código guardado se mantiene vigente aunque el host lo renueve, porque el
 // host se lo reparte a los presentes al renovarlo. Ver [Session.OnCodeRotated].
 func (s *Session) LastRoom() (domain.LastRoom, bool) {
-	raw, err := s.deps.State.LoadLast()
-	if err != nil {
-		return domain.LastRoom{}, false
-	}
-	last, err := domain.DecodeLastRoom(raw)
-	if err != nil {
-		s.deps.Log.Warn("la última sala guardada no se pudo interpretar", "error", err)
-		return domain.LastRoom{}, false
-	}
-	return last, true
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.last, s.hasLast
 }

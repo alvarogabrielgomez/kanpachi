@@ -603,6 +603,20 @@ type RendezvousProvider interface {
 // en disco antes que esto endureciera. Ver la cabecera de `registry/persist.go`.
 var ErrUnknownRoom = errors.New("el registro no conoce esa sala")
 
+// ErrSeedThrottled is the registry saying this address is asking too often.
+//
+// # Why it needs a name, when every other failure is just a failure
+//
+// Because it is the one answer where retrying at the usual rate makes things
+// worse. **The registry's rate limit counts what fails too**, so a client that
+// keeps its cadence through a throttle keeps its own door shut. Everything that
+// retries against the registry has to be able to recognise it and back off; see
+// [usecase.ReturnInterval].
+//
+// It is NOT [ErrUnknownRoom] and must never be treated as one: being throttled
+// says nothing at all about whether a room exists.
+var ErrSeedThrottled = errors.New("el registro está frenando las consultas de esta red")
+
 // ErrNoOwnSeed es que esta máquina todavía no tiene registro donde abrir salas.
 //
 // No es un fallo de red ni una configuración rota: es el estado normal de quien

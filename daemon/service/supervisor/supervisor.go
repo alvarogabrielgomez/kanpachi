@@ -64,6 +64,14 @@ type Room interface {
 	// reconoce a nadie. Es LARGO, hasta un minuto, y por eso corre fuera del
 	// despachador. Ver [Supervisor.reingreso].
 	Rejoin(ctx context.Context) error
+
+	// ReturnDue is the same shape as [Room.RejoinDue] and answers a different
+	// question: whether it is time to get back into a room this machine is NOT
+	// in. Cheap, clocks and state only.
+	ReturnDue() bool
+	// Return makes one attempt at getting back in. It is a full join, so it is
+	// long, and it runs outside the dispatcher. See [Supervisor.vuelta].
+	Return(ctx context.Context)
 }
 
 // EngineSource es lo único que el supervisor le puede pedir al motor.
@@ -212,6 +220,10 @@ const (
 	// tagRejoinDone vuelve cuando el reingreso del invitado termina, por el
 	// mismo motivo que [tagCanaryDone].
 	tagRejoinDone tag = "reingreso-terminado"
+
+	// tagReturnDone comes back when an attempt at getting back into the last
+	// room finishes, for the same reason as [tagCanaryDone].
+	tagReturnDone tag = "vuelta-terminada"
 )
 
 type item struct {
@@ -264,6 +276,14 @@ type Supervisor struct {
 	// contra el otro, porque perderlo cuesta que el invitado no vuelva a la sala
 	// y se caiga a los veinte minutos.
 	reingresoVivo bool
+
+	// vueltaViva is the single-flight for going back to the last room.
+	//
+	// Its own flag and not the rejoin one, even though both guard a long join
+	// outside the dispatcher: they cannot both be running, but they are answers
+	// to different questions and sharing a flag would make one silently disable
+	// the other the day their conditions overlap.
+	vueltaViva bool
 }
 
 // New arma el supervisor con sus relojes de verdad.
@@ -459,6 +479,9 @@ func (s *Supervisor) manejar(ctx context.Context, it item) {
 	case tagRejoinDone:
 		s.reingresoVivo = false
 
+	case tagReturnDone:
+		s.vueltaViva = false
+
 	case tagRestart:
 		s.reiniciarMotor(ctx)
 	}
@@ -489,6 +512,12 @@ func (s *Supervisor) latido(ctx context.Context) {
 	// host, y preguntar después significa preguntar sobre el estado de ahora. Al
 	// revés se lanzaría un reingreso a una sala de la que se acaba de salir.
 	s.reingreso(ctx)
+
+	// Y volver a la última sala, que es lo mismo un escalón más afuera: aquél
+	// recupera credencial estando dentro, y esto se hace cargo de no estar. Va
+	// después por el mismo motivo de orden: el Tick puede acabar de sacar de una
+	// sala, y ahí volver es exactamente lo que toca preguntar.
+	s.vuelta(ctx)
 
 	// Reaplicar el adaptador cada tantos latidos es el respaldo de la
 	// suscripción a los eventos de Windows, que puede morirse sin avisar.
@@ -625,6 +654,42 @@ func (s *Supervisor) reingreso(ctx context.Context) {
 		// El error ya se registró dentro, con su causa. Acá no hay nada que
 		// decidir: el intento siguiente lo programa la sesión.
 		_ = s.deps.Room.Rejoin(ctx)
+	}()
+}
+
+// vuelta tries to get back into the room this machine was a guest in.
+//
+// Same shape as [Supervisor.reingreso] and for the same reasons: asked before
+// launching because the question is cheap and the answer is usually no; run
+// outside the dispatcher because a join takes about a minute and the beat is
+// what makes the twenty-minute cut-off expire; and the flag released through
+// the work channel so only the dispatcher ever touches it.
+//
+// **This is the whole schedule.** There is no ladder any more and no goroutine
+// at startup: the session says when the next attempt is due, and it keeps saying
+// so until somebody gets in, somebody says stop, or the registry answers that the
+// room is gone. A daemon that just came up has its deadline at zero, so the first
+// attempt is on the first beat.
+func (s *Supervisor) vuelta(ctx context.Context) {
+	if s.vueltaViva || !s.deps.Room.ReturnDue() {
+		return
+	}
+	s.vueltaViva = true
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				s.deps.Log.Error("pánico volviendo a la última sala, el bucle sigue",
+					"pánico", fmt.Sprint(r), "pila", string(debug.Stack()))
+			}
+			select {
+			case s.work <- item{tag: tagReturnDone}:
+			case <-ctx.Done():
+			}
+		}()
+		// Sin error que mirar: lo que salga mal se anota dentro, con su causa, y
+		// el intento siguiente lo programa la sesión.
+		s.deps.Room.Return(ctx)
 	}()
 }
 

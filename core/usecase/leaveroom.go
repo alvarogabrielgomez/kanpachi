@@ -18,9 +18,23 @@ import (
 // hubieran suspendido y se revierten los ajustes que pidió el perfil. Elegir
 // el juego abre los puertos, salir de la sala los cierra, y no hay tercera
 // vía: el daemon no observa procesos y no sabe si dejaste de jugar.
+//
+// # It also covers being in NO room, and that is not a special case
+//
+// A machine on its way back into a room is not in one, and "salir de la sala" is
+// exactly what somebody means when they want that to stop. So this is the formal
+// request either way: it switches `AutoReturn` off and cuts any attempt in
+// flight. **It does not forget the room** — that is a different thing and only
+// the room ceasing to exist does it, which is what keeps going back by hand on
+// offer. See [Session.forgetLastRoomLocked].
 func (s *Session) LeaveRoom(ctx context.Context) domain.RoomState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if !s.state.Conn.InRoom() && s.returningLocked().Returning() {
+		s.stopReturningLocked()
+		return s.snapshot()
+	}
 
 	// El diario, **solo si de verdad hay sala de la que salir**.
 	//

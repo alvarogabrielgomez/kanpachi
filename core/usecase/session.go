@@ -396,6 +396,34 @@ type Session struct {
 	pending    domain.HostedRoom
 	hasPending bool
 
+	// last is the saved last room, cached in memory, and the clocks of the
+	// attempt to get back into it.
+	//
+	// **The room is cached and not read from disk on demand**, because whether
+	// this machine is going back is answered on every snapshot, and a snapshot
+	// goes out every couple of seconds to every face. Reading a sealed file that
+	// often to answer a question whose answer barely changes is work for nothing.
+	// [Session.saveLastRoomLocked] and [Session.forgetLastRoomLocked] keep it in
+	// step with what is on disk.
+	//
+	// The clocks are the only part of returning that is real state. Whether it is
+	// returning at all is derived; see [domain.ReturnAttempt].
+	last    domain.LastRoom
+	hasLast bool
+
+	returnNextAt   time.Time
+	returnAttempts int
+	returnReason   string
+
+	// returnRunning claims the turn while an attempt is in flight, because the
+	// lock is released across it: without this a second caller would find the
+	// deadline passed and dial the same room twice.
+	returnRunning bool
+
+	// returnCancel cuts the attempt in flight. It is what makes a person asking
+	// for something beat a clock that just went off. Nil when nothing is running.
+	returnCancel context.CancelFunc
+
 	// nick es el nombre propio de esta instalación en la sala actual.
 	//
 	// Se guarda aparte en vez de sacarlo del peer propio cada vez que hace
@@ -487,6 +515,7 @@ func NewSession(ctx context.Context, d Deps) (*Session, error) {
 	}
 	s.reloadCatalog(ctx)
 	s.loadPending()
+	s.loadLast()
 
 	// La primera publicación se hace acá y no en el primer Status.
 	//
@@ -577,6 +606,9 @@ func (s *Session) IssuedAddresses() []netip.Addr {
 // Asume el candado tomado.
 func (s *Session) snapshot() domain.RoomState {
 	out := s.state.Clone()
+	// Going back is DERIVED and it is derived HERE, on the way out, never stored
+	// in the live state. See [domain.RoomState.Returning].
+	out.Returning = s.returningLocked()
 	s.published.Store(&out)
 	// El enlace se publica ACÁ, que es el único sitio donde el estado y la
 	// clave de la tarjeta se leen juntos con el candado tomado.

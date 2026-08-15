@@ -341,8 +341,11 @@ func errorDelRegistro(status int, raw []byte) error {
 	case http.StatusRequestEntityTooLarge:
 		return fmt.Errorf("la tarjeta de la sala no le entra al registro (%s)", codeText(status, e))
 	case http.StatusTooManyRequests:
-		return fmt.Errorf("el registro está frenando las consultas de esta red, "+
-			"y no se reintenta porque reintentar es lo que alarga el freno (%s)", codeText(status, e))
+		// Wrapped in the sentinel so whatever is on a cadence can slow down
+		// instead of hammering: the limit counts failures, so insisting is what
+		// keeps the door shut. See [port.ErrSeedThrottled].
+		return fmt.Errorf("%w, y reintentar al mismo ritmo es lo que alarga el freno (%s)",
+			port.ErrSeedThrottled, codeText(status, e))
 	case http.StatusConflict:
 		return fmt.Errorf("el registro contestó que no pide password (%s)", codeText(status, e))
 	default:

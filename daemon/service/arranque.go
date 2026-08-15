@@ -66,18 +66,6 @@ type Sala interface {
 	PendingRoom() (domain.HostedRoom, bool)
 	// ResumeRoom reopens it with the SAME code and the SAME network.
 	ResumeRoom(ctx context.Context) (domain.RoomState, error)
-
-	// LastRoom is the room this machine was a GUEST in, and whether it should
-	// go back by itself. See [domain.LastRoom.AutoReturn].
-	LastRoom() (domain.LastRoom, bool)
-	// JoinRoom is the ordinary way in, and going back uses it rather than a
-	// path of its own: the exchange with the host happens exactly as it did the
-	// first time, so the host reissues and sees who arrives. That is what keeps
-	// revoking meaningful.
-	JoinRoom(ctx context.Context, input string, nick domain.Nickname) (domain.RoomState, error)
-	// Status says whether there is already a room, so that going back gives up
-	// the moment somebody got there first.
-	Status() domain.RoomState
 }
 
 // Deps son las piezas YA CONSTRUIDAS.
@@ -166,8 +154,11 @@ func Start(ctx context.Context, d Deps) (*Runtime, error) {
 		}
 	}()
 
+	// Reabrir la sala propia se lanza acá porque ocurre UNA vez y solo al
+	// arrancar. Volver a la última sala no está al lado: eso lo programa el
+	// latido del supervisor, y su primer intento cae en el primer latido porque
+	// la sesión arranca con el plazo en cero. Ver [supervisor.Supervisor.vuelta].
 	r.reabrirLaSala(ctx)
-	r.volverALaUltima(ctx)
 
 	d.Log.Info("el daemon está en marcha")
 	return r, nil
@@ -231,113 +222,6 @@ func (r *Runtime) reabrirLaSala(ctx context.Context) {
 		}
 		r.deps.Log.Info("la sala del arranque anterior está abierta otra vez")
 	}()
-}
-
-// reintentosDeVuelta is the ladder for going back to the last room.
-//
-// Four attempts and then it stops. The first is immediate, and the rest cover
-// the case this exists for: a group of friends where somebody turns their PC on
-// before the host does. Past five minutes it gives up rather than sitting there
-// dialling, because by then the honest thing is a person deciding, and the
-// button to go back is on the home screen.
-//
-// Constants and not configuration, like every other deadline in this daemon.
-var reintentosDeVuelta = []time.Duration{0, 30 * time.Second, 2 * time.Minute, 5 * time.Minute}
-
-// volverALaUltima goes back into the room this machine was a guest in.
-//
-// # Why this is not the same as the invariant it looks like it breaks
-//
-// "Nothing arriving from outside the app takes effect without confirming inside
-// the app." What arrives from outside is an invite link somebody clicked in a
-// browser, and none of that is happening here: **this room was already confirmed
-// once, deliberately, and nobody ever said they were leaving.** It is going back
-// to a room this machine was in, not acting on something a stranger sent. The
-// host's `reabrirLaSala` rests on the same argument.
-//
-// The other half of the argument is the file itself. It carries a code and a
-// nickname and nothing that gets anybody in: going back does the same exchange
-// as the first time, so the host reissues the credential and SEES who arrives.
-// A host who does not want this machine back kicks it, or renews the code.
-//
-// # What switches it off
-//
-// Pressing leave, and being kicked. Both are somebody deciding, and both are
-// recorded when they happen rather than guessed at here. Closing Kanpachi,
-// shutting the machine down and a power cut are not exits, so they come back.
-// See [domain.LastRoom.AutoReturn].
-//
-// # Why in the background, like the host's
-//
-// Because it takes about a minute and a `Type=notify` unit that does not report
-// in time looks hung, worse on Windows where the service manager kills it. The
-// entry opens first and this runs behind it, so `status` says it is connecting
-// and `progress` shows the steps, exactly as pasting a code by hand does.
-func (r *Runtime) volverALaUltima(ctx context.Context) {
-	if r.deps.Sala == nil {
-		return
-	}
-	last, hay := r.deps.Sala.LastRoom()
-	if !hay || !last.AutoReturn || last.Room.InviteID.IsZero() {
-		return
-	}
-
-	r.deps.Log.Info("hay una sala a la que volver",
-		"código", last.Room.InviteID.String(), "seed", last.Room.Seed)
-
-	r.reabriendo.Add(1)
-	go func() {
-		defer r.reabriendo.Done()
-		r.intentarVuelta(ctx, last)
-	}()
-}
-
-// intentarVuelta walks the ladder, and stops at the first thing that means the
-// answer will not change.
-func (r *Runtime) intentarVuelta(ctx context.Context, last domain.LastRoom) {
-	code := last.Room.InviteID.String()
-	for i, espera := range reintentosDeVuelta {
-		if espera > 0 {
-			t := time.NewTimer(espera)
-			select {
-			case <-t.C:
-			case <-ctx.Done():
-				t.Stop()
-				r.deps.Log.Info("volver a la última sala se cortó porque el daemon se apagaba")
-				return
-			}
-		}
-		// Somebody got there first: the person pasted another code, opened their
-		// own room, or an earlier attempt of this same ladder worked. Either way
-		// there is a room now and it is not this goroutine's business.
-		if r.deps.Sala.Status().Conn.InRoom() {
-			r.deps.Log.Info("ya hay sala, así que no se vuelve a la anterior")
-			return
-		}
-
-		_, err := r.deps.Sala.JoinRoom(ctx, code, last.Nick)
-		if err == nil {
-			r.deps.Log.Info("de vuelta en la última sala", "código", code)
-			return
-		}
-		if errors.Is(err, context.Canceled) {
-			r.deps.Log.Info("volver a la última sala se cortó porque el daemon se apagaba")
-			return
-		}
-		// **The registry answering "no such room" ends it, and that is the whole
-		// point of asking first.** It is the host having renewed the code or
-		// closed the room, and neither is going to change by dialling again: the
-		// answer is a fact and not a timeout. Every other failure is worth
-		// another rung, because "the host is not up yet" is the common one.
-		if errors.Is(err, port.ErrUnknownRoom) {
-			r.deps.Log.Info("esa sala ya no existe, así que no se insiste",
-				"código", code)
-			return
-		}
-		r.deps.Log.Info("no se pudo volver a la última sala todavía",
-			"código", code, "intento", i+1, "de", len(reintentosDeVuelta), "error", err)
-	}
-	r.deps.Log.Info("se deja de intentar volver a la última sala", "código", code)
 }
 
 // Wait espera a que la entrada termine.

@@ -42,6 +42,12 @@ var plazosVigilados = map[string]string{
 	"AnnounceInterval": "../../core/usecase/announce.go",
 	"KickGrace":        "../../core/usecase/kickmember.go",
 	"CredentialTTL":    "../../core/usecase/issuecredential.go",
+	// ReturnInterval no corta nada, y está acá por lo mismo que Beat y Sweep:
+	// es una CADENCIA contra una máquina ajena, sin tope de intentos, y lo que
+	// este guardián comprueba —que sea constante y que nada exportado la ponga—
+	// es exactamente lo que impide que alguien la deje en un segundo y convierta
+	// a cada invitado en un martillo sobre el registro.
+	"ReturnInterval": "../../core/usecase/returnroom.go",
 	"Beat":             "../../daemon/service/supervisor/supervisor.go",
 	"Sweep":            "../../daemon/service/supervisor/supervisor.go",
 	// Los dos del canal de la sala. NoticeAckWait es el que impide que esperar

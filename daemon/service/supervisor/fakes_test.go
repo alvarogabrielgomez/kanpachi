@@ -40,6 +40,8 @@ type salaFalsa struct {
 	// Lo del reingreso del invitado.
 	reingresoToca bool
 	reingresos    int
+	vueltaToca    bool
+	vueltas       int
 }
 
 func (r *salaFalsa) anota(s string) {
@@ -185,6 +187,24 @@ func (r *salaFalsa) Rejoin(_ context.Context) error {
 		<-bloquear
 	}
 	return nil
+}
+
+func (r *salaFalsa) ReturnDue() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.vueltaToca
+}
+
+func (r *salaFalsa) Return(_ context.Context) {
+	r.mu.Lock()
+	bloquear := r.bloquear
+	r.vueltas++
+	r.mu.Unlock()
+
+	r.anota("vuelta")
+	if bloquear != nil {
+		<-bloquear
+	}
 }
 
 func (r *salaFalsa) OnCanaryRequest(_ context.Context, req domain.CanaryRequest) error {
