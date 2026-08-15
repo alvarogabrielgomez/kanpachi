@@ -1,8 +1,10 @@
 // Package jsonfile guarda en disco lo que tiene que sobrevivir a un arranque.
 //
-// Implementa [port.StateStore] con dos archivos JSON en ProgramData. No conoce
-// Windows: son rutas y bytes, así que corre y se prueba en Linux igual que en
-// la máquina de verdad.
+// Implementa [port.StateStore] con cinco archivos en ProgramData: la sala que
+// esta máquina hospeda, la última a la que entró, el registro elegido, el token
+// de un registro cerrado y la libreta de huellas. No conoce Windows: son rutas
+// y bytes, así que corre y se prueba en Linux igual que en la máquina de
+// verdad.
 //
 // **Devuelve bytes crudos y no structs**, que es el contrato del puerto. Quien
 // decide si una sala guardada es válida es el dominio, con su decodificador

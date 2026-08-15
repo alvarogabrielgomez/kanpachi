@@ -45,8 +45,9 @@ const PlazoRelease = 5 * time.Second
 // comparte con todo lo que haya en su red—, y obliga a abrir `connect-src` a
 // un origen ajeno en la CSP, que hoy está cerrada a `'self'` a propósito.
 //
-// Preguntando acá, la consulta sale una vez por hora desde el droplet, para
-// todos los visitantes, y la página sigue hablando solo con su propio origen.
+// Preguntando acá, la consulta sale una vez al día desde el droplet, para todos
+// los visitantes, y la página sigue hablando solo con su propio origen. Ver
+// [Cadencia].
 //
 // # Por qué nunca bloquea
 //

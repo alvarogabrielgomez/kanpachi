@@ -212,7 +212,7 @@ func OpenStore(dir string, notify func(error)) (*Store, int, int, error) {
 // resolución de invite IDs y la página mientras el disco contesta. Es el mismo
 // fallo que ya obligó a sacar la derivación de Argon2id fuera del lock, y ahí
 // además se disfrazaba de proceso colgado porque el watchdog late pidiendo
-// `/healthz`. Ver [redDeEncuentro].
+// `/healthz`. Ver [rendezvous].
 //
 // El snapshot se toma bajo lectura y la escritura la serializa el mutex propio
 // del keeper, así que dos mutaciones a la vez no se pisan el fichero.

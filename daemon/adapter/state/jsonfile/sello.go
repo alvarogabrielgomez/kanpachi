@@ -37,9 +37,12 @@ const nonceLen = 12
 //
 // Sin datos autenticados aparte: el nombre del fichero no entra en el sello. Lo
 // que se gana con AAD es que un blob no se pueda mover de un fichero a otro, y
-// acá los dos ficheros que hay llevan cosas distintas y el decodificador
+// acá los cuatro que se sellan llevan cosas distintas y el decodificador
 // estricto del dominio rechaza el que no le toca. Meterlo sería una defensa
 // contra algo que ya falla ruidoso.
+//
+// El quinto, `seed.txt`, no pasa por acá: va en claro a propósito, y el motivo
+// está donde se guarda. Ver [Store.SaveSeed].
 func sellar(clave [32]byte, plano []byte) ([]byte, error) {
 	gcm, err := nuevoGCM(clave)
 	if err != nil {

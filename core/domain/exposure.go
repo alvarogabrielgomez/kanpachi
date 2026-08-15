@@ -211,8 +211,14 @@ type ForeignRule struct {
 	Name       string
 	Executable string
 	Profiles   []FirewallProfile
-	// Class decide el trato en la UI. La calcula [ClassifyForeignAgainst], que es
-	// dominio, y jamás el adaptador.
+	// Class decide el trato en la UI.
+	//
+	// Tres de las cuatro las decide [ClassifyForeignAgainst], que es dominio y
+	// mira ejecutables. La cuarta la pone el adaptador de Windows, y tiene que
+	// ser así: [ClassOnOurAdapter] no se deduce del ejecutable, se deduce de que
+	// la regla nombre NUESTRA interfaz, que es un hecho del almacén de reglas de
+	// Windows y no llega hasta acá. Lo que el adaptador NO decide es qué se hace
+	// con cada clase, que es lo que [ForeignRule.Blocking] contesta.
 	Class RuleClass
 	// WasEnabled es el estado previo, para restaurar. Se persiste ANTES de
 	// tocar nada, en suspended-rules.json, para poder deshacerlo tras una
@@ -317,10 +323,14 @@ const (
 	// AlertForeignRule: el propio juego dejó una regla que lo hace alcanzable
 	// sin pasar por Kanpachi.
 	AlertForeignRule
-	// AlertLobbyConflict: una red de esta máquina pisa el /24 fijo del
-	// vestíbulo. Entrar a salas ajenas puede fallar, y sin este aviso el fallo
-	// sería indiagnosticable. Ver "El vestíbulo tiene un /24 fijo" en
-	// 03-arquitectura.md.
+	// AlertLobbyConflict: una red de esta máquina pisa el /24 del vestíbulo de
+	// ESTA sala. Entrar a salas ajenas puede fallar, y sin este aviso el fallo
+	// sería indiagnosticable.
+	//
+	// El /24 dejó de ser fijo: sale de [Rendezvous.LobbySubnet], que reparte los
+	// 256 de la mitad alta de RFC 2544 con un byte del identificador de red. Así
+	// que el conflicto es contra la sala en la que se está, y no contra un rango
+	// que valiera para todas.
 	AlertLobbyConflict
 	// AlertKickIncomplete: una expulsión no cerró sus dos capas.
 	//
@@ -373,7 +383,13 @@ const (
 	AlertGameLost
 )
 
-// AllAlertKinds son todas las alertas que el producto sabe levantar.
+// AllAlertKinds son todos los valores del enum, que NO es lo mismo que las que
+// el producto sabe levantar.
+//
+// [AlertForeignRule] está declarada, listada acá, y con nombre en la API local,
+// y nadie la levanta. Puede ser hueco de función y puede ser código muerto; lo
+// que no puede es que esta lista mienta sobre lo uno o lo otro. Está anotado
+// sin decidir en 07-futuro.md.
 //
 // El conjunto es cerrado, y esta lista es lo que lo vuelve ENUMERABLE. De eso
 // dependen dos cosas que no son cosméticas: el test que exige que cada alerta

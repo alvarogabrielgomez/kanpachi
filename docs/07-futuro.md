@@ -299,7 +299,15 @@ Lo que **no** cambia el día que se haga: el seed sigue sin poder leer las
 tarjetas, y sigue guardando lo mismo de poco. Una base de datos hace más barato
 guardar más, y eso es exactamente lo que la decisión 24 no quiere.
 
-## 16. Lo que se decidió NO hacer
+## 16. Dos cosas anotadas sin decidir
+
+Salieron del barrido semántico del 2026-08-15. Ninguna es un bug de hoy y las dos son decisiones de diseño, así que se anotan en vez de resolverse a la carrera.
+
+**`ExitNone` hace tres trabajos.** Es el centinela de "no se dio motivo", el de "no pises el último motivo de salida", y el apagado del daemon. Encima, por no ser `ExitUser` ni `ExitKicked`, es lo que deja encendida la vuelta automática del invitado, o sea que el valor cero del enum decide una conducta del producto. El nombre que pide es `ExitShutdown`, y no es un renombre: `TransitionWithExit` explota que sea el cero, así que partirlo cambia código.
+
+**`AlertForeignRule` no la levanta nadie.** Está declarada en el enum, listada en `AllAlertKinds()`, con nombre en la API local y con texto en la ventana, y ninguna ruta del daemon la emite. Puede ser hueco de función, para el día que una regla ajena sobre el juego activo merezca aviso propio, y puede ser código muerto de una versión anterior. Lo que se corrigió ya es el doc de `AllAlertKinds()`, que decía ser "todas las que el producto sabe levantar".
+
+## 17. Lo que se decidió NO hacer
 
 Escrito para resistir la tentación:
 

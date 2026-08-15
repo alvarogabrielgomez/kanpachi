@@ -22,7 +22,7 @@ import (
 //
 //  1. El invitado pasa por `checkRoomExists`, que le pregunta al registro y **se
 //     cree el "no"**: corta antes de arrancar el motor.
-//  2. El host no lo puede reponer. [Store.Publish] exige que la entrada exista y
+//  2. El host no lo puede reponer. [Store.publish] exige que la entrada exista y
 //     devuelve `ErrNotFound`, y **no debe crear**, porque crear reabriría la
 //     carrera que el fijado existe para cerrar.
 //  3. Único arreglo desde el producto: renovar el código, que mata los enlaces
@@ -68,7 +68,7 @@ type snapshot struct {
 // El mutex es SUYO y no el del almacén, a propósito. Escribir con el lock del
 // almacén tomado dejaría parados `/healthz`, la resolución de invite IDs y la
 // página mientras el disco contesta, que es exactamente el fallo que ya obligó a
-// sacar la derivación de Argon2id fuera del lock. Ver [redDeEncuentro].
+// sacar la derivación de Argon2id fuera del lock. Ver [rendezvous].
 type keeper struct {
 	path string
 	mu   sync.Mutex
