@@ -44,8 +44,8 @@ const (
 // ErrNoState es que el archivo no está.
 //
 // **No es un error del programa.** Que falte `hosted-room.json` es lo normal
-// en una instalación nueva y en TODA salida limpia: la ausencia del archivo es
-// justamente la señal de que la última vez se cerró bien.
+// mientras nadie haya hospedado, y después de cerrar la sala. Su ausencia no
+// dice nada más: apagarse limpio ya no lo borra.
 var ErrNoState = errors.New("no hay estado guardado")
 
 // Store es el almacén.

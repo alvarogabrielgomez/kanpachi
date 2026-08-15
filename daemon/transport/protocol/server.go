@@ -87,9 +87,9 @@ type API interface {
 	// [MethodSeedPassword] para lo que no vuelve ni queda de él.
 	SeedPassword(ctx context.Context, password string) error
 
-	PendingRoom() (domain.HostedRoom, bool)
+	SavedRoom() (domain.HostedRoom, bool)
 	ResumeRoom(ctx context.Context) (domain.RoomState, error)
-	DiscardPendingRoom(ctx context.Context) error
+	DiscardSavedRoom(ctx context.Context) error
 	LastRoom() (domain.LastRoom, bool)
 
 	// Progress son los pasos de la operación larga que esté en curso, o los de
@@ -580,15 +580,15 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 	case MethodSeedPassword:
 		return s.seedPassword(ctx, req.Params)
 
-	case MethodPendingRoom:
-		return s.pending()
+	case MethodSavedRoom:
+		return s.savedRoom()
 
 	case MethodResumeRoom:
 		st, err := s.api.ResumeRoom(ctx)
 		return s.roomOrErr(st, err)
 
-	case MethodDiscardPendingRoom:
-		if err := s.api.DiscardPendingRoom(ctx); err != nil {
+	case MethodDiscardSavedRoom:
+		if err := s.api.DiscardSavedRoom(ctx); err != nil {
 			return nil, errorFor(err)
 		}
 		return result(struct{}{})
@@ -868,17 +868,17 @@ func (s *Server) observe(ctx context.Context, params json.RawMessage) (json.RawM
 	return result(rangeViews(rangos))
 }
 
-func (s *Server) pending() (json.RawMessage, *Error) {
-	room, hay := s.api.PendingRoom()
+func (s *Server) savedRoom() (json.RawMessage, *Error) {
+	room, hay := s.api.SavedRoom()
 	if !hay {
 		return result(struct {
 			Found bool `json:"found"`
 		}{false})
 	}
 	return result(struct {
-		Found bool        `json:"found"`
-		Room  PendingView `json:"room"`
-	}{true, PendingView{
+		Found bool          `json:"found"`
+		Room  SavedRoomView `json:"room"`
+	}{true, SavedRoomView{
 		Code: room.Room.InviteID.String(), Seed: room.Room.Seed, Name: room.Name,
 		Game: room.GameID, Subnet: room.Subnet.String(), SavedAt: stamp(room.SavedAt),
 	}})

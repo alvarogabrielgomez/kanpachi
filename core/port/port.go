@@ -302,25 +302,32 @@ type CatalogStore interface {
 // invariantes. Un adaptador que decidiera qué es una sala válida movería la
 // política fuera de core.
 //
-// Son tres archivos y tres motivos distintos:
+// Five files, five different reasons:
 //
-//	hosted-room.json  SOLO EN EL HOST. La sala que estaba abierta. Salir limpio
-//	                  lo borra y morir sucio lo deja, así que su sola presencia
-//	                  al arrancar es la señal de que hubo un mal cierre.
-//	last-room.json    SOLO EN INVITADOS. La última sala, para poder volver.
-//	                  Lleva el código y nada que sirva para entrar sin pasar
-//	                  por el host.
-//	seed.txt          En los dos. El registro en el que ESTA máquina abre
-//	                  salas, ELEGIDO por la persona. Ver [StateStore.LoadSeed].
+//	hosted-room.json  HOST ONLY. The room this machine opened. It says "there
+//	                  is a room to reopen", and only closing the room clears
+//	                  it. See [Session.SavedRoom].
+//	last-room.json    GUESTS ONLY. The last room, to be able to go back. It
+//	                  carries the code and nothing that gets anybody in
+//	                  without going through the host.
+//	seed.txt          Both. The registry THIS machine opens rooms on, PICKED
+//	                  by the person. See [StateStore.LoadSeed].
+//	seed-token.json   Both. The refresh token of a registry that asks for a
+//	                  password to host. See [StateStore.LoadSeedToken].
+//	known-hosts.json  Both. Who this machine has played with, to be able to
+//	                  say so before going in. See [StateStore.LoadKnownHosts].
 //
-// Los dos primeros nombres son un PAR, y eso es lo que dicen: el eje no es
-// "actual contra anterior", es host contra invitado. `hosted-room.json` lo
-// escribe solo quien hospeda y lleva la identidad de la red real; el otro lo
-// escribe solo quien entró y no lleva nada que sirva para entrar sin el host.
+// The first two names are a PAIR, and that is what they say: the axis is not
+// "current against previous", it is host against guest. `hosted-room.json` is
+// written only by whoever hosts and carries the real network identity; the
+// other one is written only by whoever went in and carries nothing that gets
+// anybody in without the host.
 //
-// Que cualquiera de los tres falte NO es un error: los dos primeros porque es
-// lo normal en una instalación nueva y en toda salida limpia, y el tercero
-// porque nadie ha hospedado todavía.
+// **The absence of any of the five is NOT an error**, and none of the five
+// means anything by being absent. `hosted-room.json` used to: it was deleted
+// on the way out and left behind by a crash, so its presence was read as a
+// dirty close. That reading is gone, because shutting down cleanly keeps it
+// now -- see `destino` in the leave-room use case.
 type StateStore interface {
 	LoadRoom() ([]byte, error)
 	SaveRoom([]byte) error

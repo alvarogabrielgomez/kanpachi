@@ -9,40 +9,46 @@ import (
 	"github.com/accentiostudios/kanpachi/core/port"
 )
 
-// ErrNoPendingRoom es reanudar sin nada que reanudar.
-var ErrNoPendingRoom = errors.New("no hay ninguna sala del arranque anterior")
+// ErrNoSavedRoom es reanudar sin nada que reanudar.
+var ErrNoSavedRoom = errors.New("no hay ninguna sala guardada")
 
-// PendingRoom es la sala que quedó abierta cuando el daemon murió sucio.
+// SavedRoom is the room THIS machine hosts, as `hosted-room.json` left it.
 //
-// **Su sola existencia es la señal de mal cierre.** Salir limpio borra el
-// archivo y morir sucio lo deja, así que no hace falta una bandera `dirty`
-// dentro, que sería un campo más que alguien puede escribir a mano.
+// # What its presence means, and what it stopped meaning
 //
-// La lee la UI al arrancar para preguntar. Preguntar y no reanudar solo: es la
-// invariante de que nada que llegue de fuera de la app surte efecto sin
-// confirmación dentro de la app, y acá lo de fuera es un archivo del arranque
-// anterior.
-func (s *Session) PendingRoom() (domain.HostedRoom, bool) {
+// It says "there is a room to reopen", and nothing else. It used to say "the
+// last exit was dirty", inferred from the file being deleted on the way out;
+// that reading died with `destino`, because shutting down cleanly keeps the
+// file now. The only thing that clears it is somebody closing the room.
+//
+// # It is not a question waiting to be answered
+//
+// [Runtime.reabrirLaSala] reopens it on every start, unconditionally, with the
+// same code and the same network. What this is for is the case where that
+// FAILS: the faces read it to offer reopening by hand, and to offer forgetting
+// it. On a machine with no window those two are the only way in.
+func (s *Session) SavedRoom() (domain.HostedRoom, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.pending, s.hasPending
+	return s.saved, s.hasSaved
 }
 
-// DiscardPendingRoom tira la sala anterior. Es el "no, ciérrala" de la
-// pregunta del arranque.
-func (s *Session) DiscardPendingRoom(_ context.Context) error {
+// DiscardSavedRoom throws the saved room away. It is "close it" without
+// reopening it first, and the only thing that stops it coming back on every
+// start.
+func (s *Session) DiscardSavedRoom(_ context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if !s.hasPending {
-		return ErrNoPendingRoom
+	if !s.hasSaved {
+		return ErrNoSavedRoom
 	}
 	if err := s.deps.State.ClearRoom(); err != nil {
 		return fmt.Errorf("borrando la sala del arranque anterior: %w", err)
 	}
-	s.pending = domain.HostedRoom{}
-	s.hasPending = false
+	s.saved = domain.HostedRoom{}
+	s.hasSaved = false
 	s.deps.Log.Info("la sala del arranque anterior se descartó")
 	return nil
 }
@@ -71,10 +77,10 @@ func (s *Session) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
 	if s.state.Conn.InRoom() {
 		return domain.RoomState{}, ErrBusy
 	}
-	if !s.hasPending {
-		return domain.RoomState{}, ErrNoPendingRoom
+	if !s.hasSaved {
+		return domain.RoomState{}, ErrNoSavedRoom
 	}
-	saved := s.pending
+	saved := s.saved
 
 	if err := s.state.Transition(domain.StateResolving, "el usuario reabrió la sala anterior"); err != nil {
 		return domain.RoomState{}, err
@@ -172,8 +178,8 @@ func (s *Session) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
 	s.republishCardLocked(ctx)
 
 	s.saveRoomLocked()
-	s.pending = domain.HostedRoom{}
-	s.hasPending = false
+	s.saved = domain.HostedRoom{}
+	s.hasSaved = false
 
 	ok = true
 	s.deps.Log.Info("sala anterior reabierta",

@@ -117,7 +117,7 @@ void main() {
         switch (method) {
           DaemonMethods.status => sala ?? <String, Object?>{},
           DaemonMethods.pendingInvite => invite ?? <String, Object?>{},
-          DaemonMethods.pendingRoom => <String, Object?>{'found': false},
+          DaemonMethods.savedRoom => <String, Object?>{'found': false},
           DaemonMethods.listGames || DaemonMethods.foreignRules => <Object?>[],
           _ => <String, Object?>{},
         };
@@ -264,7 +264,7 @@ void main() {
           (String method, Map<String, Object?>? _) => switch (method) {
             DaemonMethods.status ||
             DaemonMethods.pendingInvite => <String, Object?>{},
-            DaemonMethods.pendingRoom => <String, Object?>{'found': false},
+            DaemonMethods.savedRoom => <String, Object?>{'found': false},
             DaemonMethods.listGames => <Object?>[],
             _ => <String, Object?>{},
           },

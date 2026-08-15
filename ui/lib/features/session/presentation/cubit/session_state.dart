@@ -4,7 +4,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
-import 'package:kanpachi_ui/features/session/domain/entities/pending_room.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/saved_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 
 /// En qué anda la sesión ahora mismo.
@@ -99,7 +99,7 @@ class SessionState {
     this.progress,
     this.verbose = false,
     this.invite,
-    this.pendingRoom,
+    this.savedRoom,
   });
 
   final SessionPhase phase;
@@ -209,12 +209,12 @@ class SessionState {
   /// ventana escondida, con otra pantalla abierta o con una sala en marcha.
   final PendingInvite? invite;
 
-  /// La sala del arranque anterior, esperando que alguien diga qué hacer.
+  /// La sala propia que quedó en disco y que el daemon no logró reponer.
   ///
   /// Vive en el estado por lo mismo que [invite]: quien la descubre es el
   /// latido y no una navegación. La diferencia es que preguntar por ella NO la
-  /// consume, así que sigue ofreciéndose hasta que se reabre o se descarta.
-  final PendingRoom? pendingRoom;
+  /// consume, así que sigue ofreciéndose hasta que se reabre o se cierra.
+  final SavedRoom? savedRoom;
 
   bool get hasRoom => room != null;
 
@@ -271,8 +271,8 @@ class SessionState {
     bool? verbose,
     PendingInvite? invite,
     bool clearInvite = false,
-    PendingRoom? pendingRoom,
-    bool clearPendingRoom = false,
+    SavedRoom? savedRoom,
+    bool clearSavedRoom = false,
   }) => SessionState(
     phase: phase ?? this.phase,
     room: clearRoom ? null : (room ?? this.room),
@@ -292,6 +292,6 @@ class SessionState {
     progress: clearProgress ? null : (progress ?? this.progress),
     verbose: verbose ?? this.verbose,
     invite: clearInvite ? null : (invite ?? this.invite),
-    pendingRoom: clearPendingRoom ? null : (pendingRoom ?? this.pendingRoom),
+    savedRoom: clearSavedRoom ? null : (savedRoom ?? this.savedRoom),
   );
 }

@@ -62,8 +62,8 @@ type Bucle interface {
 type Sala interface {
 	LeaveRoomOnShutdown(ctx context.Context) error
 
-	// PendingRoom is the room left by the previous run, if there is one.
-	PendingRoom() (domain.HostedRoom, bool)
+	// SavedRoom is the room this machine hosts, as it was left on disk.
+	SavedRoom() (domain.HostedRoom, bool)
 	// ResumeRoom reopens it with the SAME code and the SAME network.
 	ResumeRoom(ctx context.Context) (domain.RoomState, error)
 }
@@ -197,7 +197,7 @@ func (r *Runtime) reabrirLaSala(ctx context.Context) {
 	if r.deps.Sala == nil {
 		return
 	}
-	pendiente, hay := r.deps.Sala.PendingRoom()
+	pendiente, hay := r.deps.Sala.SavedRoom()
 	if !hay {
 		return
 	}

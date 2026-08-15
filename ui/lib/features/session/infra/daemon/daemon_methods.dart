@@ -40,9 +40,15 @@ abstract final class DaemonMethods {
 
   static const String reapplyProtection = 'reapply_protection';
 
-  static const String pendingRoom = 'pending_room';
+  /// The room THIS machine hosts, as it was left on disk.
+  ///
+  /// **The two wire names with `pending` in them are frozen**, and no longer
+  /// say what they used to: the room reopens by itself on every start, so
+  /// nothing is pending anybody's decision. Changing the string would break
+  /// every window and every script older than the daemon serving it.
+  static const String savedRoom = 'pending_room';
   static const String resumeRoom = 'resume_room';
-  static const String discardPendingRoom = 'discard_pending_room';
+  static const String discardSavedRoom = 'discard_pending_room';
   static const String lastRoom = 'last_room';
 
   /// Steps of the long operation in flight.

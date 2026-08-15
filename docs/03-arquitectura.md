@@ -495,9 +495,9 @@ type CatalogStore interface {
 // StateStore es lo que sobrevive a un arranque, y devuelve bytes por lo mismo
 // que CatalogStore: el decodificador estricto vive en el dominio.
 //
-//   hosted-room.json  SOLO EN EL HOST. Salir limpio lo borra y morir sucio lo
-//                     deja, así que su sola presencia al arrancar es la señal
-//                     de mal cierre. No hay bandera "dirty" dentro
+//   hosted-room.json  SOLO EN EL HOST. Dice que hay una sala que reponer, y
+//                     nada más: apagarse limpio lo conserva, y lo único que lo
+//                     borra es cerrar la sala
 //   last-room.json    SOLO EN INVITADOS. Código, seed, nombre y nick. Jamás la
 //                     credencial ni la identidad de la red real
 type StateStore interface {
@@ -1215,7 +1215,7 @@ La única operación que devuelve **estado y error a la vez** es expulsar, y es 
 | `DiagReport()` | `diag_report` | Consulta `Diagnostics` al motor y conserva lo que el motor no sabe: el MTU lo sondea netcfg y la subred la eligió el plan de direcciones |
 | `ObserveGame(proceso, árbol)` | `observe_game` | La foto de sockets del creador de perfiles. Es la ÚNICA función del programa que mira un proceso |
 | `RejectedGames()` | `rejected_games` | Los perfiles que el catálogo rechazó, con su motivo, para que un archivo mal escrito sea arreglable en vez de invisible |
-| `PendingRoom()` / `ResumeRoom()` / `DiscardPendingRoom()` | `pending_room` / `resume_room` / `discard_pending_room` | La sala que quedó abierta tras un mal cierre. **Nunca se reabre sola**, ver decisión 2 |
+| `SavedRoom()` / `ResumeRoom()` / `DiscardSavedRoom()` | `pending_room` / `resume_room` / `discard_pending_room` | La sala que esta máquina hospeda, tal como quedó en disco. **Se reabre sola en cada arranque**, ver decisión 2: estas tres son la salida de emergencia de cuando eso falla. Los dos nombres de cable con `pending` dentro están congelados |
 | `LastRoom()` | `last_room` | Los datos de "volver a la última sala". Entrar es el `join_room` de siempre con el código guardado |
 
 Tres operaciones **no** vienen del named pipe, y las tres las llama el supervisor o el adaptador del canal de control:
@@ -1234,7 +1234,7 @@ Tres operaciones **no** vienen del named pipe, y las tres las llama el superviso
 | `TickHostAbsence()` | El contador de la decisión 20, con nombre propio | El corte a los veinte minutos, solo |
 | `ReapplyAdapter()` | El supervisor, en cada identificación de red y cada ocho latidos | Repone lo que Windows revirtió |
 | `RefreshAlerts()` | El supervisor, cada 60 s | Corre el módulo de exposición, repone las reglas propias si estaban alteradas, y publica el resultado. Ninguna comprobación es fatal |
-| `PendingRoom()`, `ResumeRoom()`, `DiscardPendingRoom()` | La UI, al arrancar, si hubo mal cierre | Preguntar por la sala del arranque anterior. Nunca se reabre sola |
+| `SavedRoom()`, `ResumeRoom()`, `DiscardSavedRoom()` | La UI y el CLI, cuando la reapertura automática falló | Reponer a mano la sala propia, o cerrarla. El arranque ya la reabrió solo |
 | `LastRoom()` | La UI, en la pantalla de inicio | Los datos de "volver a la última sala". Entrar es el `JoinRoom` de siempre |
 
 Sobre la primera: La llama el adaptador del canal de control cuando alguien toca la puerta del vestíbulo. Vive en los casos de uso y no en el adaptador porque todo lo que decide es política: si esta máquina puede emitir, qué dirección le toca al que entra, cuánto vale la credencial y qué se le cuenta de la red. El motor pone el token, que es lo único que no se decide acá y tiene que ser así, porque revocarlo es lo que corta la sesión.
@@ -2415,8 +2415,8 @@ ProgramData\Kanpachi\
                              a todos en desconocidos otra vez
   hosted-room.json           SOLO EN EL HOST: invite ID con su seed, identidad de la red
                              real, subred, nombre, nick, la tarjeta sellada con su
-                             clave, e id del juego activo. Su PRESENCIA al arrancar
-                             es la señal de mal cierre: salir limpio lo borra
+                             clave, e id del juego activo. Su PRESENCIA dice que hay
+                             una sala que reponer, y el arranque la repone sola
   last-room.json             SOLO EN INVITADOS: código, seed, nombre de la sala y nick.
                              Jamás la credencial ni la identidad de la red real
   seed.txt                   el registro donde ESTA máquina abre salas. En claro y

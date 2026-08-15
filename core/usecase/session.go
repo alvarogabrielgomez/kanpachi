@@ -388,13 +388,13 @@ type Session struct {
 	// seguidos tienen que programar una ronda en vez de diez.
 	canaryDue chan struct{}
 
-	// pending es la sala que quedó abierta en el arranque anterior, si la hubo.
+	// saved is the room THIS machine hosts, as it was left on disk.
 	//
-	// Se lee al construir la sesión y NO se actúa sobre ella. Reanudar es una
-	// decisión del usuario dentro de la app, nunca un efecto de arrancar el
-	// servicio.
-	pending    domain.HostedRoom
-	hasPending bool
+	// Read when the session is built and acted upon right away: the room comes
+	// back by itself on every start. What is kept here is what the faces need to
+	// offer reopening it by hand when that fails, and to forget it.
+	saved    domain.HostedRoom
+	hasSaved bool
 
 	// last is the saved last room, cached in memory, and the clocks of the
 	// attempt to get back into it.
@@ -514,7 +514,7 @@ func NewSession(ctx context.Context, d Deps) (*Session, error) {
 		d.Log.Warn("no se pudieron restaurar las reglas ajenas suspendidas", "error", err)
 	}
 	s.reloadCatalog(ctx)
-	s.loadPending()
+	s.loadSavedRoom()
 	s.loadLast()
 
 	// La primera publicación se hace acá y no en el primer Status.
@@ -530,16 +530,16 @@ func NewSession(ctx context.Context, d Deps) (*Session, error) {
 	return s, nil
 }
 
-// loadPending lee la sala que quedó abierta en el arranque anterior.
+// loadSavedRoom reads the room this machine hosts, as it was left on disk.
 //
-// Que no haya archivo es el caso NORMAL: toda salida limpia lo borra. Que haya
-// uno ilegible tampoco es un error del arranque, porque quedarse sin daemon por
-// un JSON cortado sería peor que perder una sala que de todas formas hay que
-// confirmar a mano.
-func (s *Session) loadPending() {
+// Having no file is the NORMAL case: nobody has hosted, or the room was closed.
+// An unreadable one is not a startup error either, because being left without a
+// daemon over a truncated JSON would be worse than losing a room that can be
+// opened again by hand.
+func (s *Session) loadSavedRoom() {
 	raw, err := s.deps.State.LoadRoom()
 	if err != nil {
-		s.deps.Log.Info("no hay sala pendiente del arranque anterior", "detalle", err)
+		s.deps.Log.Info("no hay ninguna sala guardada en disco", "detalle", err)
 		return
 	}
 	room, err := domain.DecodeHostedRoom(raw)
@@ -547,9 +547,9 @@ func (s *Session) loadPending() {
 		s.deps.Log.Warn("la sala guardada no se pudo interpretar y se ignora", "error", err)
 		return
 	}
-	s.pending = room
-	s.hasPending = true
-	s.deps.Log.Info("hay una sala del arranque anterior sin cerrar",
+	s.saved = room
+	s.hasSaved = true
+	s.deps.Log.Info("hay una sala guardada, se va a reabrir",
 		"código", room.Room.InviteID.String(), "guardada", room.SavedAt.Format(time.RFC3339))
 }
 

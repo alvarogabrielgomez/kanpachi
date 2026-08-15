@@ -342,7 +342,7 @@ abstract final class AppMessages {
     ),
     FailureCode.noPending => const AppMessage(
       severity: MessageSeverity.neutral,
-      body: 'No quedó ninguna sala a medio cerrar del arranque anterior.',
+      body: 'Esta máquina no tiene ninguna sala guardada.',
     ),
     // Es lo primero que se comprueba al pegar un código, antes de levantar
     // nada, así que llega en el primer segundo. El texto tiene que servir para
@@ -735,7 +735,7 @@ abstract final class AppMessages {
     FailedAction.rotateInviteCode => 'No se pudo renovar el código',
     FailedAction.renameRoom => 'No se pudo cambiar el nombre',
     FailedAction.resumeRoom => 'No se pudo reabrir la sala anterior',
-    FailedAction.discardPendingRoom => 'No se pudo descartar la sala anterior',
+    FailedAction.discardSavedRoom => 'No se pudo descartar la sala anterior',
     FailedAction.reapplyProtection => 'No se pudo reponer la protección',
     FailedAction.probeHost => 'No se pudo comprobar los puertos del host',
     FailedAction.loadCatalog => 'No se pudo leer el catálogo de juegos',

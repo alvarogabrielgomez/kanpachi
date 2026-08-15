@@ -127,7 +127,7 @@ func presentNoRoomMenu(ctx context.Context, op opciones, st protocol.RoomView) e
 		opciones = append(opciones, ahora, dejarlo)
 	}
 	opciones = append(opciones, abrir, entrar)
-	if hay, _ := haySalaPendiente(op); hay {
+	if hay, _ := haySalaGuardada(op); hay {
 		opciones = append(opciones, reanudar, descartar)
 	}
 	// La pregunta solo se hace si puede cambiar algo. Este menú abre una conexión
@@ -218,7 +218,7 @@ func volverALaÚltima(ctx context.Context, op opciones) error {
 	return cmdJoin(ctx, op, []string{v.Room.Code + "@" + v.Room.Seed})
 }
 
-func haySalaPendiente(op opciones) (bool, error) {
+func haySalaGuardada(op opciones) (bool, error) {
 	c, err := abrir(op)
 	if err != nil {
 		return false, err
@@ -226,7 +226,7 @@ func haySalaPendiente(op opciones) (bool, error) {
 	defer func() { _ = c.Close() }()
 	v, err := client.Ask[struct {
 		Found bool `json:"found"`
-	}](c, protocol.MethodPendingRoom, nil)
+	}](c, protocol.MethodSavedRoom, nil)
 	return v.Found, err
 }
 

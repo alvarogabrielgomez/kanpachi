@@ -517,9 +517,9 @@ func cmdPending(_ context.Context, op opciones, _ []string) error {
 	defer func() { _ = c.Close() }()
 
 	v, hecho, err := pedir[struct {
-		Found bool                 `json:"found"`
-		Room  protocol.PendingView `json:"room"`
-	}](c, op, protocol.MethodPendingRoom, nil)
+		Found bool                   `json:"found"`
+		Room  protocol.SavedRoomView `json:"room"`
+	}](c, op, protocol.MethodSavedRoom, nil)
 	if hecho || err != nil {
 		return err
 	}
@@ -527,7 +527,7 @@ func cmdPending(_ context.Context, op opciones, _ []string) error {
 		fmt.Println("No room was left from the previous start.")
 		return nil
 	}
-	fmt.Printf("  Pending room    %s\n", v.Room.Name)
+	fmt.Printf("  Saved room      %s\n", v.Room.Name)
 	fmt.Printf("  Code            %s@%s\n", v.Room.Code, v.Room.Seed)
 	if v.Room.Game != "" {
 		fmt.Printf("  Game            %s\n", v.Room.Game)
@@ -553,7 +553,7 @@ func cmdDiscard(_ context.Context, op opciones, _ []string) error {
 	}
 	defer func() { _ = c.Close() }()
 
-	_, hecho, err := pedir[struct{}](c, op, protocol.MethodDiscardPendingRoom, nil)
+	_, hecho, err := pedir[struct{}](c, op, protocol.MethodDiscardSavedRoom, nil)
 	if hecho || err != nil {
 		return err
 	}

@@ -49,8 +49,15 @@ type InvitePreview struct {
 	Trust domain.CardTrust
 
 	// Fingerprint is the printed shape of the key the registry pinned for this
-	// code, and it is filled ONLY when that key signed the card. A fingerprint
-	// of a key nothing vouches for is a number that decorates.
+	// code, and it is filled whenever the registry served one.
+	//
+	// **It is not tied to the card signature**, on purpose and measured: what
+	// this identifies is the key, which is what the guest checks the host
+	// against in the lobby a moment later, and a registry from before the
+	// signature was stored serves the key without a `sig`. Tying the two would
+	// leave every host on such a registry reading as new forever. See where it
+	// is filled in, below. Empty means the registry pinned no key at all, and
+	// then there is nothing to identify.
 	Fingerprint string
 
 	// Verdict is what the fingerprint book says about that key, and Known is

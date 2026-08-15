@@ -1,24 +1,27 @@
 import 'package:flutter/foundation.dart';
 
-/// La sala que quedó abierta cuando el daemon murió sucio.
+/// La sala que ESTA máquina hospeda, tal como quedó guardada en disco.
 ///
-/// **Su sola existencia es la señal de mal cierre.** Salir de la sala o apagar
-/// bien borra el archivo del disco, y morir sin poder despedirse lo deja: un
-/// corte de luz, un cuelgue, un fin de proceso a la fuerza. Por eso no hace
-/// falta ninguna bandera `dirty` dentro, que sería un campo más que alguien
-/// puede escribir a mano.
+/// # Qué significa que exista, y qué dejó de significar
 ///
-/// Existe para PREGUNTAR, nunca para reabrir sola. Es la misma invariante que
-/// gobierna [PendingInvite]: nada que llegue de fuera de la app surte efecto sin
-/// confirmación dentro de la app, y acá lo de fuera es un archivo del arranque
-/// anterior.
+/// Que hay una sala que reabrir, y nada más. Antes significaba que la última
+/// salida fue sucia, porque salir borraba el archivo y morir lo dejaba; esa
+/// lectura se acabó cuando apagarse limpio pasó a conservarlo también. Lo único
+/// que lo borra es cerrar la sala.
+///
+/// # No es una pregunta esperando respuesta
+///
+/// El daemon la reabre solo en cada arranque, con el mismo código y la misma
+/// red. Esto se lee para el caso en que esa reapertura FALLE, que es lo único
+/// que la deja a la vista: entonces la ventana ofrece reabrirla a mano, o
+/// cerrarla. Ver [SavedRoomNotice].
 ///
 /// Reabrir devuelve el MISMO código y el MISMO enlace: la identidad de la red
 /// real y la clave de la tarjeta viajan en ese archivo, así que los enlaces ya
 /// repartidos siguen valiendo y quien estuviera dentro puede volver.
 @immutable
-class PendingRoom {
-  const PendingRoom({
+class SavedRoom {
+  const SavedRoom({
     required this.code,
     this.seed = '',
     this.name = '',
@@ -27,7 +30,7 @@ class PendingRoom {
     this.savedAt,
   });
 
-  factory PendingRoom.fromJson(Map<String, Object?> json) => PendingRoom(
+  factory SavedRoom.fromJson(Map<String, Object?> json) => SavedRoom(
     code: json['code'] as String? ?? '',
     seed: json['seed'] as String? ?? '',
     name: json['name'] as String? ?? '',

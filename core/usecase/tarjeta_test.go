@@ -130,9 +130,9 @@ func TestUnaSalaGuardadaSinTarjetaNoLlamaAlRegistro(t *testing.T) {
 
 	// Se le quita la tarjeta a lo guardado, que es exactamente la forma de un
 	// archivo de una versión anterior.
-	sinTarjeta := b.session.pending
+	sinTarjeta := b.session.saved
 	sinTarjeta.Card = nil
-	b.session.pending = sinTarjeta
+	b.session.saved = sinTarjeta
 
 	antes := b.registry.publicaciones
 	if _, err := b.session.ResumeRoom(ctx()); err != nil {

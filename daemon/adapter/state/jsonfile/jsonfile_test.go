@@ -22,8 +22,8 @@ func TestElAlmacénSatisfaceElPuerto(t *testing.T) {
 
 // TestQueNoHayaSalaGuardadaNoEsUnFallo.
 //
-// Es lo normal en una instalación nueva y en TODA salida limpia: la ausencia
-// del archivo es justamente la señal de que la última vez se cerró bien.
+// It is the normal case while nobody has hosted, and after the room is closed.
+// The absence says nothing beyond that: shutting down cleanly keeps the file.
 func TestQueNoHayaSalaGuardadaNoEsUnFallo(t *testing.T) {
 	s := New(t.TempDir())
 

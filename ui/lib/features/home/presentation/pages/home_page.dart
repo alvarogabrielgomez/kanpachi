@@ -13,7 +13,7 @@ import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
 import 'package:kanpachi_ui/core/messages/message_catalog.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
-import 'package:kanpachi_ui/features/home/presentation/widgets/pending_room_notice.dart';
+import 'package:kanpachi_ui/features/home/presentation/widgets/saved_room_notice.dart';
 import 'package:kanpachi_ui/features/home/presentation/widgets/returning_notice.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
 import 'package:kanpachi_ui/features/games/domain/steam_art.dart';
@@ -219,13 +219,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
             // La sala propia que no volvió sola va PRIMERO: es de esta máquina y
             // hay gente esperándola, así que pesa más que volver a la de otro.
-            if (session.pendingRoom != null && !session.hasRoom) ...<Widget>[
-              PendingRoomNotice(
-                pending: session.pendingRoom!,
+            if (session.savedRoom != null && !session.hasRoom) ...<Widget>[
+              SavedRoomNotice(
+                pending: session.savedRoom!,
                 onReopen: () =>
-                    context.read<SessionCubit>().resumePendingRoom(),
+                    context.read<SessionCubit>().resumeSavedRoom(),
                 onDiscard: () =>
-                    context.read<SessionCubit>().discardPendingRoom(),
+                    context.read<SessionCubit>().discardSavedRoom(),
               ),
               const SizedBox(height: AppSpacing.x5l),
             ],

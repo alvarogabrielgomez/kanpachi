@@ -724,8 +724,11 @@ type RejectedView struct {
 	Origin string `json:"origin"`
 }
 
-// PendingView es la sala que quedó abierta en el arranque anterior.
-type PendingView struct {
+// SavedRoomView es la sala que ESTA máquina hospeda, tal como quedó en disco.
+//
+// Se pide cuando la reapertura automática del arranque falló, que es lo único
+// que la deja a la vista.
+type SavedRoomView struct {
 	Code    string `json:"code"`
 	Seed    string `json:"seed"`
 	Name    string `json:"name"`

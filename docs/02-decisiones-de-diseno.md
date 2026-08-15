@@ -349,16 +349,22 @@ Ese tercer punto es el que hace que revocar sirva de verdad. En el diseño ingen
 
 **Una consecuencia que vale más de lo que parece:** como el código dejó de ser la red, "la misma sala" sobrevive a que la red subyacente cambie por completo. La sala pasa a ser un objeto durable que el host posee, en vez de una consecuencia matemática de un string. Reiniciar, cambiar de red o migrar el esquema de derivación dejan de romper la invitación.
 
-### La sala mal cerrada del host
+### La sala del host se repone sola
 
-Un apagón deja al host sin mandar el aviso de cierre. Al volver, el daemon detecta la sala anterior y **pregunta**: reabrirla con el mismo código, o cerrarla.
+Un apagón, un reinicio, una actualización del servicio. En los tres, al volver, el daemon **reabre la sala** con el mismo código y la misma red, sin preguntar y sin que nadie toque nada.
 
-**El archivo ES la señal.** Salir limpio lo borra, morir sucio lo deja. No hay bandera `dirty` dentro, porque una bandera es un campo más que alguien puede escribir a mano y este hecho no se puede falsificar desde dentro del archivo.
+**El archivo dice que hay una sala que reponer, y no dice nada más.** Hubo una versión en la que su presencia significaba que la última salida fue sucia, deducido de que salir lo borraba y morir lo dejaba. Esa lectura se acabó: apagarse limpio también lo conserva, porque parar el proceso no es cerrar la sala. Lo único que lo borra es cerrarla.
+
+**Por qué esto NO contradice que nada de fuera surta efecto sin confirmación.** Lo que llega de fuera son códigos, enlaces y tarjetas, y todo eso sigue pasando por una pantalla. Este archivo lo escribió este daemon, está sellado con la identidad de esta máquina, y lleva **identidad y referencias, jamás política**. Reabrir es reponer lo propio, no obedecer a un tercero.
+
+**Y hospedar sin ventana lo exige.** Un host de 24/7 en un servidor no tiene a nadie mirando: preguntar ahí significa que la sala no vuelve hasta que alguien se conecte por SSH. La mitad del invitado hace lo mismo desde el otro lado, volviendo cada cinco minutos, así que un corte que se lleve todas las máquinas a la vez se rearma solo.
 
 **Dos reglas de orden, y las dos son invariantes:**
 
-1. **Se purga primero.** El arranque ya borra las reglas del grupo `Kanpachi` y restaura las ajenas suspendidas, así que la máquina está en deny-all mientras la pregunta está en pantalla.
-2. **Nunca reconecta solo.** Siempre pregunta. Es la invariante de que nada que llegue de fuera de la app surte efecto sin confirmación dentro de la app, y acá lo de fuera es un archivo del arranque anterior.
+1. **Se purga primero.** El arranque borra las reglas del grupo `Kanpachi` y restaura las ajenas suspendidas antes de reabrir nada, así que la máquina está en deny-all mientras la reapertura corre. Es más importante que antes, no menos: ahora ese hueco existe en cada arranque.
+2. **Reabrir no restaura nada de lo que abre puertos.** Los miembros son lo que reporte el motor y las reglas se recalculan desde ahí, así que la sala vuelve con cero puertos abiertos hasta que llegue alguien de verdad. Ver más abajo.
+
+**Lo que queda para una persona es el fallo.** Si la reapertura no sale adelante, la ventana lo dice y ofrece reabrirla a mano o cerrarla, y en la terminal son `kanpachi resume` y `kanpachi discard`. Es una salida de emergencia, no el camino normal.
 
 **La ventana encaja sola con el contador de la decisión 20.** Los invitados guardan una credencial contra la red real, así que un host que vuelve dentro de los veinte minutos se los encuentra reconectando solos. Uno que tarda más reabre una sala vacía con el mismo código, que es igual de correcto y era el otro caso a cubrir.
 

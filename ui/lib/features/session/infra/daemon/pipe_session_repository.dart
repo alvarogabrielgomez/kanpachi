@@ -4,7 +4,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/own_seed.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
-import 'package:kanpachi_ui/features/session/domain/entities/pending_room.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/saved_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
@@ -360,27 +360,27 @@ class PipeSessionRepository implements SessionRepository {
   }
 
   @override
-  Future<PendingRoom?> pendingRoom() async {
-    final Map<String, Object?> v = await _mapa(DaemonMethods.pendingRoom);
+  Future<SavedRoom?> savedRoom() async {
+    final Map<String, Object?> v = await _mapa(DaemonMethods.savedRoom);
     // El daemon contesta `{"found": false}` cuando no hay nada, que es la
     // respuesta normal: esto se pregunta en cada latido y casi siempre no hay
     // ninguna sala del arranque anterior. No es un error.
     if ((v['found'] as bool?) != true) return null;
     final Object? sala = v['room'];
     if (sala is! Map<String, Object?>) return null;
-    final PendingRoom pendiente = PendingRoom.fromJson(sala);
+    final SavedRoom pendiente = SavedRoom.fromJson(sala);
     // Sin código no hay nada que ofrecer, y ofrecer una sala sin código dejaría
     // un diálogo del que no se puede salir haciendo lo que propone.
     return pendiente.understood ? pendiente : null;
   }
 
   @override
-  Future<Room> resumePendingRoom() async =>
+  Future<Room> resumeSavedRoom() async =>
       _conReglasAjenas(await _sala(await _mapa(DaemonMethods.resumeRoom)));
 
   @override
-  Future<void> discardPendingRoom() async {
-    await _mapa(DaemonMethods.discardPendingRoom);
+  Future<void> discardSavedRoom() async {
+    await _mapa(DaemonMethods.discardSavedRoom);
   }
 
   // ------------------------------------------------------------ diagnósticos

@@ -48,8 +48,8 @@ var plazosVigilados = map[string]string{
 	// es exactamente lo que impide que alguien la deje en un segundo y convierta
 	// a cada invitado en un martillo sobre el registro.
 	"ReturnInterval": "../../core/usecase/returnroom.go",
-	"Beat":             "../../daemon/service/supervisor/supervisor.go",
-	"Sweep":            "../../daemon/service/supervisor/supervisor.go",
+	"Beat":           "../../daemon/service/supervisor/supervisor.go",
+	"Sweep":          "../../daemon/service/supervisor/supervisor.go",
 	// Los dos del canal de la sala. NoticeAckWait es el que impide que esperar
 	// el acuse convierta la expulsión en cooperativa, y writeWait el que impide
 	// que un miembro que deja de recibir trabe al host: los dos son plazos que

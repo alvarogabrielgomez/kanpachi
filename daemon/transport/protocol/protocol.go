@@ -73,10 +73,18 @@ const (
 	// pulsarlo con nada roto no lo toca.
 	MethodReapplyProtection Method = "reapply_protection"
 
-	MethodPendingRoom        Method = "pending_room"
-	MethodResumeRoom         Method = "resume_room"
-	MethodDiscardPendingRoom Method = "discard_pending_room"
-	MethodLastRoom           Method = "last_room"
+	// MethodSavedRoom, MethodResumeRoom y MethodDiscardSavedRoom son la sala
+	// que ESTA máquina hospeda, tal como quedó en disco.
+	//
+	// **Los dos nombres de cable con `pending` dentro están congelados**, y no
+	// dicen ya lo que decían: la sala se reabre sola en cada arranque, así que
+	// no hay nada pendiente de que alguien decida. Cambiar la cadena rompería a
+	// toda ventana y todo script más viejos que el daemon que la sirve, que es
+	// justo lo que un nombre de cable existe para evitar.
+	MethodSavedRoom        Method = "pending_room"
+	MethodResumeRoom       Method = "resume_room"
+	MethodDiscardSavedRoom Method = "discard_pending_room"
+	MethodLastRoom         Method = "last_room"
 
 	// MethodProgress son los pasos de la operación larga en curso.
 	//
@@ -191,9 +199,9 @@ var métodos = map[Method]bool{
 	MethodExposure:            true,
 	MethodProbeHost:           true,
 	MethodReapplyProtection:   true,
-	MethodPendingRoom:         true,
+	MethodSavedRoom:           true,
 	MethodResumeRoom:          true,
-	MethodDiscardPendingRoom:  true,
+	MethodDiscardSavedRoom:    true,
 	MethodLastRoom:            true,
 	MethodProgress:            true,
 	MethodCancel:              true,
@@ -237,7 +245,7 @@ const (
 	CodeKickPartial Code = "kick_partial"  // la expulsión se aplicó a medias
 	CodeProbeSelf   Code = "probe_self"    // el host no puede sondearse a sí mismo
 	CodeProbeNoHost Code = "probe_no_host" // no se sabe dónde está el host
-	CodeNoPending   Code = "no_pending"    // no hay sala del arranque anterior
+	CodeNoSavedRoom Code = "no_pending"    // no hay ninguna sala guardada en disco
 	CodeNoSuchRoom  Code = "no_such_room"  // el registro dice que ese código no existe
 	CodeNoRegistry  Code = "no_registry"   // el registro no contestó nada
 	// CodeSeedPassword es que ese registro pide password para HOSPEDAR y esta
@@ -351,8 +359,8 @@ func errorFor(err error) *Error {
 		code = CodeProbeSelf
 	case errors.Is(err, usecase.ErrProbeNoHost):
 		code = CodeProbeNoHost
-	case errors.Is(err, usecase.ErrNoPendingRoom):
-		code = CodeNoPending
+	case errors.Is(err, usecase.ErrNoSavedRoom):
+		code = CodeNoSavedRoom
 	case errors.Is(err, usecase.ErrNoSuchRoom):
 		code = CodeNoSuchRoom
 	// Va DESPUÉS del de arriba y son dos códigos, no uno. El registro afirmando

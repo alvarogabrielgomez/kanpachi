@@ -38,11 +38,12 @@ var ErrPersistedShape = errors.New("el estado guardado no se puede interpretar")
 // es nombrar otro juego que ya está en el catálogo, o sea algo que el usuario
 // podía elegir con dos clics.
 //
-// # Por qué el archivo es la señal de mal cierre
+// # What the file being there means
 //
-// Salir limpio lo borra y morir sucio lo deja. No hay bandera `dirty`, porque
-// una bandera es un campo más que alguien puede escribir a mano y este hecho no
-// se puede falsificar desde dentro del archivo.
+// That there is a room to reopen, and nothing more. It used to mean the last
+// exit was dirty, because leaving deleted it and dying left it behind; that
+// reading is gone, since shutting down cleanly keeps it now. The only thing
+// that clears it is somebody closing the room.
 type HostedRoom struct {
 	// Room es el invite ID vigente con su seed. Sobrevive porque la sala es un
 	// objeto durable que el host posee, y honrar el mismo código tras un

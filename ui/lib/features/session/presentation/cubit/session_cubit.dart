@@ -11,7 +11,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/own_seed.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
-import 'package:kanpachi_ui/features/session/domain/entities/pending_room.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/saved_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/probe.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
@@ -366,8 +366,8 @@ class SessionCubit extends Cubit<SessionState> {
       // abierta no hay nada que ofrecer reabrir, y el daemon rechazaría el
       // intento igual. Es además una llamada menos por latido en el caso
       // normal, que es estar dentro de una sala.
-      final PendingRoom? anterior = sala == null
-          ? await _repository.pendingRoom()
+      final SavedRoom? anterior = sala == null
+          ? await _repository.savedRoom()
           : null;
       if (isClosed) return;
       emit(
@@ -376,8 +376,8 @@ class SessionCubit extends Cubit<SessionState> {
           clearRoom: sala == null,
           health: salud,
           invite: incoming,
-          pendingRoom: anterior,
-          clearPendingRoom: anterior == null,
+          savedRoom: anterior,
+          clearSavedRoom: anterior == null,
           daemonDown: false,
           // Volver a estar dentro de una sala tras haberla perdido de vista
           // tiene que devolver también la fase, o la app se queda con la sala
@@ -675,12 +675,12 @@ class SessionCubit extends Cubit<SessionState> {
   /// levanta el motor igual que crear, tarda lo mismo, y sin fase la ventana se
   /// queda muda hasta noventa segundos. Lo que se ve al terminar es la misma
   /// sala, con el mismo código y el mismo enlace que ya se repartió.
-  Future<bool> resumePendingRoom() async {
-    if (state.pendingRoom == null) return false;
-    emit(state.copyWith(phase: SessionPhase.creating, clearPendingRoom: true));
+  Future<bool> resumeSavedRoom() async {
+    if (state.savedRoom == null) return false;
+    emit(state.copyWith(phase: SessionPhase.creating, clearSavedRoom: true));
     _watchProgress();
     await _try(FailedAction.resumeRoom, onFail: SessionPhase.idle, () async {
-      final Room sala = await _repository.resumePendingRoom();
+      final Room sala = await _repository.resumeSavedRoom();
       emit(state.copyWith(phase: SessionPhase.inRoom, room: sala));
     });
     _stopWatching();
@@ -694,11 +694,11 @@ class SessionCubit extends Cubit<SessionState> {
   /// acto: el latido no lo va a volver a traer, porque descartar borra el
   /// archivo del que salía. Si la llamada falla, el siguiente latido lo vuelve
   /// a ofrecer, que es lo correcto: no se descartó nada.
-  Future<void> discardPendingRoom() async {
-    if (state.pendingRoom == null) return;
-    emit(state.copyWith(clearPendingRoom: true));
-    await _try(FailedAction.discardPendingRoom, () async {
-      await _repository.discardPendingRoom();
+  Future<void> discardSavedRoom() async {
+    if (state.savedRoom == null) return;
+    emit(state.copyWith(clearSavedRoom: true));
+    await _try(FailedAction.discardSavedRoom, () async {
+      await _repository.discardSavedRoom();
     });
   }
 

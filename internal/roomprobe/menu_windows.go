@@ -67,7 +67,7 @@ func menuSinSala(ctx context.Context, e entorno) error {
 	if _, hay := e.s.LastRoom(); hay {
 		opciones = append(opciones, ultima)
 	}
-	if _, hay := e.s.PendingRoom(); hay {
+	if _, hay := e.s.SavedRoom(); hay {
 		opciones = append(opciones, reanudar, descartar)
 	}
 	opciones = append(opciones, verificar, renombrar, registro, salirDeTod)
@@ -89,7 +89,7 @@ func menuSinSala(ctx context.Context, e entorno) error {
 		_, err := e.s.ResumeRoom(ctx)
 		return conAviso(e, err)
 	case descartar:
-		return conAviso(e, e.s.DiscardPendingRoom(ctx))
+		return conAviso(e, e.s.DiscardSavedRoom(ctx))
 	case verificar:
 		return menuVerificaciones(ctx, e)
 	case renombrar:

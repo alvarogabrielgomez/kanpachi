@@ -12,8 +12,9 @@ import (
 // abierta y funcionando, y lo único que se pierde al no poder guardar es poder
 // reabrirla tras un corte de luz.
 //
-// La ausencia del archivo es lo que dice que la última salida fue limpia, así
-// que guardar y borrar son las dos mitades de la misma señal.
+// The file says "there is a room to reopen", and its absence says nothing at
+// all: a clean shutdown keeps it now. What clears it is closing the room. See
+// `destino` in [Session.leaveLocked].
 //
 // Asume el candado tomado.
 func (s *Session) saveRoomLocked() {

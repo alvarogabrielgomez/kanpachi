@@ -26,52 +26,54 @@ func reinicia(t *testing.T, b *bank) *bank {
 	return b
 }
 
-// TestSalirLimpioBorraLaSalaYMorirSucioLaDeja.
+// TestCerrarLaSalaBorraElArchivoYMorirSucioLoDeja.
 //
-// La presencia del archivo ES la señal de mal cierre. No hay bandera `dirty`
-// dentro, porque una bandera es un campo más que alguien puede escribir a mano
-// y este hecho no se puede falsificar desde dentro del archivo.
-func TestSalirLimpioBorraLaSalaYMorirSucioLaDeja(t *testing.T) {
-	t.Run("morir sucio la deja", func(t *testing.T) {
+// The file says "there is a room to reopen", and closing the room is the only
+// thing that clears it. It used to be read the other way round, as the mark of
+// a dirty exit, and that reading died when shutting down cleanly started
+// keeping the file too.
+func TestCerrarLaSalaBorraElArchivoYMorirSucioLoDeja(t *testing.T) {
+	t.Run("morir sucio lo deja", func(t *testing.T) {
 		b := salaCreada(t)
 		if len(b.state.salaGuardada()) == 0 {
 			t.Fatal("crear una sala no la guardó")
 		}
 		b = reinicia(t, b)
-		if _, hay := b.session.PendingRoom(); !hay {
+		if _, hay := b.session.SavedRoom(); !hay {
 			t.Fatal("tras morir sucio no se detectó la sala anterior")
 		}
 	})
 
-	t.Run("salir limpio la borra", func(t *testing.T) {
+	t.Run("cerrar la sala lo borra", func(t *testing.T) {
 		b := salaCreada(t)
 		b.session.LeaveRoom(ctx())
 		if len(b.state.salaGuardada()) != 0 {
-			t.Fatal("salir por las buenas dejó la sala guardada")
+			t.Fatal("closing the room left it saved on disk")
 		}
 		b = reinicia(t, b)
-		if _, hay := b.session.PendingRoom(); hay {
-			t.Fatal("hay sala pendiente después de una salida limpia")
+		if _, hay := b.session.SavedRoom(); hay {
+			t.Fatal("there is a saved room after closing it")
 		}
 	})
 }
 
-// TestArrancarConSalaPendienteNoRehospedaYPurgaIgual.
+// TestConstruirLaSesiónNoReabreLaSalaYPurgaIgual.
 //
-// Las dos mitades importan. Purgar primero deja la máquina en deny-all mientras
-// la pregunta está en pantalla; no rehospedar es la invariante de que nada que
-// llegue de fuera de la app surte efecto sin confirmación dentro de la app, y
-// acá lo de fuera es un archivo del arranque anterior.
-func TestArrancarConSalaPendienteNoRehospedaYPurgaIgual(t *testing.T) {
+// Both halves matter. Purging first leaves the machine in deny-all for as long
+// as the reopen takes. Not reopening HERE is the layering: the room does come
+// back on every start, and what brings it back is `reabrirLaSala` in the daemon
+// runtime, never the constructor of this package. A session that reopened by
+// itself would put the room back before the purge had run.
+func TestConstruirLaSesiónNoReabreLaSalaYPurgaIgual(t *testing.T) {
 	b := salaCreada(t)
 	purgasAntes := b.firewall.purgas
 	b = reinicia(t, b)
 
 	if st := b.session.Status(); st.Conn != domain.StateIdle {
-		t.Fatalf("reabrió la sala sin preguntar: %s", st.Conn)
+		t.Fatalf("the session constructor reopened the room: %s", st.Conn)
 	}
 	if b.firewall.purgas != purgasAntes+1 {
-		t.Fatal("no purgó al arrancar con una sala pendiente")
+		t.Fatal("it did not purge when starting with a saved room")
 	}
 }
 
@@ -107,8 +109,8 @@ func TestReabrirConservaLaIdentidadDeLaRed(t *testing.T) {
 	if st.Conn != domain.StateConnected || st.Role != domain.RoleHost {
 		t.Fatalf("estado tras reabrir: %s, %s", st.Conn, st.Role)
 	}
-	if _, hay := b.session.PendingRoom(); hay {
-		t.Fatal("la sala pendiente sigue ahí después de reabrirla")
+	if _, hay := b.session.SavedRoom(); hay {
+		t.Fatal("la sala guardada sigue ahí después de reabrirla")
 	}
 }
 
@@ -182,19 +184,19 @@ func TestDescartarLaSalaAnteriorLaBorraYDejaEnIdle(t *testing.T) {
 	b := salaCreada(t)
 	b = reinicia(t, b)
 
-	if err := b.session.DiscardPendingRoom(ctx()); err != nil {
+	if err := b.session.DiscardSavedRoom(ctx()); err != nil {
 		t.Fatal(err)
 	}
 	if len(b.state.salaGuardada()) != 0 {
 		t.Fatal("descartar no borró el archivo")
 	}
-	if _, hay := b.session.PendingRoom(); hay {
-		t.Fatal("descartar dejó la sala pendiente")
+	if _, hay := b.session.SavedRoom(); hay {
+		t.Fatal("descartar dejó la sala guardada")
 	}
 	if st := b.session.Status(); st.Conn != domain.StateIdle {
 		t.Fatalf("descartar movió el estado: %s", st.Conn)
 	}
-	if err := b.session.DiscardPendingRoom(ctx()); !errors.Is(err, ErrNoPendingRoom) {
+	if err := b.session.DiscardSavedRoom(ctx()); !errors.Is(err, ErrNoSavedRoom) {
 		t.Fatalf("descartar dos veces = %v", err)
 	}
 }
@@ -332,7 +334,7 @@ func TestUnArchivoDeSalaIlegibleNoImpideArrancar(t *testing.T) {
 	b.state.room = []byte(`{"invite_id":"A7K2M9QX","seed":`)
 
 	b = reinicia(t, b)
-	if _, hay := b.session.PendingRoom(); hay {
+	if _, hay := b.session.SavedRoom(); hay {
 		t.Fatal("un archivo cortado se tomó por sala válida")
 	}
 	if st := b.session.Status(); st.Conn != domain.StateIdle {

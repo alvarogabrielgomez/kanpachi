@@ -516,7 +516,7 @@ enum FailedAction {
   rotateInviteCode,
   renameRoom,
   resumeRoom,
-  discardPendingRoom,
+  discardSavedRoom,
   reapplyProtection,
   probeHost,
   loadCatalog,

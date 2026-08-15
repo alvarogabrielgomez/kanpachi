@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
 import 'package:kanpachi_ui/core/messages/app_message.dart';
 import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
-import 'package:kanpachi_ui/features/session/domain/entities/pending_room.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/saved_room.dart';
 
 /// La sala propia que quedó del arranque anterior y NO volvió sola.
 ///
@@ -18,15 +18,15 @@ import 'package:kanpachi_ui/features/session/domain/entities/pending_room.dart';
 /// Lo que sí sigue haciendo falta es una salida cuando la reapertura falla, y eso
 /// es lo que esto es: un aviso, en la columna de siempre, sin robar el foco.
 /// Quien lo ve es porque su sala no volvió.
-class PendingRoomNotice extends StatelessWidget {
-  const PendingRoomNotice({
+class SavedRoomNotice extends StatelessWidget {
+  const SavedRoomNotice({
     required this.pending,
     required this.onReopen,
     required this.onDiscard,
     super.key,
   });
 
-  final PendingRoom pending;
+  final SavedRoom pending;
   final VoidCallback onReopen;
   final VoidCallback onDiscard;
 
