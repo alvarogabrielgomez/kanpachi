@@ -193,6 +193,13 @@ try {
     }
     Get-ChildItem $linux | ForEach-Object { Ok ("{0,-12} {1,10:N0} KB" -f $_.Name, ($_.Length / 1KB)) }
 
+    Step 'the terminal client for Windows, which is how the guest gets read'
+    # El portable no lleva CLI: es un daemon y una ventana. Para que la medición
+    # pueda preguntarle el estado sin mirar una pantalla hace falta este, que
+    # habla por el pipe del portable con `--pipe` y `--data`.
+    Native 'kanpachi for windows' { & go build -o (Join-Path $outDir 'kanpachi.exe') ./daemon/cmd/kanpachi }
+    Ok ("kanpachi.exe {0,10:N0} KB" -f ((Get-Item (Join-Path $outDir 'kanpachi.exe')).Length / 1KB))
+
     if ($SkipPortable) {
         Step 'the Windows guest'
         Info 'skipped with -SkipPortable'
