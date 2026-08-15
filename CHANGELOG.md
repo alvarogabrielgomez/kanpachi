@@ -10,7 +10,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Fixed
 
-- Get told a room is closed the moment you paste its code, instead of waiting twenty-one seconds for a message about the host reconnecting. Closing a room now tells the meeting server, so the code stops working right then. Renewing a code closes the old one too, which is what makes "renewing shuts the door" true when you press it rather than six hours later. Reopening your own room with the same code is untouched: what closing expires is the room's card, never the reservation of the code
+- Get told a room is closed the moment you paste its code, instead of waiting twenty-one seconds for a message about the host reconnecting. Closing a room now tells the meeting server, so the code stops working right then. Renewing a code closes the old one too, which is what makes "renewing shuts the door" true when you press it rather than six hours later. Reopening your own room with the same code is untouched: what closing expires is the room's card, never the reservation of the code ([4fe32df](https://github.com/alvarogabrielgomez/kanpachi/commit/4fe32df))
 - Find out when a room that reopened by itself came back without its game, instead of it being a line in a log nobody reads. A host that restarts brings its room back with the same code, and if the profile that was active is no longer in that machine's catalogue the room comes back with no ports open at all: everything looks fine, people join, and the server does not answer. The room now says so, and says the room itself is fine and the fix is to pick the game again ([5ff3516](https://github.com/alvarogabrielgomez/kanpachi/commit/5ff3516))
 
 ### Security
