@@ -14,7 +14,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Added
 
-- Read what the meeting server's HTTP surface actually is, in `registry/API.md`: every endpoint it has, what the optional hosting password does and does not cover, and what defends each thing
+- Read what the meeting server's HTTP surface actually is, in `registry/API.md`: every endpoint it has, what the optional hosting password does and does not cover, and what defends each thing ([271153f](https://github.com/alvarogabrielgomez/kanpachi/commit/271153f))
 
 ## [0.3.0] - 2026-08-14
 
