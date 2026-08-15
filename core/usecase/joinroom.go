@@ -389,6 +389,20 @@ func (s *Session) exchangeForCredential(
 	//
 	// Marcar hacia una dirección conocida, y no aceptar conexiones entrantes,
 	// es lo que hace imposible que un miembro se haga pasar por el host.
+	//
+	// **The step exists because this is the longest silence of the whole join,
+	// and it was mute.** Measured on 2026-08-15: a join spent twenty-one seconds
+	// here with the screen frozen on the previous line, and what came out at the
+	// end was a `connectex` string. The wait is NOT bounded on purpose -- a slow
+	// link, a high RTT or a machine that is paging can legitimately take that
+	// long, and cutting at five seconds would turn a slow host into a missing
+	// one. What was wrong was never the twenty-one seconds, it was not saying so.
+	//
+	// Saying how long it can take is half the step. A wait that announces its own
+	// length reads as work; the same wait unannounced reads as a hang, and that
+	// is the difference between somebody waiting and somebody killing the app.
+	s.deps.Progress.Step(domain.ScopeDaemon,
+		"marcando al host en el vestíbulo, que puede tardar hasta veinte segundos si su conexión va lenta")
 	if err := s.deps.Control.Dial(ctx, rdv.LobbyHostAddress()); err != nil {
 		// El host no está alcanzable. Es el costo aceptado de la decisión 2 y
 		// merece un mensaje propio, porque "no se pudo conectar" mandaría a

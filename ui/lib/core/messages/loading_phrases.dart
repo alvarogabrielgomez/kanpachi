@@ -58,7 +58,11 @@ String loadingKicker(LoadingFlow flow, {bool closing = false}) =>
 /// desmontaje de `session.go`.
 int expectedSteps(LoadingFlow flow) => switch (flow) {
   LoadingFlow.creating => 13,
-  LoadingFlow.joining => 8,
+  // Nine and not eight since the dial into the lobby announces itself. That
+  // wait is the longest of the whole join and can reach twenty seconds, so
+  // without its own step the bar sat still through the slowest part, which is
+  // exactly when a person decides the app has hung.
+  LoadingFlow.joining => 9,
   LoadingFlow.leaving => 11,
 };
 

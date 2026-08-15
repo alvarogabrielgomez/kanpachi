@@ -1017,7 +1017,9 @@ Ahora el host lo dice al cerrar, con `DELETE /api/i/{id}`, y renovar el código 
 
 **La petición va firmada y fechada.** Firmada con la llave que fijó ese invite ID, igual que publicar, porque lo que dice que la sala es tuya no es el password del seed: ese es del operador y un seed abierto no lo pide. Y fechada, con cinco minutos de tolerancia, porque **cerrar es el único mensaje cuya copia grabada sigue sirviendo más tarde**: publicar una tarjeta vieja deja una tarjeta vieja, y reproducir un cierre después de que el host reabra mata una sala viva.
 
-Lo que sigue sin cubrir es el cierre que nadie llegó a hacer, o sea el corte de luz y el proceso matado. Ahí la entrada sigue muriendo de vieja, y lo que hay que acotar es el marcado al vestíbulo.
+Lo que sigue sin cubrir es el cierre que nadie llegó a hacer, o sea el corte de luz y el proceso matado. Ahí la entrada muere de vieja como siempre, y el invitado paga el timeout de conexión del sistema operativo, unos veintiún segundos en Windows.
+
+**Esa espera se deja como está, y acotarla sería el arreglo equivocado.** Un enlace lento, un RTT alto o una máquina paginando tardan eso con todo funcionando, así que cortar a los cinco segundos convierte a un host lento en un host que no está, y pega más fuerte justo donde las conexiones son peores. Lo que estaba mal nunca fue la duración: era que la espera fuera muda, con la pantalla clavada en el paso anterior y un `connectex` crudo al final. El marcado ahora se anuncia y dice cuánto puede tardar. Una espera que declara su largo se lee como trabajo, y la misma espera sin anunciar se lee como un cuelgue.
 
 ### El contador sale de EasyTier, verificado
 
