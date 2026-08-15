@@ -565,6 +565,49 @@ abstract final class AppMessages {
         'que hacer.',
   );
 
+  /// Esta máquina está volviendo a una sala en la que estuvo.
+  ///
+  /// # No es [rejoining], y la diferencia importa
+  ///
+  /// Aquello es pedir credencial DESDE DENTRO de una sala viva, dura segundos y
+  /// no hay nada que hacer. Esto es no estar en ninguna sala y seguir
+  /// intentándolo cada cinco minutos, sin tope, y **sí hay algo que hacer**: por
+  /// eso lleva el botón de salir al lado.
+  ///
+  /// Que el registro no conteste manda sobre el motivo del último intento,
+  /// porque son dos sitios distintos donde mirar: un host dormido se arregla
+  /// esperando y un registro caído no es asunto de quien espera.
+  static AppMessage returning({
+    required String room,
+    required String code,
+    required Duration nextIn,
+    required int attempts,
+    bool seedDown = false,
+  }) {
+    final String cuando = nextIn > Duration.zero
+        ? 'Se reintenta en ${_enPocasPalabras(nextIn)}.'
+        : 'Reintentando ahora mismo.';
+    final String motivo = seedDown
+        ? 'El servidor de encuentro no contesta, así que todavía no se sabe '
+              'nada de la sala.'
+        : 'Se entra sola en cuanto el host vuelva a estar disponible.';
+    return AppMessage(
+      severity: MessageSeverity.neutral,
+      title: 'Volviendo a ${room.isEmpty ? code : room}',
+      body: '$motivo $cuando',
+      hint: attempts > 1 ? 'Van $attempts intentos.' : null,
+    );
+  }
+
+  /// Una duración en las palabras que usaría una persona. Sin segundos por
+  /// debajo del minuto: un contador al segundo invita a mirarlo, y no hay nada
+  /// que mirar.
+  static String _enPocasPalabras(Duration d) {
+    if (d.inMinutes < 1) return 'menos de un minuto';
+    if (d.inMinutes == 1) return 'un minuto';
+    return '${d.inMinutes} minutos';
+  }
+
   /// El registro perdió la entrada de una sala que sigue abierta.
   ///
   /// No es una caída del seed: esa se cura sola y no afirma que el código haya

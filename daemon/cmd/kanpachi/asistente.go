@@ -30,7 +30,7 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
 )
 
-func asistente(ctx context.Context, op opciones) error {
+func assistant(ctx context.Context, op opciones) error {
 	// Sin terminal no hay flechas que pulsar. Se dice y se enseña la ayuda, en
 	// vez de fallar con lo que survey diría, que habla de descriptores de
 	// fichero y no de lo que le pasa a quien lo está corriendo.
@@ -51,34 +51,34 @@ func asistente(ctx context.Context, op opciones) error {
 		if ctx.Err() != nil {
 			return errInterrumpido
 		}
-		st, err := estadoParaElMenú(op)
+		st, err := currentMenuStatus(op)
 		if err != nil {
 			return err
 		}
-		var siguiente error
+		var nextError error
 		if st.Conn == "idle" || st.Conn == "" {
-			siguiente = menuSinSala(ctx, op, st)
+			nextError = presentNoRoomMenu(ctx, op, st)
 		} else {
-			siguiente = menuConSala(ctx, op, st)
+			nextError = roomMenu(ctx, op, st)
 		}
-		if errors.Is(siguiente, errSalir) {
+		if errors.Is(nextError, errExit) {
 			return nil
 		}
-		if siguiente != nil {
-			return siguiente
+		if nextError != nil {
+			return nextError
 		}
 	}
 }
 
-// errSalir es haber elegido «Salir» en el menú, que no es un fallo.
-var errSalir = errors.New("salir")
+// errExit es haber elegido «Salir» en el menú, que no es un fallo.
+var errExit = errors.New("salir")
 
 // estadoParaElMenú abre, pregunta y cierra.
 //
 // Una conexión por vuelta de menú y no una para todo el asistente, a propósito:
 // entre dos vueltas puede haber pasado un minuto con alguien leyendo el menú, y
 // una conexión ociosa ocupa una de las ocho plazas del oyente todo ese rato.
-func estadoParaElMenú(op opciones) (protocol.RoomView, error) {
+func currentMenuStatus(op opciones) (protocol.RoomView, error) {
 	c, err := abrir(op)
 	if err != nil {
 		return protocol.RoomView{}, err
@@ -89,7 +89,7 @@ func estadoParaElMenú(op opciones) (protocol.RoomView, error) {
 
 // ─── Sin sala ────────────────────────────────────────────────────────────────
 
-func menuSinSala(ctx context.Context, op opciones, st protocol.RoomView) error {
+func presentNoRoomMenu(ctx context.Context, op opciones, st protocol.RoomView) error {
 	limpiarPantalla(os.Stdout)
 	fmt.Println(raya)
 	fmt.Printf("  KANPACHI %-20s channel: %s\n", Version, op.canal)
@@ -185,7 +185,7 @@ func menuSinSala(ctx context.Context, op opciones, st protocol.RoomView) error {
 	case nombre:
 		return cambiarNombre(ctx, op)
 	case salir:
-		return errSalir
+		return errExit
 	}
 	return nil
 }
@@ -244,7 +244,7 @@ func hayÚltimaSala(op opciones) (bool, error) {
 
 // ─── Con sala ────────────────────────────────────────────────────────────────
 
-func menuConSala(ctx context.Context, op opciones, st protocol.RoomView) error {
+func roomMenu(ctx context.Context, op opciones, st protocol.RoomView) error {
 	limpiarPantalla(os.Stdout)
 	pintarSala(os.Stdout, st)
 	fmt.Println()
@@ -332,7 +332,7 @@ func menuConSala(ctx context.Context, op opciones, st protocol.RoomView) error {
 	case cerrar, salirSala:
 		return conAviso(ctx, op, cmdLeave(ctx, op, nil))
 	case salir:
-		return errSalir
+		return errExit
 	}
 	return nil
 }

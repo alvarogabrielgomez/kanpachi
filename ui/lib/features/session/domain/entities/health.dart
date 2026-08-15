@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/canary.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/returning.dart';
 
 /// Lo que el daemon vigila SOLO, sin que nadie se lo pida.
 ///
@@ -24,6 +25,7 @@ class HealthReport {
     this.canary = const CanaryCheck.blind(),
     this.net = const NetDiagnostics.unknown(),
     this.seedDown = false,
+    this.returning,
   });
 
   /// Antes de haber preguntado. Ni avisos ni comprobación, que no es lo mismo
@@ -35,7 +37,8 @@ class HealthReport {
       // Falso porque no se preguntó, no porque conteste. Es el mismo criterio
       // que el resto de este constructor: no saber jamás se pinta como un
       // hallazgo.
-      seedDown = false;
+      seedDown = false,
+      returning = null;
 
   /// Los avisos vivos, **en el orden que los mandó el daemon**.
   ///
@@ -72,6 +75,14 @@ class HealthReport {
   /// contesta a él. Se apaga solo en cuanto el registro vuelva.
   final bool seedDown;
 
+  /// La sala a la que esta máquina está volviendo, si está volviendo a alguna.
+  ///
+  /// Vive acá por el mismo criterio que [seedDown], y con más razón: hace falta
+  /// justo cuando NO hay sala, así que en [Room] sería inalcanzable en el único
+  /// momento en que sirve. Y llega dentro del mismo `status` que el resto, así
+  /// que no cuesta una llamada más.
+  final Returning? returning;
+
   bool get hasAlerts => alerts.isNotEmpty;
 
   /// Las clases de aviso que esta versión de la UI sabe nombrar.
@@ -94,6 +105,7 @@ class HealthReport {
       (json['net'] as Map<String, Object?>?) ?? const <String, Object?>{},
     ),
     seedDown: json['seed_down'] as bool? ?? false,
+    returning: Returning.fromJson(json['returning']),
   );
 }
 

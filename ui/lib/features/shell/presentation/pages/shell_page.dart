@@ -8,6 +8,7 @@ import 'package:kanpachi_ui/core/messages/loading_phrases.dart';
 import 'package:kanpachi_ui/features/shell/presentation/failure_navigation.dart';
 import 'package:kanpachi_ui/features/games/presentation/pages/game_picker_page.dart';
 import 'package:kanpachi_ui/features/games/presentation/pages/manual_game_page.dart';
+import 'package:kanpachi_ui/features/home/presentation/widgets/confirm_displace_dialog.dart';
 import 'package:kanpachi_ui/features/home/presentation/pages/home_page.dart';
 import 'package:kanpachi_ui/features/invite/presentation/pages/invite_pages.dart';
 import 'package:kanpachi_ui/features/onboarding/presentation/pages/onboarding_pages.dart';
@@ -250,32 +251,6 @@ class _RoomFollower extends StatelessWidget {
             }
           },
         ),
-        // **La sala del arranque anterior pregunta, no navega.**
-        //
-        // Es un diálogo y no una pantalla porque son dos botones y una frase, y
-        // porque puede aparecer encima de donde sea. Y es el único diálogo que
-        // se abre sin que nadie pulse nada: lo descubre el latido.
-        //
-        // `listenWhen` mira el borde, así que cerrar el diálogo sin elegir NO
-        // lo vuelve a abrir a los dos segundos: el dato sigue ahí —preguntar no
-        // lo consume— pero ya no cambia. Vuelve a ofrecerse al siguiente
-        // arranque, que es cuando la pregunta vuelve a tener sentido.
-        BlocListener<SessionCubit, SessionState>(
-          listenWhen: (SessionState a, SessionState b) =>
-              (a.pendingRoom == null) != (b.pendingRoom == null),
-          listener: (BuildContext context, SessionState state) {
-            final ShellCubit shell = context.read<ShellCubit>();
-            if (state.pendingRoom != null) {
-              shell.showDialog(AppDialog.resumeRoom);
-              return;
-            }
-            // Se resolvió, por el botón que sea. El diálogo se cierra solo al
-            // pulsar, y esto cubre el caso de que lo resuelva otra ventana.
-            if (shell.state.dialog == AppDialog.resumeRoom) {
-              shell.closeDialog();
-            }
-          },
-        ),
       ],
       child: child,
     );
@@ -498,10 +473,17 @@ class _DialogLayer extends StatelessWidget {
       AppDialog.confirmClose => ConfirmCloseDialog(
         membersInside: session.room?.members.length ?? 0,
       ),
-      AppDialog.resumeRoom =>
-        session.pendingRoom == null
+      // Lo que se deja atrás sale del ESTADO y el destino del [ShellState],
+      // que es lo que hace que este diálogo no tenga que saber adónde iba nadie.
+      AppDialog.confirmDisplace =>
+        (session.health.returning == null || shell.trust == null)
             ? const SizedBox.shrink()
-            : ResumeRoomDialog(pending: session.pendingRoom!),
+            : ConfirmDisplaceDialog(
+                returning: session.health.returning!,
+                onConfirm: () => context.read<ShellCubit>().askTrust(
+                  _conReemplazo(shell.trust!),
+                ),
+              ),
       AppDialog.trustSeed =>
         shell.trust == null
             ? const SizedBox.shrink()
@@ -509,3 +491,20 @@ class _DialogLayer extends StatelessWidget {
     };
   }
 }
+
+/// El mismo destino, ya confirmado.
+///
+/// Se reconstruye en vez de mutarse porque [TrustRequest] es inmutable, y lo es
+/// para que el estado del shell se pueda comparar: sin eso no habría redibujado.
+TrustRequest _conReemplazo(TrustRequest req) => req.joining
+    ? TrustRequest.joining(
+        seed: req.seed,
+        code: req.code,
+        preview: req.preview,
+        replace: true,
+      )
+    : TrustRequest.hosting(
+        seed: req.seed,
+        suggestedName: req.suggestedName,
+        replace: true,
+      );

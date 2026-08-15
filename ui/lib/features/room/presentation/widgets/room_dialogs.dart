@@ -9,7 +9,6 @@ import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/seed/presentation/ask_to_host.dart';
 import 'package:kanpachi_ui/features/games/domain/steam_art.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
-import 'package:kanpachi_ui/features/session/domain/entities/pending_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
@@ -284,86 +283,6 @@ class ConfirmRenewDialog extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// La sala que quedó abierta cuando el daemon murió sin poder despedirse.
-///
-/// Pregunta y no reabre sola, que es la invariante: nada que llegue de fuera de
-/// la app surte efecto sin confirmación dentro, y acá lo de fuera es un archivo
-/// del arranque anterior. Ver `docs/05-ui.md` y la decisión 22.
-///
-/// Mientras esto está en pantalla la máquina YA está en cuarentena: el arranque
-/// purga las reglas propias antes de preguntar nada, así que dudar acá no deja
-/// ningún puerto abierto.
-class ResumeRoomDialog extends StatelessWidget {
-  const ResumeRoomDialog({required this.pending, super.key});
-
-  final PendingRoom pending;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final ShellCubit shell = context.read<ShellCubit>();
-    final SessionCubit session = context.read<SessionCubit>();
-
-    return AppModal(
-      width: 460,
-      onDismiss: shell.closeDialog,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            'Tenías una sala abierta',
-            style: context.type.titleXs.copyWith(color: colors.text),
-          ),
-          const SizedBox(height: AppSpacing.xl),
-          _ResumeRoomBody(pending: pending),
-          const SizedBox(height: AppSpacing.x6l),
-          AppModalActions(
-            cancelLabel: 'Cerrarla',
-            confirmLabel: 'Reabrir la sala',
-            onCancel: () {
-              session.discardPendingRoom();
-              shell.closeDialog();
-            },
-            onConfirm: () {
-              session.resumePendingRoom();
-              shell.closeDialog();
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// El cuerpo del aviso, en su propia clase.
-///
-/// Separado porque su texto depende de datos que pueden faltar —una sala puede
-/// no tener nombre— y armarlo dentro del `build` de arriba mezclaría dos cosas
-/// que se leen distinto. Es una clase y no un método que devuelva Widget, que
-/// es la regla del proyecto: ver la explicación en `shell_page.dart`.
-class _ResumeRoomBody extends StatelessWidget {
-  const _ResumeRoomBody({required this.pending});
-
-  final PendingRoom pending;
-
-  @override
-  Widget build(BuildContext context) {
-    final String cual = pending.name.isEmpty
-        ? 'La sala con el código ${pending.displayCode}'
-        : '"${pending.name}", con el código ${pending.displayCode}';
-
-    return Text(
-      '$cual.\n'
-      'Se cerró sin avisar, seguramente por un apagón o un reinicio.\n\n'
-      'Si la reabres, vuelve con el mismo código y el mismo juego, así que '
-      'los enlaces que ya repartiste siguen valiendo. Quien siga esperando '
-      'reconecta solo.',
-      style: context.type.body.copyWith(color: context.colors.textOnChip),
     );
   }
 }

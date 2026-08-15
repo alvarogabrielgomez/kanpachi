@@ -213,7 +213,7 @@ func últimaPublicada(ctx context.Context) (string, error) {
 // que es de donde salió el binario que está corriendo.
 func seedDeEstaMáquina(op opciones) string {
 	// Que el daemon no conteste NO es un fallo acá, ver arriba.
-	if st, err := estadoParaElMenú(op); err == nil && st.Seed != "" {
+	if st, err := currentMenuStatus(op); err == nil && st.Seed != "" {
 		return st.Seed
 	}
 	raw, err := os.ReadFile(filepath.Join(op.datos, jsonfile.SeedFile))

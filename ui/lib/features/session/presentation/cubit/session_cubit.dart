@@ -519,7 +519,11 @@ class SessionCubit extends Cubit<SessionState> {
   /// way back, because every control on it needs a room to act on. That is
   /// worse than any error message, and it is the reason this returns a bool
   /// instead of void.
-  Future<bool> createRoom({required String name, Game? game}) async {
+  Future<bool> createRoom({
+    required String name,
+    Game? game,
+    bool replace = false,
+  }) async {
     emit(
       state.copyWith(
         phase: SessionPhase.creating,
@@ -534,6 +538,7 @@ class SessionCubit extends Cubit<SessionState> {
         name: name,
         nickname: state.nickname,
         game: game,
+        replace: replace,
       );
       emit(state.copyWith(phase: SessionPhase.inRoom, room: room));
     });
@@ -556,13 +561,14 @@ class SessionCubit extends Cubit<SessionState> {
   }
 
   /// Joins a room. Returns whether it joined. Same rule as [createRoom].
-  Future<bool> joinRoom(String inviteId) async {
+  Future<bool> joinRoom(String inviteId, {bool replace = false}) async {
     emit(state.copyWith(phase: SessionPhase.joining, clearRoom: true));
     _watchProgress();
     await _try(FailedAction.joinRoom, onFail: SessionPhase.idle, () async {
       final Room room = await _repository.joinRoom(
         inviteId,
         nickname: state.nickname,
+        replace: replace,
       );
       emit(state.copyWith(phase: SessionPhase.inRoom, room: room));
     });

@@ -38,10 +38,17 @@ abstract interface class SessionRepository {
     required String name,
     required String nickname,
     Game? game,
+    bool replace = false,
   });
 
   /// Entra a una sala con un invite ID.
-  Future<Room> joinRoom(String inviteId, {required String nickname});
+  /// `replace` es que ya se confirmó dejar atrás lo que estorbaba. Sin él el
+  /// daemon rechaza, que es lo correcto: quién decide no es esta capa.
+  Future<Room> joinRoom(
+    String inviteId, {
+    required String nickname,
+    bool replace = false,
+  });
 
   /// Abre un juego en la sala, o lo cierra si `game` es null. Devuelve la
   /// sala ya con los puertos aplicados.

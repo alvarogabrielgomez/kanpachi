@@ -57,12 +57,11 @@ enum AppDialog {
   /// salirse: es terminar la sala para todos los que están jugando.
   confirmClose,
 
-  /// La sala que quedó abierta del arranque anterior: reabrirla o cerrarla.
+  /// Dejar de volver a la sala anterior, para entrar a otra o abrir una propia.
   ///
-  /// Es el único diálogo que se abre SIN que nadie pulse nada: lo dispara el
-  /// latido al descubrir el archivo del arranque anterior. Preguntar y no
-  /// reabrir sola es la invariante; ver `docs/05-ui.md`.
-  resumeRoom,
+  /// Va ANTES del de confianza: primero se pregunta por lo que se pierde y
+  /// después por la máquina a la que se le va a hablar.
+  confirmDisplace,
 
   /// Confiar en un registro, antes de abrir una sala o de entrar a una.
   ///
@@ -178,15 +177,19 @@ class ShellState {
 /// Lo que el diálogo de confianza necesita saber para preguntar y para actuar.
 @immutable
 class TrustRequest {
-  const TrustRequest.hosting({required this.seed, required this.suggestedName})
-    : joining = false,
-      code = '',
-      preview = null;
+  const TrustRequest.hosting({
+    required this.seed,
+    required this.suggestedName,
+    this.replace = false,
+  }) : joining = false,
+       code = '',
+       preview = null;
 
   const TrustRequest.joining({
     required this.seed,
     required this.code,
     this.preview,
+    this.replace = false,
   }) : joining = true,
        suggestedName = '';
 
@@ -217,6 +220,14 @@ class TrustRequest {
   /// este diálogo existe para tomar.
   final PendingInvite? preview;
 
+  /// Que ya se confirmó dejar atrás lo que estorbaba.
+  ///
+  /// Viaja hasta el daemon, que es quien decide de verdad: sin esto rechaza, con
+  /// esto sale de lo anterior y entra, todo bajo el mismo candado. La pantalla no
+  /// calcula si hace falta — se lo dijo el daemon en el estado. Ver
+  /// `domain.Displacement`.
+  final bool replace;
+
   @override
   bool operator ==(Object other) =>
       other is TrustRequest &&
@@ -224,10 +235,12 @@ class TrustRequest {
       other.joining == joining &&
       other.code == code &&
       other.suggestedName == suggestedName &&
-      other.preview == preview;
+      other.preview == preview &&
+      other.replace == replace;
 
   @override
-  int get hashCode => Object.hash(seed, joining, code, suggestedName, preview);
+  int get hashCode =>
+      Object.hash(seed, joining, code, suggestedName, preview, replace);
 }
 
 /// Navegación y preferencias de presentación.
@@ -355,6 +368,15 @@ class ShellCubit extends Cubit<ShellState> {
   /// Abre el diálogo de confianza con lo que se está por hacer.
   void askTrust(TrustRequest req) =>
       emit(state.copyWith(dialog: AppDialog.trustSeed, trust: req));
+
+  /// Pregunta antes de dejar atrás la sala a la que se estaba volviendo.
+  ///
+  /// Lleva el MISMO [TrustRequest] que se va a usar después, y no un callback:
+  /// este estado es inmutable y comparable, y una función dentro rompería la
+  /// igualdad. Al confirmar, el diálogo lo pasa a [askTrust] con `replace`
+  /// puesto, que es lo único que cambia entre haber preguntado y no.
+  void askDisplace(TrustRequest next) =>
+      emit(state.copyWith(dialog: AppDialog.confirmDisplace, trust: next));
 
   void askKick(Member member) =>
       emit(state.copyWith(dialog: AppDialog.confirmKick, kickTarget: member));

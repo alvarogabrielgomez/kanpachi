@@ -204,10 +204,15 @@ class PipeSessionRepository implements SessionRepository {
     required String name,
     required String nickname,
     Game? game,
+    bool replace = false,
   }) async {
     final Map<String, Object?> creada = await _mapa(
       DaemonMethods.createRoom,
-      <String, Object?>{'nickname': nickname, 'name': name},
+      <String, Object?>{
+        'nickname': nickname,
+        'name': name,
+        if (replace) 'replace': true,
+      },
     );
     if (game == null) return _sala(creada);
     // Crear no lleva juego, por decisión 20: la sala nace vacía y el juego se
@@ -216,13 +221,19 @@ class PipeSessionRepository implements SessionRepository {
   }
 
   @override
-  Future<Room> joinRoom(String inviteId, {required String nickname}) async =>
-      _sala(
-        await _mapa(DaemonMethods.joinRoom, <String, Object?>{
-          'code': inviteId,
-          'nickname': nickname,
-        }),
-      );
+  Future<Room> joinRoom(
+    String inviteId, {
+    required String nickname,
+    bool replace = false,
+  }) async => _sala(
+    await _mapa(DaemonMethods.joinRoom, <String, Object?>{
+      'code': inviteId,
+      'nickname': nickname,
+      // Se omite en falso, que es lo que el daemon espera: su cero rechaza, y
+      // eso hace que olvidarlo sea seguro en vez de destructivo.
+      if (replace) 'replace': true,
+    }),
+  );
 
   @override
   Future<Room> setGame(Room room, Game? game) async {

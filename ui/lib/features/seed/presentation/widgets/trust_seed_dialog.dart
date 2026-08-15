@@ -149,11 +149,18 @@ class _TrustSeedDialogState extends State<TrustSeedDialog> {
               // **Sin `dropHostIntent` acá.** Confirmar no abandona: la
               // creación que arranca es la que decide, y es ella la que
               // recuerda la intención cuando falla por falta de contraseña.
+              // `replace` viaja tal cual llegó: quien decidió si hacía falta
+              // preguntar fue el daemon, y quien preguntó fue el diálogo de
+              // antes. Acá solo se pasa.
               final bool ok = entrando
-                  ? await session.joinRoom(widget.request.code)
+                  ? await session.joinRoom(
+                      widget.request.code,
+                      replace: widget.request.replace,
+                    )
                   : await session.createRoom(
                       name: _nombreFinal,
                       game: session.state.pendingGame,
+                      replace: widget.request.replace,
                     );
               if (ok) shell.go(AppScreen.room);
             },

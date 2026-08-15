@@ -81,7 +81,7 @@ func correr(ctx context.Context, args []string) int {
 	// Sin subcomando, el asistente. Es lo que hace que esto se pueda usar sin
 	// haber leído nada, que en un servidor recién instalado es el caso normal.
 	if len(resto) == 0 {
-		if err := asistente(ctx, op); err != nil {
+		if err := assistant(ctx, op); err != nil {
 			return informar(op, err)
 		}
 		return 0

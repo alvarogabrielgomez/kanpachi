@@ -13,6 +13,8 @@ import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
 import 'package:kanpachi_ui/core/messages/message_catalog.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/features/home/presentation/widgets/pending_room_notice.dart';
+import 'package:kanpachi_ui/features/home/presentation/widgets/returning_notice.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
 import 'package:kanpachi_ui/features/games/domain/steam_art.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
@@ -130,7 +132,7 @@ class _HomeScreenState extends State<HomeScreen> {
         .read<SessionCubit>()
         .previewInvite(_code.text);
     if (!mounted) return;
-    context.read<ShellCubit>().askTrust(
+    _pedirConfianza(
       TrustRequest.joining(seed: seed, code: _code.text, preview: preview),
     );
   }
@@ -141,6 +143,23 @@ class _HomeScreenState extends State<HomeScreen> {
   /// se pasa es la SUGERENCIA, para cuando nadie escribió nada. El diálogo lo
   /// enseña y se puede cambiar ahí mismo.
   Future<void> _createEmpty() => askToHost(context, suggestedName: _nameHint);
+
+  /// Abre la confirmación que toque, y **esa decisión no se toma acá**.
+  ///
+  /// El daemon dice en el estado si entrar desplaza algo. Volviendo a una sala,
+  /// se pregunta primero por lo que se pierde y después por el registro; sin
+  /// nada que desplazar, se va derecho al de confianza como siempre.
+  ///
+  /// Estando DENTRO de una sala este camino no existe: la pantalla es la de la
+  /// sala y no tiene campo de código. Eso está bien y se queda.
+  void _pedirConfianza(TrustRequest next) {
+    final ShellCubit shell = context.read<ShellCubit>();
+    if (context.read<SessionCubit>().state.health.returning != null) {
+      shell.askDisplace(next);
+      return;
+    }
+    shell.askTrust(next);
+  }
 
   /// Baja al campo lo que se haya escrito en el diálogo.
   ///
@@ -195,6 +214,26 @@ class _HomeScreenState extends State<HomeScreen> {
                 failure: failure,
                 verbose: session.verbose,
                 onDismiss: () => context.read<SessionCubit>().clearFailure(),
+              ),
+              const SizedBox(height: AppSpacing.x5l),
+            ],
+            // La sala propia que no volvió sola va PRIMERO: es de esta máquina y
+            // hay gente esperándola, así que pesa más que volver a la de otro.
+            if (session.pendingRoom != null && !session.hasRoom) ...<Widget>[
+              PendingRoomNotice(
+                pending: session.pendingRoom!,
+                onReopen: () =>
+                    context.read<SessionCubit>().resumePendingRoom(),
+                onDiscard: () =>
+                    context.read<SessionCubit>().discardPendingRoom(),
+              ),
+              const SizedBox(height: AppSpacing.x5l),
+            ],
+            if (session.health.returning != null) ...<Widget>[
+              ReturningNotice(
+                returning: session.health.returning!,
+                seedDown: session.health.seedDown,
+                onLeave: () => context.read<SessionCubit>().leave(),
               ),
               const SizedBox(height: AppSpacing.x5l),
             ],
