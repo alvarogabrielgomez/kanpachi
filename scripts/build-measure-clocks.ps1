@@ -26,15 +26,17 @@
     # What it produces, in dist/measure
 
       kanpseed-linux-amd64   the registry, with RoomTTL in minutes
-      kanpachi-amd64.deb     the Linux host
+      linux/kanpachid        the Linux host's daemon
+      linux/kanpachi         its terminal client
       kanpachi-portable.exe  the Windows guest
 
-    # The engine is NOT built here
+    # No .deb, and no engine
 
-    Same reason `build-deb.sh` states: that binary is Rust with vendored C and
-    comes out of its own repository, on Linux. This takes it out of the released
-    .deb, which is the same engine the product ships, because the measurement is
-    about clocks and nothing else.
+    The droplet installs the PUBLISHED package, with its engine, its systemd
+    units and its catalogue exactly as they ship, and then these two binaries go
+    on top of it. Building a package here would change three more things than
+    the one being measured, and what is being measured is clocks, which live in
+    Go. Undoing it is reinstalling the package.
 
     # The values, and why these
 
@@ -167,25 +169,29 @@ try {
     Native 'build-seed.sh' { & bash scripts/build-seed.sh --version v0.0.0-measure --out $Out }
     Ok 'kanpseed built for linux'
 
-    Step 'the engine, taken out of the published .deb'
-    $engine = Join-Path $outDir 'kanpachi-engine'
-    if (-not (Test-Path $engine)) {
-        $deb = Join-Path $outDir 'released.deb'
-        # Sin --repo: `gh` lo saca del remoto de este clon. Escribirlo acá lo
-        # dejaría copiado fuera de internal/brand, que es donde vive el canal de
-        # publicación, y un fork acabaría bajando el .deb del repositorio
-        # original. Lo prohibe el guardián de marca, y con razón.
-        Native 'gh release download' { & gh release download --pattern 'kanpachi-amd64.deb' --output $deb --clobber }
-        $unix = $outDir -replace '\\', '/'
-        $unpack = "cd '$unix' && ar x released.deb && tar xf data.tar.* ./usr/lib/kanpachi/kanpachi-engine" +
-        " && mv usr/lib/kanpachi/kanpachi-engine . && rm -rf usr data.tar.* control.tar.* debian-binary released.deb"
-        Native 'unpacking the engine' { & bash -c $unpack }
+    Step 'the Linux host: the two Go binaries and nothing else'
+    # No se arma un .deb, y es a propósito.
+    #
+    # Un paquete nuevo traería motor, unidades de systemd y catálogo, o sea tres
+    # cosas más que cambian entre lo publicado y lo que se mide. Lo que esta
+    # medición estudia son RELOJES, y los relojes viven en Go. Así que el droplet
+    # instala el .deb publicado —con su motor, sus unidades y su catálogo tal
+    # cual— y encima se le cambian solo estos dos ficheros.
+    #
+    # Deshacerlo es reinstalar el paquete, que repone los dos.
+    $linux = Join-Path $outDir 'linux'
+    New-Item -ItemType Directory -Force $linux | Out-Null
+    $env:GOOS = 'linux'
+    $env:GOARCH = 'amd64'
+    $env:CGO_ENABLED = '0'
+    try {
+        Native 'kanpachid for linux' { & go build -o (Join-Path $linux 'kanpachid') ./daemon/cmd/kanpachid }
+        Native 'kanpachi for linux' { & go build -o (Join-Path $linux 'kanpachi') ./daemon/cmd/kanpachi }
     }
-    Ok ("kanpachi-engine {0:N0} KB" -f ((Get-Item $engine).Length / 1KB))
-
-    Step 'the Linux host'
-    Native 'build-deb.sh' { & bash scripts/build-deb.sh --version 0.0.0-measure --engine $engine --out $Out }
-    Ok 'kanpachi-amd64.deb built'
+    finally {
+        Remove-Item Env:GOOS, Env:GOARCH, Env:CGO_ENABLED -ErrorAction SilentlyContinue
+    }
+    Get-ChildItem $linux | ForEach-Object { Ok ("{0,-12} {1,10:N0} KB" -f $_.Name, ($_.Length / 1KB)) }
 
     if ($SkipPortable) {
         Step 'the Windows guest'
