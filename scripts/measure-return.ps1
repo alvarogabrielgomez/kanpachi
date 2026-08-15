@@ -77,10 +77,19 @@ $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
 $buildDir = Join-Path $repo $Build
 
-$isAdmin = ([Security.Principal.WindowsPrincipal] `
-        [Security.Principal.WindowsIdentity]::GetCurrent()
-).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) { throw 'An elevated console is needed: the portable pipe is under the protected prefix.' }
+# La elevación se exige donde hace falta, que es al correr escenarios, y no acá.
+#
+# `-Deploy` y `-Restore` solo hablan con el droplet por ssh: pedir administrador
+# para eso obligaría a abrir una consola elevada para no usarla, y el permiso que
+# no hace falta es el que se acaba concediendo por costumbre.
+function Require-Admin() {
+    $isAdmin = ([Security.Principal.WindowsPrincipal] `
+            [Security.Principal.WindowsIdentity]::GetCurrent()
+    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $isAdmin) {
+        throw 'An elevated console is needed to run the scenarios: the portable pipe lives under the protected prefix, and launching the portable raises UAC.'
+    }
+}
 
 # ─── Los dos extremos ────────────────────────────────────────────────────────
 
@@ -363,6 +372,8 @@ $scenarios = [ordered]@{
         }
     }
 }
+
+Require-Admin
 
 Step 'the pieces'
 if (-not (Test-Path $cli)) { throw "no kanpachi.exe in $Build. Run scripts/build-measure-clocks.ps1 first." }
