@@ -305,11 +305,15 @@ type Session struct {
 	// lastPublish es cuándo el registro aceptó por última vez la tarjeta de
 	// esta sala.
 	//
-	// Es lo que hace medible el CardTTL desde este lado. El registro deja de
-	// resolver una sala a las seis horas de la última publicación, y hasta que
-	// esto existió nada la refrescaba en vida de la sala: una partida abierta
-	// desde la tarde dejaba de aceptar gente nueva a la noche, sin un solo
-	// error de este lado y con un "ese código no existe" del otro.
+	// It is what makes the registry's deadline measurable from this side. A room
+	// nobody republishes for `RoomTTL` gets swept and its invite ID goes back in
+	// the pool, so republishing is what keeps a long-lived room's code its own.
+	//
+	// It used to be answering a much tighter deadline: the registry stopped
+	// resolving six hours after the last publish, so a game opened in the
+	// afternoon quietly stopped accepting new people by night, with no error on
+	// this side and a "that code does not exist" on the other. That deadline is
+	// gone and this clock stayed, now against three weeks instead of six hours.
 	lastPublish time.Time
 
 	// lastRenew es cuándo el host empujó por última vez el vencimiento de las

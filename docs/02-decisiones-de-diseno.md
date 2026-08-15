@@ -1005,7 +1005,7 @@ inviteID (8 chars, emitido por el seed)
 | Una tarjeta que no puede descifrar | Nombres de sala ni nicks en claro |
 | Un contador por red | Quién es cada miembro. Los nicks viven dentro de la red cifrada |
 
-Con TTL: la tarjeta muere con la sala, y la llave fijada del host sobrevive semanas para que reabrir con el mismo ID siga siendo del host. **Se guarda en disco**, ver la decisión 33.
+Con un solo plazo, `RoomTTL`, de tres semanas: mientras nadie cierre la sala y su host la republique, el invite ID le sigue perteneciendo. **Se guarda en disco**, ver la decisión 33.
 
 ### Una entrada muere de dos formas, y antes solo de una
 
@@ -1013,7 +1013,9 @@ La tarjeta vencía sola a las seis horas, y ese era el único final. **Cerrar la
 
 Ahora el host lo dice al cerrar, con `DELETE /api/i/{id}`, y renovar el código cierra además el viejo. Eso último es lo que hace cierta la frase «renovar cierra la puerta» en el instante en que se pulsa, en vez de seis horas después.
 
-**Cierra la tarjeta y jamás el fijado.** El invite ID sigue siendo de su host, así que reabrir la misma sala con el mismo código no se toca, que es de lo que depende el host headless que se reabre solo en cada arranque. Borrar la entrada la devolvería al bote y reabriría la carrera que el fijado existe para cerrar.
+**Marca la sala como cerrada y jamás borra la entrada.** El invite ID sigue siendo de su host, así que reabrir la misma sala con el mismo código no se toca, que es de lo que depende el host headless que se reabre solo en cada arranque. Borrar la entrada la devolvería al bote y reabriría la carrera que el fijado existe para cerrar.
+
+**Cerrar tiene campo propio, y antes tomaba prestado el plazo de la tarjeta.** Empujar el vencimiento al pasado dejaba una sala cerrada indistinguible de un host que llevaba seis horas fuera, y así es como el silencio terminó matando salas que nadie había terminado. Ese campo **no sale del proceso**: en el cable, una sala cerrada, una barrida y una que nunca existió son el mismo 404. Partirlo sería un oráculo, diciéndole a quien recorre el espacio de códigos que ese ID estuvo vivo alguna vez.
 
 **La petición va firmada y fechada.** Firmada con la llave que fijó ese invite ID, igual que publicar, porque lo que dice que la sala es tuya no es el password del seed: ese es del operador y un seed abierto no lo pide. Y fechada, con cinco minutos de tolerancia, porque **cerrar es el único mensaje cuya copia grabada sigue sirviendo más tarde**: publicar una tarjeta vieja deja una tarjeta vieja, y reproducir un cierre después de que el host reabra mata una sala viva.
 
@@ -1021,15 +1023,16 @@ Ahora el host lo dice al cerrar, con `DELETE /api/i/{id}`, y renovar el código 
 
 Un corte de luz, un VPS matado o un proceso muerto **no son una sala que se acabó**. El host se reabre solo en su arranque siguiente, con el mismo código, la misma identidad de red y el mismo perfil, y republica su tarjeta de paso. Los invitados vuelven cuando vuelvan. **Que la entrada sobreviva es justo lo que hace posible ese caso**, así que caducarla ahí rompería lo que existe para servir.
 
-Son tres ventanas, y sus largos son distintos a propósito:
+**Una sala no es su túnel.** El túnel, el agujero en el NAT, los caminos P2P y el propio motor son herramienta: se caen, se rehacen, y ninguno es la sala. Lo que la sala ES vive en tres sitios que sobreviven a que se apague todo a la vez: `hosted-room.json` en el host, `last-room.json` en cada invitado, y el fijado del invite ID en el seed. Por eso el caso extremo —se caen todos los motores a la vez, host incluido— no necesita código propio: el host reabre con el mismo código, remonta el vestíbulo, y los invitados vuelven cada uno cuando le toca.
+
+Hay un solo plazo, y es largo a propósito:
 
 | El host lleva fuera | Qué hace el código |
 |---|---|
-| Hasta ~6 h | Sigue resolviendo. El invitado llega al vestíbulo y espera a un host que todavía no está |
-| Más de 6 h | Deja de resolver, porque venció la tarjeta. En cuanto el host reabre, republicar la repone para todo el que tenga el código |
-| Más de 21 días | Se barre el fijado y la entrada se va. Reabrir contesta que esa sala no existe |
+| Lo que sea, hasta 21 días | **Sigue resolviendo.** El invitado llega al vestíbulo y espera, o reintenta cada cinco minutos |
+| Más de 21 días | Venció `RoomTTL` sin que nadie republicara, el barrido se lleva la entrada, y ese código contesta que esa sala no existe |
 
-O sea que `CardTTL` **no acota cuánto tiene el host para volver**, que son las tres semanas del fijado. Acota cuánto tiempo un INVITADO puede resolver ese código mientras nadie hospeda, que es otra pregunta con otra respuesta correcta. Una sala viva no vence nunca: se republica cada hora contra unas seis de vida.
+Había una segunda ventana, un `CardTTL` de seis horas, y **se quitó**. Su nombre decía la vida de la tarjeta y su efecto era el de la sala: un host cuyo VPS pasó la noche caído volvía a un código que llevaba horas contestando «no existe» a todo el que lo tuviera, con semanas de fijado por delante. Una sala viva no se acerca nunca a `RoomTTL`, porque republica cada hora.
 
 El invitado, por su lado, reintenta en cada arranque de Kanpachi mientras su marca de volver siga encendida. Nadie tiene que acordarse de nada: el host vuelve cuando puede y los invitados aparecen cuando aparecen.
 

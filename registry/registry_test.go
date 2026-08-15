@@ -79,8 +79,8 @@ func TestEmitirYResolver(t *testing.T) {
 	if !bytes.Equal(sala.Card, card) {
 		t.Errorf("la tarjeta volvió distinta: %q", sala.Card)
 	}
-	if want := domain.DeriveRendezvous(id).NetworkName(); sala.Network != want {
-		t.Errorf("red = %q, se esperaba %q: el registro tiene que derivarla, no creerle al host", sala.Network, want)
+	if want := domain.DeriveRendezvous(id).NetworkName(); sala.Rendezvous != want {
+		t.Errorf("red = %q, se esperaba %q: el registro tiene que derivarla, no creerle al host", sala.Rendezvous, want)
 	}
 }
 
@@ -101,7 +101,7 @@ func TestElRegistroNoPuedeLeerLaTarjeta(t *testing.T) {
 	if !bytes.Equal(sala.Card, card) {
 		t.Fatal("la tarjeta se transformó: el registro debe tratarla como bytes opacos")
 	}
-	if strings.Contains(sala.Network, "La Guarida") {
+	if strings.Contains(sala.Rendezvous, "La Guarida") {
 		t.Fatal("el nombre de la sala se filtró al identificador de red")
 	}
 }
@@ -160,20 +160,22 @@ func TestUnMiembroNoPuedeSobrescribirLaTarjeta(t *testing.T) {
 	}
 }
 
-// TestReabrirConElMismoIDSigueSiendoDelHost cubre la asimetría de TTLs, que es
-// la parte del diseño más fácil de romper sin notarlo.
+// TestReabrirConElMismoIDSigueSiendoDelHost covers that closing does not release
+// the invite ID, which is the easiest part of the design to break unnoticed.
 func TestReabrirConElMismoIDSigueSiendoDelHost(t *testing.T) {
-	s, reloj := storeDePrueba(t)
+	s, _ := storeDePrueba(t)
 	humberto := nuevoHost(t, 1)
 	exMiembro := nuevoHost(t, 2)
 
 	card := []byte("La Guarida")
 	id, _ := s.Issue(context.Background(), humberto.pub, card, humberto.firma(card))
 
-	// La sala muere: la tarjeta caduca y deja de resolverse.
-	reloj.avanza(CardTTL + time.Minute)
+	// The room ends: its host closes it and it stops resolving.
+	if err := s.retire(id, humberto.pub); err != nil {
+		t.Fatalf("the host could not close its own room: %v", err)
+	}
 	if _, err := s.lookup(id); err != ErrNotFound {
-		t.Fatalf("la tarjeta caducada sigue resolviéndose: %v", err)
+		t.Fatalf("a closed room still resolves: %v", err)
 	}
 
 	// Un ex miembro conserva el invite ID y se adelanta al host. No puede.
@@ -191,22 +193,24 @@ func TestReabrirConElMismoIDSigueSiendoDelHost(t *testing.T) {
 	}
 }
 
-func TestElFijadoTambienCaduca(t *testing.T) {
+// TestLaSalaCaducaPorAbandono is the other ending, the one nobody asks for:
+// nobody republished for RoomTTL and the sweep takes the room, pin included.
+func TestLaSalaCaducaPorAbandono(t *testing.T) {
 	s, reloj := storeDePrueba(t)
 	h := nuevoHost(t, 1)
 	card := []byte("x")
 	id, _ := s.Issue(context.Background(), h.pub, card, h.firma(card))
 
-	reloj.avanza(PinTTL + time.Hour)
+	reloj.avanza(RoomTTL + time.Hour)
 	if n := s.Sweep(); n != 1 {
-		t.Errorf("Sweep descartó %d salas, se esperaba 1", n)
+		t.Errorf("Sweep discarded %d rooms, wanted 1", n)
 	}
 	if s.Len() != 0 {
-		t.Errorf("quedan %d entradas tras el barrido", s.Len())
+		t.Errorf("%d entries left after the sweep", s.Len())
 	}
-	// Y el invite ID vuelve a estar libre para cualquiera.
+	// And the invite ID is free for anybody again.
 	if err := s.publish(id, h.pub, card, h.firma(card)); err != ErrNotFound {
-		t.Errorf("tras caducar el fijado, Publish dio %v, se esperaba ErrNotFound", err)
+		t.Errorf("after the pin expired, Publish gave %v, wanted ErrNotFound", err)
 	}
 }
 
@@ -219,18 +223,18 @@ func TestTarjetaDemasiadoGrande(t *testing.T) {
 	}
 }
 
-func TestNetworksSoloListaSalasVivas(t *testing.T) {
+// TestElSilencioDelHostNoMataLaSala is the failure that got CardTTL removed. A
+// host that spent the night down came back to a code that had been answering
+// "no such room" for hours, with weeks of pin still to go.
+func TestElSilencioDelHostNoMataLaSala(t *testing.T) {
 	s, reloj := storeDePrueba(t)
 	h := nuevoHost(t, 1)
 	card := []byte("x")
-	s.Issue(context.Background(), h.pub, card, h.firma(card))
+	id, _ := s.Issue(context.Background(), h.pub, card, h.firma(card))
 
-	if got := len(s.networks()); got != 1 {
-		t.Fatalf("Networks devolvió %d, se esperaba 1", got)
-	}
-	reloj.avanza(CardTTL + time.Minute)
-	if got := len(s.networks()); got != 0 {
-		t.Errorf("Networks devolvió %d tras caducar la tarjeta, se esperaba 0", got)
+	reloj.avanza(72 * time.Hour)
+	if _, err := s.lookup(id); err != nil {
+		t.Fatalf("three days without republishing and the room stopped resolving: %v", err)
 	}
 }
 

@@ -87,7 +87,7 @@ restart does not lock out everybody who already has a code
 | host key | the host's public key, so that reopening the same code cannot be hijacked by an ex-member |
 | card | opaque bytes, at most 512 of them, encrypted with a key the server never gets |
 | network | the name of the *rendezvous* network, used to count members |
-| two timestamps | the card expires in 6 hours, the key pin in 21 days |
+| two timestamps | when the entry expires if nobody republishes, 21 days out, and when its host closed it, zero while it is open |
 
 That is the whole record. Run it and it looks like this — one room, sealed card, no addresses
 anywhere:
@@ -97,8 +97,11 @@ anywhere:
   "HostKey":"QSXp2kt4WxiZwdySzs0Jgwme5vSs4WF/U/Qe8AP5K2Y=",
   "Card":"ybxAYtu2BUZ4LJCPSRurpfzaMfR+Tqxjd1nOEtbbOB2PBtGTns6GrzyLr1cfZ9113wQja8JYWRnPrLjsBz/It0/yr5olyoGf16BtCHbLyA==",
   "Network":"kanpachi-b8cdca2cd5c34077e3c9aaabddea60a3",
-  "CardUntil":"2026-08-14T04:53:54Z","PinUntil":"2026-09-03T22:53:54Z"}}}
+  "PinUntil":"2026-09-03T22:53:54Z","ClosedAt":"0001-01-01T00:00:00Z"}}}
 ```
+
+The `Network` key is the *rendezvous* network and the Go field behind it is called `Rendezvous`: the
+key is frozen so a deployed seed keeps its rooms across the rename.
 
 The room in that dump is called `NOMBRE DE SALA SECRETO` and its host is `Humberto`. Neither string
 appears in the file, because the card arrived sealed.

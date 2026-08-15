@@ -1011,12 +1011,13 @@ fallara. El test que lo cierra falla de fábrica sobre el código anterior, que 
 la mejor prueba de que el fallo era real.
 
 Lo que NO cubre la republicación al reabrir, y queda escrito con su disparador:
-la tarjeta también muere **en vida de la sala**, por dos caminos. Una sala abierta
-más de seis horas sin renombrar ni renovar vence su `CardTTL`. Y un reinicio del
-registro se lleva el mapa entero, y ahí `Publish` contesta que no conoce la sala,
-porque publicar no crea; que creara reabriría la carrera que el fijado de la llave
-existe para cerrar. Los dos los cerraría una republicación periódica colgada de un
-latido del supervisor, que ya existe.
+un reinicio del registro se lleva el mapa entero, y ahí `Publish` contesta que no
+conoce la sala, porque publicar no crea; que creara reabriría la carrera que el
+fijado de la llave existe para cerrar. Lo cierra una republicación periódica
+colgada del latido del supervisor, que ya existe. Había un segundo camino, el
+`CardTTL` de seis horas que vencía **en vida de la sala**, y ese desapareció con
+la constante: hoy el único plazo es `RoomTTL`, de tres semanas, y la
+republicación horaria lo empuja de sobra.
 
 Y al escribir el cliente apareció la mitad que casi se escapa: **a un cliente HTTP no
 alcanza con comprobar antes de llamar.** Si la URL lleva el nombre, el transporte

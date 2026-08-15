@@ -46,7 +46,7 @@ What it does, in order ([`store.go`](store.go)):
 2. Verifies `ed25519.Verify(host_key, card, sig)`. That proves self-consistency, not identity: anybody can generate a pair and sign their own card.
 3. Draws a free invite ID, with eight attempts as the ceiling. A full registry answers `exhausted` instead of spinning forever.
 4. Derives the ID's rendezvous network with Argon2id, **outside the store's lock and through the single-slot brake** (see "The brakes"). The request's context reaches all the way into the queue: somebody who hung up does not get 64 MiB spent on an answer nobody is waiting for.
-5. Inserts the entry with its two deadlines, `CardTTL` of 6 hours and `PinTTL` of 21 days, and mirrors it to disk.
+5. Inserts the entry with its deadline, `RoomTTL` of 21 days, and mirrors it to disk.
 
 Response: `201 {"invite_id": "A7K2-M9QX"}`.
 
@@ -76,12 +76,14 @@ Two absences that mean something, and both are deliberate ([`http.go`](http.go),
 
 The count comes from `easytier-cli peer list-foreign` against the loopback RPC portal, polled every 3 seconds and cached ([`counter.go`](counter.go)): a flood of visitors does not turn into a flood of child processes. That JSON has peer IDs and addresses in it and no nicknames: nicknames travel inside the encrypted network and the seed relays without decrypting.
 
-A room whose card expired while its pin is still alive answers `404 not_found`, on purpose: the visitor learns there is no room, which is the truth, and the invite ID stays reserved for its host until the pin dies.
+**A room stops resolving for exactly two reasons, and they answer alike.** Its host closed it, or nobody republished it for `RoomTTL` and the sweep took it. A renewed code reaches the first one, because renewing closes the old code. All three come back as the same `404 not_found` with nothing to tell them apart, and that is a property rather than an accident: **splitting that 404 would be an oracle**, telling whoever walks the code space that an ID was alive once. It is information about other people's rooms in exchange for a nuance nobody needs.
+
+**A host being away is not one of those reasons.** There used to be a six-hour card deadline here, and it answered "no such room" about rooms that were only waiting for a machine to come back up, with weeks of pin still to go. Silence now costs nothing until the sweep.
 
 | Failure | Status and code |
 |---|---|
 | The ID does not have the shape of an invite ID | `400 bad_request` |
-| It does not exist, or its card already expired | `404 not_found` |
+| It does not exist, was closed, or was swept | `404 not_found` |
 
 ### `PUT /api/i/{id}`, publishing
 
@@ -94,7 +96,7 @@ What it demands, in order ([`store.go`](store.go), `publish`):
 3. **That the entry exists.** `Publish` never creates. Creating would reopen the race the pin exists to close: an ex-member who kept the code would get there first when the room reopens.
 4. **That `host_key` is exactly the key pinned the first time.** This is the endpoint's real lock.
 
-If it passes, the card and signature are refreshed and both deadlines renewed. Response: `204`, no body.
+If it passes, the card and signature are refreshed, the deadline is renewed, and **a closed room is reopened**. That last one is the point: closing and coming back under the same code is the headless host's whole promise, and the pin has already proved this is the key that claimed the ID. Response: `204`, no body.
 
 | Failure | Status and code |
 |---|---|
@@ -124,7 +126,9 @@ Body:
 
 The invite ID goes inside, or a good signature for one room would close any other room of the same host. And the timestamp goes inside because **closing is the one message whose recorded copy keeps working later**: publishing an old card leaves an old card, which is what was already there, but replaying a close after the host REOPENS the same room kills a live one — and reopening with the same code is exactly what a headless host does on every boot. `ts` travels beside the signature because the verifier has to rebuild the same bytes. Tolerance is ±5 minutes, in both directions: a stamp in the future is a wrong clock or somebody extending a signature's life on purpose.
 
-What it does ([`store.go`](store.go), `retire`): expires the card **one second in the past** and empties the card and its signature. It does **not** delete the entry, and that is the whole design. `lookup` answers 404 from that instant, `networks()` stops counting it, and `publish` keeps working — so **reopening the same room with the same code is untouched**. Deleting the entry would return the ID to the pool and reopen the race the pin exists to close.
+What it does ([`store.go`](store.go), `retire`): stamps `ClosedAt` and empties the card and its signature. It does **not** delete the entry, and that is the whole design. `lookup` answers 404 from that instant and `publish` keeps working — so **reopening the same room with the same code is untouched**. Deleting the entry would return the ID to the pool and reopen the race the pin exists to close.
+
+**Closing has a field of its own, and it used to borrow the card's deadline.** Pushing the expiry into the past made a closed room indistinguishable from a host who had been away six hours, which is how silence came to end rooms nobody had ended. `ClosedAt` never leaves this process: on the wire a closed room, a swept one and one that never existed are the same 404.
 
 Closing an already-closed room is a no-op and not an error: closing is on the idempotent path out of a room, which three places call.
 
@@ -316,7 +320,7 @@ On the client side, the adapter brings its own refusals ([`client.go`](../daemon
 
 Both came out of the same test: open a room, close the room, and try to enter with the code still in hand. Two other things that test turned up are fixed and documented above — the page without a limiter, and a closed room still resolving.
 
-1. **`members` measures the lobby, not the room.** The host stays in the rendezvous network while hosting and the guest leaves it as soon as it collects the credential, so the real number is "the host plus whoever is entering right now". As "how many people are in" it is a bad number; as a signal for "the host is at the door" it is exact, and nothing in the client reads it.
+1. **`members` measures the lobby, not the room.** The host stays in the rendezvous network while hosting and the guest leaves it as soon as it collects the credential, so the real number is "the host plus whoever is entering right now". As "how many people are in" it is a bad number; as a signal for "the host is at the door" it is exact. Two places read it, and this line used to claim nobody did: the invitation page paints it as "N en la sala", which is the bad reading, and the daemon carries it to `InviteLookup.Members`, which is the exact one — a zero there is how a failed join can say "that room exists, its host is not connected right now" instead of a generic error.
 2. **A room served before the registry kept signatures comes back unsigned**, and the client treats it as unverified rather than forged. That is the truth about it and it is the right call, and it is still a room whose card nothing vouches for.
 
 Neither touches containment or the real network's secret.
@@ -325,14 +329,15 @@ Neither touches containment or the real network's secret.
 
 **An entry outliving a host that died dirty is the design, not a leak.** A power cut, a killed VPS or a process that died are not a room ending: the host reopens by itself on its next start, with the same code, the same network identity and the same profile, and republishes its card on the way. Peers come back whenever they come back. The entry surviving is exactly what makes that possible — expiring it eagerly would break the case it exists to serve.
 
-Three windows govern it, and they are deliberately different lengths:
+**A room is not its tunnel.** The tunnel, the NAT hole, the P2P paths and the engine itself are tooling: they drop, they get rebuilt, and none of them is the room. What the room IS survives on disk in three places — `hosted-room.json` on the host, `last-room.json` on each guest, and the pinned invite ID here. So the extreme case, every engine dying at once, host included, needs no code of its own: the host reopens under the same code, the lobby comes back up, and the guests return on their own clocks.
+
+There is one deadline, and it is deliberately long:
 
 | Host away for | What the code does |
 |---|---|
-| Up to ~6 hours | Keeps resolving. A guest reaches the lobby and waits on a host that is not there yet |
-| More than 6 hours | Stops resolving, because the card expired. The moment the host reopens, republishing brings it back for everybody holding the code |
-| More than 21 days | The pin is swept and the entry is gone. Reopening answers that the room does not exist |
+| Any amount, up to 21 days | **Keeps resolving.** A guest reaches the lobby and waits on a host that is not there yet, or keeps retrying every five minutes |
+| More than 21 days | `RoomTTL` ran out with nobody republishing, the sweep takes the entry, and the code answers that the room does not exist |
 
-So `CardTTL` does not bound how long the host has to come back — the pin gives it three weeks. What it bounds is how long a **guest** can resolve the code while nobody is hosting, which is a different question with a different right answer.
+There used to be a second window here, a `CardTTL` of six hours, and it is gone. Its name said the card's life and its effect was the room's: a host whose VPS spent the night down came back to a code that had spent hours answering "no such room" to everybody holding it. A live room never gets near `RoomTTL`, because it republishes hourly.
 
 **And the dial that costs the operating system's connect timeout is not a defect either.** With no host at the far end, a guest brings up the lobby and waits about twenty-one seconds on Windows. Bounding that would be the wrong fix: a slow link, a high RTT or a machine that is paging take that long with everything working, and cutting at five seconds turns a slow host into a missing one — hardest exactly where connections are worst. What was actually wrong was that the wait was mute, with the screen frozen on the previous line and a raw `connectex` string at the end. The dial announces itself now and says how long it can take.

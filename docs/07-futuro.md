@@ -271,7 +271,35 @@ de hoy va por la 0.1.4, declarada "work in progress" por sus autores, y cambiar
 implicaría reemplazar `tray_manager` y `window_manager` a la vez, que es el
 shell entero. Se reevalúa cuando salga de obra y tenga icono de ventana.
 
-## 15. Lo que se decidió NO hacer
+## 15. El registro del seed en una base de datos
+
+Hoy `rooms.json` es un mapa en memoria con un espejo en disco, y **resolver un
+invite ID ya es O(1)**. La lentitud que se le supone a un fichero no existe:
+nadie recorre el JSON para buscar una sala.
+
+Lo que no escala es otra cosa, y conviene escribirla para que nadie meta una base
+de datos por el motivo equivocado. **`respaldar` reescribe el fichero entero en
+cada mutación.** Cada sala viva republica su tarjeta una vez por hora, así que
+con N salas el seed hace N escrituras por hora de un fichero que mide N. El coste
+crece con el cuadrado, y a eso hay que sumarle que el mapa entero vive en RAM, y
+la memoria es el recurso escaso del droplet, no la CPU: es lo que ya obligó a
+acotar Argon2id a una derivación a la vez.
+
+**El disparador es de escritura y no de consulta**: cuando el seed pase de unas
+pocas miles de salas vivas, o cuando el `iowait` del droplet se note en `/healthz`.
+Antes de eso hay un arreglo más barato y sin dependencias nuevas, que es escribir
+solo lo que cambió en vez del fichero completo.
+
+Cuando toque, lo que pide el caso es SQLite: un fichero, sin servidor que
+administrar, sin puerto que exponer, y con escrituras que no reescriben todo. Un
+Postgres sería un segundo servicio que asegurar en la misma máquina que hoy
+presume de instalarse de una sola ejecución.
+
+Lo que **no** cambia el día que se haga: el seed sigue sin poder leer las
+tarjetas, y sigue guardando lo mismo de poco. Una base de datos hace más barato
+guardar más, y eso es exactamente lo que la decisión 24 no quiere.
+
+## 16. Lo que se decidió NO hacer
 
 Escrito para resistir la tentación:
 

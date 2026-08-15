@@ -303,7 +303,7 @@ func (s *Server) vista(sala Room) map[string]any {
 	}
 	// El contador se omite si nunca se pudo hablar con EasyTier. Un cero sería
 	// una afirmación falsa, "no hay nadie"; ausente dice la verdad, "no lo sé".
-	if n, ok := s.counter.For(sala.Network); ok {
+	if n, ok := s.counter.For(sala.Rendezvous); ok {
 		v["members"] = n
 	}
 	return v
