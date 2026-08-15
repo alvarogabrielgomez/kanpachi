@@ -95,10 +95,24 @@ func (s *Server) Handler() http.Handler {
 	// es la prosa más larga posible.
 	//
 	// El comodín se queda porque es como se sirve la invitación: `/{CÓDIGO}` es
-	// una ruta legítima y no se puede enumerar. Lo que se acota es el prefijo de
-	// la API, que sí es un espacio cerrado.
+	// una ruta legítima. Lo que se acota es el prefijo de la API, que sí es un
+	// espacio cerrado.
 	mux.HandleFunc("/api/", s.apiNoExiste)
-	mux.HandleFunc("/", s.servirPagina)
+	// **The page is rate limited too, and the line above used to say it could
+	// not be enumerated.** That was false, and it was measured against the
+	// deployment: `/{CÓDIGO}` resolves an invite ID and embeds the SAME view
+	// that `GET /api/i/{id}` serves, so a live code came back with the card and
+	// a dead one came back with `"room":null` — the same existence oracle as the
+	// endpoint that does have a brake, reachable at whatever rate anyone liked.
+	// Enumerating simply moved one route over.
+	//
+	// The SAME limiter as the API on purpose, not one of its own. A budget of
+	// its own would hand an enumerator thirty a minute here plus thirty there;
+	// sharing it means the ceiling is thirty per IP no matter which door gets
+	// knocked on. It costs an honest visitor nothing: opening an invitation is
+	// one request for the page, the browser's implicit `/favicon.ico`, and the
+	// fallback `fetch` only when the server did not resolve the card already.
+	mux.HandleFunc("/", s.limitado(s.servirPagina))
 	return cabecerasSeguras(mux)
 }
 

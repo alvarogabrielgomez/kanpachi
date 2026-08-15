@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Security
+
+- Rate limit the invitation page, which resolves invite codes exactly like the API does and was answering at any rate anybody asked for. A live code came back with the room card embedded in the page and a dead one came back empty, so walking the eight-character space was a matter of skipping the endpoint that counts and asking the page instead. Both now share one budget per address, so moving to the other route buys nothing
+
 ## [0.3.0] - 2026-08-14
 
 ### Security
