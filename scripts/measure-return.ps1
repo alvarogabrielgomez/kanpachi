@@ -251,9 +251,16 @@ function Check($what, [bool]$cond) {
     if ($cond) { Ok $what } else { Fail $what; $script:failures += $what }
 }
 
-$scenarios = [ordered]@{
+# Una LISTA con el id dentro, y no un diccionario ordenado.
+#
+# `[ordered]@{ 1 = ...; 2 = ... }` indexado con un entero devuelve por POSICION y
+# no por clave, asi que `-Only 1` corria el segundo escenario. Falla en silencio:
+# imprime un titulo, hace otra cosa, y lo unico que delata la diferencia es leer
+# el nombre con atencion.
+$scenarios = @(
 
-    1 = @{
+    @{
+        id    = 1
         name  = 'going back after Kanpachi is closed and opened'
         run   = {
             Host-Run 'sudo -n systemctl restart kanpachid' | Out-Null
@@ -277,7 +284,8 @@ $scenarios = [ordered]@{
         }
     }
 
-    2 = @{
+    @{
+        id    = 2
         name  = 'the host reopens its room, same code, and the guest reconnects'
         run   = {
             $before = (Host-Json 'status').room.code
@@ -292,7 +300,8 @@ $scenarios = [ordered]@{
         }
     }
 
-    3 = @{
+    @{
+        id    = 3
         name  = 'the guest arrives BEFORE the host is up'
         run   = {
             Note 'stopping the host daemon without closing the room'
@@ -307,7 +316,8 @@ $scenarios = [ordered]@{
         }
     }
 
-    4 = @{
+    @{
+        id    = 4
         name  = 'the host comes up and the guest walks in on the next try'
         run   = {
             $before = (Peer-Returning).attempts
@@ -319,7 +329,8 @@ $scenarios = [ordered]@{
         }
     }
 
-    5 = @{
+    @{
+        id    = 5
         name  = 'the guest retries several times while the host stays down'
         run   = {
             Host-Run 'sudo -n systemctl stop kanpachid' | Out-Null
@@ -343,7 +354,8 @@ $scenarios = [ordered]@{
         }
     }
 
-    6 = @{
+    @{
+        id    = 6
         name  = 'the host never comes back, the room expires, and the guest stops'
         run   = {
             Note 'closing the host daemon and waiting out RoomTTL, which is four minutes in this build'
@@ -360,7 +372,8 @@ $scenarios = [ordered]@{
         }
     }
 
-    7 = @{
+    @{
+        id    = 7
         name  = 'a kicked guest does NOT come back on its own'
         run   = {
             Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
@@ -387,7 +400,7 @@ $scenarios = [ordered]@{
             Check 'with nothing scheduled to go back' ($null -eq (Peer-Returning))
         }
     }
-}
+)
 
 Require-Admin
 
@@ -400,9 +413,9 @@ if (-not (Test-Path $peerExe)) {
 Ok "guest in $PortableRoot"
 Ok "host on $Droplet, registry at $Seed"
 
-$run = if ($Only) { $Only } else { $scenarios.Keys }
+$run = if ($Only) { $Only } else { $scenarios.id }
 foreach ($n in $run) {
-    $s = $scenarios[$n]
+    $s = $scenarios | Where-Object { $_.id -eq $n }
     if (-not $s) { Fail "there is no scenario $n"; continue }
     Step "$n. $($s.name)"
     try { & $s.run }
