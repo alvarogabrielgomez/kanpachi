@@ -356,6 +356,19 @@ type Session struct {
 	// hacía nada. Ver [Session.rejoinDueLocked].
 	credencialMuerta bool
 
+	// myCredential is the GUEST's live credential, held in memory and nowhere
+	// else.
+	//
+	// It is what a reattach rides: when the engine's data path dies while the
+	// host is fine and the credential is still good, rebuilding the engine
+	// instance with the SAME credential keeps the same virtual IP and skips
+	// the lobby entirely. See [Session.reattachLocked].
+	//
+	// It never touches the disk, and that is a promise, not an omission: the
+	// guest's saved state carries nothing that enters a room without passing
+	// through the host. See [Session.saveLastRoomLocked].
+	myCredential domain.Credential
+
 	// cardPublishFailing dice si la última republicación falló.
 	//
 	// Existe solo para no repetir el mismo aviso en cada latido. Se avisa en el

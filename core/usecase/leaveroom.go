@@ -142,6 +142,9 @@ func (s *Session) OnRoomNotice(ctx context.Context, n domain.RoomNotice) domain.
 		// prueba de vida la volvía a encender y el reingreso no llegaba a
 		// dispararse nunca. Ver [Session.credencialMuerta].
 		s.credencialMuerta = true
+		// Y la copia local se suelta con ella: reengancharse con una credencial
+		// que su emisor declaró muerta solo gastaría el intento.
+		s.myCredential = domain.Credential{}
 		s.lastRejoin = time.Time{}
 		s.rejoinWait = 0
 		s.deps.Log.Info("el host avisa que no tiene la credencial de esta máquina, se le vuelve a pedir")
@@ -253,6 +256,9 @@ func (s *Session) leaveLocked(
 	// de la sala siguiente se anote aunque por casualidad pida lo mismo.
 	s.appliedRules = ""
 	s.credencialMuerta = false
+	// La credencial del invitado muere con su sala, igual que las emitidas del
+	// host arriba: es de ESTA sala, y la siguiente empieza pidiendo la suya.
+	s.myCredential = domain.Credential{}
 	s.announcedGame = ""
 	s.lastAnnounce = time.Time{}
 	s.lastPublish = time.Time{}

@@ -11,32 +11,36 @@ import (
 	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
-// El reingreso del invitado: volver a pedir credencial cuando el host se cayó y
-// volvió sin recordar a nadie.
+// La vuelta del invitado a su sala, por el camino más corto que siga siendo
+// verdad: primero reengancharse con la credencial que ya tiene, y de respaldo
+// el canje completo por el vestíbulo.
 //
-// # Qué pasa hoy sin esto
+// # Los dos casos que esto cubre, que piden curas distintas
 //
-// Las credenciales viven en la memoria del motor del host y mueren con su
-// proceso. Así que un host que reinicia, aunque reabra la MISMA sala con el
-// MISMO código, ya no reconoce la llave de nadie: los invitados dejan de ser de
-// confianza, no se forma ruta hacia él, y su canal de control no puede levantar
-// aunque reintente. A los veinte minutos cada uno sale solo y su usuario tiene
-// que volver a pegar el código.
+// **El motor murió y el host está bien.** El fallo medido el 2026-08-16: el
+// camino de datos del motor se pudre, el silencio marca al host ausente, y la
+// credencial sigue siendo perfectamente buena. La cura es reemplazar la
+// instancia del motor CON ESA credencial: misma dirección, sin vestíbulo, en
+// segundos. Antes de existir este camino, cada vuelta pedía credencial nueva y
+// quemaba una dirección por minuto. Ver [Session.reattachLocked].
 //
-// El invitado tiene todo lo que hace falta para arreglarlo por su cuenta, y lo
-// tiene guardado desde siempre: el código, el seed y su apodo están en
-// `last-room.json`, que es exactamente lo que pide entrar. Lo único que faltaba
-// era que alguien lo llamara solo.
+// **El host murió y volvió sin recordar a nadie.** Las credenciales emitidas
+// viven en la memoria del motor del host y mueren con su proceso, así que el
+// host que reinicia ya no reconoce la llave de nadie y el reenganche no forma
+// ruta. Ahí corre el canje completo de siempre: el código, el seed y el apodo
+// están en `last-room.json`, que es exactamente lo que pide entrar.
 //
-// # Por qué NO se guarda la credencial en disco, que sería lo otro
+// # Por qué la credencial NO se guarda en disco, que sería lo tercero
 //
-// Porque volver a pedirla da el mismo resultado sin poner en disco una llave de
-// sala, y porque **renovar el código sigue cerrando la puerta gratis**: quien
-// estaba conectado recibió el código nuevo por el canal de control y entra, y
-// quien estaba apagado tiene el viejo, deriva el vestíbulo viejo, y ahí no
-// espera nadie. Con la credencial guardada eso habría que construirlo.
+// El reenganche la usa DESDE LA MEMORIA, y eso es deliberado: el disco del
+// invitado no lleva nada que sirva para entrar sin pasar por el host, y
+// **renovar el código sigue cerrando la puerta gratis**: quien estaba conectado
+// recibió el código nuevo por el canal de control y entra, y quien estaba
+// apagado tiene el viejo, deriva el vestíbulo viejo, y ahí no espera nadie. Con
+// la credencial en disco eso habría que construirlo.
 //
-// El precio es que se recibe una dirección nueva. Ver [timing.ArrivalGrace].
+// El precio queda acotado al camino del canje: solo esa vuelta recibe una
+// dirección nueva. Ver [timing.ArrivalGrace].
 
 // RejoinDue dice si toca reintentar el canje con el host.
 //
@@ -139,7 +143,7 @@ func (s *Session) Rejoin(ctx context.Context) error {
 	s.rejoinWait = s.nextRejoinWaitLocked()
 
 	room, nick := s.state.Room, s.nick
-	s.deps.Log.Info("el host no está, se le vuelve a pedir credencial",
+	s.deps.Log.Info("el host no está, se intenta volver a la sala",
 		"código", room.InviteID.String(), "próximo intento en", s.rejoinWait)
 
 	// Se publica que esto está pasando ANTES de empezar, y es la única
@@ -179,7 +183,22 @@ func (s *Session) Rejoin(ctx context.Context) error {
 
 // rejoinLocked es el cuerpo, aparte para que el diario de progreso se cierre en
 // un solo sitio pase lo que pase. Asume el candado tomado.
+//
+// Son DOS caminos y el orden es el diseño: primero el reenganche con la
+// credencial que esta sesión ya tiene, y solo si no se puede o no funciona, el
+// canje completo por el vestíbulo. El fallo medido que motiva el primero es el
+// camino de datos del motor muriendo con el host sano y la credencial buena:
+// ahí reemplazar la instancia del motor es la cura entera, y pedir credencial
+// nueva en cada vuelta era lo que quemaba una dirección por minuto.
 func (s *Session) rejoinLocked(ctx context.Context, room domain.Room, nick domain.Nickname) error {
+	if s.reattachPossibleLocked() {
+		err := s.reattachLocked(ctx, nick)
+		if err == nil {
+			return nil
+		}
+		s.deps.Log.Warn("el reenganche con la credencial guardada no funcionó, se vuelve por el vestíbulo", "error", err)
+	}
+
 	// Re-entering goes through the SAME lobby, so it runs the same risk as
 	// entering the first time: anybody holding the code can answer there. The
 	// registry is asked again for the key it pinned.
@@ -193,7 +212,56 @@ func (s *Session) rejoinLocked(ctx context.Context, room domain.Room, nick domai
 	if err != nil {
 		return err
 	}
+	s.myCredential = cred
+	return s.settleIntoRoomLocked(ctx, cred)
+}
 
+// reattachPossibleLocked says whether the held credential is worth trying.
+//
+// Asume el candado tomado.
+func (s *Session) reattachPossibleLocked() bool {
+	switch {
+	// El host dijo que no la tiene. Él es el único que lo puede saber, así que
+	// intentarla igual solo gastaría la vuelta. Ver [Session.credencialMuerta].
+	case s.credencialMuerta:
+		return false
+	case s.myCredential.Token == "", !s.myCredential.VirtualIP.IsValid():
+		return false
+	case s.myCredential.Expired(s.deps.Clock.Now()):
+		return false
+	}
+	return true
+}
+
+// reattachLocked vuelve a la red real con la credencial que esta sesión ya
+// tiene: mismo secreto, misma dirección, sin vestíbulo.
+//
+// Cuando el que falló es el motor y no la credencial, esto convierte la vuelta
+// en segundos con la MISMA dirección, así que el servidor del juego ni se
+// entera y el firewall del host no reescribe nada. El canje queda de respaldo
+// para el caso contrario: un host que reinició no confía en la credencial de
+// nadie, ahí esta entrada no forma ruta, el marcado vence, y el llamador cae
+// al canje completo.
+//
+// Asume el candado tomado.
+func (s *Session) reattachLocked(ctx context.Context, nick domain.Nickname) error {
+	cred := s.myCredential
+	s.deps.Progress.Stepf(domain.ScopeEngine, "reenganchando con tu credencial, tu dirección sigue siendo %s", cred.VirtualIP)
+	if err := s.deps.Engine.JoinWithCredential(ctx, domain.GuestSpec{
+		Credential: cred, Name: nick, Seeds: seedsFor(s.state.Room),
+	}); err != nil {
+		return fmt.Errorf("reentrando a la sala con la credencial guardada: %w", err)
+	}
+	return s.settleIntoRoomLocked(ctx, cred)
+}
+
+// settleIntoRoomLocked es todo lo que sigue a estar dentro de la red real, y
+// es UNA función porque tiene dos llamadores, el canje y el reenganche. Dos
+// copias de esta secuencia serían dos maneras de llegar que se separan en
+// silencio, y la parte que menos puede separarse es la acotación del firewall.
+//
+// Asume el candado tomado.
+func (s *Session) settleIntoRoomLocked(ctx context.Context, cred domain.Credential) error {
 	// La dirección se anota ANTES de marcar al host, y el orden importa: el
 	// motor ya está en la red con la dirección nueva, así que un fallo del
 	// marcado tiene que dejar el estado diciendo la verdad. Al revés, la sesión

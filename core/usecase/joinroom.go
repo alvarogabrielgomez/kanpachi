@@ -112,6 +112,10 @@ func (s *Session) JoinRoom(
 	if err != nil {
 		return domain.RoomState{}, err
 	}
+	// Se retiene en memoria para poder reengancharse sin canje si el camino de
+	// datos del motor muere con la credencial todavía buena. Jamás al disco.
+	// Ver [Session.reattachLocked].
+	s.myCredential = cred
 
 	// **Getting here with a pinned key in hand IS the proof.** The lobby answer
 	// came back signed by that key and verified against it; an unsigned or bad
