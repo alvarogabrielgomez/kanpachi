@@ -151,8 +151,14 @@ function Host-Json([string]$verb) {
 # are Spanish because the daemon's log is Spanish; deltas of this are how a
 # scenario proves which path ran (a reattach leaves no issuance line, a member
 # coming back leaves "devuelta" instead of "emitida").
+#
+# The daemon does NOT log to the journal: its log is a root-owned file under
+# /var/lib/kanpachi/logs. `tail` runs under the one sudoers line written for it
+# (exact arguments, read-only, one file); grep runs unprivileged. Measured
+# 2026-08-16: the journal only ever holds systemd's own Start/Stop lines, so a
+# journalctl-based count returns 0 forever and every delta check passes vacuously.
 function Host-Count([string]$pattern) {
-    $out = Host-Try "sudo -n journalctl -u kanpachid -o cat | grep -cF -- '$pattern'"
+    $out = Host-Try "sudo -n tail -n +1 /var/lib/kanpachi/logs/kanpachi.log | grep -cF -- '$pattern'"
     $n = 0
     if ([int]::TryParse($out.Trim(), [ref]$n)) { return $n }
     return 0
@@ -318,8 +324,8 @@ $scenarios = @(
             # haya terminal y el comando se quede colgado esperando una respuesta
             # que ningun script va a dar.
             $h = Host-Json 'host Medicion --yes'
-            $script:code = $h.room.code + '@' + $h.room.seed
-            Check 'the host opened a room' ($null -ne $h -and $h.room.code)
+            $script:code = $h.code + '@' + $h.seed
+            Check 'the host opened a room' ($null -ne $h -and $h.code)
             Info "code $script:code"
 
             Peer-Start
@@ -340,14 +346,14 @@ $scenarios = @(
         id    = 2
         name  = 'the host reopens its room, same code, and the guest reconnects'
         run   = {
-            $before = (Host-Json 'status').room.code
+            $before = (Host-Json 'status').code
             Note 'restarting the host daemon, which is a reboot as far as the room is concerned'
             Host-Run 'sudo -n systemctl restart kanpachid' | Out-Null
             Check 'the host brought the room back by itself' (Wait-Until {
                     $s = Host-Json 'status'; $null -ne $s -and $s.conn -eq 'connected'
                 } 180 'the host room to be back')
-            $after = (Host-Json 'status').room.code
-            Check "the code is the same one it handed out ($before)" ($before -eq $after)
+            $after = (Host-Json 'status').code
+            Check "the code is the same one it handed out ($before)" ($null -ne $before -and $before -eq $after)
             Check 'the guest is back in without being told' (Wait-Until { Peer-InRoom } 240 'the guest to reconnect')
         }
     }
@@ -433,7 +439,7 @@ $scenarios = @(
             Start-Sleep -Seconds 8
             $h = Host-Json 'status'
             if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes' }
-            $script:code = $h.room.code + '@' + $h.room.seed
+            $script:code = $h.code + '@' + $h.seed
             if (-not (Peer-Running)) { Peer-Start }
             if (-not (Peer-InRoom)) { Peer-Json "join $script:code --yes" | Out-Null }
             Check 'the guest is in' (Wait-Until { Peer-InRoom } 120 'the guest to be in')
@@ -464,7 +470,7 @@ $scenarios = @(
 
             Check 'the guest is back in' (Wait-Until { Peer-InRoom } 180 'the guest to recover')
             $ipAfter = (Peer-Json 'status').local_ip
-            Check "it kept its address ($ipBefore)" ($ipAfter -eq $ipBefore)
+            Check "it kept its address ($ipBefore)" ($null -ne $ipBefore -and $ipAfter -eq $ipBefore)
             $issuedAfter = Host-Count 'credencial emitida'
             Check 'and the host issued NO new credential for the recovery' ($issuedAfter -eq $issuedBefore)
         }
@@ -483,7 +489,7 @@ $scenarios = @(
             Peer-Start
             Check 'it went back on its own' (Wait-Until { Peer-InRoom } 180 'the guest to come back')
             $ipAfter = (Peer-Json 'status').local_ip
-            Check "with the SAME address ($ipBefore)" ($ipAfter -eq $ipBefore)
+            Check "with the SAME address ($ipBefore)" ($null -ne $ipBefore -and $ipAfter -eq $ipBefore)
 
             $returnedAfter = Host-Count 'credencial devuelta al que vuelve'
             Check 'because the host recognized its member key and handed the credential back' ($returnedAfter -gt $returnedBefore)
@@ -538,7 +544,7 @@ $scenarios = @(
             Start-Sleep -Seconds 8
             $h = Host-Json 'status'
             if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes' }
-            $script:code = $h.room.code + '@' + $h.room.seed
+            $script:code = $h.code + '@' + $h.seed
             Peer-Json "join $script:code --yes" | Out-Null
             Check 'the guest is in' (Wait-Until { Peer-InRoom } 120 'the guest to be in')
 
@@ -570,6 +576,15 @@ if (-not (Test-Path $peerExe)) {
 }
 Ok "guest in $PortableRoot"
 Ok "host on $Droplet, registry at $Seed"
+
+# Host-Count must be able to read the daemon's log, or every delta check in 8,
+# 9 and 11 compares 0 against 0 and lies green. Better to refuse to start.
+$null = Host-Try 'sudo -n tail -n +1 /var/lib/kanpachi/logs/kanpachi.log | tail -1'
+if ($script:lastCode -ne 0) {
+    throw ("the host log cannot be read: `sudo -n tail` was refused. " +
+        'The sudoers line for reading /var/lib/kanpachi/logs/kanpachi.log is missing.')
+}
+Ok 'the host log is readable, so the counts count'
 
 $run = if ($Only) { $Only } else { $scenarios.id }
 foreach ($n in $run) {
