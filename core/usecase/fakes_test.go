@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
@@ -1303,6 +1305,17 @@ func bancoSinSesión() *bank {
 		Quarantine: domain.QuarantineWindows,
 	}
 	return b
+}
+
+// issueReq arma un pedido de emisión con una llave de miembro ÚNICA, que es lo
+// que la puerta exige y lo que separa a dos máquinas aunque compartan apodo:
+// el nombre no es identidad, la llave sí, y con la misma llave el host
+// devuelve la misma credencial en vez de emitir otra.
+var memberKeySeq atomic.Uint32
+
+func issueReq(t interface{ Fatalf(string, ...any) }, name string) domain.CredentialRequest {
+	key := fmt.Sprintf("member-key-de-prueba-%011d", memberKeySeq.Add(1))
+	return domain.CredentialRequest{Name: nick(t, name), MemberKey: []byte(key)}
 }
 
 func nick(t interface{ Fatalf(string, ...any) }, s string) domain.Nickname {

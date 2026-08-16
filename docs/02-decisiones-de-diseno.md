@@ -380,9 +380,11 @@ Un apagón, un reinicio, una actualización del servicio. En los tres, al volver
 
 ### Volver a la última sala, del lado del invitado
 
-Simétrico y mucho más chico. El invitado guarda **el código, el seed, el nombre de la sala y su nick**, y nada más.
+Simétrico y mucho más chico. El invitado guarda **el código, el seed, el nombre de la sala, su nick y la semilla de su llave de miembro**, y nada más.
 
 **Jamás la credencial y jamás la identidad de la red real.** Volver pasa otra vez por el vestíbulo: el host reemite y ve llegar a quien llega, y eso es lo que mantiene con sentido a la revocación. Un archivo con credencial dentro sería una llave de sala tirada en disco que sobrevive a la sesión.
+
+**La semilla de miembro no contradice eso, y conviene decir por qué.** No abre ninguna puerta: hace que al pasar por la puerta te reconozcan. El pedido de credencial va firmado con la llave que la semilla reconstruye, el host comprueba la posesión, y al que firma con la llave de una credencial viva le devuelve la MISMA credencial y la MISMA dirección en vez de emitirle otra. El canje corre entero igual, con una excepción que tiene dueño propio: cuando lo que murió es el motor del invitado y no su credencial, la vuelta ni siquiera pasa por el vestíbulo, se reengancha con la credencial que tiene en MEMORIA. Las dos cosas viven en `core/usecase/rejoin.go`, con la medición que las motivó.
 
 El código guardado se mantiene vigente cuando el host lo renueva, porque se lo reparte a los presentes en ese mismo acto. Ver decisión 23.
 
@@ -891,11 +893,11 @@ Ninguna de las dos es cooperativa. No hay mensaje que el expulsado pueda ignorar
 
 **Una expulsión a medias es un estado VISIBLE, no un rollback.** Si una capa falla, la lista de miembros dice que no está y la máquina puede seguir autorizándolo, y eso se avisa con una alerta que sobrevive al refresco del módulo de exposición. No se deshace la mitad que sí funcionó: deshacerla volvería a autorizar a quien el host acaba de echar. La UI ofrece renovar el código ahí mismo, que es el control que cierra la puerta de verdad.
 
-**No hay ni va a haber baneo.** Banear exige guardar identidad por peer, y este producto no la guarda. El expulsado que vuelve con el mismo código entra de nuevo, y eso es deliberado: el kick saca de la sala, no impide volver. Lo único que impide volver es renovar el código.
+**No hay ni va a haber baneo.** El expulsado que vuelve con el mismo código entra de nuevo, y eso es deliberado: el kick saca de la sala, no impide volver. Lo único que impide volver es renovar el código. La llave de miembro que existe desde el 2026-08-16 no cambia esto: vive por sala, muere con la credencial que ata, y lo único que la expulsión le hace es marcarle la credencial como revocada, así que el que vuelve entra como miembro nuevo con dirección nueva, sin recuperar nada de lo que tenía.
 
 **Expulsar recorta el canal en dos sitios, y ninguno depende del otro.** La lista del oyente, que cierra en el acto la conexión de quien ya no es miembro, y el conjunto de reglas del firewall, que se recalcula sin su dirección. Son dos capas con dos causas de fallo distintas, que es la doctrina de la decisión 26 aplicada a la superficie que corre como SYSTEM.
 
-**El límite honesto de eso, escrito para que nadie lo descubra por su cuenta:** el que vuelve toca la puerta del vestíbulo con una dirección ALEATORIA, así que ni siquiera se parece al que se echó. Reconocerlo exigiría la llave de la decisión 25, que todavía no está implementada. Mientras no lo esté, la respuesta a "no quiero que vuelva" es una sola y es renovar el código.
+**El límite honesto de eso, escrito para que nadie lo descubra por su cuenta:** el que vuelve puede volver con una llave de miembro NUEVA, que es un archivo que se borra y un reingreso después, así que reconocer al expulsado sigue sin estar garantizado. La respuesta a "no quiero que vuelva" es una sola y es renovar el código.
 
 **Qué pasa si intenta volver.** Con el mismo código, y si el host no lo renovó, entra de nuevo como si nada. Eso es deliberado: expulsar y bloquear son cosas distintas. Para que no vuelva, el host **renueva el código** (decisión 2), y ahí el código viejo deja de servir mientras los que ya están adentro siguen dentro, porque tienen credencial y no código.
 
@@ -965,6 +967,7 @@ Superficie nueva, así que se escribe entera:
 | Miembro se hace pasar por el host EN LA SALA | No puede: los clientes marcan hacia una dirección conocida y no aceptan conexiones entrantes, y ahí las direcciones las asignó el host dentro de la credencial |
 | Alguien con el código ocupa la dirección del host EN EL VESTÍBULO | **Ocupar la dirección lo puede, quedarse con la víctima ya no.** Las direcciones del vestíbulo siguen siendo autoasignadas, y lo que decide ahora es la firma: el host firma su respuesta con la llave larga de su instalación, atada a la red de encuentro y a la llave efímera de ESE pedido, y el invitado la comprueba contra la llave que el registro fijó para ese código. Un ocupante no la tiene, así que su respuesta se descarta y el invitado no entra a su red. Sin llave fijada no hay contra qué comparar, y ahí queda lo de antes: solo lo intenta quien ya tiene el código, y renovar levanta un vestíbulo nuevo derivado del ID nuevo |
 | Un tercero lee la credencial o el código nuevo al relayarlos | Los dos van sellados contra la llave de sesión del destinatario, que compra CONFIDENCIALIDAD frente a quien transporta los bytes. La autenticación del host va aparte, en la firma de la respuesta: la caja sigue siendo anónima, y lo que va dentro no |
+| Alguien del vestíbulo reclama la credencial de un miembro que vuelve | No puede: el pedido va firmado por la llave de miembro y el transcript ata la firma a la llave efímera de ESA conexión, así que reenviar el pedido de otro con la efímera propia no verifica, y sin la privada del miembro no hay con qué firmar uno nuevo. La puerta rechaza todo pedido sin firma de posesión |
 | Inundación de conexiones al host | Tope de conexiones simultáneas en la puerta, plazo para hablar, y una sola conexión viva por IP virtual: la segunda desplaza a la primera |
 | Un miembro deja de recibir y traba al host | Toda escritura lleva plazo. Sin él, un cliente que abre la conexión y no lee nunca deja trabada la sesión entera, que la llama con su candado tomado, **sin haber mandado un solo mensaje inválido**. Vencido el plazo, esa conexión se cierra |
 

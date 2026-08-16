@@ -369,6 +369,14 @@ type Session struct {
 	// through the host. See [Session.saveLastRoomLocked].
 	myCredential domain.Credential
 
+	// memberKey es la identidad de este invitado DENTRO de la sala actual: con
+	// ella firma su pedido de credencial y el host le devuelve lo suyo al
+	// volver. Nace en el primer ingreso, se reusa al volver a LA MISMA sala, y
+	// su semilla persiste sellada en la última sala guardada según lo que
+	// signifique esa salida. Ver [domain.MemberKey] y
+	// [Session.ensureMemberKeyLocked].
+	memberKey domain.MemberKey
+
 	// cardPublishFailing dice si la última republicación falló.
 	//
 	// Existe solo para no repetir el mismo aviso en cada latido. Se avisa en el

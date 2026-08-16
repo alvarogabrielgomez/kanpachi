@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/netip"
@@ -59,6 +60,13 @@ func (s *Session) renewCredentialsLocked(ctx context.Context) {
 
 	for ip, c := range s.issued {
 		if c.Expired(ahora) {
+			continue
+		}
+		// Una revocada no se renueva jamás: el motor ya la rechazó, y contarla
+		// como fallida escribiría una advertencia por ronda sobre alguien que
+		// el host echó a propósito. Su entrada muere sola por su vencimiento
+		// acortado. Ver [Session.KickMember].
+		if c.Revoked {
 			continue
 		}
 		if !presentes[ip] && ahora.Sub(c.IssuedAt) >= timing.ArrivalGrace {
@@ -241,6 +249,39 @@ func (s *Session) IssueCredentialFor(ctx context.Context, req domain.CredentialR
 		// se confía en que el otro lado lo haya validado.
 		return domain.Credential{}, domain.ErrNicknameEmpty
 	}
+	if len(req.MemberKey) == 0 {
+		// La firma la comprobó el adaptador de la puerta; esto es la mitad de
+		// core de la misma exigencia, para que un llamador nuevo no pueda
+		// emitir credenciales sueltas sin identidad a la que atarlas.
+		return domain.Credential{}, fmt.Errorf("el pedido no trae llave de miembro")
+	}
+
+	// El que vuelve recibe LO SUYO: misma credencial, misma dirección.
+	//
+	// Es lo que apaga el gasto de una dirección por vuelta, y lo que ninguna
+	// suplantación puede explotar: la llave la probó la firma de la puerta, así
+	// que nadie reclama la credencial de otro eligiendo su apodo, que era el
+	// argumento entero de no reusar direcciones en [timing.ArrivalGrace].
+	if ip, prev, ok := s.credentialByMemberLocked(req.MemberKey); ok {
+		vence, err := s.deps.Engine.RenewCredential(ctx, prev.ID, timing.CredentialTTL)
+		if err == nil {
+			prev.ExpiresAt = vence
+			prev.Name = req.Name
+			s.issued[ip] = prev
+			s.deps.Log.Info("credencial devuelta al que vuelve",
+				"nombre", req.Name.String(), "ip", ip.String())
+			if err := s.applyPolicy(ctx); err != nil {
+				s.deps.Log.Warn("no se pudo pre-autorizar el canal de control en el firewall", "error", err)
+			}
+			s.restrictControlChannel(ctx)
+			return prev, nil
+		}
+		// El motor ya no la reconoce: revocada o vencida entre dos latidos. La
+		// entrada se suelta y el pedido sigue como uno nuevo, que es lo que es.
+		s.deps.Log.Warn("la credencial guardada del que vuelve ya no vale en el motor, se emite una nueva",
+			"nombre", req.Name.String(), "ip", ip.String(), "error", err)
+		delete(s.issued, ip)
+	}
 
 	ip, err := nextFreeAddress(s.state.Subnet, s.takenAddressesLocked())
 	if err != nil {
@@ -265,6 +306,7 @@ func (s *Session) IssueCredentialFor(ctx context.Context, req domain.CredentialR
 	cred.NetworkName = s.hostSpec.RealNetworkName()
 	cred.IssuedAt = now
 	cred.ExpiresAt = now.Add(timing.CredentialTTL)
+	cred.MemberKey = req.MemberKey
 
 	s.issued[ip] = cred
 
@@ -278,6 +320,29 @@ func (s *Session) IssueCredentialFor(ctx context.Context, req domain.CredentialR
 	s.restrictControlChannel(ctx)
 
 	return cred, nil
+}
+
+// credentialByMemberLocked busca la credencial viva atada a esa llave de
+// miembro.
+//
+// Descarta lo vencido y lo REVOCADO, y el segundo filtro es la mitad de la
+// expulsión: un expulsado que vuelve encuentra su entrada revocada, no la
+// recupera, y entra como miembro nuevo con dirección nueva. Su entrada vieja
+// sigue reteniendo la dirección hasta su vencimiento acortado, para que no se
+// reparta mientras la tabla de rutas del motor todavía lo recuerda.
+//
+// Lineal sobre el mapa y alcanza: una sala son cinco personas, no quinientas.
+//
+// Asume el candado tomado.
+func (s *Session) credentialByMemberLocked(memberKey []byte) (netip.Addr, domain.Credential, bool) {
+	now := s.deps.Clock.Now()
+	for ip, c := range s.issued {
+		if c.Revoked || c.Expired(now) || !bytes.Equal(c.MemberKey, memberKey) {
+			continue
+		}
+		return ip, c, true
+	}
+	return netip.Addr{}, domain.Credential{}, false
 }
 
 // takenAddressesLocked junta lo que ya está ocupado en la subred de la sala.

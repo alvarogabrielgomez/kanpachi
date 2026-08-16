@@ -100,6 +100,16 @@ type credentialRequestMsg struct {
 	// side, which is exactly what should happen. Empty on an older guest, and
 	// then there is nothing to check. See [credentialTranscript].
 	RendezvousName string `json:"rendezvous,omitempty"`
+
+	// MemberKey and MemberSig are the guest's PER-ROOM identity and its proof
+	// of possession over [memberTranscript]. Unlike PublicKey, this one is
+	// stable across returns to the same room: it is what the host binds the
+	// credential and the address to, so the one who returns gets THEIRS back.
+	//
+	// **Without them there is no credential.** The door refuses an unsigned
+	// request outright; there are no older guests to keep working.
+	MemberKey []byte `json:"member_key"`
+	MemberSig []byte `json:"member_sig"`
 }
 
 // credentialResponseMsg lleva la credencial SELLADA, o el motivo del rechazo.
@@ -443,4 +453,38 @@ func credentialTranscript(rendezvous string, guestKey, sealed []byte) []byte {
 	out = append(out, guestKey...)
 	out = append(out, 0)
 	return append(out, sealed...)
+}
+
+// memberTranscript builds what the GUEST signs in its request and the host
+// verifies at the door. The other direction of [credentialTranscript], with
+// its own prefix so neither signature can pass as the other.
+//
+// # What is inside, and what each piece prevents
+//
+//	"kanpachi-member-v1" 0x00 <rendezvous> 0x00 <ephemeral key> 0x00 <member key> 0x00 <name>
+//
+//   - **The rendezvous** binds the request to THIS room: a signed request
+//     recorded in room A does not verify when replayed against room B.
+//   - **The ephemeral key** binds it to THIS connection, and it is the piece
+//     that matters most: without it, anybody in the lobby could replay a
+//     member's signed request with their OWN ephemeral key in it, and the
+//     host would hand them that member's credential — same secret, same
+//     address — sealed against the thief's key.
+//   - **The member key** is what is being claimed.
+//   - **The name** rides along so a relay cannot swap the nickname the host
+//     writes into its book.
+//
+// The separators are 0x00 and they are enough: every field before the name is
+// fixed-length or 0x00-free, and the name goes last.
+func memberTranscript(rendezvous string, ephemeralKey, memberKey []byte, name string) []byte {
+	out := make([]byte, 0, len(rendezvous)+len(ephemeralKey)+len(memberKey)+len(name)+32)
+	out = append(out, "kanpachi-member-v1"...)
+	out = append(out, 0)
+	out = append(out, rendezvous...)
+	out = append(out, 0)
+	out = append(out, ephemeralKey...)
+	out = append(out, 0)
+	out = append(out, memberKey...)
+	out = append(out, 0)
+	return append(out, name...)
 }

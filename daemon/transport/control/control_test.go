@@ -3,6 +3,7 @@ package control
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"net"
 	"net/netip"
@@ -114,7 +115,7 @@ func TestElCanjeDeCredencialVaSelladoPorLaPuerta(t *testing.T) {
 	if err := invitado.Dial(ctx(), ipPuerta); err != nil {
 		t.Fatal(err)
 	}
-	cred, err := invitado.RequestCredential(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")})
+	cred, err := invitado.RequestCredential(ctx(), memberReq(t, "humberto"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +256,7 @@ func TestLaPuertaSigueAbiertaParaElExpulsado(t *testing.T) {
 	if err := vuelve.Dial(ctx(), ipPuerta); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := vuelve.RequestCredential(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")}); err != nil {
+	if _, err := vuelve.RequestCredential(ctx(), memberReq(t, "humberto")); err != nil {
 		t.Fatalf("el que volvió a tocar la puerta no consiguió credencial: %v", err)
 	}
 }
@@ -393,7 +394,7 @@ func TestElCódigoNuevoLlegaSoloPorSuCanalYSoloAQuienEs(t *testing.T) {
 	if err := uno.Dial(ctx(), ipPuerta); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := uno.RequestCredential(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")}); err != nil {
+	if _, err := uno.RequestCredential(ctx(), memberReq(t, "humberto")); err != nil {
 		t.Fatal(err)
 	}
 	// Con la credencial emitida, el host ya conoce a ipUno y su llave.
@@ -565,7 +566,7 @@ func TestPedirCredencialSinHaberMarcadoNoRevientaNada(t *testing.T) {
 	b := nuevoBanco(t)
 	solo := b.invitado(t, ipUno)
 
-	if _, err := solo.RequestCredential(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")}); !errors.Is(err, ErrNotDialed) {
+	if _, err := solo.RequestCredential(ctx(), memberReq(t, "humberto")); !errors.Is(err, ErrNotDialed) {
 		t.Fatalf("pedir sin marcar = %v", err)
 	}
 }
@@ -579,7 +580,7 @@ func TestElHostQueNoEmiteDevuelveElMotivoYNoSeCuelga(t *testing.T) {
 	if err := invitado.Dial(ctx(), ipPuerta); err != nil {
 		t.Fatal(err)
 	}
-	_, err := invitado.RequestCredential(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")})
+	_, err := invitado.RequestCredential(ctx(), memberReq(t, "humberto"))
 	if err == nil || !strings.Contains(err.Error(), "direcciones libres") {
 		t.Fatalf("el motivo del host no llegó: %v", err)
 	}
@@ -699,4 +700,15 @@ func TestCerrarNoFugaGoroutines(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("goroutines antes = %d, después = %d", antes, runtime.NumGoroutine())
+}
+
+// memberReq arma un pedido con llave de miembro, que es lo que toda puerta
+// real exige: sin firma de posesión no se emite.
+func memberReq(t *testing.T, name string) domain.CredentialRequest {
+	t.Helper()
+	k, err := domain.NewMemberKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return domain.CredentialRequest{Name: nick(t, name), Member: k}
 }

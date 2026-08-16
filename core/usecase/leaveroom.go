@@ -259,6 +259,10 @@ func (s *Session) leaveLocked(
 	// La credencial del invitado muere con su sala, igual que las emitidas del
 	// host arriba: es de ESTA sala, y la siguiente empieza pidiendo la suya.
 	s.myCredential = domain.Credential{}
+	// La llave de miembro también sale de la memoria. Su semilla ya quedó — o
+	// no — en la última sala guardada, según lo que signifique esta salida:
+	// eso lo decidió saveLastRoomLocked unas líneas arriba.
+	s.memberKey = domain.MemberKey{}
 	s.announcedGame = ""
 	s.lastAnnounce = time.Time{}
 	s.lastPublish = time.Time{}

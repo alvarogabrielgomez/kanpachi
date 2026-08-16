@@ -107,11 +107,22 @@ func (p HostedRoom) String() string {
 // la primera vez: el host reemite y ve llegar a quien llega, y eso es lo que
 // mantiene con sentido a la revocación. Un archivo con credencial dentro sería
 // una llave de sala tirada en disco que sobrevive a la sesión.
+//
+// La semilla de la llave de miembro SÍ entra, y no contradice lo de arriba:
+// no abre ninguna puerta, hace que al pasar por la puerta te reconozcan. El
+// canje corre igual, el host decide igual, y lo único que cambia es que el que
+// vuelve recibe su misma credencial y su misma dirección. Ver [MemberKey].
 type LastRoom struct {
 	Room    Room
 	Name    string
 	Nick    Nickname
 	SavedAt time.Time
+
+	// MemberSeed reconstruye la llave de miembro de ESA sala. Vacía en un
+	// archivo de antes de que existiera, y entonces se entra con llave nueva,
+	// que solo cuesta volver como miembro nuevo. Viaja sellada con el resto
+	// del archivo.
+	MemberSeed []byte
 
 	// AutoReturn says whether startup should go back into this room unasked.
 	//
@@ -170,6 +181,9 @@ type lastRoomJSON struct {
 	// before this field existed, and those two only lead to the same place by
 	// coincidence. Writing it leaves the state readable by eye.
 	AutoReturn bool `json:"auto_return"`
+	// MemberSeed with `omitempty`: leaving on purpose drops the key, and the
+	// absent field IS that state.
+	MemberSeed string `json:"member_seed,omitempty"`
 }
 
 // Encode serializa la sala del host.
@@ -270,14 +284,18 @@ func (l LastRoom) Encode() ([]byte, error) {
 	if l.Room.InviteID.IsZero() {
 		return nil, fmt.Errorf("%w: no hay invite ID que guardar", ErrPersistedShape)
 	}
-	return json.MarshalIndent(lastRoomJSON{
+	j := lastRoomJSON{
 		InviteID:   l.Room.InviteID.String(),
 		Seed:       l.Room.Seed,
 		Name:       l.Name,
 		Nick:       l.Nick.String(),
 		SavedAt:    l.SavedAt.UTC().Format(time.RFC3339),
 		AutoReturn: l.AutoReturn,
-	}, "", "  ")
+	}
+	if len(l.MemberSeed) == MemberSeedLen {
+		j.MemberSeed = base64.StdEncoding.EncodeToString(l.MemberSeed)
+	}
+	return json.MarshalIndent(j, "", "  ")
 }
 
 // DecodeLastRoom es el único decodificador de la última sala del invitado.
@@ -298,10 +316,26 @@ func DecodeLastRoom(raw []byte) (LastRoom, error) {
 	if err != nil {
 		return LastRoom{}, err
 	}
-	return LastRoom{
+	out := LastRoom{
 		Room: room, Name: ClampRoomName(j.Name), Nick: nick,
 		SavedAt: saved, AutoReturn: j.AutoReturn,
-	}, nil
+	}
+	// La semilla es OPCIONAL: un archivo de antes de que existiera carga igual
+	// y se entra con llave nueva. Presente y malformada sí rechaza el archivo,
+	// porque una semilla rota que se ignora en silencio es un miembro al que el
+	// host dejó de reconocer sin ninguna línea que diga por qué.
+	if j.MemberSeed != "" {
+		seed, err := base64.StdEncoding.DecodeString(j.MemberSeed)
+		if err != nil {
+			return LastRoom{}, fmt.Errorf("%w: la semilla de miembro: %v", ErrPersistedShape, err)
+		}
+		if len(seed) != MemberSeedLen {
+			return LastRoom{}, fmt.Errorf("%w: la semilla de miembro mide %d bytes y no %d",
+				ErrPersistedShape, len(seed), MemberSeedLen)
+		}
+		out.MemberSeed = seed
+	}
+	return out, nil
 }
 
 // decodeStrict es el rechazo de campos desconocidos, compartido por los dos

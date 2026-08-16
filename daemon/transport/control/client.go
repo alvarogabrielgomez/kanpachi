@@ -162,10 +162,25 @@ func (c *Channel) RequestCredential(ctx context.Context, req domain.CredentialRe
 	if cli == nil || !cli.puerta {
 		return domain.Credential{}, ErrNotDialed
 	}
+	if req.Member.IsZero() {
+		// Sin llave de miembro el host rechaza, así que pedir sin ella solo
+		// gasta la vuelta. Que falte acá es un error de cableado, no de red.
+		return domain.Credential{}, fmt.Errorf("control: el pedido no trae llave de miembro")
+	}
+	// La firma se hace ACÁ y no en core, porque el transcript lleva la llave
+	// efímera de esta conexión, que core no ve. Cubre la efímera a propósito:
+	// sin ella, alguien del vestíbulo podría reenviar un pedido ajeno con su
+	// propia efímera puesta y llevarse la credencial del que vuelve, sellada
+	// contra la suya. Ver [memberTranscript].
+	memberPub := req.Member.Public()
+	sig := req.Member.Sign(memberTranscript(
+		req.RendezvousName, cli.llaves.pub[:], memberPub, req.Name.String()))
 	sobre, err := wrap(KindCredentialRequest, credentialRequestMsg{
 		Name:           req.Name.String(),
 		PublicKey:      cli.llaves.pub[:],
 		RendezvousName: req.RendezvousName,
+		MemberKey:      memberPub,
+		MemberSig:      sig,
 	})
 	if err != nil {
 		return domain.Credential{}, err

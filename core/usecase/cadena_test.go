@@ -100,7 +100,7 @@ func TestElExpulsadoVuelveAEntrarConElMismoCódigo(t *testing.T) {
 	b.clock.avanza(timing.KickGrace + time.Minute)
 	b.motor.credenciales = func() domain.Credential { return domain.Credential{ID: "c2", Token: "t2"} }
 
-	cred, err := b.session.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")})
+	cred, err := b.session.IssueCredentialFor(ctx(), issueReq(t, "humberto"))
 	if err != nil {
 		t.Fatalf("el expulsado no pudo volver a entrar: %v", err)
 	}

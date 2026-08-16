@@ -255,8 +255,24 @@ func (s *server) issue(req credentialRequestMsg) credentialResponseMsg {
 		return credentialResponseMsg{Error: "falta la llave con la que sellar la respuesta"}
 	}
 
+	s.mu.Lock()
+	rdv := s.scope.RendezvousName
+	s.mu.Unlock()
+
+	// La prueba de posesión de la llave de miembro, y SIN ella no se emite.
+	//
+	// Se verifica contra el rendezvous de ESTE host y jamás contra el string
+	// del pedido, por lo mismo que la firma de la respuesta unas líneas abajo:
+	// verificar lo que dijo el que pregunta sería dejarle elegir a qué sala ató
+	// su firma. Mismo string cuando es la misma sala; distinto, no verifica, que
+	// es lo que corresponde. Ver [memberTranscript] y [domain.VerifyMemberSig].
+	if !domain.VerifyMemberSig(req.MemberKey,
+		memberTranscript(rdv, req.PublicKey, req.MemberKey, req.Name), req.MemberSig) {
+		return credentialResponseMsg{Error: "el pedido no viene firmado por su llave de miembro"}
+	}
+
 	cred, err := s.issuer.IssueCredentialFor(s.ctx, domain.CredentialRequest{
-		Name: nick, PublicKey: req.PublicKey,
+		Name: nick, PublicKey: req.PublicKey, MemberKey: req.MemberKey,
 	})
 	if err != nil {
 		s.ch.log().Warn("no se emitió la credencial", "nombre", nick.String(), "error", err)
@@ -277,7 +293,6 @@ func (s *server) issue(req credentialRequestMsg) credentialResponseMsg {
 	// código nuevo si el host lo renueva.
 	s.mu.Lock()
 	s.keys[cred.VirtualIP] = req.PublicKey
-	rdv := s.scope.RendezvousName
 	s.mu.Unlock()
 
 	resp := credentialResponseMsg{Sealed: sellado}

@@ -96,8 +96,24 @@ func (s *Session) KickMember(ctx context.Context, ip netip.Addr) (domain.RoomSta
 	if s.kicked == nil {
 		s.kicked = make(map[netip.Addr]time.Time)
 	}
-	s.kicked[ip] = s.deps.Clock.Now()
+	now := s.deps.Clock.Now()
+	s.kicked[ip] = now
 	s.dropPeerLocked(ip)
+
+	// La entrada del libro se marca REVOCADA con el vencimiento acortado a la
+	// gracia de llegada, y las dos mitades tienen su porqué. Revocada: el que
+	// vuelve con su llave de miembro no recupera esta credencial ni su
+	// dirección, entra como nuevo. El vencimiento corto: la dirección sigue
+	// retenida mientras la tabla de rutas del motor todavía recuerda al
+	// expulsado, y después se libera sola, en vez de quedar tomada las 24 horas
+	// de una credencial que ya no autoriza a nadie.
+	if c, ok := s.issued[ip]; ok {
+		c.Revoked = true
+		if grace := now.Add(timing.ArrivalGrace); c.ExpiresAt.After(grace) {
+			c.ExpiresAt = grace
+		}
+		s.issued[ip] = c
+	}
 
 	// El canal de control se recorta ANTES que el firewall, y el orden importa:
 	// es la superficie que corre como SYSTEM y parsea entrada de la sala. Si

@@ -176,23 +176,31 @@ const RenewInterval = time.Hour
 // vuelta siguiente. Quedarse corto cuesta dejar sin renovar a alguien que estaba
 // entrando, que es el lado caro.
 //
-// # Por qué NO se usa para devolverle la dirección a quien vuelve
+// # A quién SÍ se le devuelve su dirección, y por qué eso dejó de ser peligroso
 //
-// Porque la única forma de reconocerlo sería el apodo, y el apodo no autentica
-// nada: lo elige quien pide. El pedido de credencial lleva además una llave
-// EFÍMERA, generada al pedir y descartada al salir, así que este producto no
-// tiene con qué reconocer a nadie entre dos ingresos, y eso es deliberado: es lo
-// mismo que hace que expulsar no sea banear.
+// Al que vuelve con su llave de miembro. La versión anterior de esta doc
+// explicaba por qué no se podía: la única forma de reconocer al que vuelve era
+// el apodo, el apodo lo elige quien pide, y reusar la dirección con esa llave
+// le daba a cualquiera con el código la capacidad de tumbarle la credencial a
+// un miembro real poniéndose su nombre. Ese argumento era correcto y ya no
+// aplica: el pedido viaja firmado por una llave Ed25519 por sala, la puerta
+// comprueba la posesión, y el host devuelve la MISMA credencial y la MISMA
+// dirección solo a quien la firma. Ver [domain.MemberKey].
 //
-// Reusar la dirección exige revocar la credencial anterior, porque si no quedan
-// dos vivas para la misma dirección. Con el apodo como llave, eso le da a
-// CUALQUIERA con el código la capacidad de tumbarle la credencial a un miembro
-// real con solo ponerse su nombre, y le basta con que el host no lo esté viendo
-// en ese instante.
+// El apodo sigue sin autenticar nada, decisión 21, y la llave sigue sin ser
+// baneo: vive por sala y muere con la credencial que ata.
 //
-// El precio de no hacerlo es cosmético: quien sale y vuelve recibe otra
-// dirección mientras su reserva anterior siga viva. No se acumula, porque el
-// latido solo renueva a los presentes y la reserva de un ausente vence sola.
+// # La frase que una medición mató, conservada como advertencia
+//
+// Esta doc decía que recibir otra dirección al volver "no se acumula, porque
+// el latido solo renueva a los presentes y la reserva de un ausente vence
+// sola". Medido el 2026-08-16: un invitado cuyo motor moría reingresaba solo
+// una vez por minuto, cada vuelta ERA un presente que renovaba su reserva
+// nueva, y el host acumuló 73 direcciones autorizadas para una sola máquina.
+// La premisa vale para quien vuelve de vez en cuando y es falsa en cuanto algo
+// reingresa solo, así que el precio nunca fue cosmético: era el /24 entero en
+// cuatro horas. La cura fue doble, el reenganche que no pide credencial
+// ([usecase.Session] `reattachLocked`) y la llave de arriba.
 const ArrivalGrace = 10 * time.Minute
 
 // ─── Expulsar, y avisarle a quien perdió su credencial ───────────────────────

@@ -180,6 +180,18 @@ type Credential struct {
 
 	IssuedAt  time.Time
 	ExpiresAt time.Time
+
+	// MemberKey es la llave de miembro a la que el HOST ató esta credencial.
+	// Solo vive en su libro de emitidas: no viaja en el sobre, porque el que la
+	// pidió ya la tiene. Es lo que hace que quien vuelve reciba LA MISMA
+	// credencial y LA MISMA dirección. Ver [MemberKey].
+	MemberKey []byte
+
+	// Revoked la marca el host al expulsar. La entrada se conserva un rato con
+	// el vencimiento acortado para que su dirección no se reparta mientras la
+	// tabla de rutas del motor todavía recuerda al expulsado, y una revocada
+	// jamás se devuelve ni se renueva: el que vuelve, vuelve como nuevo.
+	Revoked bool
 }
 
 // String redacta el token. Una credencial en un mensaje de error terminaría en
@@ -229,6 +241,18 @@ type CredentialRequest struct {
 	// entrar a la sala de un host que todavía no firma, y lo que hace que
 	// desplegar esto no parta el producto en dos mitades que no se hablan.
 	ExpectHostKey []byte
+
+	// Member es la llave de miembro DEL QUE PIDE, solo en el lado del invitado.
+	// El adaptador manda su pública y firma el transcript con ella; core nunca
+	// arma ese transcript porque lleva la llave efímera de la conexión. Ver
+	// [MemberKey].
+	Member MemberKey
+
+	// MemberKey es la pública YA VERIFICADA del que pidió, solo en el lado del
+	// host: el adaptador comprobó la firma de posesión antes de entregar el
+	// pedido, así que core la puede usar como identidad del miembro sin volver
+	// a mirar ninguna firma. Sin ella no se emite. Ver [VerifyMemberSig].
+	MemberKey []byte
 }
 
 // HostSpec es todo lo que el motor necesita para levantar la red como nodo

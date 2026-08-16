@@ -108,6 +108,9 @@ func (s *Session) JoinRoom(
 	if err := s.state.Transition(domain.StateConnecting, "buscando al host"); err != nil {
 		return domain.RoomState{}, err
 	}
+	if err := s.ensureMemberKeyLocked(room); err != nil {
+		return domain.RoomState{}, err
+	}
 	cred, err := s.joinRealNetworkLocked(ctx, room, nick, hostKey)
 	if err != nil {
 		return domain.RoomState{}, err
@@ -289,6 +292,39 @@ func (s *Session) joinRealNetworkLocked(
 	return cred, nil
 }
 
+// ensureMemberKeyLocked deja lista la llave de miembro para el canje.
+//
+// Se reusa la de la última sala guardada cuando es LA MISMA sala, que es lo
+// que hace que volver — a mano o solo, con el daemon reiniciado o sin
+// reiniciar — recupere la credencial y la dirección de antes. Cualquier otra
+// sala estrena llave: por sala y sin enlace entre salas, ver
+// [domain.MemberKey].
+//
+// El código renovado no rompe el reuso: el host reparte el código nuevo a los
+// presentes y [Session.OnCodeRotated] reescribe la última sala con él, así que
+// la comparación por invite ID sigue casando para quien estaba dentro.
+//
+// Asume el candado tomado.
+func (s *Session) ensureMemberKeyLocked(room domain.Room) error {
+	if s.hasLast && s.last.Room.InviteID == room.InviteID && len(s.last.MemberSeed) == domain.MemberSeedLen {
+		k, err := domain.MemberKeyFromSeed(s.last.MemberSeed)
+		if err == nil {
+			s.memberKey = k
+			return nil
+		}
+		// Malformada de verdad no llega acá, la rechaza [domain.DecodeLastRoom];
+		// esto cubre el tamaño correcto con contenido imposible, y el costo de
+		// seguir es volver como miembro nuevo, que es mejor que no volver.
+		s.deps.Log.Warn("la semilla de miembro guardada no sirve, se entra con llave nueva", "error", err)
+	}
+	k, err := domain.NewMemberKey(s.deps.Rand)
+	if err != nil {
+		return err
+	}
+	s.memberKey = k
+	return nil
+}
+
 // checkRoomExists le pregunta al registro si ese código existe, y no sigue sin
 // una respuesta suya.
 //
@@ -430,6 +466,9 @@ func (s *Session) exchangeForCredential(
 		// code that was pasted into it.
 		RendezvousName: rdv.NetworkName(),
 		ExpectHostKey:  hostKey,
+		// Y la llave con la que ESTE lado firma su pedido, que es lo que hace
+		// que el host le devuelva lo suyo al que vuelve. Ver [domain.MemberKey].
+		Member: s.memberKey,
 	})
 	if err != nil {
 		return domain.Credential{}, fmt.Errorf("el host no emitió la credencial: %w", err)

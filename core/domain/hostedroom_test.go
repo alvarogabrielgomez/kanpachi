@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -205,6 +206,9 @@ func TestLaÚltimaSalaVaYVuelveIgual(t *testing.T) {
 		Name:    "Los panas",
 		Nick:    nick,
 		SavedAt: time.Date(2026, 8, 2, 20, 0, 0, 0, time.UTC),
+		// La semilla de miembro entra en la vuelta completa: es lo que hace que
+		// volver a la sala recupere la credencial y la dirección de antes.
+		MemberSeed: bytes.Repeat([]byte{7}, MemberSeedLen),
 	}
 
 	raw, err := quiero.Encode()
@@ -220,7 +224,7 @@ func TestLaÚltimaSalaVaYVuelveIgual(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tengo != quiero {
+	if !reflect.DeepEqual(tengo, quiero) {
 		t.Fatalf("la vuelta cambió la última sala:\n%+v\n%+v", tengo, quiero)
 	}
 }

@@ -70,6 +70,14 @@ func (s *Session) saveLastRoomLocked(autoReturn bool) {
 		SavedAt:    s.deps.Clock.Now(),
 		AutoReturn: autoReturn,
 	}
+	// La semilla de miembro sigue la MISMA regla que la vuelta automática:
+	// salir a propósito — irse o ser expulsado — la descarta, y todo lo demás
+	// la conserva para que la vuelta recupere credencial y dirección. Dejarla
+	// tras una salida deliberada mantendría en disco una identidad enlazable
+	// que su dueño decidió cerrar.
+	if autoReturn {
+		last.MemberSeed = s.memberKey.Seed()
+	}
 	raw, err := last.Encode()
 	if err != nil {
 		s.deps.Log.Warn("no se pudo serializar la última sala", "error", err)

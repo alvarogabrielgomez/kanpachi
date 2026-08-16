@@ -236,7 +236,7 @@ func emiteCredencial(t *testing.T, b *bank, nombre string, id domain.CredentialI
 	}
 	b.motor.mu.Unlock()
 
-	cred, err := b.session.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, nombre)})
+	cred, err := b.session.IssueCredentialFor(ctx(), issueReq(t, nombre))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1165,7 +1165,7 @@ func TestEmitirCredencialNoRepiteDirecciones(t *testing.T) {
 
 	var vistas []netip.Addr
 	for i := 0; i < 3; i++ {
-		cred, err := b.session.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")})
+		cred, err := b.session.IssueCredentialFor(ctx(), issueReq(t, "humberto"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1192,7 +1192,7 @@ func TestLaCredencialEmitidaNoLlevaElSecretoDeLaRed(t *testing.T) {
 	b.motor.credenciales = func() domain.Credential {
 		return domain.Credential{ID: "c", Token: "token-del-motor"}
 	}
-	cred, err := b.session.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")})
+	cred, err := b.session.IssueCredentialFor(ctx(), issueReq(t, "humberto"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1214,7 +1214,7 @@ func TestElHostNoRepartesuPropiaDirección(t *testing.T) {
 	b.motor.credenciales = func() domain.Credential {
 		return domain.Credential{ID: "c", Token: "t"}
 	}
-	cred, err := b.session.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, "humberto")})
+	cred, err := b.session.IssueCredentialFor(ctx(), issueReq(t, "humberto"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1236,7 +1236,7 @@ func TestUnInvitadoNoEmiteCredenciales(t *testing.T) {
 	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.session.IssueCredentialFor(ctx(), domain.CredentialRequest{Name: nick(t, "otro")}); !errors.Is(err, ErrNotHost) {
+	if _, err := b.session.IssueCredentialFor(ctx(), issueReq(t, "otro")); !errors.Is(err, ErrNotHost) {
 		t.Fatalf("un invitado emitió una credencial: %v", err)
 	}
 }
