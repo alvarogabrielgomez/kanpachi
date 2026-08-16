@@ -263,6 +263,9 @@ func (s *Session) leaveLocked(
 	// no — en la última sala guardada, según lo que signifique esta salida:
 	// eso lo decidió saveLastRoomLocked unas líneas arriba.
 	s.memberKey = domain.MemberKey{}
+	// Y la racha de reingresos: la sala siguiente empieza con la suya.
+	s.rejoinStreak = 0
+	s.lastRejoinSuccess = time.Time{}
 	s.announcedGame = ""
 	s.lastAnnounce = time.Time{}
 	s.lastPublish = time.Time{}

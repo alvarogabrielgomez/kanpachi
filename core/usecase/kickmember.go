@@ -209,6 +209,15 @@ func (s *Session) credentialFor(ip netip.Addr) (domain.Credential, error) {
 // intento de conexión del invitado rebotaría contra el firewall. Pre-autorizar
 // el puerto de control en cuanto se emite la credencial cierra la ventana.
 //
+// **La pre-autorización dura la gracia de llegada, no la vida de la
+// credencial**, y esa diferencia se midió el 2026-08-16: filtrando solo lo
+// vencido, el canal que corre como SYSTEM quedó abierto hacia 73 direcciones
+// —todo lo emitido en 24 horas, presente o no— mientras la regla del juego
+// tenía 2. Es la MISMA pregunta que contesta el latido de renovación, con el
+// mismo predicado: quien no está y ya pasó su ventana de ingreso no
+// pre-autoriza nada, aunque su credencial siga viva por si vuelve. Ver
+// [arrivalGraceOpen].
+//
 // Asume el candado tomado.
 func (s *Session) authorizedControlIPsLocked() []netip.Addr {
 	out := domain.MemberIPs(s.state.Peers)
@@ -225,10 +234,13 @@ func (s *Session) authorizedControlIPsLocked() []netip.Addr {
 	}
 
 	for ip, c := range s.issued {
-		if c.Expired(now) || seen[ip] {
+		if c.Expired(now) || c.Revoked || seen[ip] {
 			continue
 		}
 		if _, kicked := s.kicked[ip]; kicked {
+			continue
+		}
+		if !arrivalGraceOpen(c, now) {
 			continue
 		}
 		out = append(out, ip)
@@ -236,6 +248,18 @@ func (s *Session) authorizedControlIPsLocked() []netip.Addr {
 	}
 
 	return out
+}
+
+// arrivalGraceOpen dice si una credencial emitida sigue dentro de su ventana
+// de ingreso: la recibió hace menos de [timing.ArrivalGrace], así que su dueño
+// puede estar todavía entrando y su ausencia no significa nada.
+//
+// Es UN predicado y lo comparten las dos preguntas que dependen de él, la
+// renovación del latido y la pre-autorización del canal de control. Estuvieron
+// contestadas por separado y la segunda contestaba 24 horas, que es cómo el
+// oyente que corre como SYSTEM terminó abierto a 73 direcciones de nadie.
+func arrivalGraceOpen(c domain.Credential, now time.Time) bool {
+	return now.Sub(c.IssuedAt) < timing.ArrivalGrace
 }
 
 // controlScope arma el alcance del oyente del host. Asume el candado tomado.

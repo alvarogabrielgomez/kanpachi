@@ -69,7 +69,7 @@ func (s *Session) renewCredentialsLocked(ctx context.Context) {
 		if c.Revoked {
 			continue
 		}
-		if !presentes[ip] && ahora.Sub(c.IssuedAt) >= timing.ArrivalGrace {
+		if !presentes[ip] && !arrivalGraceOpen(c, ahora) {
 			ausentes++
 			continue
 		}

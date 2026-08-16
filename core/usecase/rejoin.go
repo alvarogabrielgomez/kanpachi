@@ -42,6 +42,18 @@ import (
 // El precio queda acotado al camino del canje: solo esa vuelta recibe una
 // dirección nueva. Ver [timing.ArrivalGrace].
 
+// maxRejoinStreak es cuántos reingresos SEGUIDOS se toleran antes de rendirse.
+//
+// Es un tope de intentos y no un plazo, así que vive acá y no en core/timing.
+// El caso que frena se midió: un reingreso que triunfa y no se sostiene vuelve
+// a disparar en un minuto, y como cada éxito reinicia el contador de ausencia
+// del host, el corte de los veinte minutos no llega jamás. Ocho vueltas son
+// suficientes para que cualquier tropiezo real se recupere, y pocas para que
+// una sala que no se sostiene deje de masticarse a sí misma: se sale con
+// motivo propio y la vuelta automática, que reintenta cada cinco minutos,
+// queda como el ritmo de fondo.
+const maxRejoinStreak = 8
+
 // RejoinDue dice si toca reintentar el canje con el host.
 //
 // Es BARATO a propósito y se llama en cada latido: solo mira relojes y estado,
@@ -137,6 +149,18 @@ func (s *Session) Rejoin(ctx context.Context) error {
 	if !s.rejoinDueLocked(now) {
 		return nil
 	}
+	// El freno de los reingresos encadenados, ANTES de intentar otro. Ver
+	// [maxRejoinStreak]: llegar acá con la racha llena significa que los
+	// últimos ocho triunfaron y ninguno se sostuvo, y la novena vuelta no va a
+	// ser distinta. Salir con motivo propio deja la pantalla diciendo la
+	// verdad, y la vuelta automática sigue existiendo con su ritmo de fondo.
+	if s.rejoinStreak >= maxRejoinStreak {
+		s.deps.Log.Warn("la sala no se sostiene tras varios reingresos seguidos, se sale",
+			"reingresos", s.rejoinStreak)
+		s.leaveLocked(ctx, "la conexión con la sala no se sostuvo tras varios reingresos", domain.ExitTunnelLost, cerrarDeVerdad)
+		return nil
+	}
+
 	// El reloj se sella ANTES de intentar, igual que en [Session.announceLocked]:
 	// si esto falla, el intento siguiente va cuando toque y no de inmediato.
 	s.lastRejoin = now
@@ -174,6 +198,17 @@ func (s *Session) Rejoin(ctx context.Context) error {
 	// éxito a propósito: si el canje falló, la credencial sigue muerta y el
 	// intento siguiente tiene que seguir saltándose las guardas de la ausencia.
 	s.credencialMuerta = false
+
+	// La racha cuenta ÉXITOS encadenados, no fallos: el bucle medido triunfaba
+	// en cada vuelta. Dos reingresos con calma de por medio son incidentes
+	// independientes y la racha vuelve a empezar; sin calma, se acumula hacia
+	// el freno de arriba. Ver [timing.RejoinCalmAfter].
+	if s.lastRejoinSuccess.IsZero() || now.Sub(s.lastRejoinSuccess) > timing.RejoinCalmAfter {
+		s.rejoinStreak = 1
+	} else {
+		s.rejoinStreak++
+	}
+	s.lastRejoinSuccess = now
 
 	s.deps.Log.Info("se volvió a entrar a la sala",
 		"código", room.InviteID.String(), "ip", s.state.LocalIP.String())

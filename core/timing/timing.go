@@ -295,6 +295,21 @@ const (
 	RejoinJitter   = 30 * time.Second
 )
 
+// RejoinCalmAfter es cuánta calma separa dos reingresos INDEPENDIENTES.
+//
+// Alimenta el freno de los reingresos encadenados: dos éxitos con menos que
+// esto de por medio cuentan como la misma racha, y la racha llena hace que la
+// sesión deje de masticarse a sí misma y salga con motivo propio. El bucle que
+// lo motivó, medido el 2026-08-16, reingresaba una vez por minuto y cada éxito
+// reiniciaba el contador de ausencia del host, así que el corte de los veinte
+// minutos no llegaba jamás.
+//
+// Quince minutos son quince vueltas del bucle medido, o sea imposibles de
+// confundir con él, y menos que la vida de una partida: dos tropiezos reales
+// en una tarde caen de sobra en rachas separadas. El tope de la racha vive
+// junto al código que frena, porque es un conteo y no un plazo.
+const RejoinCalmAfter = 15 * time.Minute
+
 // ─── Volver a la sala, NO estando en ninguna ─────────────────────────────────
 
 // ReturnInterval is how often a guest tries to get back into the last room it

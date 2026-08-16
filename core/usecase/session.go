@@ -345,6 +345,13 @@ type Session struct {
 	lastRejoin time.Time
 	rejoinWait time.Duration
 
+	// rejoinStreak y lastRejoinSuccess son el freno de los reingresos
+	// encadenados: la racha cuenta éxitos sin calma de por medio, y llena
+	// significa que la sala no se sostiene y hay que dejar de masticarla. Ver
+	// [maxRejoinStreak] y [timing.RejoinCalmAfter].
+	rejoinStreak      int
+	lastRejoinSuccess time.Time
+
 	// credencialMuerta dice que el HOST avisó de que no tiene la credencial de
 	// esta máquina. Solo del lado del invitado.
 	//
