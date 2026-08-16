@@ -4,10 +4,11 @@
     clocks cut short.
 
 .DESCRIPTION
-    Seven scenarios, in order, each one leaving the pair in the state the next
-    one needs. They are the cases the return feature was written for, and none
-    of them can be proven by a test: they need a host that goes away, a registry
-    that keeps answering, and a guest that gives up on its own.
+    Eleven scenarios. The first seven are the return feature's cases; 8 to 11
+    are the 2026-08-16 fixes — the reattach, the member key, and the control
+    rule that stopped accumulating. None of them can be proven by a test: they
+    need a host that goes away, a registry that keeps answering, and a guest
+    that gives up on its own.
 
       1  going back after Kanpachi is closed and opened
       2  the host reopening its room, same code, guest reconnecting
@@ -16,6 +17,14 @@
       5  the guest retrying several times until the host appears
       6  the host never coming back, the room expiring, the guest stopping
       7  a kicked guest NOT coming back after a close and open
+      8  an induced flap ending in a reattach: same address, no new credential
+      9  a dirty restart coming back as itself: credential handed back
+      10 the control rule scoped to who is there, never an accumulation
+      11 a kicked member returning as a stranger: new address, nothing back
+
+    8 to 11 run in that order and feed each other; the default full run does
+    1-6, then 8-11, then 7, because 7 wants a guest inside to kick and 11
+    leaves one.
 
     # The two machines
 
@@ -138,6 +147,17 @@ function Host-Json([string]$verb) {
     try { return $raw | ConvertFrom-Json } catch { Info "host $verb -> $($raw.Trim())"; return $null }
 }
 
+# Host-Count counts occurrences of a daemon-log line on the host. The patterns
+# are Spanish because the daemon's log is Spanish; deltas of this are how a
+# scenario proves which path ran (a reattach leaves no issuance line, a member
+# coming back leaves "devuelta" instead of "emitida").
+function Host-Count([string]$pattern) {
+    $out = Host-Try "sudo -n journalctl -u kanpachid -o cat | grep -cF -- '$pattern'"
+    $n = 0
+    if ([int]::TryParse($out.Trim(), [ref]$n)) { return $n }
+    return 0
+}
+
 function Peer-Json([string]$verb) {
     $raw = Native { & $cli --pipe $peerPipe --data $peerData --json $verb.Split(' ') }
     if (-not $raw.Trim()) { return $null }
@@ -218,9 +238,33 @@ if ($Deploy) {
     Host-Run ('sudo -n install -m755 /tmp/kanpachid /usr/libexec/kanpachi/kanpachid' +
         ' && sudo -n install -m755 /tmp/kanpachi /usr/bin/kanpachi' +
         ' && sudo -n install -m755 /tmp/kanpseed /usr/local/bin/kanpseed') | Out-Null
+
+    # The engine rides along when the cycle rebuilt it. The published .deb's
+    # engine is the default, and this cycle IS about the engine — the fork's
+    # backports and the owner election — so a fresh linux/kanpachi-engine in
+    # the build dir replaces the packaged one. -Restore undoes it with the
+    # .deb, same as the other two.
+    $engineBin = Join-Path $buildDir 'linux/kanpachi-engine'
+    if (Test-Path $engineBin) {
+        Native { & scp -q $engineBin "${Droplet}:/tmp/kanpachi-engine" } | Out-Null
+        Host-Run 'sudo -n install -m755 /tmp/kanpachi-engine /usr/libexec/kanpachi/kanpachi-engine' | Out-Null
+        Ok 'engine replaced with the rebuilt one'
+    }
+    else { Note 'no rebuilt engine in the build dir; the packaged one stays' }
+
     Host-Run 'sudo -n systemctl start kanpseed-registry' | Out-Null
     Ok 'kanpachid, kanpachi and kanpseed replaced, registry back up'
     Info (Host-Run 'sudo -n systemctl is-active kanpseed-registry; /usr/bin/kanpachi version 2>/dev/null || true').Trim()
+
+    # El host tiene que saber a QUIEN pedirle un codigo, y una instalacion recien
+    # hecha no lo sabe: desde que no hay seed compilado por defecto, `host` sin
+    # registro configurado se niega antes de tocar la red. Es lo correcto —abrir
+    # una sala es elegir en la maquina de quien vive—, y aca esa eleccion se hace
+    # una vez, al desplegar, y no en mitad de una medicion.
+    Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
+    Start-Sleep -Seconds 8
+    Host-Run "sudo -n kanpachi seed $Seed" | Out-Null
+    Ok "host registry set to $Seed"
     return
 }
 
@@ -265,13 +309,21 @@ $scenarios = @(
         run   = {
             Host-Run 'sudo -n systemctl restart kanpachid' | Out-Null
             Start-Sleep -Seconds 8
-            $h = Host-Json 'host Medicion'
+            # `--yes` no es comodidad, es la unica forma de que esto corra.
+            #
+            # Abrir o entrar a una sala pide confirmar el registro, y sin
+            # terminal el CLI se NIEGA con `refused` en vez de resolver la
+            # ausencia como un si. Del lado del host eso es exacto: ssh sin `-t`
+            # no da tty. Del lado del invitado el peligro es el contrario, que si
+            # haya terminal y el comando se quede colgado esperando una respuesta
+            # que ningun script va a dar.
+            $h = Host-Json 'host Medicion --yes'
             $script:code = $h.room.code + '@' + $h.room.seed
             Check 'the host opened a room' ($null -ne $h -and $h.room.code)
             Info "code $script:code"
 
             Peer-Start
-            Peer-Json "join $script:code" | Out-Null
+            Peer-Json "join $script:code --yes" | Out-Null
             Check 'the guest is in' (Wait-Until { Peer-InRoom } 120 'the guest to be in')
 
             $last = Peer-Json 'last'
@@ -373,15 +425,121 @@ $scenarios = @(
     }
 
     @{
+        id    = 8
+        name  = 'an induced flap ends in a reattach: same address, no new credential'
+        run   = {
+            # A room with the guest inside, however this scenario was reached.
+            Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
+            Start-Sleep -Seconds 8
+            $h = Host-Json 'status'
+            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes' }
+            $script:code = $h.room.code + '@' + $h.room.seed
+            if (-not (Peer-Running)) { Peer-Start }
+            if (-not (Peer-InRoom)) { Peer-Json "join $script:code --yes" | Out-Null }
+            Check 'the guest is in' (Wait-Until { Peer-InRoom } 120 'the guest to be in')
+
+            $ipBefore = (Peer-Json 'status').local_ip
+            $issuedBefore = Host-Count 'credencial emitida'
+            Info "guest at $ipBefore, host has issued $issuedBefore so far"
+
+            # The flap: the engine's outbound traffic dies for 45 seconds, which
+            # under the short clocks is enough for the connection to be torn
+            # down, the host to read as absent, and the rejoin to fire. This is
+            # the measured defect's exact shape: a fresh engine instance with a
+            # new random peer id and the SAME credential key, electing against
+            # its own ghost in the host's route table.
+            $engine = Get-Process -Name 'kanpachi-engine' -ErrorAction SilentlyContinue
+            if (-not $engine) { throw 'no kanpachi-engine process to flap' }
+            $rule = 'kanpachi-measure-flap'
+            Note "blocking the engine's outbound traffic for 45s"
+            New-NetFirewallRule -DisplayName $rule -Direction Outbound `
+                -Program $engine.Path -Action Block | Out-Null
+            try {
+                Start-Sleep -Seconds 45
+            }
+            finally {
+                Remove-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue
+                Note 'traffic restored'
+            }
+
+            Check 'the guest is back in' (Wait-Until { Peer-InRoom } 180 'the guest to recover')
+            $ipAfter = (Peer-Json 'status').local_ip
+            Check "it kept its address ($ipBefore)" ($ipAfter -eq $ipBefore)
+            $issuedAfter = Host-Count 'credencial emitida'
+            Check 'and the host issued NO new credential for the recovery' ($issuedAfter -eq $issuedBefore)
+        }
+    }
+
+    @{
+        id    = 9
+        name  = 'a dirty restart comes back as itself: same address, credential handed back'
+        run   = {
+            if (-not (Peer-InRoom)) { throw 'scenario 9 needs the guest in a room; run 8 first' }
+            $ipBefore = (Peer-Json 'status').local_ip
+            $returnedBefore = Host-Count 'credencial devuelta al que vuelve'
+
+            Note 'killing the guest, which is the dirty close, and starting it again'
+            Peer-Kill
+            Peer-Start
+            Check 'it went back on its own' (Wait-Until { Peer-InRoom } 180 'the guest to come back')
+            $ipAfter = (Peer-Json 'status').local_ip
+            Check "with the SAME address ($ipBefore)" ($ipAfter -eq $ipBefore)
+
+            $returnedAfter = Host-Count 'credencial devuelta al que vuelve'
+            Check 'because the host recognized its member key and handed the credential back' ($returnedAfter -gt $returnedBefore)
+        }
+    }
+
+    @{
+        id    = 10
+        name  = 'the control rule stays scoped to who is actually there'
+        run   = {
+            if (-not (Peer-InRoom)) { throw 'scenario 10 needs the guest in a room; run 8 and 9 first' }
+            # After the laps of 8 and 9 the old code accumulated one address per
+            # re-entry, 73 measured. The rule must now hold exactly one remote:
+            # this guest, at its one address.
+            $exp = Host-Run 'sudo -n kanpachi exposure'
+            $control = ($exp -split "`n" | Where-Object { $_ -match 'canal de control' }) -join ' '
+            $remotes = [regex]::Matches($control, '\d+\.\d+\.\d+\.\d+') |
+            ForEach-Object { $_.Value } | Where-Object { $_ -ne (Host-Json 'status').local_ip } | Select-Object -Unique
+            Info "control rule: $($control.Trim())"
+            Check "one remote address on the control rule, not an accumulation (saw $($remotes.Count))" ($remotes.Count -eq 1)
+        }
+    }
+
+    @{
+        id    = 11
+        name  = 'a kicked member returns as a stranger: new address, nothing handed back'
+        run   = {
+            if (-not (Peer-InRoom)) { throw 'scenario 11 needs the guest in a room; run 8 first' }
+            $ipBefore = (Peer-Json 'status').local_ip
+            $returnedBefore = Host-Count 'credencial devuelta al que vuelve'
+
+            Note "the host kicks $ipBefore"
+            Host-Run "sudo -n kanpachi kick $ipBefore" | Out-Null
+            Check 'the guest is out' (Wait-Until { -not (Peer-InRoom) } 120 'the guest to be out')
+
+            Note 'the kicked one comes back on purpose, with the same code'
+            Peer-Json "join $script:code --yes" | Out-Null
+            Check 'and it gets in, because kicking is not banning' (Wait-Until { Peer-InRoom } 120 'the kicked guest to re-enter')
+
+            $ipAfter = (Peer-Json 'status').local_ip
+            Check "as a NEW member: another address (was $ipBefore, got $ipAfter)" ($ipAfter -ne $ipBefore)
+            $returnedAfter = Host-Count 'credencial devuelta al que vuelve'
+            Check 'and the revoked credential was NOT handed back' ($returnedAfter -eq $returnedBefore)
+        }
+    }
+
+    @{
         id    = 7
         name  = 'a kicked guest does NOT come back on its own'
         run   = {
             Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
             Start-Sleep -Seconds 8
             $h = Host-Json 'status'
-            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion' }
+            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes' }
             $script:code = $h.room.code + '@' + $h.room.seed
-            Peer-Json "join $script:code" | Out-Null
+            Peer-Json "join $script:code --yes" | Out-Null
             Check 'the guest is in' (Wait-Until { Peer-InRoom } 120 'the guest to be in')
 
             $me = (Peer-Json 'status').local_ip
