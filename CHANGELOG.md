@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.4.0] - 2026-08-17
+
 ### Added
 
 - Come back to the room you were in without pasting the code again: Kanpachi goes back to it by itself and keeps trying every five minutes, for as long as that room exists, whether it was already running when the host reappeared or was started afterwards. Closing Kanpachi, shutting the PC down, a power cut and a host that spends the night switched off are none of them leaving, so all of them come back. Three things stop it: pressing "salir de la sala", being kicked, and the meeting server saying that code is gone — and being kicked does not take the room away, the button to go back is still there, it just does not go back on its own ([e2eafd6](https://github.com/alvarogabrielgomez/kanpachi/commit/e2eafd6), [ed4484c](https://github.com/alvarogabrielgomez/kanpachi/commit/ed4484c))
@@ -300,6 +302,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.4.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.4.0
 [0.3.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.3.0
 [0.2.2]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.2.2
 [0.2.1]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.2.1
