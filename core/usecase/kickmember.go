@@ -333,7 +333,7 @@ func (s *Session) onPeersChangedLocked(ctx context.Context) (domain.RoomState, e
 	// que la necesita: el motor emite este evento en ráfagas, y el conjunto
 	// deseado es el mismo en todas menos en la primera. Ver
 	// [Session.applyPolicyIfChanged], donde está lo medido y por qué los otros
-	// once llamadores siguen aplicando siempre.
+	// dieciséis llamadores siguen aplicando siempre.
 	if _, err := s.applyPolicyIfChanged(ctx); err != nil {
 		return domain.RoomState{}, err
 	}

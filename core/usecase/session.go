@@ -259,8 +259,16 @@ type Session struct {
 	// puerto, deshaciendo justo la mitad de la expulsión que era inmediata.
 	kicked map[netip.Addr]time.Time
 
-	// appliedRules es la firma del último conjunto que se aplicó, y existe solo
-	// para no repetir la misma línea de log. Ver [Session.applyRuleSetLocked].
+	// appliedRules es la firma del último conjunto que se aplicó CON ÉXITO.
+	//
+	// Nació para no repetir la misma línea de log y hoy hace dos cosas: esa, y
+	// decidir si el evento de miembros tiene algo que aplicar. Ver
+	// [Session.applyRuleSetLocked] y [Session.applyPolicyIfChanged].
+	//
+	// Que solo se escriba tras un Apply exitoso es lo que hace gratis el
+	// reintento: un fallo deja la firma vieja puesta y el evento siguiente
+	// vuelve a aplicar. Se limpia al salir de la sala y al reatar la compuerta
+	// a otro adaptador, ver [Session.bindRoomLocked].
 	appliedRules string
 
 	// issued son las credenciales que emitió esta sala, por la dirección que se
@@ -816,7 +824,7 @@ func (s *Session) applyPolicy(ctx context.Context) error {
 // conjunto repone lo que alguien borró por fuera, y de eso dependen el barrido
 // del canario y la comprobación de la decisión 19. Un salto metido dentro de
 // applyPolicy apagaría la autorreparación entera, que es lo contrario de lo que
-// se busca. Por eso hay dos métodos y el de siempre queda intacto: los once
+// se busca. Por eso hay dos métodos y el de siempre queda intacto: los dieciséis
 // llamadores que reparan siguen llamando al que aplica siempre, y solo el sitio
 // de alta frecuencia llama a este.
 //
