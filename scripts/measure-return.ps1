@@ -521,8 +521,10 @@ $scenarios = @(
             # must now hold this one guest and nobody else.
             $guestIp = (Peer-Json 'status').local_ip
             $exp = Host-Json 'exposure'
-            $members = @($exp.ports | Where-Object { $_.control } | ForEach-Object { $_.members }) |
-            Where-Object { $_ } | ForEach-Object { ($_ -split '/')[0] } | Select-Object -Unique
+            # The outer @() is load-bearing: a one-member pipeline answers a
+            # bare string, and [0] on a string is its first CHARACTER.
+            $members = @($exp.ports | Where-Object { $_.control } | ForEach-Object { $_.members } |
+                Where-Object { $_ } | ForEach-Object { ($_ -split '/')[0] } | Select-Object -Unique)
             Info "control members: [$($members -join ', ')], guest at $guestIp"
             Check "the room control rule holds exactly this guest (saw $($members.Count))" (
                 $members.Count -eq 1 -and $members[0] -eq $guestIp)
