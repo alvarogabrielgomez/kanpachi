@@ -158,7 +158,6 @@ class Room {
     this.missingGameId,
     this.localIp,
     this.subnet,
-    this.hostName,
     this.hostLeft = false,
     this.hostGoneFor,
     this.reconnectingFor,
@@ -294,8 +293,6 @@ class Room {
   /// sala se crea vacía y el juego se elige adentro.
   final Game? game;
 
-  final String? hostName;
-
   /// El host cerró su lado. La sala sigue en pie, pero si el juego corría en
   /// su PC no hay a qué conectarse.
   final bool hostLeft;
@@ -349,13 +346,40 @@ class Room {
       (foreignRuleClass == RuleClass.remoteControl ||
           foreignRuleClass == RuleClass.onOurAdapter);
 
+  /// Quién hospeda la sala, salido de la tabla de miembros.
+  ///
+  /// `null` mientras no esté: la tabla llega vacía justo tras crear la sala,
+  /// y se queda sin host mientras el host está caído. Los dos son estados
+  /// normales, y el único dato honesto ahí es que no se sabe.
+  Member? get host {
+    for (final Member m in members) {
+      if (m.isHost) return m;
+    }
+    return null;
+  }
+
+  /// El nombre de quien hospeda, que es lo que la pantalla nombra.
+  ///
+  /// **Se deriva, y antes era un campo del constructor que nadie llenaba
+  /// nunca.** Salía de la nada y llegaba en `null` a todas partes, así que la
+  /// tarjeta pintaba `host: —` y el aviso de salida decía «El host salió de la
+  /// sala» con el nombre delante disponible en la misma pantalla, en la lista
+  /// de miembros. Un campo opcional que ningún constructor rellena no falla en
+  /// ningún sitio, se lee como una ausencia legítima.
+  String? get hostName => host?.name;
+
   /// La dirección que se pega en el juego: la del host y el puerto del juego.
+  ///
+  /// **Vacía cuando el host no está en la tabla**, que es lo único cierto en
+  /// ese momento. Acá había un `orElse` que devolvía el PRIMER miembro de la
+  /// lista, o sea quien fuera, incluso uno mismo: la tarjeta pintaba una
+  /// dirección con forma de buena, el botón de copiar la entregaba, y el juego
+  /// no conectaba contra nada, sin un solo error por delante. Quien la pinta
+  /// decide qué decir mientras tanto, ver `_AddressBox`.
   String get gameAddress {
-    final Member host = members.firstWhere(
-      (Member m) => m.isHost,
-      orElse: () => members.first,
-    );
-    return '${host.address} : ${game?.primaryPort ?? ''}';
+    final Member? h = host;
+    if (h == null) return '';
+    return '${h.address} : ${game?.primaryPort ?? ''}';
   }
 
   Room copyWith({
@@ -379,7 +403,6 @@ class Room {
     missingGameId: missingGameId,
     localIp: localIp,
     subnet: subnet,
-    hostName: hostName,
     hostLeft: hostLeft ?? this.hostLeft,
     hostGoneFor: hostGoneFor,
     reconnectingFor: reconnectingFor,

@@ -100,7 +100,10 @@ func presentNoRoomMenu(ctx context.Context, op opciones, st protocol.RoomView) e
 	// hacía: el asistente enseñaba el menú sin decir por qué terminó lo anterior
 	// ni que se está volviendo a una sala. Es el mismo renderizador que usan
 	// `status` y `watch`, no una segunda versión.
-	pintarSala(os.Stdout, st)
+	//
+	// No catalog: this branch is the one with no room, so there is no host and
+	// no active profile, and the address line has nothing to build from.
+	pintarSala(os.Stdout, st, nil)
 	fmt.Println()
 
 	const (
@@ -244,9 +247,27 @@ func hayÚltimaSala(op opciones) (bool, error) {
 
 // ─── Con sala ────────────────────────────────────────────────────────────────
 
+// catalogForRoomMenu opens its own connection because the wizard hands the room
+// view around without one.
+//
+// It is a menu a person is reading, so one extra round trip over a local pipe
+// costs nothing anybody can perceive, and only when a profile is active. Every
+// failure ends in nil, which drops the address line and keeps the menu.
+func catalogForRoomMenu(op opciones, st protocol.RoomView) []protocol.GameView {
+	if st.Game == "" {
+		return nil
+	}
+	c, err := abrir(op)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = c.Close() }()
+	return catalogForAddress(c, st)
+}
+
 func roomMenu(ctx context.Context, op opciones, st protocol.RoomView) error {
 	limpiarPantalla(os.Stdout)
-	pintarSala(os.Stdout, st)
+	pintarSala(os.Stdout, st, catalogForRoomMenu(op, st))
 	fmt.Println()
 
 	const (

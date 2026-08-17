@@ -122,7 +122,9 @@ Solo con lanzamiento público, siempre opt-in, nunca en el modo privado. Lo mín
 
 **Lo que confirmó de la arquitectura**, que es lo que este punto prometía: `core/` no se tocó. Lo que se escribió fue periferia, tal como estaba previsto en la tabla de abajo.
 
-**Lo que queda pendiente de este punto**, y sigue siendo futuro de verdad: la implementación nftables de `FirewallPort` y el equivalente de `netcfg` con `iproute2`. Hasta que existan, un host de Linux abre la sala y no contiene nada, así que el modo headless sirve para hospedar en una máquina donde el filtrado lo pone otra cosa.
+**Esto ya no queda pendiente, y decía que sí.** La implementación nftables de `FirewallPort` existe entera, en sus dos capas: `daemon/adapter/firewall/linux/nft` es la compuerta que cierra, y `linux/nftpermits` son los permisos que abren, con su auditoría de reglas ajenas. `daemon/adapter/netcfg/netcfg_linux.go` es el equivalente de los ajustes. Un host de Linux contiene su sala igual que uno de Windows. El párrafo decía lo contrario y llevaba diciéndolo desde antes de que se escribiera.
+
+**Lo que sí sigue vivo es el cortafuegos AJENO**, que es otra cosa: `ufw` o `firewalld` denegando la entrada en nuestros adaptadores. Nuestro permiso no puede ganarle a ese bloqueo desde nuestra tabla, así que Kanpachi lo detecta y pide consentimiento para abrirlo con la propia herramienta del administrador, y lo cierra al salir. Ver decisión 36.
 
 **Lo que sigue valiendo:** el modelo de identidad, el catálogo, las invariantes de puertos y el rol de host de la decisión 20. Un host en Linux es un host, con las mismas reglas.
 

@@ -217,6 +217,15 @@ enum FailureCode {
   /// Ya hay una sala abierta.
   busy('busy'),
 
+  /// Un cortafuegos que no es el nuestro deniega la entrada en los adaptadores
+  /// de Kanpachi, así que abrir o entrar a una sala no serviría de nada.
+  ///
+  /// **No pasa en Windows hoy**, y está acá igual porque este enum es el espejo
+  /// de `protocol.Code` y un espejo con huecos deja de avisar cuando el hueco
+  /// importa. Lo produce un host de Linux con `ufw` o `firewalld` cerrado. Ver
+  /// decisión 36.
+  firewallBlocks('firewall_blocks'),
+
   /// La operación necesita una sala y no hay.
   noRoom('no_room'),
 

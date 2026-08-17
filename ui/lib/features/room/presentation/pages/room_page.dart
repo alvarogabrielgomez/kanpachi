@@ -552,6 +552,10 @@ class _GameCard extends StatelessWidget {
 /// El rótulo cambia con el papel: el host la reparte, el invitado la usa. Es
 /// el mismo dato y dos verbos distintos, y decir el equivocado manda a la
 /// mitad de la sala a hacer lo que no toca.
+///
+/// **Sin host en la tabla no hay dirección, y se dice.** `Room.gameAddress`
+/// devuelve vacío ahí, y esta caja pasa a esperar en vez de pintar la IP de
+/// cualquiera con el botón de copiar al lado.
 class _AddressBox extends StatelessWidget {
   const _AddressBox({required this.room});
 
@@ -560,6 +564,8 @@ class _AddressBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final String address = room.gameAddress;
+    final String? hint = room.game?.hintText;
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.xxl,
@@ -569,32 +575,50 @@ class _AddressBox extends StatelessWidget {
         color: colors.surfaceSunken,
         borderRadius: AppRadius.allMd,
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                AppKicker(
-                  room.selfIsHost ? 'Pásales esta dirección' : 'Conéctate a',
-                  size: AppKickerSize.xs,
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    AppKicker(
+                      room.selfIsHost ? 'Pásales esta dirección' : 'Conéctate a',
+                      size: AppKickerSize.xs,
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      address.isEmpty ? 'Esperando al host…' : address,
+                      style: context.type.mono.copyWith(
+                        color: address.isEmpty ? colors.textMuted : colors.text,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 5),
-                Text(
-                  room.gameAddress,
-                  style: context.type.mono.copyWith(color: colors.text),
+              ),
+              if (address.isNotEmpty)
+                CopyButton(
+                  label: 'Copiar',
+                  value: address.replaceAll(' ', ''),
+                  variant: AppButtonVariant.quiet,
+                  height: 34,
+                  horizontalPadding: 15,
+                  textStyle: context.type.labelSm,
                 ),
-              ],
+            ],
+          ),
+          // Dónde se pega la dirección DENTRO del juego, que es el paso que
+          // sigue y el que nadie adivina. Viaja en el perfil desde siempre,
+          // llega parseado a `Game.hintText`, y hasta acá no lo pintaba nadie.
+          if (hint != null && hint.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              hint,
+              style: context.type.bodySm.copyWith(color: colors.textMuted),
             ),
-          ),
-          CopyButton(
-            label: 'Copiar',
-            value: room.gameAddress.replaceAll(' ', ''),
-            variant: AppButtonVariant.quiet,
-            height: 34,
-            horizontalPadding: 15,
-            textStyle: context.type.labelSm,
-          ),
+          ],
         ],
       ),
     );

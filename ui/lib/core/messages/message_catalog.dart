@@ -282,6 +282,18 @@ abstract final class AppMessages {
       severity: MessageSeverity.neutral,
       body: 'Ya estás en una sala. Sal de esa antes de abrir otra.',
     ),
+    // El `detail` acá lleva los comandos exactos que abren el paso, y por eso
+    // se acompaña: el cuerpo dice qué pasa y el daemon dice qué escribir. En
+    // Windows este código no llega, y la copia existe igual porque el catálogo
+    // es el espejo entero de `protocol.Code`.
+    FailureCode.firewallBlocks => const AppMessage(
+      severity: MessageSeverity.warn,
+      title: 'El cortafuegos de esta máquina cierra la sala',
+      body:
+          'Un cortafuegos que no es Kanpachi deniega la entrada en su '
+          'adaptador, así que nadie podría llegar. Abrirlo es cosa de '
+          'ese programa.',
+    ),
     FailureCode.noRoom => const AppMessage(
       severity: MessageSeverity.neutral,
       body: 'Esa acción necesita una sala abierta.',

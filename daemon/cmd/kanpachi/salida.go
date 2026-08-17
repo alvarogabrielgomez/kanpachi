@@ -71,7 +71,44 @@ func pintarVuelta(w io.Writer, v *protocol.ReturningView, seedCaido bool) {
 	fmt.Fprintln(w, "\n  `kanpachi leave` stops going back. `kanpachi join <code>` enters another room.")
 }
 
-func pintarSala(w io.Writer, st protocol.RoomView) {
+// gameAddress builds what a player pastes inside the game: the host's address
+// and the active profile's first port.
+//
+// # Why the catalog comes in as an argument
+//
+// Because the port is NOT in the room view. The wire carries the game's id and
+// name, never its ports, so whoever wants the address resolves the id against
+// the catalog — which is exactly what the window does before it paints the same
+// box. The two faces resolve the same way from the same source rather than the
+// daemon growing a display string.
+//
+// Empty whenever any half is missing, and the caller says nothing instead of
+// printing a half address. Missing halves are ordinary: no game is active, the
+// members table has not arrived yet, or the host is down.
+func gameAddress(st protocol.RoomView, catalog []protocol.GameView) string {
+	if st.Game == "" {
+		return ""
+	}
+	host := ""
+	for _, p := range st.Peers {
+		if p.Host {
+			host = p.IP
+			break
+		}
+	}
+	if host == "" {
+		return ""
+	}
+	for _, g := range catalog {
+		if g.ID != st.Game || len(g.HostPorts) == 0 {
+			continue
+		}
+		return fmt.Sprintf("%s:%d", host, g.HostPorts[0].From)
+	}
+	return ""
+}
+
+func pintarSala(w io.Writer, st protocol.RoomView, catalog []protocol.GameView) {
 	if st.Conn == "idle" || st.Conn == "" {
 		fmt.Fprintln(w, "  No room is open.")
 		if st.LastExit != "" {
@@ -136,6 +173,20 @@ func pintarSala(w io.Writer, st protocol.RoomView) {
 		fmt.Fprintf(w, "  Game     %s\n", st.GameName)
 	} else if st.Game != "" {
 		fmt.Fprintf(w, "  Game     %s\n", st.Game)
+	}
+	// The address a player pastes inside the game. The window has painted it
+	// since it existed and this face never did, so somebody on a headless host
+	// had to read the members table and the profile's ports and put the two
+	// together by hand. It is the same line, and the verb changes with the role
+	// for the same reason it does over there: the host hands it out and a guest
+	// uses it, and saying the wrong one sends half the room to do the wrong
+	// thing.
+	if addr := gameAddress(st, catalog); addr != "" {
+		if st.Role == "host" {
+			fmt.Fprintf(w, "  Hand out %s\n", addr)
+		} else {
+			fmt.Fprintf(w, "  Connect  %s\n", addr)
+		}
 	}
 	if st.MissingGame != "" {
 		fmt.Fprintf(w, "  Missing  %s: it is active in the room and you do not have it installed\n",

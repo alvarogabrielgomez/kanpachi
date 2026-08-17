@@ -35,7 +35,9 @@ Lo que nunca ve: una terminal, un archivo de configuración, una pregunta del fi
 
 **Nada de esto toca el router.** Todas las conexiones se inician desde adentro hacia afuera, por eso el NAT deja pasar la respuesta sin reenvío de puertos ni UPnP. Nadie escucha en la IP pública de nadie.
 
-Nota de rol: "host" es quien corre el servidor del juego. Cualquier miembro puede crear la sala, las aperturas del perfil aplican en la máquina que declara hospedar.
+**Nota de rol: hay un solo host y es el que creó la sala.** Quien la abrió corre el servidor del juego, elige qué juego está activo, y es en su máquina donde aplican las aperturas del perfil. La tarjeta de la sala enseña SU dirección, que es a la que se conecta el resto. Ver decisión 20.
+
+Acá decía que las aperturas aplican "en la máquina que declara hospedar", y ese mecanismo no existe ni existió: no hay forma de declararse host de un juego dentro de una sala ajena, ni de designar a otro. Una promesa así en el documento del flujo es peor que un hueco, porque lo que se escribe después se escribe para el mecanismo imaginario. Lo que sí puede hacer cualquiera es crear su propia sala.
 
 ## Qué hace el instalador, paso a paso
 

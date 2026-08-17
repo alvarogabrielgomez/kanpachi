@@ -157,9 +157,30 @@ func conSala(op opciones, m protocol.Method, params any) error {
 	// se pudo cerrar, y quien mire solo el error tira el estado que acaba de
 	// pedir. Ver [protocol.Response].
 	if st.Conn != "" {
-		pintarSala(os.Stdout, st)
+		pintarSala(os.Stdout, st, catalogForAddress(c, st))
 	}
 	return err
+}
+
+// catalogForAddress fetches the catalog only when there is an address to build.
+//
+// The connect address needs the active profile's port, and the port does not
+// travel in the room view: it travels in the catalog, the same place the window
+// reads it from. With no game active there is nothing to build, so nothing is
+// asked for and the common case costs no extra round trip.
+//
+// A failure here returns nil and stays quiet. Not being able to name the port
+// is not a reason to withhold the room: without it the address line is skipped
+// and everything else prints as it did.
+func catalogForAddress(c *client.Client, st protocol.RoomView) []protocol.GameView {
+	if st.Game == "" {
+		return nil
+	}
+	catalog, err := client.Ask[[]protocol.GameView](c, protocol.MethodListGames, nil)
+	if err != nil {
+		return nil
+	}
+	return catalog
 }
 
 // ─── La sala ─────────────────────────────────────────────────────────────────
@@ -185,13 +206,22 @@ func cmdWatch(ctx context.Context, op opciones, _ []string) error {
 	}
 	defer func() { _ = c.Close() }()
 
+	// Once, outside the loop. The catalog is what the address line needs and it
+	// does not change while this runs, so asking per frame would be a request a
+	// second for an answer that is already in hand. Which profile is active can
+	// change mid-loop, and that is read from the room view every frame.
+	catalog, err := client.Ask[[]protocol.GameView](c, protocol.MethodListGames, nil)
+	if err != nil {
+		catalog = nil
+	}
+
 	for {
 		st, err := client.Ask[protocol.RoomView](c, protocol.MethodStatus, nil)
 		if err != nil {
 			return err
 		}
 		limpiarPantalla(os.Stdout)
-		pintarSala(os.Stdout, st)
+		pintarSala(os.Stdout, st, catalog)
 		fmt.Println("  [Ctrl+C] to leave. This does NOT close the room: the room lives in the daemon.")
 
 		select {
