@@ -165,12 +165,22 @@ Ante la duda, `[]`. Un juego de malla mal clasificado como estrella no conecta, 
 
 Windows rompe de varias formas distintas el multijugador sobre un adaptador virtual. Cada juego sufre unas y no otras, por eso son campos del perfil y no ajustes globales.
 
-| Campo | Qué hace | Qué juegos lo piden |
-|---|---|---|
-| `broadcast_route` | Ruta persistente `255.255.255.255/32` sobre `kanpachi0` | Descubrimiento LAN clásico, era DirectPlay |
-| `multicast_route` | Ruta `224.0.0.0/4` | mDNS, SSDP, buscadores de servidores, motores modernos |
-| `prefer_ipv4` | Política de prefijo `::ffff:0:0/96 100 4` | Netcode viejo que solo habla IPv4 y se confunde si Windows le entrega un destino IPv6 |
-| `directplay` | Habilita el componente legado de Windows | Juegos previos a 2005, aproximadamente |
+La última columna dice quién lo pide **en el catálogo de hoy**, contado el
+2026-08-17 sobre los once perfiles de `builtin.json`, no la clase de juego que
+podría necesitarlo. La diferencia importa: dos de los cuatro no los pide nadie,
+así que su código no lo recorre el producto, solo `internal/netcfgprobe` y los
+tests del dominio.
+
+| Campo | Qué hace | Para qué clase de juego | Quién lo pide hoy |
+|---|---|---|---|
+| `broadcast_route` | Ruta persistente `255.255.255.255/32` sobre `kanpachi0` | Descubrimiento LAN clásico, era DirectPlay | **2**: Minecraft, Terraria |
+| `multicast_route` | Ruta `224.0.0.0/4` | mDNS, SSDP, buscadores de servidores, motores modernos | **0** |
+| `prefer_ipv4` | Política de prefijo `::ffff:0:0/96 100 4` | Netcode viejo que solo habla IPv4 y se confunde si Windows le entrega un destino IPv6 | **0** |
+| `directplay` | Habilita el componente legado de Windows | Juegos previos a 2005, aproximadamente | **1**: Age of Empires II |
+
+Los dos que están en cero se quedan escritos. Lo que les falta es un perfil que
+los pida, no código: `multicast_route` es lo que hace falta el día que entre un
+juego que descubre partida por mDNS o SSDP, y esa es una decisión de catálogo.
 
 Tres reglas de manejo:
 

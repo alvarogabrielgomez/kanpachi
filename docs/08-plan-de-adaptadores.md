@@ -783,7 +783,15 @@ contra lo que de verdad había CORRIDO dijo otra cosa: aproximadamente la mitad
 de ese adaptador nunca se había ejecutado. Escrito, revisado, con tests de
 paquete en verde, y sin ejecutar una sola vez.
 
-| Lo que pedía el plan | Estado antes de contrastar |
+**FOTO HISTÓRICA del 2026-08-05, ya corregida. No es el estado de hoy.** La
+tabla dice cómo se encontró ese adaptador al contrastarlo, y lo que pasó
+después está en los párrafos de abajo: los tres fallos salieron de acá y se
+arreglaron, y las cuatro transiciones de rutas se midieron en verde ese mismo
+día. Lleva este encabezado porque ya costó una vez: extraída suelta, una fila
+que dice **nunca ejecutado** se lee como presente, y de ahí salió un plan
+entero apuntando a un hueco que no existía desde hacía diez días.
+
+| Lo que pedía el plan | Estado el 2026-08-05, antes de contrastar |
 |---|---|
 | Métrica IPv4=1, automática apagada | hecho y medido |
 | MTU | hecho y medido, 1360 |
@@ -1059,6 +1067,22 @@ lo seguía recomendando. El motor y el catálogo se resuelven al lado del propio
 ejecutable, y bajo `go run` ese sitio es un directorio temporal. El stage era la
 única vía que funcionaba, y era la única que nada en el repositorio construía:
 ahora la construye `scripts/prepare-stage.ps1`.
+
+### Dos de los cuatro ajustes del sistema no los pide ningún perfil
+
+Contado el 2026-08-17 sobre los once perfiles de `builtin.json`:
+`broadcast_route` lo piden dos, Minecraft y Terraria; `directplay` uno, Age of
+Empires II; y `multicast_route` y `prefer_ipv4`, **cero**. La ruta
+`224.0.0.0/4` y la política de prefijo IPv6 no tienen disparador de producción:
+hoy las ejecutan `internal/netcfgprobe`, que las enciende a mano, y los tests
+puros del dominio.
+
+Los caminos se quedan y no se borran. Son un par de líneas de constante cada
+uno, ya están medidos por la sonda, y `docs/06` promete `multicast_route` para
+los juegos que descubren partida por mDNS o SSDP: lo que falta ahí es un perfil
+en el catálogo, no código. Lo que hay que evitar es la conclusión opuesta,
+**que un camino con tests en verde es un camino que el producto recorre**, que
+es la misma confusión que la tabla histórica de más arriba deja servida.
 
 ---
 
