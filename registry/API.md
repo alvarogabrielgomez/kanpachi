@@ -2,6 +2,8 @@
 
 A complete reference for the HTTP surface of `kanpseed`, the seed's room registry. It explains what each endpoint does, how the optional password door works, and what concrete defence protects each thing.
 
+It lives next to the code it describes, and is listed from [the public documentation](../docs/public/README.md). To put a seed up, the guide is [host your own seed](../docs/public/host-a-seed.md); for what a seed can see and store, read [`kanpachi-seed.md`](../kanpachi-seed.md).
+
 ---
 
 ## The whole map

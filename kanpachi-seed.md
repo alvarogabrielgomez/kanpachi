@@ -8,7 +8,10 @@ part of Kanpachi that runs on somebody else's machine.
 
 It is written in English for the same reason as
 [`kanpachi-protection.md`](kanpachi-protection.md): it is linked from the app and from the public
-repositories. Kanpachi's design documents are in Spanish and live in [`docs/`](docs/).
+repositories, and it stays at the repository root because those links are URLs. This one explains;
+to actually put a seed up, the guide is [host your own seed](docs/public/host-a-seed.md), and the
+endpoint-by-endpoint reference is [`registry/API.md`](registry/API.md). Kanpachi's design documents
+are in Spanish and live in [`docs/`](docs/).
 
 ---
 

@@ -8,8 +8,11 @@ document is the shared statement of what the promise means, what each part does
 to keep it, and what it does not cover.
 
 It is written in English because it is linked from the public engine and library
-repositories. Kanpachi's design documents are in Spanish and live in
-[`docs/`](docs/).
+repositories, and it stays at the repository root for the same reason: two other
+repositories link to it by URL. Read it when the question is *why*; when there
+is a task pending, the guides are in
+[the public documentation](docs/public/README.md). Kanpachi's design documents
+are in Spanish and live in [`docs/`](docs/).
 
 ## The problem it solves
 

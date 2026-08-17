@@ -25,6 +25,23 @@ Está en `docs/`. Son la fuente de verdad del diseño, no notas sueltas. Los sie
 
 Fuera de `docs/` hay uno más: **`CHANGELOG.md`** en la raíz, que cuenta qué cambió en cada versión para quien usa Kanpachi. Los ocho de arriba explican el diseño; ese cuenta la historia. Cómo se mantiene está abajo.
 
+### La documentación pública, en `docs/public/`
+
+Aparte de los ocho de diseño está **la documentación pública, en inglés**. Su índice es `docs/public/README.md`. Los ocho de arriba son para quien cambia el código; estos son para quien usa Kanpachi, y **no se escriben en castellano**, por lo mismo que `kanpachi-protection.md`: se enlazan desde fuera del repositorio.
+
+El reparto es por lo que está haciendo quien abre el documento, no por el tema:
+
+| Tipo | Documentos |
+|---|---|
+| Tutorial | `tutorial-first-room.md` |
+| Guías | `install-windows.md`, `install-linux.md`, `run-a-game-server.md`, `host-a-seed.md`, `build-from-source.md`, `fork-the-branding.md` |
+| Referencia | `reference-cli.md`, `reference-files.md`, y `registry/API.md`, que vive junto al código |
+| Explicación | `architecture.md`, y `kanpachi-protection.md` y `kanpachi-seed.md`, que viven en la raíz |
+
+**Tres archivos NO se mueven de donde están, y hay que decir por qué:** `kanpachi-protection.md` y `kanpachi-seed.md` están enlazados por URL desde `kanpachi-engine` y desde el fork de EasyTier, así que moverlos rompe dos repositorios ajenos; `registry/API.md` vive al lado del código que describe. Los tres se enlazan desde el índice.
+
+El `README.md` de la raíz no es ninguno de los cuatro tipos: es la portada, y su trabajo es decir qué es Kanpachi, cómo se instala y a dónde ir después. Lo que crezca ahí de más se muda a `docs/public/`.
+
 **Antes de proponer algo que parezca obvio, busca en `02` y `07`.** Muchas ideas razonables ya se evaluaron y se descartaron con motivo: detección de ejecución de juegos, MSIX y Microsoft Store, habilitar Compartir archivos, exit node, compartir archivos, chat. Si vas a reabrir una, hazlo citando la decisión y el argumento nuevo.
 
 ## Mantener los documentos al día
@@ -40,6 +57,7 @@ Fuera de `docs/` hay uno más: **`CHANGELOG.md`** en la raíz, que cuenta qué c
 | El esquema de perfiles o el flujo del catálogo | `06` |
 | Algo que decides posponer o no hacer | `07`, con su disparador |
 | Un principio o una parte del producto | `01` |
+| Un comando, una ruta, un servicio, un puerto o un paso de instalación | el documento de `docs/public/` que lo nombra, en inglés |
 | **Cualquier cosa que una persona note al usar Kanpachi** | **`CHANGELOG.md`**, en `Unreleased` |
 
 Reglas de escritura:
