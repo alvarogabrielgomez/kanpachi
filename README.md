@@ -57,9 +57,13 @@ That is the whole install. `kanpachid.service` starts and is enabled at boot,
 and so is `kanpachi-quarantine.service`, which keeps file sharing, remote
 desktop and remote management closed from the internet **even while Kanpachi is
 stopped**. There is no window here: the client is `kanpachi`, and typing it with
-no arguments opens an assistant that walks through hosting or joining. Why
-`apt install /path` and not `dpkg -i`, what lands where, how to check the two
-services and how to remove them: [install on Linux](docs/public/install-linux.md).
+no arguments opens an assistant that walks through hosting or joining. Every
+subcommand it has, explained one by one, is in
+[the `kanpachi` command reference](docs/public/reference-cli.md).
+
+Why `apt install /path` and not `dpkg -i`, what lands where, how to check the
+two services and how to remove them:
+[install on Linux](docs/public/install-linux.md).
 
 ### Your Own Seed
 
@@ -146,7 +150,7 @@ entry points.
 |---|---|
 | **Start here** | [Your first room](docs/public/tutorial-first-room.md), from installing to playing with a friend |
 | **How to** | [Windows](docs/public/install-windows.md) · [Linux](docs/public/install-linux.md) · [Host a seed](docs/public/host-a-seed.md) · [Run a 24/7 game server](docs/public/run-a-game-server.md) · [Build and test from source](docs/public/build-from-source.md) · [Fork it](docs/public/fork-the-branding.md) |
-| **Reference** | [Every command](docs/public/reference-cli.md) · [What gets installed, and where](docs/public/reference-files.md) · [The seed's HTTP API](registry/API.md) · [What changed in each release](CHANGELOG.md) |
+| **Reference** | [Every command of the Linux CLI](docs/public/reference-cli.md), `kanpachi` and `kanpseed` · [What gets installed, and where](docs/public/reference-files.md) · [The seed's HTTP API](registry/API.md) · [What changed in each release](CHANGELOG.md) |
 | **Understand** | [Kanpachi Protection](kanpachi-protection.md), the promise and its limits · [The seed](kanpachi-seed.md), what it sees and stores · [Architecture](docs/public/architecture.md), the three repositories and why they are three |
 
 Two of those live in other repositories, because that is where the code they
