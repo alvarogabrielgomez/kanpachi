@@ -461,18 +461,18 @@ func credentialTranscript(rendezvous string, guestKey, sealed []byte) []byte {
 //
 // # What is inside, and what each piece prevents
 //
-//	"kanpachi-member-v1" 0x00 <rendezvous> 0x00 <ephemeral key> 0x00 <member key> 0x00 <name>
+//		"kanpachi-member-v1" 0x00 <rendezvous> 0x00 <ephemeral key> 0x00 <member key> 0x00 <name>
 //
-//   - **The rendezvous** binds the request to THIS room: a signed request
-//     recorded in room A does not verify when replayed against room B.
-//   - **The ephemeral key** binds it to THIS connection, and it is the piece
-//     that matters most: without it, anybody in the lobby could replay a
-//     member's signed request with their OWN ephemeral key in it, and the
-//     host would hand them that member's credential — same secret, same
-//     address — sealed against the thief's key.
-//   - **The member key** is what is being claimed.
-//   - **The name** rides along so a relay cannot swap the nickname the host
-//     writes into its book.
+//	  - **The rendezvous** binds the request to THIS room: a signed request
+//	    recorded in room A does not verify when replayed against room B.
+//	  - **The ephemeral key** binds it to THIS connection, and it is the piece
+//	    that matters most: without it, anybody in the lobby could replay a
+//	    member's signed request with their OWN ephemeral key in it, and the
+//	    host would hand them that member's credential — same secret, same
+//	    address — sealed against the thief's key.
+//	  - **The member key** is what is being claimed.
+//	  - **The name** rides along so a relay cannot swap the nickname the host
+//	    writes into its book.
 //
 // The separators are 0x00 and they are enough: every field before the name is
 // fixed-length or 0x00-free, and the name goes last.

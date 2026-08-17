@@ -234,7 +234,6 @@ const (
 	// CodeTooLarge es un mensaje que pasa del tope. Se corta la conexión.
 	CodeTooLarge Code = "too_large"
 
-	CodeBusy        Code = "busy"          // ya hay sala
 	// CodeFirewallBlocks es que un firewall AJENO (ufw, firewalld) deniega la
 	// entrada de los adaptadores de la sala y nadie consintió abrirlo.
 	//
@@ -242,7 +241,13 @@ const (
 	// lo que la persona hace después es distinto. Acá relanza con
 	// `allow_firewall` tras leer los comandos exactos, que viajan en el
 	// mensaje. Ver [usecase.ErrFirewallBlocks].
+	//
+	// Va ARRIBA de la tabla de una línea y no dentro: un comentario en medio
+	// parte el bloque de alineación de gofmt en dos, y la tabla deja de leerse
+	// como tabla.
 	CodeFirewallBlocks Code = "firewall_blocks"
+
+	CodeBusy        Code = "busy"          // ya hay sala
 	CodeNoRoom      Code = "no_room"       // la operación necesita una y no hay
 	CodeNotHost     Code = "not_host"      // solo el host puede
 	CodeUnknownGame Code = "unknown_game"  // ese juego no está en el catálogo
