@@ -204,6 +204,14 @@ type mockFirewall struct {
 	// permitidos volvió a ser aditiva y la sala no estaba contenida.
 	abrióSinCompuerta bool
 
+	// bloqueos is what InboundBlocked answers: the foreign firewall a test
+	// wants in the way. Empty keeps every scenario on the clear path.
+	bloqueos []domain.FirewallBlock
+	// abrió is what AllowAdapters was asked to open, and retiró how many times
+	// the book was paid.
+	abrió  []domain.FirewallBlock
+	retiró int
+
 	errApply      error
 	errCuarentena error
 	errBind       error
@@ -303,6 +311,28 @@ func (f *mockFirewall) RestoreForeign(context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.restauras++
+	return nil
+}
+
+// The foreign-firewall gate: the mock never blocks, which keeps every existing
+// scenario on the clear path. A test that wants a block sets `bloqueos`.
+func (f *mockFirewall) InboundBlocked(context.Context) ([]domain.FirewallBlock, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.bloqueos, nil
+}
+
+func (f *mockFirewall) AllowAdapters(_ context.Context, blocks []domain.FirewallBlock) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.abrió = append(f.abrió, blocks...)
+	return nil
+}
+
+func (f *mockFirewall) WithdrawAdapters(context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.retiró++
 	return nil
 }
 

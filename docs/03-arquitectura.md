@@ -467,6 +467,15 @@ type FirewallPort interface {
     AuditForeign(ctx context.Context, p domain.GameProfile) ([]domain.ForeignRule, error)
     SuspendForeign(ctx context.Context, r []domain.ForeignRule) error
     RestoreForeign(ctx context.Context) error
+    // Las tres del firewall AJENO que bloquea la entrada (decisión 36).
+    // InboundBlocked nunca inventa una lista vacía ante un fallo de lectura;
+    // AllowAdapters ejecuta solo los comandos ya enseñados y anota cada
+    // apertura en un libro; WithdrawAdapters deshace exactamente lo del libro,
+    // al salir de la sala y al arrancar el servicio. En Windows contestan
+    // vacío hasta que ese caso se mida
+    InboundBlocked(ctx context.Context) ([]domain.FirewallBlock, error)
+    AllowAdapters(ctx context.Context, blocks []domain.FirewallBlock) error
+    WithdrawAdapters(ctx context.Context) error
 }
 
 type NetConfigPort interface {

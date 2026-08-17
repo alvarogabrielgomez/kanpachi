@@ -30,7 +30,7 @@ import (
 // Without it, anything in the way is refused, which is the behaviour that has
 // always been right; see [Session.clearTheWayLocked].
 func (s *Session) JoinRoom(
-	ctx context.Context, input string, nick domain.Nickname, replace bool,
+	ctx context.Context, input string, nick domain.Nickname, replace, allowFirewall bool,
 ) (estado domain.RoomState, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -51,6 +51,13 @@ func (s *Session) JoinRoom(
 	}
 	if nick.IsZero() {
 		return domain.RoomState{}, domain.ErrNicknameEmpty
+	}
+	// The foreign-firewall gate, same as when hosting: a guest behind a
+	// denying manager gets no direct paths in, and the join that "works" over
+	// relay is the degraded room nobody asked for. See
+	// [Session.firewallGateLocked].
+	if err := s.firewallGateLocked(ctx, allowFirewall); err != nil {
+		return domain.RoomState{}, err
 	}
 
 	// A partir de acá la operación se puede cancelar desde la pantalla. Ver

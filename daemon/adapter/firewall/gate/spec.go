@@ -57,7 +57,9 @@ const (
 	//
 	// Que sea débil es lo que conserva el veto del usuario. También es el motivo
 	// por el que en Linux Kanpachi no puede abrir por encima del bloqueo de un
-	// ufw o un firewalld: se audita y se informa, no se pisa.
+	// ufw o un firewalld desde su propia tabla: cuando hay que abrirlos, se le
+	// pide al gestor del operador con su CLI, con consentimiento y libro, que
+	// es la decisión 36.
 	Permit
 )
 

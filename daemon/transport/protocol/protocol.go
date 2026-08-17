@@ -235,6 +235,14 @@ const (
 	CodeTooLarge Code = "too_large"
 
 	CodeBusy        Code = "busy"          // ya hay sala
+	// CodeFirewallBlocks es que un firewall AJENO (ufw, firewalld) deniega la
+	// entrada de los adaptadores de la sala y nadie consintió abrirlo.
+	//
+	// Código propio y no `busy` ni `unavailable`, por el criterio de siempre:
+	// lo que la persona hace después es distinto. Acá relanza con
+	// `allow_firewall` tras leer los comandos exactos, que viajan en el
+	// mensaje. Ver [usecase.ErrFirewallBlocks].
+	CodeFirewallBlocks Code = "firewall_blocks"
 	CodeNoRoom      Code = "no_room"       // la operación necesita una y no hay
 	CodeNotHost     Code = "not_host"      // solo el host puede
 	CodeUnknownGame Code = "unknown_game"  // ese juego no está en el catálogo
@@ -341,6 +349,8 @@ func errorFor(err error) *Error {
 		code = CodeKickPartial
 	case errors.Is(err, usecase.ErrBusy):
 		code = CodeBusy
+	case errors.Is(err, usecase.ErrFirewallBlocked):
+		code = CodeFirewallBlocks
 	case errors.Is(err, usecase.ErrNoRoom):
 		code = CodeNoRoom
 	case errors.Is(err, usecase.ErrNotHost):

@@ -30,8 +30,13 @@ type API interface {
 	// The `replace` on both is the caller saying that leaving whatever is in the
 	// way is fine. False refuses, with an error that NAMES what was in the way so
 	// the caller can ask about it. See [usecase.ErrWouldDisplace].
-	CreateRoom(ctx context.Context, nick domain.Nickname, roomName string, replace bool) (domain.RoomState, error)
-	JoinRoom(ctx context.Context, input string, nick domain.Nickname, replace bool) (domain.RoomState, error)
+	//
+	// `allowFirewall` is the same shape for the other consent: a foreign
+	// firewall (ufw, firewalld) denying inbound gets opened, with the exact
+	// commands already shown to the person. False refuses naming who blocks
+	// and what would open it. See [usecase.ErrFirewallBlocks].
+	CreateRoom(ctx context.Context, nick domain.Nickname, roomName string, replace, allowFirewall bool) (domain.RoomState, error)
+	JoinRoom(ctx context.Context, input string, nick domain.Nickname, replace, allowFirewall bool) (domain.RoomState, error)
 	LeaveRoom(ctx context.Context) domain.RoomState
 	ActivateProfile(ctx context.Context, gameID string) (domain.RoomState, error)
 	KickMember(ctx context.Context, ip netip.Addr) (domain.RoomState, error)
@@ -309,6 +314,10 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 			// fine. Its zero refuses, which is what makes forgetting to send it
 			// safe rather than destructive.
 			Replace bool `json:"replace,omitempty"`
+			// AllowFirewall is the other consent, with the same zero-refuses
+			// safety: opening a foreign firewall that blocks the room's
+			// inbound. See [usecase.ErrFirewallBlocks].
+			AllowFirewall bool `json:"allow_firewall,omitempty"`
 		}](req.Params)
 		if e != nil {
 			return nil, e
@@ -317,14 +326,15 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 		if err != nil {
 			return nil, errorFor(err)
 		}
-		st, err := s.api.CreateRoom(ctx, nick, p.Name, p.Replace)
+		st, err := s.api.CreateRoom(ctx, nick, p.Name, p.Replace, p.AllowFirewall)
 		return s.roomOrErr(st, err)
 
 	case MethodJoinRoom:
 		p, e := decodeStrict[struct {
-			Code     string `json:"code"`
-			Nickname string `json:"nickname"`
-			Replace  bool   `json:"replace,omitempty"`
+			Code          string `json:"code"`
+			Nickname      string `json:"nickname"`
+			Replace       bool   `json:"replace,omitempty"`
+			AllowFirewall bool   `json:"allow_firewall,omitempty"`
 		}](req.Params)
 		if e != nil {
 			return nil, e
@@ -333,7 +343,7 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 		if err != nil {
 			return nil, errorFor(err)
 		}
-		st, err := s.api.JoinRoom(ctx, p.Code, nick, p.Replace)
+		st, err := s.api.JoinRoom(ctx, p.Code, nick, p.Replace, p.AllowFirewall)
 		return s.roomOrErr(st, err)
 
 	case MethodLeaveRoom:

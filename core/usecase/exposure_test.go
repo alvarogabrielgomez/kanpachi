@@ -7,7 +7,7 @@ import (
 
 func TestExposureShowsTheGamePortsThatAreReallyOpen(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
@@ -35,7 +35,7 @@ func TestExposureGoesBlindInsteadOfLooking(t *testing.T) {
 	// Lo que no se pudo medir se dice. Rellenar con la última lista buena sería
 	// enseñar una pantalla verde sobre una medición que no ocurrió.
 	b := nuevoBanco(t)
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {
@@ -72,7 +72,7 @@ func TestExposureWithNoRoomDoesNotDemandTheGate(t *testing.T) {
 
 func TestExposureReportsRulesNobodyAskedFor(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatal(err)
 	}
 	b.audit.tamper()

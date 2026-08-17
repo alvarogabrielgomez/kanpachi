@@ -95,6 +95,19 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 		medido = e
 	}
 
+	// The foreign firewall that blocks inbound is asked about in the same
+	// sweep: a ufw enabled MID-room turns a working room into one nobody can
+	// enter, with every other check still green. The alert below is the only
+	// thing on screen that says why. A read failure joins `sinRespuesta`, same
+	// as the other audit queries: it is the module going blind, not a finding.
+	var bloqueos []domain.FirewallBlock
+	if b, err := s.deps.Firewall.InboundBlocked(ctx); err != nil {
+		s.deps.Log.Warn("no se pudo mirar si un firewall ajeno bloquea la entrada", "error", err)
+		sinRespuesta = append(sinRespuesta, "si un firewall ajeno bloquea la entrada de la sala")
+	} else {
+		bloqueos = b
+	}
+
 	// La consulta al router es la única de las tres cuyo fallo se traga entero:
 	// ni alerta, ni línea de log.
 	//
@@ -145,6 +158,21 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 	// una sala que ya no existe y clearRoom ya dejó las alertas en nil.
 	if s.enforceDeadlinesLocked(ctx) {
 		return s.snapshot()
+	}
+
+	// The foreign-firewall block becomes an alert only WITH a room open, same
+	// argument as the gate below: at rest it would train people to ignore the
+	// screen, and the moment it matters is when members should be arriving and
+	// are not. The automatic reopen paths rely on this alert being here: they
+	// cannot ask for consent, so this is what says why the room stays empty.
+	if s.state.Conn.InRoom() {
+		for _, b := range bloqueos {
+			found = append(found, domain.Alert{
+				Kind: domain.AlertForeignRule,
+				Detail: fmt.Sprintf("%s deniega la entrada en %s, así que nadie puede llegar a la sala. Para abrirlo: %s",
+					b.Manager, strings.Join(b.Adapters, " y "), strings.Join(b.Fix, " && ")),
+			})
+		}
 	}
 
 	// El veredicto se calcula ACÁ y no en el adaptador: el adaptador mide y el

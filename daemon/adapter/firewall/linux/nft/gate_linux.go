@@ -20,7 +20,10 @@
 // también significa que **Kanpachi no puede abrir por encima del `drop` de un
 // ufw, un firewalld o una cadena de Docker**. No es una limitación de esta
 // implementación: netfilter no lo permite, y es la misma propiedad que hace
-// fuerte a nuestro bloqueo. Lo ajeno se audita y se informa, jamás se toca.
+// fuerte a nuestro bloqueo. Lo ajeno que bloquea se abre por OTRA vía, con
+// consentimiento explícito y anotado: se le pide al gestor del operador con su
+// propio CLI, jamás desde esta tabla. Ver la decisión 36 y el paquete
+// nftpermits; el resto de lo ajeno se sigue auditando sin tocarse.
 //
 // # La política de la cadena es ACCEPT, y es deliberado
 //

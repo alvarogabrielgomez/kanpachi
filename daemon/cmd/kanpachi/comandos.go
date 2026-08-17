@@ -235,11 +235,14 @@ func cmdHost(_ context.Context, op opciones, args []string) error {
 		fmt.Println("Opening the room. This takes about a minute: two adapters have to")
 		fmt.Println("come up, the credential has to be exchanged, and the MTU measured.")
 	}
-	return conSala(op, protocol.MethodCreateRoom, struct {
-		Nickname string `json:"nickname"`
-		Name     string `json:"name"`
-		Replace  bool   `json:"replace,omitempty"`
-	}{nick, nombre, replace})
+	return conSalaAbriendoFirewall(op, protocol.MethodCreateRoom, sinPreguntar, func(allowFirewall bool) any {
+		return struct {
+			Nickname      string `json:"nickname"`
+			Name          string `json:"name"`
+			Replace       bool   `json:"replace,omitempty"`
+			AllowFirewall bool   `json:"allow_firewall,omitempty"`
+		}{nick, nombre, replace, allowFirewall}
+	})
 }
 
 // cmdJoin pasa el texto TAL CUAL lo pegó la persona.
@@ -279,11 +282,14 @@ func cmdJoin(_ context.Context, op opciones, args []string) error {
 	if !op.json {
 		fmt.Println("Entering...")
 	}
-	return conSala(op, protocol.MethodJoinRoom, struct {
-		Code     string `json:"code"`
-		Nickname string `json:"nickname"`
-		Replace  bool   `json:"replace,omitempty"`
-	}{args[0], nick, replace})
+	return conSalaAbriendoFirewall(op, protocol.MethodJoinRoom, sinPreguntar, func(allowFirewall bool) any {
+		return struct {
+			Code          string `json:"code"`
+			Nickname      string `json:"nickname"`
+			Replace       bool   `json:"replace,omitempty"`
+			AllowFirewall bool   `json:"allow_firewall,omitempty"`
+		}{args[0], nick, replace, allowFirewall}
+	})
 }
 
 func cmdLeave(_ context.Context, op opciones, _ []string) error {

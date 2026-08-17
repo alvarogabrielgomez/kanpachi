@@ -1593,7 +1593,7 @@ Los dos pasos baratos se quedan igual porque contestan otra cosa. Convierten «n
 
 **Lo que se enseña cuando falla.** El daemon lo dice él mismo, con `uihost.Stop`, sin pasar por la interfaz de Flutter ni por el protocolo. Espera a que alguien pulse Aceptar, con plazo de cinco minutos, y recién entonces apaga Kanpachi. La espera importa: un cuadro que aparece justo cuando todo se cierra se lee como que reventó. Y el arranque no se aborta desde ahí, porque abortar mataría el canal por el que `doctor` y la ventana explican qué pasó.
 
-**Lo que no cubre.** Nada de esto arregla el almacén de drivers, que es del sistema operativo y no nuestro. Se nombra, se dice qué mirar, y se para ahí. Es la misma regla que hace que en Linux `SuspendForeign` niegue en vez de tocar el firewall de quien administra el servidor.
+**Lo que no cubre.** Nada de esto arregla el almacén de drivers, que es del sistema operativo y no nuestro. Se nombra, se dice qué mirar, y se para ahí. Es la misma regla que hace que en Linux `SuspendForeign` niegue en vez de tocar el firewall de quien administra el servidor. La decisión 36 abre una excepción acotada a esa regla, para la entrada de los dos adaptadores de Kanpachi, con consentimiento y libro; el resto de lo ajeno sigue igual de intocable.
 
 ## 33. Sin registro no hay sala, y por eso el registro recuerda
 
@@ -1716,3 +1716,31 @@ El retardo creciente es global y no por cuenta, porque no hay cuentas: bloquear 
 **Lo que NO se hace, y por qué.** No se cuenta como miembro a quien tiene credencial y todavía no abrió el canal. Ese caso ya está resuelto donde corresponde: su dirección se preautoriza en el canal de control en cuanto se emite la credencial, que es justo lo que le permite llegar a abrirlo. Contarlo como presente reservaría su dirección para siempre y renovaría la credencial de alguien que quizá nunca llegó.
 
 **Lo que queda sin explicar.** Por qué la tabla del motor no reporta al invitado en el host. La asimetría es del motor y no está medida. Esta decisión no la explica: la rodea con una fuente que el host ya tenía y no estaba mirando.
+
+## 36. El firewall ajeno que bloquea se abre con consentimiento, y queda anotado
+
+**El hueco, medido el 2026-08-16 contra el droplet.** Un `ufw` con la entrada denegada se traga los SYN hacia `kanpachi0` y `kanpachi1` sin devolver RST. La sala se monta perfecta, cada comprobación pinta verde, y no entra nadie: el host pierde la tarde mirando pantallas que dicen que todo está bien. La física de netfilter hace la mitad del daño: un `drop` ajeno corta la evaluación del hook entero, así que nuestro `accept` no puede ganarle desde nuestra tabla, y eso sigue siendo verdad.
+
+**La regla que esto deroga, y en qué mitad.** La doctrina era «lo ajeno se audita y se informa, jamás se toca», escrita en el doctor, en la compuerta de Linux y en tres decisiones (12, 15, 19). Su mitad física queda intacta. Su mitad de política era una elección: pedirle al gestor del operador que deje pasar los adaptadores, con SU propio CLI, siempre fue posible. Negarse incluso con consentimiento explícito producía el defecto de arriba, y un producto cuyo argumento central es decir la verdad sobre la exposición no puede sostener una pantalla verde sobre una sala muerta.
+
+**Alternativas.** Solo avisar, como hasta ahora, con el comando en el mensaje. Escribir reglas nftables propias por encima. Abrir el gestor ajeno con consentimiento y libro. Detectarlo y negarse a abrir la sala sin más salida que la manual.
+
+**Elección: la compuerta como precondición de abrir y entrar, con tres salidas.** Antes de montar nada, el daemon mira si un gestor conocido (`ufw`, `firewalld`, lista cerrada) va a tragarse la entrada. Bloqueado y sin consentimiento, se niega en el primer segundo nombrando al gestor, los dos adaptadores y los comandos exactos, sin media sala montada. Con consentimiento (`--yes`, la pregunta de la terminal, o `allow_firewall` por el pipe), ejecuta exactamente esos comandos. Sin bloqueo, nada cambia.
+
+**Las reglas que hacen la derogación aceptable, calcadas de la decisión 12:**
+
+- **El consentimiento es sobre algo concreto.** Lo que se enseña y lo que se ejecuta salen de la misma lista cerrada, así que no pueden discrepar. La ausencia de terminal jamás es un sí.
+- **Todo lo agregado queda en un libro** (`/var/lib/kanpachi/foreign-allows.json`), con gestor, adaptador y fecha. Es el régimen de la decisión 29: mutación persistente en almacén ajeno, con libro.
+- **Deshacer quita lo del libro y nada más.** Una regla que el operador ya tenía no entra al libro, y por eso no puede salir por él. Se deshace al salir de la sala y también al arrancar el servicio, por si una muerte sucia dejó la deuda impaga. Un cierre que falla conserva su entrada y se reintenta.
+- **Los caminos automáticos no consienten.** La reapertura de la sala al arrancar y el reenganche no preguntan nada a nadie: proceden, y el barrido levanta `AlertForeignRule` con el porqué y los comandos. El retorno automático del invitado tampoco: su rechazo cae en el reintento con ritmo que ya tenía, y se resuelve solo cuando el operador abre.
+- **La postura se interpreta con el empate hacia el lado pesimista.** Un `ufw` activo con `Default: allow (incoming)` no bloquea; deny, reject y lo ilegible cuentan todos como bloqueo, porque decir «vía libre» sin saberlo es el defecto original con otra ropa.
+
+**Por qué no reglas nftables propias.** No funcionan: el `drop` ajeno gana igual, y es la mitad física que esta decisión no toca. Escribirlas daría la misma pantalla verde con una capa más de mentira.
+
+**Por qué no solo avisar.** Es lo que había, y lo medido es que el aviso vive en un log que nadie mira mientras la pantalla dice que la sala está lista. El costo real fue una tarde de dos personas contra un defecto ya conocido por el propio código.
+
+**Por qué no negarse sin salida.** Deja al operador copiando comandos de un mensaje de error hacia una segunda terminal, con la sala caída entre medio. La pregunta con default NO cuesta una tecla y deja el mismo rastro.
+
+**Costos aceptados.** Kanpachi escribe en la configuración del gestor del operador, que es exactamente lo que la doctrina vieja prohibía. Mitigación: solo con consentimiento explícito por cada apertura, solo comandos de una lista cerrada con el adaptador como único parámetro, libro con lo agregado, y deshecho al salir y al arrancar. En Windows nada de esto corre: `InboundBlocked` contesta vacío hasta que ese caso se mida, porque el permiso de entrada ahí ya lo escribe la capa de permisos propia.
+
+**Lo que esta decisión NO cambia.** `SuspendForeign` sigue negando en Linux: suspender una regla ajena sigue siendo escribir en configuración ajena sin una forma de expresarlo que nftables tenga. La decisión 32 sigue diciendo que el almacén de drivers no se toca. Lo único que se abre es la entrada de los dos adaptadores de Kanpachi, jamás un puerto arbitrario.

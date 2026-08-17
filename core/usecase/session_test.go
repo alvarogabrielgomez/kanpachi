@@ -34,7 +34,7 @@ func TestArrancarPurgaLoQueDejóLaEjecuciónAnterior(t *testing.T) {
 func TestCrearSala(t *testing.T) {
 	b := nuevoBanco(t)
 
-	st, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false)
+	st, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestCrearSala(t *testing.T) {
 // defecto en el mismo test: red cifrada, cero puertos abiertos.
 func TestUnaSalaNaceSinJuegoYSinPuertos(t *testing.T) {
 	b := nuevoBanco(t)
-	st, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false)
+	st, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestUnaSalaNaceSinJuegoYSinPuertos(t *testing.T) {
 // identidades de red distintas.
 func TestElSecretoDeLaRedRealNoDerivaDelCódigo(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatal(err)
 	}
 	spec := b.motor.hostSpec
@@ -107,7 +107,7 @@ func TestSinRegistroNoSeCreaLaSala(t *testing.T) {
 	b := nuevoBanco(t)
 	b.registry.err = errors.New("504")
 
-	_, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false)
+	_, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false)
 	if !errors.Is(err, ErrNoRegistry) {
 		t.Fatalf("sin registro la sala se creó igual, o falló por otra cosa: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestSinRegistroNoSeCreaLaSala(t *testing.T) {
 // escribe en la 17, no un detalle de implementación.
 func TestElRegistroRecibeLaTarjetaCifradaYNoElNombre(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatal(err)
 	}
 	depositado := string(b.registry.publicado)
@@ -145,7 +145,7 @@ func TestElRegistroRecibeLaTarjetaCifradaYNoElNombre(t *testing.T) {
 // y lo único que el servidor no recibe.
 func TestElEnlaceLlevaLaClaveDeLaTarjeta(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatal(err)
 	}
 	link := b.session.InviteLink()
@@ -171,13 +171,13 @@ func TestElEnlaceLlevaLaClaveDeLaTarjeta(t *testing.T) {
 
 func TestNoSePuedeEstarEnDosSalas(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Otra", false); !errors.Is(err, ErrBusy) {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Otra", false, false); !errors.Is(err, ErrBusy) {
 		t.Fatalf("se crearon dos salas: %v", err)
 	}
-	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "alvaro"), false); !errors.Is(err, ErrBusy) {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "alvaro"), false, false); !errors.Is(err, ErrBusy) {
 		t.Fatalf("se entró a otra sala teniendo una: %v", err)
 	}
 }
@@ -189,7 +189,7 @@ func TestUnFalloAMitadDeCaminoVuelveAIdle(t *testing.T) {
 	b := nuevoBanco(t)
 	b.motor.errHost = errors.New("el motor no arrancó")
 
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err == nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err == nil {
 		t.Fatal("la creación no falló")
 	}
 	if st := b.session.Status(); st.Conn != domain.StateIdle {
@@ -209,7 +209,7 @@ func lobbyDe(b *bank) netip.Addr {
 func salaCreada(t *testing.T) *bank {
 	t.Helper()
 	b := nuevoBanco(t)
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatal(err)
 	}
 	return b
@@ -330,7 +330,7 @@ func TestElInvitadoAcotaLaCompuertaALaSalaSola(t *testing.T) {
 		VirtualIP: netip.MustParseAddr("100.87.3.5"),
 		Subnet:    netip.MustParsePrefix("100.87.3.0/24"),
 	}
-	if _, err := b.session.JoinRoom(ctx(), "kanpachi://A7K2-M9QX@seed.midominio.com", nick(t, "humberto"), false); err != nil {
+	if _, err := b.session.JoinRoom(ctx(), "kanpachi://A7K2-M9QX@seed.midominio.com", nick(t, "humberto"), false, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -367,7 +367,7 @@ func TestSinCompuertaNoHaySala(t *testing.T) {
 	b := nuevoBanco(t)
 	b.firewall.errBind = errors.New("no se encontró el adaptador")
 
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Prueba", false); err == nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Prueba", false, false); err == nil {
 		t.Fatal("la sala se abrió sin compuerta")
 	}
 	if st := b.session.Status(); st.Conn != domain.StateIdle {
@@ -425,7 +425,7 @@ func TestSoloElHostPuedeLasTresOperaciones(t *testing.T) {
 		VirtualIP: netip.MustParseAddr("100.87.3.5"),
 		Subnet:    netip.MustParsePrefix("100.87.3.0/24"),
 	}
-	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false); err != nil {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -453,7 +453,7 @@ func TestEntrarPasaPorElVestíbuloYSaleDeÉl(t *testing.T) {
 		Subnet:    netip.MustParsePrefix("100.87.3.0/24"),
 	}
 
-	st, err := b.session.JoinRoom(ctx(), "kanpachi://A7K2-M9QX@seed.midominio.com", nick(t, "humberto"), false)
+	st, err := b.session.JoinRoom(ctx(), "kanpachi://A7K2-M9QX@seed.midominio.com", nick(t, "humberto"), false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,7 +482,7 @@ func TestElInvitadoNoAbreElCanalDeControl(t *testing.T) {
 		VirtualIP: netip.MustParseAddr("100.87.3.5"),
 		Subnet:    netip.MustParsePrefix("100.87.3.0/24"),
 	}
-	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false); err != nil {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false, false); err != nil {
 		t.Fatal(err)
 	}
 	b.control.mu.Lock()
@@ -522,7 +522,7 @@ func TestSiElCanalConElHostNoLevantaNoSeEntra(t *testing.T) {
 	// La primera llamada, al vestíbulo, funciona. La segunda, a la sala, no.
 	b.control.fallarDesde = 2
 
-	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false); err == nil {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false, false); err == nil {
 		t.Fatal("se entró sin canal con el host")
 	}
 	if st := b.session.Status(); st.Conn != domain.StateIdle {
@@ -571,7 +571,7 @@ func TestUnaCredencialAMediasSeRechaza(t *testing.T) {
 	b := nuevoBanco(t)
 	b.control.credencial = domain.Credential{ID: "c1"} // sin token, sin IP, sin subred
 
-	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false); err == nil {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false, false); err == nil {
 		t.Fatal("se entró con una credencial incompleta")
 	}
 	if st := b.session.Status(); st.Conn != domain.StateIdle {
@@ -583,7 +583,7 @@ func TestSiElHostNoRespondeElIngresoFalla(t *testing.T) {
 	b := nuevoBanco(t)
 	b.control.errDial = errors.New("conexión rechazada")
 
-	_, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false)
+	_, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false, false)
 	if err == nil {
 		t.Fatal("se entró sin host")
 	}
@@ -594,7 +594,7 @@ func TestSiElHostNoRespondeElIngresoFalla(t *testing.T) {
 
 func TestUnCódigoConFormaRaraNiSiquieraMueveElEstado(t *testing.T) {
 	b := nuevoBanco(t)
-	if _, err := b.session.JoinRoom(ctx(), "no-es-un-código", nick(t, "humberto"), false); err == nil {
+	if _, err := b.session.JoinRoom(ctx(), "no-es-un-código", nick(t, "humberto"), false, false); err == nil {
 		t.Fatal("se aceptó")
 	}
 	if st := b.session.Status(); st.Conn != domain.StateIdle {
@@ -786,7 +786,7 @@ func TestLaSalidaAutomáticaALosVeinteMinutos(t *testing.T) {
 		VirtualIP: netip.MustParseAddr("100.87.3.5"),
 		Subnet:    netip.MustParsePrefix("100.87.3.0/24"),
 	}
-	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false); err != nil {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -972,7 +972,7 @@ func TestUnFalloAlAbrirElCanalDeshaceLoQueYaSeHizo(t *testing.T) {
 	b := nuevoBanco(t)
 	b.control.errServe = errors.New("no se pudo escuchar")
 
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err == nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err == nil {
 		t.Fatal("la creación no falló")
 	}
 	if st := b.session.Status(); st.Conn != domain.StateIdle {
@@ -1037,7 +1037,7 @@ func TestElInvitadoVeAlHostEnLaDirecciónConocida(t *testing.T) {
 		{VirtualIP: netip.MustParseAddr("100.87.3.9"), Name: nick(t, "mallory"), Host: true},
 	}
 
-	st, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false)
+	st, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1072,7 +1072,7 @@ func TestStatusLeeLaCopiaPublicada(t *testing.T) {
 	if st := b.session.Status(); st.Conn != domain.StateIdle {
 		t.Fatalf("antes de la primera publicación: %s", st.Conn)
 	}
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatal(err)
 	}
 	if st := b.session.Status(); st.Conn != domain.StateConnected {
@@ -1096,7 +1096,7 @@ func TestElCódigoLlevaElSeedDelRegistroQueLoEmitió(t *testing.T) {
 	b := nuevoBanco(t)
 	b.registry.seed = "seed.humberto.dev"
 
-	st, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false)
+	st, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1142,7 +1142,7 @@ func TestUnHostModificadoNoPuedeMandarCualquierCredencial(t *testing.T) {
 			caso.muta(&cred)
 			b.control.credencial = cred
 
-			if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false); err == nil {
+			if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false, false); err == nil {
 				t.Fatal("se aceptó")
 			}
 			if st := b.session.Status(); st.Conn != domain.StateIdle {
@@ -1233,7 +1233,7 @@ func TestUnInvitadoNoEmiteCredenciales(t *testing.T) {
 		VirtualIP: netip.MustParseAddr("100.87.3.5"),
 		Subnet:    netip.MustParsePrefix("100.87.3.0/24"),
 	}
-	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false); err != nil {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := b.session.IssueCredentialFor(ctx(), issueReq(t, "otro")); !errors.Is(err, ErrNotHost) {
@@ -1354,7 +1354,7 @@ func salaConInvitado(t *testing.T) *bank {
 		{VirtualIP: netip.MustParseAddr("100.87.3.1"), Name: nick(t, "alvaro")},
 		{VirtualIP: netip.MustParseAddr("100.87.3.5"), Name: nick(t, "humberto")},
 	}
-	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false); err != nil {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false, false); err != nil {
 		t.Fatal(err)
 	}
 	return b
@@ -1531,7 +1531,7 @@ func TestUnaAuditoríaQueFallaNoRompeNada(t *testing.T) {
 			t.Errorf("una auditoría rota inventó un hallazgo que nadie midió: %+v", a)
 		}
 	}
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatalf("una auditoría rota impidió crear la sala: %v", err)
 	}
 }
@@ -1795,7 +1795,7 @@ func TestNoSeEntraAUnaSalaQuePisaLaLANDeCasa(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false); err == nil {
+	if _, err := s.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false, false); err == nil {
 		t.Fatal("se entró a una sala que pisa la LAN de casa")
 	} else if !strings.Contains(err.Error(), "192.168.1.0/24") {
 		t.Errorf("el error no dice qué red se pisaba: %v", err)
@@ -1817,7 +1817,7 @@ func TestDirectPlaySigueAlPerfil(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := s.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatal(err)
 	}
 	if b.netcfg.directPlay {
@@ -1996,7 +1996,7 @@ func TestElMotivoDeSalidaDistingueLosCuatroCaminos(t *testing.T) {
 	t.Run("no se llegó a entrar", func(t *testing.T) {
 		b := nuevoBanco(t)
 		b.control.errDial = errors.New("nadie contesta")
-		if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false); err == nil {
+		if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false, false); err == nil {
 			t.Fatal("entró")
 		}
 		if st := b.session.Status(); st.LastExit != domain.ExitFailed {

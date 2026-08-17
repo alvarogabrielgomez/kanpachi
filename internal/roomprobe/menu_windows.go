@@ -122,7 +122,9 @@ func crearSala(ctx context.Context, e entorno) error {
 	}
 	fmt.Println("\nCreando la sala. Esto tarda; los pasos van al log y a la vista.")
 	err = conPasswordSiHaceFalta(ctx, e, func() error {
-		_, err := e.s.CreateRoom(ctx, nick, nombre, false)
+		// Sin consentimiento de firewall: en Windows InboundBlocked contesta
+		// vacio hasta que el caso se mida, asi que la compuerta no salta.
+		_, err := e.s.CreateRoom(ctx, nick, nombre, false, false)
 		return err
 	})
 	if err == nil {
@@ -167,7 +169,7 @@ func entrarASala(ctx context.Context, e entorno) error {
 	}
 	mirarAntesDeEntrar(ctx, e, pegado)
 	fmt.Println("\nEntrando. Los pasos van al log y a la vista.")
-	_, err = e.s.JoinRoom(ctx, pegado, nick, false)
+	_, err = e.s.JoinRoom(ctx, pegado, nick, false, false)
 	if err == nil {
 		tras := e.s.KnownHosts()
 		e.log.Info("libreta después de entrar", "hosts", len(tras.Hosts))
@@ -264,7 +266,7 @@ func volverALaUltima(ctx context.Context, e entorno) error {
 	fmt.Printf("\nVolviendo a %s...\n", enlace)
 	e.log.Info("volviendo a la última sala", "enlace", enlace,
 		"guardada", last.SavedAt.Format(time.RFC3339))
-	_, err = e.s.JoinRoom(ctx, enlace, nick, false)
+	_, err = e.s.JoinRoom(ctx, enlace, nick, false, false)
 	return err
 }
 

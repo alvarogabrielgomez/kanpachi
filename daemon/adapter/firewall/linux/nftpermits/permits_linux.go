@@ -19,7 +19,7 @@
 //   - AUDITAR también, porque lo ajeno que bloquea o que abre de más es lo único
 //     que queda por decir cuando no se puede tocar.
 //
-// # La regla que gobierna todo este paquete
+// # La regla que gobierna este paquete, y su única excepción
 //
 // **Solo se toca lo nuestro.** Nuestras tablas y nuestro fichero. Lo del
 // operador (ufw, firewalld, las cadenas de Docker, el kernel) se lee, se reporta
@@ -27,6 +27,14 @@
 // decisión que llevó a bifurcar EasyTier: las dos llamadas que se le quitaron
 // escribían reglas permanentes en el firewall del usuario que sobrevivían al
 // proceso.
+//
+// La excepción es la decisión 36, y vive en `foreignopen_linux.go`: un gestor
+// ajeno que va a tragarse la entrada de los adaptadores de la sala se abre con
+// el CLI del propio gestor, SOLO con consentimiento explícito sobre los
+// comandos exactos, con cada apertura anotada en un libro y deshecha al salir
+// y al arrancar. Nada más de lo ajeno se toca, y las dos llamadas del fork
+// siguen tan quitadas como siempre: la diferencia entre aquello y esto es que
+// aquello escribía sin preguntar y sin deshacer.
 package nftpermits
 
 import (

@@ -541,6 +541,13 @@ func NewSession(ctx context.Context, d Deps) (*Session, error) {
 		// estado que se pudo corromper.
 		d.Log.Warn("no se pudieron restaurar las reglas ajenas suspendidas", "error", err)
 	}
+	if err := d.Firewall.WithdrawAdapters(ctx); err != nil {
+		// Same regime as RestoreForeign, same tolerance: a dirty death left
+		// doors open in the operator's firewall, and paying that debt cannot
+		// be the reason the service refuses to start. What could not be closed
+		// stays in the book and is retried on the next start.
+		d.Log.Warn("no se pudo cerrar lo abierto en el firewall ajeno", "error", err)
+	}
 	s.reloadCatalog(ctx)
 	s.loadSavedRoom()
 	s.loadLast()
@@ -971,6 +978,15 @@ func (s *Session) teardown(ctx context.Context) {
 	if err := s.deps.Firewall.RestoreForeign(ctx); err != nil {
 		s.deps.Log.Error("no se pudieron restaurar las reglas ajenas", "error", err)
 		s.deps.Progress.Step(domain.ScopeFirewall, "no se pudieron restaurar las reglas ajenas: "+err.Error())
+	}
+	// The doors opened in the FOREIGN firewall close with the room, next to
+	// RestoreForeign because it is the same debt regime: what got touched with
+	// consent goes back the moment the reason is gone. A failure stays in the
+	// book and the next service start retries it.
+	s.deps.Progress.Step(domain.ScopeFirewall, "cerrando lo abierto en el firewall ajeno")
+	if err := s.deps.Firewall.WithdrawAdapters(ctx); err != nil {
+		s.deps.Log.Error("no se pudo cerrar lo abierto en el firewall ajeno", "error", err)
+		s.deps.Progress.Step(domain.ScopeFirewall, "no se pudo cerrar lo abierto en el firewall ajeno: "+err.Error())
 	}
 	// La compuerta se suelta DESPUÉS de cerrar los puertos, y ese orden es el
 	// mismo argumento de arriba llevado a la otra capa: al revés quedaría un

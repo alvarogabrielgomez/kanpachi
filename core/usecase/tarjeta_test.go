@@ -161,7 +161,7 @@ func TestCrearSinRegistroNoGuardaNada(t *testing.T) {
 	b := nuevoBanco(t)
 	b.registry.err = errors.New("el registro no está")
 
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); !errors.Is(err, ErrNoRegistry) {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); !errors.Is(err, ErrNoRegistry) {
 		t.Fatalf("sin registro se creó la sala, o falló por otra cosa: %v", err)
 	}
 	if raw, err := b.state.LoadRoom(); err == nil && len(raw) > 0 {

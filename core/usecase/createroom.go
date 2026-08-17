@@ -29,7 +29,7 @@ import (
 // It goes through the same gate as entering somebody else's room, because it is
 // the same question: see [Session.clearTheWayLocked].
 func (s *Session) CreateRoom(
-	ctx context.Context, nick domain.Nickname, roomName string, replace bool,
+	ctx context.Context, nick domain.Nickname, roomName string, replace, allowFirewall bool,
 ) (estado domain.RoomState, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -41,6 +41,13 @@ func (s *Session) CreateRoom(
 	}
 	if nick.IsZero() {
 		return domain.RoomState{}, domain.ErrNicknameEmpty
+	}
+	// The foreign-firewall gate, before the state machine moves: a ufw denying
+	// inbound means a room that assembles and nobody enters, so it refuses in
+	// the first second or opens with the consent that already came. See
+	// [Session.firewallGateLocked].
+	if err := s.firewallGateLocked(ctx, allowFirewall); err != nil {
+		return domain.RoomState{}, err
 	}
 
 	// A partir de acá la operación se puede cancelar desde la pantalla. Ver

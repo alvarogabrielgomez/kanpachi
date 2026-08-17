@@ -23,7 +23,7 @@ func salaDeInvitado(t *testing.T) (*bank, netip.Addr) {
 		VirtualIP: yo,
 		Subnet:    netip.MustParsePrefix("100.87.3.0/24"),
 	}
-	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false); err != nil {
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false, false); err != nil {
 		t.Fatal(err)
 	}
 	b.motor.peers = []domain.Peer{

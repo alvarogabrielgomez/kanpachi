@@ -14,7 +14,7 @@ func TestShuttingDownKeepsTheRoomToReopenIt(t *testing.T) {
 	// so the file stays and the next start reopens it with the SAME code, which
 	// is what keeps the links already handed out working.
 	b := nuevoBanco(t)
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatal(err)
 	}
 	if len(b.state.salaGuardada()) == 0 {
@@ -39,7 +39,7 @@ func TestClosingTheRoomDoesClearIt(t *testing.T) {
 	// no se borra nunca: cerrar la sala SÍ se lo lleva, porque ahí la sala se
 	// acabó de verdad. Es lo único que lo borra.
 	b := nuevoBanco(t)
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatal(err)
 	}
 	if len(b.state.salaGuardada()) == 0 {
@@ -62,7 +62,7 @@ func TestShuttingDownDoesNotTellTheMembersTheRoomClosed(t *testing.T) {
 	// room exists to allow. What they see is the host absent, and the
 	// twenty-minute counter already covers that.
 	b := nuevoBanco(t)
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatal(err)
 	}
 	b.control.avisos = nil
@@ -84,7 +84,7 @@ func TestShuttingDownReportsRulesThatSurvived(t *testing.T) {
 	// una alerta del estado, y el proceso se muere justo después: una alerta
 	// añadida a un estado que nadie va a leer no es un informe.
 	b := nuevoBanco(t)
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatal(err)
 	}
 	b.audit.tamper()
@@ -102,7 +102,7 @@ func TestShuttingDownReportsBlindness(t *testing.T) {
 	// Ciego y limpio no son lo mismo, y confundirlos acá es el peor sitio
 	// posible: es la última medición que se hace en la vida del proceso.
 	b := nuevoBanco(t)
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatal(err)
 	}
 	b.audit.errIntactas = errors.New("no se pudo enumerar")
@@ -124,7 +124,7 @@ func TestShuttingDownIsIdempotent(t *testing.T) {
 	if err := b.session.LeaveRoomOnShutdown(ctx()); err != nil {
 		t.Fatalf("apagar sin sala abierta informó un problema: %v", err)
 	}
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := b.session.LeaveRoomOnShutdown(ctx()); err != nil {
@@ -139,7 +139,7 @@ func TestShuttingDownClosesThePortsBeforeMeasuring(t *testing.T) {
 	// El orden importa: medir antes de cerrar encontraría las reglas de la sala
 	// todavía puestas y llamaría a eso un apagado sucio, en cada apagado.
 	b := nuevoBanco(t)
-	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false); err != nil {
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := b.session.ActivateProfile(ctx(), "project-zomboid"); err != nil {

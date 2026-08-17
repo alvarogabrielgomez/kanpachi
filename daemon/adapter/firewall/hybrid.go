@@ -17,10 +17,12 @@
 // # En Linux la segunda capa hace las dos cosas, y este fichero no cambia
 //
 // nftables sí expresa "denegar salvo esto" en una tabla propia, así que la
-// compuerta se basta sola. La capa que abre queda como AUDITORÍA: en Linux
-// nadie puede abrir por encima del `drop` de un ufw o un firewalld, así que se
-// reporta y no se toca. La cuarentena de base sigue siendo suya, porque es lo
-// único que tiene que sobrevivir a Kanpachi apagado.
+// compuerta se basta sola. La capa que abre queda como AUDITORÍA, más la única
+// excepción de la decisión 36: en Linux nadie puede abrir por encima del
+// `drop` de un ufw o un firewalld desde una tabla propia, así que cuando uno
+// bloquea la sala se le pide con SU CLI, con consentimiento explícito y libro.
+// La cuarentena de base sigue siendo suya, porque es lo único que tiene que
+// sobrevivir a Kanpachi apagado.
 //
 // La composición no se entera de nada de eso, y ese es el punto: sigue siendo
 // intersección, sigue habiendo un orden correcto, y [Permits] sigue siendo el

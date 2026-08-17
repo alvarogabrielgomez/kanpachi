@@ -16,7 +16,10 @@ package nftpermits
 //     el operador ve una sala perfectamente montada donde no entra nadie y no
 //     tiene dónde mirar.
 //
-// Se reporta con el comando exacto para resolverlo, y no se ejecuta ninguno.
+// Se reporta con el comando exacto para resolverlo, y desde ACÁ no se ejecuta
+// ninguno. Ejecutarlos existe, con consentimiento y libro, en
+// `foreignopen_linux.go` (decisión 36): auditar y abrir siguen siendo dos
+// caminos separados a propósito, y este es el que jamás escribe.
 
 import (
 	"bufio"

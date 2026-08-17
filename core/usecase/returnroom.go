@@ -180,7 +180,13 @@ func (s *Session) Return(ctx context.Context) {
 	// `replace` is false, and firmly. An automatic return never displaces
 	// anything: if somebody is in a room by now, this attempt is the one that
 	// gives way. It comes back as [ErrBusy] and gets no turn.
-	_, err := s.JoinRoom(ctx, code, last.Nick, false)
+	//
+	// `allowFirewall` is false for the same reason: an automatic path cannot
+	// consent to touching the operator's firewall. If one blocks, the refusal
+	// lands in the default branch below and the return keeps trying at its own
+	// pace, which is right: the block is transient the moment the operator
+	// opens it, and the sweep's [domain.AlertForeignRule] says why meanwhile.
+	_, err := s.JoinRoom(ctx, code, last.Nick, false, false)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
