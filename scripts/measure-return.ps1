@@ -250,7 +250,11 @@ if ($Deploy) {
     }
     else { Ok 'published package already installed' }
 
-    Host-Try 'sudo -n systemctl stop kanpachid kanpseed-registry' | Out-Null
+    # One unit per command: the sudoers lines match exact arguments, so the
+    # two-unit form gets refused and Host-Try swallows it — measured 2026-08-17
+    # as a daemon still running a build from three deploys earlier.
+    Host-Try 'sudo -n systemctl stop kanpachid' | Out-Null
+    Host-Try 'sudo -n systemctl stop kanpseed-registry' | Out-Null
     Native { & scp -q (Join-Path $buildDir 'linux/kanpachid') "${Droplet}:/tmp/kanpachid" } | Out-Null
     Native { & scp -q (Join-Path $buildDir 'linux/kanpachi') "${Droplet}:/tmp/kanpachi" } | Out-Null
     Native { & scp -q (Join-Path $buildDir 'kanpseed-linux-amd64') "${Droplet}:/tmp/kanpseed" } | Out-Null
@@ -271,9 +275,13 @@ if ($Deploy) {
     }
     else { Note 'no rebuilt engine in the build dir; the packaged one stays' }
 
+    # The daemon comes back too. It was missing, and what that buys is a deploy
+    # that replaces the file and keeps the OLD process serving: every check
+    # after it measures a build that is not the one on disk.
+    Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
     Host-Run 'sudo -n systemctl start kanpseed-registry' | Out-Null
-    Ok 'kanpachid, kanpachi and kanpseed replaced, registry back up'
-    Info (Host-Run 'sudo -n systemctl is-active kanpseed-registry; /usr/bin/kanpachi version 2>/dev/null || true').Trim()
+    Ok 'kanpachid, kanpachi and kanpseed replaced, both services back up'
+    Info (Host-Run 'sudo -n systemctl is-active kanpachid; sudo -n systemctl is-active kanpseed-registry; /usr/bin/kanpachi version 2>/dev/null || true').Trim()
 
     # El host tiene que saber a QUIEN pedirle un codigo, y una instalacion recien
     # hecha no lo sabe: desde que no hay seed compilado por defecto, `host` sin
@@ -294,7 +302,11 @@ if ($Restore) {
         Native { & gh release download --pattern 'kanpachi-amd64.deb' --output $deb --clobber } | Out-Null
     }
     Native { & gh release download --pattern 'kanpseed-linux-amd64' --output (Join-Path $buildDir 'kanpseed-released') --clobber } | Out-Null
-    Host-Try 'sudo -n systemctl stop kanpachid kanpseed-registry' | Out-Null
+    # One unit per command: the sudoers lines match exact arguments, so the
+    # two-unit form gets refused and Host-Try swallows it — measured 2026-08-17
+    # as a daemon still running a build from three deploys earlier.
+    Host-Try 'sudo -n systemctl stop kanpachid' | Out-Null
+    Host-Try 'sudo -n systemctl stop kanpseed-registry' | Out-Null
     Native { & scp -q $deb "${Droplet}:/tmp/kanpachi-released.deb" } | Out-Null
     Native { & scp -q (Join-Path $buildDir 'kanpseed-released') "${Droplet}:/tmp/kanpseed" } | Out-Null
     Host-Run ('sudo -n dpkg -i /tmp/kanpachi-released.deb' +
