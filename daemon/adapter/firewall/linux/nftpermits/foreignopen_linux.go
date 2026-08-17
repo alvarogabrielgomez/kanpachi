@@ -124,6 +124,14 @@ func roomAdapters() []string {
 // to the pessimistic side: whatever cannot be read counts as blocking, because
 // saying "clear" without knowing is the original defect in new clothes.
 func (p *Permits) InboundBlocked(ctx context.Context) ([]domain.FirewallBlock, error) {
+	return InboundBlocks(ctx)
+}
+
+// InboundBlocks is the detection itself, exported because the doctor asks the
+// SAME question from outside the daemon: one implementation, or the check the
+// product runs and the check the doctor runs drift into answering two
+// different things.
+func InboundBlocks(ctx context.Context) ([]domain.FirewallBlock, error) {
 	var out []domain.FirewallBlock
 	for _, g := range openers {
 		block, err := inboundBlockOf(ctx, g)
@@ -263,6 +271,14 @@ func firewalldBlock(ctx context.Context, unit, shown string) (*domain.FirewallBl
 // passes is neither touched nor booked, which is why undo can never take an
 // operator's rule away.
 func (p *Permits) AllowAdapters(ctx context.Context, blocks []domain.FirewallBlock) error {
+	return AllowBlocked(ctx, blocks, p.log)
+}
+
+// AllowBlocked is the opening itself, exported for the doctor's --fix: the
+// person typing --fix after reading the verdict that names the commands is
+// the same consent the room's question collects, and using one implementation
+// keeps the book as the single ledger no matter which door opened it.
+func AllowBlocked(ctx context.Context, blocks []domain.FirewallBlock, log Logger) error {
 	if len(blocks) == 0 {
 		return nil
 	}
@@ -288,7 +304,7 @@ func (p *Permits) AllowAdapters(ctx context.Context, blocks []domain.FirewallBlo
 				return fmt.Errorf("opening %s for %s: %w", b.Manager, adapter, err)
 			}
 			book = append(book, allowEntry{Manager: b.Manager, Adapter: adapter, Since: time.Now()})
-			p.log.Info("firewall ajeno abierto con consentimiento",
+			log.Info("firewall ajeno abierto con consentimiento",
 				"gestor", b.Manager, "adaptador", adapter, "libro", AllowsBook)
 		}
 	}

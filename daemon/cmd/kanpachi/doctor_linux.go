@@ -312,19 +312,45 @@ func chequeoDelDirectorioDelCanal() chequeo {
 	}
 }
 
-// ─── Lo del operador, que se mira y no se toca ───────────────────────────────
+// ─── Lo del operador, que se mira y casi nunca se toca ───────────────────────
 
 // chequeoDeFirewallsAjenos busca lo que puede estar cerrando por encima nuestro.
 //
-// **No tiene arreglo, y esa ausencia es la regla.** Kanpachi no puede abrir por
-// encima de un `drop` ajeno —netfilter no lo permite, por la misma propiedad que
-// hace fuerte a nuestra compuerta— y tocarle la configuración del firewall a
-// quien administra el servidor no es una opción. Se nombra, se dice el comando
-// con el que lo miraría él, y se para ahí.
+// # Este chequeo tiene la ÚNICA excepción a "lo ajeno no se arregla"
+//
+// Un gestor que va a tragarse la entrada de los adaptadores de la sala es MAL,
+// con arreglo: `--fix` corre exactamente los comandos que el veredicto nombra,
+// por el mismo camino con libro que usa la pregunta de `kanpachi host`, y lo
+// abierto se cierra al terminar la sala o en el próximo arranque. Escribir
+// `--fix` después de leer el veredicto ES el consentimiento, igual de
+// explícito que contestar la pregunta. Ver la decisión 36.
+//
+// Lo demás sigue como siempre: un gestor activo que hoy no bloquea, o una
+// cadena de Docker, se nombran y no se tocan. Netfilter sigue sin dejarnos
+// abrir por encima de un `drop` ajeno desde nuestra tabla; abrir es pedírselo
+// al CLI del gestor, jamás pisarlo.
 func chequeoDeFirewallsAjenos() chequeo {
 	return chequeo{
 		nombre: "firewalls that are not ours",
 		mirar: func(ctx context.Context, _ opciones) veredicto {
+			bloqueos, err := nftpermits.InboundBlocks(ctx)
+			if err != nil {
+				return noSeSabe("could not read their posture: %v", err)
+			}
+			if len(bloqueos) > 0 {
+				partes := make([]string, 0, len(bloqueos))
+				var comandos []string
+				for _, b := range bloqueos {
+					partes = append(partes, b.String())
+					comandos = append(comandos, b.Fix...)
+				}
+				return fallar("%s. A room would assemble and nobody would get in",
+					strings.Join(partes, "; ")).
+					con("By hand: " + strings.Join(comandos, " && ") + "\n" +
+						"`kanpachi doctor --fix` runs exactly that, writes it down, and it is\n" +
+						"undone when the room closes or on the next service start.")
+			}
+
 			encontrados := []string{}
 			if strings.Contains(salidaDe(ctx, "ufw", "status"), "Status: active") {
 				encontrados = append(encontrados, "ufw")
@@ -339,13 +365,29 @@ func chequeoDeFirewallsAjenos() chequeo {
 			if len(encontrados) == 0 {
 				return ok("none is active")
 			}
-			return avisar("there is %s. Kanpachi can NOT open above its block",
+			return avisar("there is %s, not blocking the room today. Its policy can change",
 				strings.Join(encontrados, ", ")).
 				con("Look yourself: ufw status verbose / firewall-cmd --list-all / nft list ruleset\n" +
-					"Kanpachi does not touch this, not even with --fix.")
+					"Kanpachi only ever touches these to let its own two adapters in, with consent.")
+		},
+		arreglar: func(ctx context.Context, _ opciones) error {
+			bloqueos, err := nftpermits.InboundBlocks(ctx)
+			if err != nil {
+				return err
+			}
+			return nftpermits.AllowBlocked(ctx, bloqueos, logDelDoctor{})
 		},
 	}
 }
+
+// logDelDoctor is the sliver of logger AllowBlocked wants. The doctor's
+// answer is the re-measured verdict, so the daemon-style log lines go nowhere
+// on purpose: printing them twice would say more than what was measured.
+type logDelDoctor struct{}
+
+func (logDelDoctor) Info(string, ...any)  {}
+func (logDelDoctor) Warn(string, ...any)  {}
+func (logDelDoctor) Error(string, ...any) {}
 
 // ─── Correr cosas ────────────────────────────────────────────────────────────
 

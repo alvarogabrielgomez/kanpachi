@@ -276,9 +276,11 @@ jobs:
             game ports closed from the internet **with Kanpachi switched off**.
 
             `sudo kanpachi doctor` checks the machine and writes nothing;
-            `--fix` repairs only what belongs to Kanpachi and never touches ufw,
-            firewalld or Docker. `sudo kanpachi upgrade` brings the next
-            version.
+            `--fix` repairs what belongs to Kanpachi, and the one foreign thing
+            it touches — a ufw or firewalld about to swallow the room — it
+            opens only for Kanpachi's two adapters, says so, writes it down,
+            and undoes it when the room closes. Docker and everything else
+            stay untouched. `sudo kanpachi upgrade` brings the next version.
 
             The SHA256 is in `SHA256SUMS-linux`, which is built in its own job:
 

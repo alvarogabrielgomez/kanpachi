@@ -504,6 +504,7 @@ Lectura rápida:
 | Peer en ámbar (relay) con lag | NAT simétrico o CGNAT en una de las puntas. El juego funciona, con más latencia |
 | "Sin conexión con el servidor de encuentro" | Droplet caído o 11010 bloqueado. Revisar el contenedor y el Cloud Firewall |
 | Sala vacía tras pegar el código | Código mal copiado, o versiones de esquema distintas entre clientes |
+| **La sala se monta perfecta en Linux y no entra nadie** | Un firewall del operador (ufw, firewalld) denegando la entrada de `kanpachi0`/`kanpachi1`. Desde la decisión 36 `kanpachi host` y `join` lo dicen en el primer segundo y preguntan si abrirlo; con la sala ya abierta lo dice la alerta de regla ajena, y `kanpachi doctor` lo marca MAL con el arreglo en `--fix` |
 | Todo en verde y el juego no ve la partida | Perfil del juego: falta `lan_discovery`, falta `broadcast_route`, o el juego usa puertos distintos a los del perfil |
 | **Conecta y se cuelga al cargar el mundo** | **MTU.** Los paquetes chicos pasan y los grandes desaparecen en silencio. Típico en PPPoE (1492) o móvil. `Diagnostics` muestra el MTU efectivo |
 | **Ayer funcionaba y hoy no, sin cambiar nada** | Windows revirtió métrica o categoría en un evento de identificación de red y el servicio no estaba corriendo para reaplicar |

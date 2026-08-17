@@ -19,14 +19,22 @@ package main
 // Arreglar es `doctor --fix`. Un diagnóstico que modifica la máquina no se puede
 // correr para entender qué pasa, que es exactamente para lo que se corre.
 //
-// # La regla del arreglo: solo se toca lo NUESTRO
+// # La regla del arreglo: solo se toca lo NUESTRO, con una excepción anotada
 //
 // Nuestras unidades, nuestras tablas, nuestro socket, nuestro nodo de
-// dispositivo. Lo del operador —ufw, firewalld, Docker, el kernel— se reporta
-// con el comando exacto y no se ejecuta jamás, ni con `--fix`. Es la misma regla
-// que hace que `SuspendForeign` niegue en Linux y la misma que llevó a bifurcar
-// EasyTier: las dos llamadas que se le quitaron escribían reglas permanentes en
-// el firewall de quien lo corría.
+// dispositivo. Lo del operador —Docker, el kernel, y todo gestor que hoy no
+// bloquee la sala— se reporta con el comando exacto y no se ejecuta, ni con
+// `--fix`. Es la misma regla que hace que `SuspendForeign` niegue en Linux y la
+// misma que llevó a bifurcar EasyTier: las dos llamadas que se le quitaron
+// escribían reglas permanentes en el firewall de quien lo corría.
+//
+// La excepción es la decisión 36, y es una sola: un ufw o un firewalld que va
+// a tragarse la entrada de los DOS adaptadores de Kanpachi se abre con `--fix`,
+// por el mismo camino con libro que usa la pregunta de `kanpachi host`, y se
+// deshace al cerrar la sala o en el próximo arranque. Escribir `--fix` después
+// de leer el veredicto que nombra los comandos ES el consentimiento. La
+// diferencia con lo del fork es total: aquello escribía sin preguntar y sin
+// deshacer.
 
 import (
 	"context"
