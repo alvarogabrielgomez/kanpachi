@@ -515,14 +515,17 @@ $scenarios = @(
         run   = {
             if (-not (Peer-InRoom)) { throw 'scenario 10 needs the guest in a room; run 8 and 9 first' }
             # After the laps of 8 and 9 the old code accumulated one address per
-            # re-entry, 73 measured. The rule must now hold exactly one remote:
-            # this guest, at its one address.
-            $exp = Host-Run 'sudo -n kanpachi exposure'
-            $control = ($exp -split "`n" | Where-Object { $_ -match 'canal de control' }) -join ' '
-            $remotes = [regex]::Matches($control, '\d+\.\d+\.\d+\.\d+') |
-            ForEach-Object { $_.Value } | Where-Object { $_ -ne (Host-Json 'status').local_ip } | Select-Object -Unique
-            Info "control rule: $($control.Trim())"
-            Check "one remote address on the control rule, not an accumulation (saw $($remotes.Count))" ($remotes.Count -eq 1)
+            # re-entry, 73 measured. There are TWO control rules: the gate,
+            # which opens the lobby /24 and is structural, and the room rule,
+            # whose members list is exactly where the 73 piled up. That list
+            # must now hold this one guest and nobody else.
+            $guestIp = (Peer-Json 'status').local_ip
+            $exp = Host-Json 'exposure'
+            $members = @($exp.ports | Where-Object { $_.control } | ForEach-Object { $_.members }) |
+            Where-Object { $_ } | ForEach-Object { ($_ -split '/')[0] } | Select-Object -Unique
+            Info "control members: [$($members -join ', ')], guest at $guestIp"
+            Check "the room control rule holds exactly this guest (saw $($members.Count))" (
+                $members.Count -eq 1 -and $members[0] -eq $guestIp)
         }
     }
 
@@ -531,6 +534,12 @@ $scenarios = @(
         name  = 'a kicked member returns as a stranger: new address, nothing handed back'
         run   = {
             if (-not (Peer-InRoom)) { throw 'scenario 11 needs the guest in a room; run 8 first' }
+            # Each scenario runs in its own process, so $script:code from 8 is
+            # not here: an empty code made the return join die with `usage`.
+            if (-not $script:code) {
+                $h = Host-Json 'status'
+                $script:code = $h.code + '@' + $h.seed
+            }
             $ipBefore = (Peer-Json 'status').local_ip
             $returnedBefore = Host-Count 'credencial devuelta al que vuelve'
 
