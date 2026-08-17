@@ -64,9 +64,16 @@ StateDirectoryMode=0700
 ConfigurationDirectory=kanpachi
 ConfigurationDirectoryMode=0755
 
-# El resto del sistema, de solo lectura. `ReadWritePaths` abre las tres que sí.
+# El resto del sistema, de solo lectura. `ReadWritePaths` abre las que sí.
+# /etc/ufw y /var/lib/ufw son de la decisión 36: abrir el firewall ajeno con
+# consentimiento es pedirle a `ufw` que escriba SUS ficheros de reglas, y con
+# /etc de solo lectura el ufw que este proceso invoca falla con "user.rules is
+# not writable". Se abre lo que ufw escribe, no /etc entero.
 ProtectSystem=strict
-ReadWritePaths=/etc/kanpachi /var/lib/kanpachi
+# El guion delante de las de ufw: en una máquina sin ufw esas carpetas no
+# existen, y sin el guion systemd se niega a montar el namespace y la unidad
+# entera no arranca.
+ReadWritePaths=/etc/kanpachi /var/lib/kanpachi -/etc/ufw -/var/lib/ufw
 # `read-only` y no `yes`: la detección de Steam mira los directorios de los
 # usuarios, y con `yes` los vería vacíos y contestaría "no hay Steam", que es
 # una respuesta creíble y falsa. Ver `root_linux.go`.
