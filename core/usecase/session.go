@@ -806,6 +806,95 @@ func (s *Session) applyPolicy(ctx context.Context) error {
 	return s.applyRuleSetLocked(ctx, desired)
 }
 
+// applyPolicyIfChanged aplica solo si el conjunto deseado no es el mismo que se
+// aplicó la última vez, y contesta si aplicó.
+//
+// # Por qué existe al lado de applyPolicy, y no dentro
+//
+// Porque [Session.applyPolicy] es también el que REPARA. `Apply` calcula su
+// diferencia contra las reglas VIVAS del sistema, así que reaplicar el mismo
+// conjunto repone lo que alguien borró por fuera, y de eso dependen el barrido
+// del canario y la comprobación de la decisión 19. Un salto metido dentro de
+// applyPolicy apagaría la autorreparación entera, que es lo contrario de lo que
+// se busca. Por eso hay dos métodos y el de siempre queda intacto: los once
+// llamadores que reparan siguen llamando al que aplica siempre, y solo el sitio
+// de alta frecuencia llama a este.
+//
+// # El sitio de alta frecuencia, medido
+//
+// [Session.onPeersChangedLocked], que corre por cada evento del motor. Medido
+// el 2026-08-17 en el droplet: crear una sala son 19 aplicaciones de nftables,
+// hasta 31 dentro de un mismo segundo de reloj, separadas por lo que tarda cada
+// una (16 ms con 3 reglas, 23 ms con 7), todas con el conjunto idéntico. En
+// reposo son cero, así que el gasto está concentrado entero en las transiciones,
+// que es justo cuando el daemon tiene trabajo de verdad que hacer. En Windows
+// cada aplicación enumera la tienda ENTERA de reglas por COM, dos veces, y eso
+// son 152 ms medidos sobre 1157 reglas: casi seis segundos de leer el firewall
+// de punta a punta por transición.
+//
+// # Por qué la firma es la condición correcta
+//
+// El conjunto deseado se calcula entero desde el perfil, el rol y los miembros
+// presentes, y las reglas del canal de control van DENTRO, con sus
+// destinatarios. O sea que la firma cambia ante todo lo que tiene que provocar
+// un cambio, y no cambia cuando el motor repite lo que ya se sabía.
+//
+// El estado es `s.appliedRules`, que ya existía para el log y solo se escribe
+// tras un `Apply` EXITOSO: un fallo deja la firma vieja puesta y el evento
+// siguiente reintenta gratis. Se limpia al salir de la sala, y también al
+// reatar la compuerta a un adaptador nuevo, ver [Session.bindRoomLocked].
+//
+// Asume el candado tomado.
+func (s *Session) applyPolicyIfChanged(ctx context.Context) (bool, error) {
+	desired, err := s.desiredRuleSetLocked()
+	if err != nil {
+		return false, err
+	}
+	if ruleSignature(desired) == s.appliedRules {
+		return false, nil
+	}
+	if err := s.applyRuleSetLocked(ctx, desired); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// bindRoomLocked ata la compuerta a los adaptadores de esta sala y OLVIDA la
+// firma aplicada.
+//
+// El olvido es la mitad que importa. La firma describe un conjunto de reglas, y
+// las reglas se aplican contra el adaptador al que la compuerta está atada: tras
+// reatar, el mismo texto describe otra cosa. Sin limpiarla, el primer evento
+// después de un reatado casaría con la firma vieja y se saltaría la aplicación
+// que pone las reglas donde ahora hay que ponerlas. Un contador de reataduras
+// sería lo mismo con un campo más y una forma más de olvidarse de subirlo.
+//
+// Los siete sitios que atan pasan por acá para que ese olvido no dependa de que
+// alguien lo recuerde.
+//
+// Asume el candado tomado.
+func (s *Session) bindRoomLocked(
+	ctx context.Context, room, lobby netip.Prefix, with domain.RoomBinding,
+) error {
+	if err := s.deps.Firewall.BindRoom(ctx, room, lobby, with); err != nil {
+		return err
+	}
+	s.appliedRules = ""
+	return nil
+}
+
+// ruleSignature es cómo se compara un conjunto de reglas contra otro.
+//
+// Una sola versión del cálculo, compartida por el gate y por el log, porque dos
+// serían las dos versiones que derivan: el día que una cambiara, el log diría
+// que las reglas cambiaron y el gate creería que no, y el síntoma sería una
+// sala sin las reglas que su propio log afirma haber puesto.
+//
+// `%v` sobre las reglas y no un hash: vienen ordenadas por nombre, y sus
+// destinatarios por dirección, así que el mismo conjunto imprime siempre igual.
+// Un hash sería lo mismo con más código.
+func ruleSignature(rs domain.RuleSet) string { return fmt.Sprintf("%v", rs.Rules) }
+
 // desiredRuleSetLocked calcula el estado deseado sin aplicarlo.
 //
 // Existe separado porque hay DOS consumidores del mismo cálculo: aplicarlo, y
@@ -887,11 +976,9 @@ func (s *Session) applyRuleSetLocked(ctx context.Context, desired domain.RuleSet
 	// el conjunto cambió porque entró alguien o se eligió un juego, queda
 	// enterrada entre cuatro que dicen lo mismo de antes.
 	//
-	// La firma se arma con `%v` sobre las reglas y no con un campo aparte:
-	// vienen ordenadas por nombre, y sus destinatarios por dirección, así que
-	// el mismo conjunto imprime siempre igual. Un hash sería lo mismo con más
-	// código.
-	if firma := fmt.Sprintf("%v", desired.Rules); firma != s.appliedRules {
+	// La firma sale de [ruleSignature], que es la MISMA que decide si hace falta
+	// aplicar. Ver allá por qué no puede haber dos.
+	if firma := ruleSignature(desired); firma != s.appliedRules {
 		s.appliedRules = firma
 		s.deps.Log.Info("cambiaron las reglas del firewall",
 			"juego", s.state.Game.ID, "rol", s.state.Role.String(), "reglas", len(desired.Rules))

@@ -29,6 +29,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Fixed
 
+- Stop rewriting the whole firewall twenty or thirty times a second while a room is being opened or a member is joining. The network engine reports its peers in bursts, and each report rebuilt and re-applied a rule set identical to the one already installed: measured at 19 applications per room opened, 31 inside a single second, 2221 across a day at the bench, and zero while a room sits still. On Windows each one of those reads the machine's entire firewall rule store twice — 152 ms over 1157 rules — so a burst was seconds of work for nothing, on the exact kind of pattern an antivirus watches. Rules that somebody deletes behind Kanpachi's back are still put back, by the sweep that exists for that
+
 - Stop the room card handing out an address that leads nowhere. When the host was not in the members table — a reconnection, a host that just went down, a list still arriving — the card fell back to the FIRST member in the list, anybody at all, including yourself, and painted their address as the game's, with a Copy button next to it and no error anywhere. It now says it is waiting for the host
 - See who hosts the room on the card instead of `host: —`, which is what it said every single time: the name was read from a field nothing ever filled, while the answer sat in the members list on the same screen
 - Recognise a blocking foreign firewall in the window too, instead of it arriving as an error the app had no name for

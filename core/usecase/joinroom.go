@@ -183,7 +183,7 @@ func (s *Session) JoinRoom(
 	// escribe permisos, y también necesita quién los acote frente a los demás
 	// miembros de la sala. Va con la SALA SOLA: el vestíbulo se soltó unas
 	// líneas más arriba, a propósito, y ya no existe adaptador que acotar.
-	if err := s.deps.Firewall.BindRoom(ctx, cred.Subnet, netip.Prefix{}, domain.BindRoomOnly); err != nil {
+	if err := s.bindRoomLocked(ctx, cred.Subnet, netip.Prefix{}, domain.BindRoomOnly); err != nil {
 		return domain.RoomState{}, fmt.Errorf("acotando la contención a la sala: %w", err)
 	}
 

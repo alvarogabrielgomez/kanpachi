@@ -119,7 +119,7 @@ func (s *Session) RotateInviteCode(ctx context.Context) (domain.RoomState, error
 	// dirección virtual no casa con una regla acotada por adaptador. Está medido
 	// en la cabecera de [gate.Scope]. O sea que saltarse esto abre justo la
 	// puerta por donde llega gente que todavía no es miembro.
-	if err := s.deps.Firewall.BindRoom(
+	if err := s.bindRoomLocked(
 		ctx, s.state.Subnet, rdv.LobbySubnet(), domain.BindRoomAndLobby,
 	); err != nil {
 		return domain.RoomState{}, fmt.Errorf("acotando la contención al vestíbulo nuevo: %w", err)

@@ -39,6 +39,8 @@ Y tres cosas que la guía ni menciona porque no son configurables en EasyTier:
 
 - **Cuarentena por defecto**, que es lo contrario de una LAN plana. En EasyTier, estar en la red significa alcanzarse en todos los puertos, y esa es exactamente la propiedad que este producto existe para no tener.
 - **El catálogo de juegos.** Nadie tiene que saber que Project Zomboid habla UDP 16261-16262. El perfil lo dice, y hay puertos que **ningún** perfil puede pedir, con 445 y 3389 a la cabeza.
+
+  **El catálogo es editable, y el techo de un perfil trucho es acotado a propósito:** lo peor que consigue es que un miembro presente de esa sala alcance un puerto tuyo por el túnel, jamás exposición a internet, y para eso te hace falta importarlo, entrar a su sala, tener algo escuchando ahí, y no mirar la pantalla que lo lista. La cadena entera, con lo que la corta en cada paso, está en `03-arquitectura.md`.
 - **Que se cierre solo.** Los cortes automáticos de la decisión 26 no existen en un motor de red: nadie cierra tus puertos porque el host se fue hace veinte minutos.
 
 **Lo honesto también:** todo esto lo puede hacer una persona con paciencia y conocimiento, a mano, cada vez. El producto no inventa una capacidad nueva, quita el "cada vez" y el "con conocimiento".

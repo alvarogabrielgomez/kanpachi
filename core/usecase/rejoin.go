@@ -322,7 +322,7 @@ func (s *Session) settleIntoRoomLocked(ctx context.Context, cred domain.Credenti
 	// al viejo no falla en ningún sitio, emite sus filtros y devuelve éxito,
 	// mientras debajo hay una red virtual sin bloqueo. Es la misma trampa que
 	// documenta [Session.OnEngineRestarted], y acá es fatal por lo mismo.
-	if err := s.deps.Firewall.BindRoom(ctx, cred.Subnet, netip.Prefix{}, domain.BindRoomOnly); err != nil {
+	if err := s.bindRoomLocked(ctx, cred.Subnet, netip.Prefix{}, domain.BindRoomOnly); err != nil {
 		return fmt.Errorf("acotando la contención a la sala tras volver: %w", err)
 	}
 	if err := s.refreshPeersLocked(ctx); err != nil {

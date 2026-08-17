@@ -329,10 +329,26 @@ func (s *Session) onPeersChangedLocked(ctx context.Context) (domain.RoomState, e
 	for ip := range s.kicked {
 		s.dropPeerLocked(ip)
 	}
-	if err := s.applyPolicy(ctx); err != nil {
+	// El ÚNICO sitio que se salta la aplicación cuando nada cambió, y el único
+	// que la necesita: el motor emite este evento en ráfagas, y el conjunto
+	// deseado es el mismo en todas menos en la primera. Ver
+	// [Session.applyPolicyIfChanged], donde está lo medido y por qué los otros
+	// once llamadores siguen aplicando siempre.
+	if _, err := s.applyPolicyIfChanged(ctx); err != nil {
 		return domain.RoomState{}, err
 	}
-	if s.state.IsHost() {
+	// Las otras dos cuelgan del cambio de MIEMBROS, que es su disparador de
+	// verdad, y NO de la firma de las reglas.
+	//
+	// Colgarlas de la firma parecía equivalente y no lo es, por una ventana
+	// concreta: quien entra ya tenía credencial recién emitida, así que ya
+	// estaba en la lista de autorizados del canal, y sin juego activo los
+	// miembros no aparecen en ninguna otra regla. O sea que **un ingreso a una
+	// sala sin juego no cambia la firma**, que es el caso más común que hay:
+	// se abre la sala, se reparte el código, y la gente entra antes de que
+	// nadie elija juego. Con la firma de condición, ese invitado se quedaba sin
+	// anuncio, o sea con la pantalla de la sala sin nombre y sin juego.
+	if memberSetChangedLocked(antes, s.state.Peers) && s.state.IsHost() {
 		s.restrictControlChannel(ctx)
 		// Quien acaba de entrar no estaba cuando se anunció lo anterior, así
 		// que su pantalla en sala arrancaría sin juego y sin nombre.
@@ -479,6 +495,32 @@ func (s *Session) tellStaleMembersLocked(ctx context.Context) {
 // falta el nombre, no el total.
 //
 // Asume el candado tomado.
+// memberSetChangedLocked dice si entró o salió alguien entre las dos tablas.
+//
+// Por DIRECCIÓN y no por la tabla entera, porque el motor reporta el camino y
+// la latencia de cada uno, y esos dos se mueven solos todo el tiempo: comparar
+// las tablas completas daría "cambió" en cada evento de la ráfaga y no
+// distinguiría nada.
+//
+// Es lo que decide si hay que reacotar el canal de control y volver a anunciar.
+// Las dos preguntas son la misma, quién está, y por eso comparten el predicado
+// en vez de derivarlo cada una por su lado.
+func memberSetChangedLocked(antes, ahora []domain.Peer) bool {
+	if len(antes) != len(ahora) {
+		return true
+	}
+	previos := make(map[netip.Addr]bool, len(antes))
+	for _, p := range antes {
+		previos[p.VirtualIP] = true
+	}
+	for _, p := range ahora {
+		if !previos[p.VirtualIP] {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Session) logMemberDiffLocked(antes []domain.Peer) {
 	previos := make(map[netip.Addr]bool, len(antes))
 	for _, p := range antes {

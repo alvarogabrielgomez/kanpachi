@@ -190,7 +190,7 @@ func (s *Session) CreateRoom(
 	// usuario por la red virtual. Una sala que no abre es mejor que una que dice
 	// estar contenida y no lo está.
 	s.deps.Progress.Step(domain.ScopeFirewall, "acotando la contención a la sala y al vestíbulo")
-	if err := s.deps.Firewall.BindRoom(ctx, plan.Subnet, spec.Rendezvous.LobbySubnet(), domain.BindRoomAndLobby); err != nil {
+	if err := s.bindRoomLocked(ctx, plan.Subnet, spec.Rendezvous.LobbySubnet(), domain.BindRoomAndLobby); err != nil {
 		return domain.RoomState{}, fmt.Errorf("acotando la contención a la sala: %w", err)
 	}
 

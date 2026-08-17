@@ -989,16 +989,18 @@ Los eventos de red son los cinco del motor, y el supervisor los traduce uno a un
 | Evento del motor | Estado | Qué más pasa |
 |---|---|---|
 | `EngineConnected` | `Connected` | Se relee la lista de miembros, se recalculan las reglas, se reajusta el adaptador, y siendo host se recorta el alcance del canal y se vuelve a anunciar |
-| `EnginePeersChanged` | ninguno | Recalcula el conjunto de reglas completo. Es la misma operación que un cambio de juego |
+| `EnginePeersChanged` | ninguno | Recalcula el conjunto de reglas completo y lo aplica SOLO si cambió respecto de lo último aplicado. Es el único camino con esa compuerta, ver abajo |
 | `EngineDegraded` | **ninguno** | Relee la lista de miembros, y el estado sale de ahí. El evento es una pista con causa, que queda en el log; no fija nada |
 | `EngineDisconnected` | `Reconnecting` | Arranca el plazo sin túnel, y en un invitado apaga la presencia del host |
 | `EngineDied` | `Reconnecting` | Igual, y además despierta al watchdog |
 
 **Estar en `Reconnecting` no es eterno.** A los 10 minutos sin túnel se sale de la sala con motivo propio, se cierran los puertos y se revierten los ajustes. Ver decisión 20.
 
-##### Cuántas veces se aplican las reglas de verdad, medido
+##### Cuántas veces se aplican las reglas de verdad, medido, y la compuerta que salió de ahí
 
-`EnginePeersChanged` regenera y aplica el conjunto entero, sin camino incremental. La pregunta era cuánto trabajo es eso en una sala que se mueve. Medido el 2026-08-13 en el invitado de Linux, contando las líneas de `compuerta puesta`, que es una por cada aplicación real de nftables:
+`EnginePeersChanged` regenera el conjunto entero, sin camino incremental. La pregunta era cuánto trabajo es eso en una sala que se mueve. Se midió dos veces, contando las líneas de `compuerta puesta`, que es una por cada aplicación real de nftables.
+
+**Primera medición, el 2026-08-13, en el invitado de Linux:**
 
 | | |
 |---|---|
@@ -1010,7 +1012,40 @@ Los eventos de red son los cinco del motor, y el supervisor los traduce uno a un
 
 El motor republica el conjunto de confianza aproximadamente cada segundo, así que la tabla de rutas se toca todo el tiempo sin que cambie quién está. **708 de las 709 aplicaciones escribieron lo mismo que ya estaba puesto.**
 
-El log ya no las repite: la firma del conjunto se compara antes de escribir, y solo se anota el cambio. Lo que sigue corriendo entero es el cálculo y la transacción del firewall. Es el número que dice si conviene gatear `applyPolicy` por cambio real del conjunto deseado, y también dice que **coalescer encima no compraría nada**: un gate por firma ya colapsa la ráfaga, porque lo que la ráfaga repite es exactamente la misma firma.
+**Segunda medición, el 2026-08-17, en el host del droplet, y el promedio de arriba escondía la forma:**
+
+| | |
+|---|---|
+| En reposo, sala abierta y quieta, 60 s | **0** |
+| Por transición, crear la sala y elegir juego | **19** |
+| Pico dentro de un segundo de reloj | **31** |
+| Separación entre aplicaciones, con 3 reglas | **16 ms** |
+| Separación entre aplicaciones, con 7 reglas | **~23 ms** |
+| Del log entero del banco, ~30 h | **2221 de 5136 líneas**, en solo 253 segundos distintos |
+
+"~2 por segundo" era el promedio de una ráfaga contra el rato de silencio de al lado. La forma de verdad es una ráfaga de veinte o treinta aplicaciones idénticas, pegadas, seguida de nada. Y la separación **sigue al número de reglas**, que es lo que dice qué es ese hueco: no es una cadencia del motor, es lo que tarda cada aplicación. El daemon está saturado drenando eventos que dicen lo mismo.
+
+**Lo que cuesta.** En Linux, tres ciclos de crear sala con juego dejaron a `kanpachid` en 5.4% de un núcleo sostenido, contra 0.13% en reposo. En Windows es diez veces peor y por una razón estructural: `Apply` enumera la tienda ENTERA de reglas del firewall por COM, dos veces por llamada. Medido sobre una máquina con 1157 reglas, una enumeración con las doce propiedades que se leen tarda **152 ms**, así que una aplicación ronda los 300 ms y una transición son casi seis segundos de leer el firewall de punta a punta para escribir lo que ya estaba. Es además la clase de actividad que un antivirus perfila.
+
+**La compuerta, y por qué son dos métodos.** `applyPolicyIfChanged` compara la firma del conjunto deseado contra la del último aplicado y se salta el firewall si coinciden. Lo llama **un solo sitio**, `onPeersChangedLocked`, que es el de la ráfaga. Los otros once llamadores de `applyPolicy` no cambian, y eso es lo que hace correcto el corte: `Apply` calcula su diferencia contra las reglas VIVAS, así que reaplicar el mismo conjunto REPONE lo que alguien borró por fuera. Esa autorreparación es de lo que dependen el barrido del canario y la comprobación de la decisión 19, y un salto metido dentro de `applyPolicy` la apagaría entera.
+
+**La firma gobierna la aplicación y NADA MÁS, y esa frontera costó encontrarla.** Del mismo evento colgaban otras dos cosas, reacotar el canal de control y volver a anunciar, y colgarlas también de la firma parecía equivalente. No lo es. Quien entra a una sala ya tenía credencial recién emitida, así que **ya estaba** en la lista de autorizados del canal; y sin juego activo los miembros no aparecen en ninguna otra regla, porque los puertos de juego son lo único que se abre hacia ellos. O sea que **un ingreso a una sala sin juego no cambia la firma**, que es justo el caso más común: se abre la sala, se reparte el código, y la gente entra antes de que nadie elija juego. Con la firma de condición ese invitado se quedaba sin anuncio, o sea con la pantalla de la sala sin nombre y sin juego. Las dos cuelgan ahora del cambio de MIEMBROS, comparado por dirección, que es su disparador de verdad.
+
+**Comparado por dirección y no por la tabla entera**, porque el motor reporta el camino y la latencia de cada miembro, y esos dos se mueven solos: comparar las tablas completas diría "cambió" en cada evento de la ráfaga y no distinguiría nada.
+
+**El reatado se resuelve olvidando.** La firma describe reglas contra el adaptador al que la compuerta está atada, así que tras un `BindRoom` el mismo texto describe otra cosa. Los siete sitios que atan pasan por `bindRoomLocked`, que limpia la firma al conseguirlo. Un contador de reataduras sería lo mismo con un campo más y una forma más de olvidarse de subirlo.
+
+**Lo que dio, medido con el mismo guion antes y después**, tres ciclos de abrir sala y elegir juego en el droplet:
+
+| | Antes | Después |
+|---|---|---|
+| Aplicaciones en los tres ciclos | **57** | **11** |
+| Por ciclo | 19 | ~3.7 |
+| Pico en un segundo de reloj | 31 | 3 |
+
+Y la comprobación que importa más que el ahorro: `kanpachi protect`, que es `applyPolicy` sin compuerta, **sigue aplicando cada vez que se pulsa**, con el conjunto idéntico y la sala quieta. Dos pulsaciones seguidas, dos aplicaciones. La autorreparación no se tocó.
+
+**Lo que ya estaba decidido y sigue valiendo:** coalescer o debounce encima no compra nada. Un gate por firma ya colapsa la ráfaga, porque lo que la ráfaga repite es exactamente la misma firma.
 
 #### `Degraded` se DERIVA de la tabla de miembros, no se recuerda
 
@@ -2731,3 +2766,23 @@ Los dos sistemas protegen lo mismo por caminos distintos, y la diferencia import
 | **Otro usuario de la MISMA PC, en Windows** | **El password del seed NO lo cubre**, y hay que decirlo para que nadie lo suponga al revés. El canal local se le concede al usuario interactivo a propósito, para que la ventana hable sin elevar, así que ese usuario puede pedirle al daemon que abra una sala usando el token ya guardado. El password le cierra la puerta a desconocidos de internet, no a quien ya se sentó en esa máquina. En Linux no ocurre: el socket es 0600 de root |
 | Alguien captura el tráfico del túnel en el camino | Va cifrado con AES-128-GCM dentro del protocolo del motor, sin TLS por encima ni certificados en ninguna parte. La llave sale del secreto de red por un hash NO criptográfico, así que el respaldo de "32 bytes aleatorios" no llega hasta ella. **Capturado**: el RPC va cifrado, el latido y el apretón de manos no, y en claro viajan los nombres de las dos redes. El nombre de la sala, el apodo, el código y las direcciones virtuales no aparecen |
 | Un miembro manda paquetes con la marca de cifrado apagada | El receptor los acepta tal cual, en las cuatro implementaciones de cifrado. Llegar a ser peer exige el digest del secreto de red y su prueba MAC, así que quien puede hacerlo ya está dentro de la sala: misma clase que mandar basura al canal de control |
+| **Perfil de catálogo malicioso** | Techo: un peer autorizado alcanza UN puerto tuyo no prohibido, por el túnel, mientras estés en su sala. Jamás exposición a internet. La sección de abajo lo desarma entero |
+
+### El techo de un catálogo trucho, entero
+
+Es la pregunta que hay que poder contestar sin rodeos, porque el catálogo es un fichero editable y el producto acepta perfiles importados: **si alguien te pasa un perfil que dice ser un juego y en realidad pide un puerto suyo, ¿qué consigue?**
+
+**Lo que NO consigue, y es la mitad que la gente supone al revés: exposición a internet.** El puerto que se abre queda acotado al adaptador virtual, al `/24` de la sala y a las direcciones de los miembros PRESENTES. No hay UPnP, no hay reenvío de puertos en el router, no hay exit node ni enrutado de subredes, y ninguna de esas tres existe como opción que un perfil pueda pedir. El router del usuario no se toca nunca. Un perfil no puede hacer que nada de fuera del túnel llegue a esa máquina.
+
+**Lo que sí consigue:** que UN peer autorizado de esa sala alcance UN puerto tuyo no prohibido, a través del túnel, mientras estés dentro de su sala.
+
+**Y la cadena que necesita para llegar ahí son cuatro consentimientos tuyos y una desatención:**
+
+1. **Que importes su catálogo.** Importar pide confirmación dentro de la app, un perfil importado **no puede pisar a uno de fábrica**, y los puertos prohibidos se rechazan al validarlo. Los prohibidos están además tapados por la cuarentena de base, así que un perfil que los pidiera no conseguiría nada aunque el validador fallara: son dos capas, no una.
+2. **Que entres a SU sala**, que es otra confirmación, con la tarjeta del registro delante.
+3. **Que tengas algo escuchando** en ese puerto no prohibido. Sin oyente detrás, una regla abierta no lleva a ninguna parte.
+4. **Que no mires la pantalla de exposición**, que lista ese puerto con su número real y hacia quién está abierto. Es la pantalla por la que existe la app.
+
+**El host malicioso NO puede empujarte el perfil.** Tu máquina abre lo que dice TU catálogo; por el cable viaja el identificador del juego, nunca sus puertos. Un identificador que tu catálogo no conoce se queda sin abrir nada y la sala lo dice.
+
+**La frase que cierra el asunto:** es deliberadamente el mismo techo que invitar a un desconocido a tu LAN física, con una diferencia a favor: acá cada puerto abierto tiene nombre y destinatario, y se leen en `kanpachi exposure` o en la pantalla de exposición. En una LAN física no hay ninguna de las dos cosas.

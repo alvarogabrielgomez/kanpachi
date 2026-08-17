@@ -152,7 +152,7 @@ func (s *Session) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
 	// Los dos adaptadores ya están arriba, y la compuerta se acota antes de
 	// abrir un solo puerto, igual que al crear. Reabrir una sala no es un
 	// camino de menos exigencia: es el mismo host con la misma red.
-	if err := s.deps.Firewall.BindRoom(ctx, saved.Subnet, spec.Rendezvous.LobbySubnet(), domain.BindRoomAndLobby); err != nil {
+	if err := s.bindRoomLocked(ctx, saved.Subnet, spec.Rendezvous.LobbySubnet(), domain.BindRoomAndLobby); err != nil {
 		return domain.RoomState{}, fmt.Errorf("acotando la contención a la sala anterior: %w", err)
 	}
 	if err := s.deps.Control.Serve(ctx, s.controlScope()); err != nil {
