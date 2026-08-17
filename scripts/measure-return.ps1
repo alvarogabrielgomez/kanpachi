@@ -166,8 +166,21 @@ function Host-Count([string]$pattern) {
 
 function Peer-Json([string]$verb) {
     $raw = Native { & $cli --pipe $peerPipe --data $peerData --json $verb.Split(' ') }
-    if (-not $raw.Trim()) { return $null }
+    if (-not $raw.Trim()) { Info "peer $verb -> (empty, exit $script:lastCode)"; return $null }
     try { return $raw | ConvertFrom-Json } catch { Info "peer $verb -> $($raw.Trim())"; return $null }
+}
+
+# Peer-Join is Peer-Json for the one verb whose answer must never be thrown
+# away: a join that the CLI refuses client-side answers VALID json that no
+# check ever looks at, and the scenario then waits 120s for a room the daemon
+# was never told about. Found 2026-08-16: the manual join worked while the
+# harness join silently did not.
+function Peer-Join([string]$code) {
+    $j = Peer-Json "join $code --yes"
+    if ($null -eq $j) { return }
+    if ($j.conn -ne 'connected') {
+        Info "join answered ($($script:lastCode)): $($j | ConvertTo-Json -Compress -Depth 4)"
+    }
 }
 
 function Peer-Running() {
@@ -329,7 +342,7 @@ $scenarios = @(
             Info "code $script:code"
 
             Peer-Start
-            Peer-Json "join $script:code --yes" | Out-Null
+            Peer-Join $script:code
             Check 'the guest is in' (Wait-Until { Peer-InRoom } 120 'the guest to be in')
 
             $last = Peer-Json 'last'
@@ -441,7 +454,7 @@ $scenarios = @(
             if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes' }
             $script:code = $h.code + '@' + $h.seed
             if (-not (Peer-Running)) { Peer-Start }
-            if (-not (Peer-InRoom)) { Peer-Json "join $script:code --yes" | Out-Null }
+            if (-not (Peer-InRoom)) { Peer-Join $script:code }
             Check 'the guest is in' (Wait-Until { Peer-InRoom } 120 'the guest to be in')
 
             $ipBefore = (Peer-Json 'status').local_ip
@@ -526,7 +539,7 @@ $scenarios = @(
             Check 'the guest is out' (Wait-Until { -not (Peer-InRoom) } 120 'the guest to be out')
 
             Note 'the kicked one comes back on purpose, with the same code'
-            Peer-Json "join $script:code --yes" | Out-Null
+            Peer-Join $script:code
             Check 'and it gets in, because kicking is not banning' (Wait-Until { Peer-InRoom } 120 'the kicked guest to re-enter')
 
             $ipAfter = (Peer-Json 'status').local_ip
@@ -545,7 +558,7 @@ $scenarios = @(
             $h = Host-Json 'status'
             if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes' }
             $script:code = $h.code + '@' + $h.seed
-            Peer-Json "join $script:code --yes" | Out-Null
+            Peer-Join $script:code
             Check 'the guest is in' (Wait-Until { Peer-InRoom } 120 'the guest to be in')
 
             $me = (Peer-Json 'status').local_ip
