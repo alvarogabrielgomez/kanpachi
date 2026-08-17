@@ -23,8 +23,8 @@
 // único que tiene que sobrevivir a Kanpachi apagado.
 //
 // La composición no se entera de nada de eso, y ese es el punto: sigue siendo
-// intersección, sigue habiendo un orden correcto, y [Permits] sigue teniendo los
-// mismos siete métodos.
+// intersección, sigue habiendo un orden correcto, y [Permits] sigue siendo el
+// mismo contrato en los dos sistemas.
 //
 // # Por qué este fichero es puro
 //
@@ -55,6 +55,13 @@ type Permits interface {
 	AuditForeign(ctx context.Context, p domain.GameProfile) ([]domain.ForeignRule, error)
 	SuspendForeign(ctx context.Context, rules []domain.ForeignRule) error
 	RestoreForeign(ctx context.Context) error
+	// The three for the FOREIGN firewall that blocks inbound. On Linux they
+	// read and touch ufw/firewalld with consent and a ledger (decision 36); on
+	// Windows they answer empty until the case is measured. See
+	// [port.FirewallPort].
+	InboundBlocked(ctx context.Context) ([]domain.FirewallBlock, error)
+	AllowAdapters(ctx context.Context, blocks []domain.FirewallBlock) error
+	WithdrawAdapters(ctx context.Context) error
 	// SetAdapter anota el nombre del adaptador virtual cuando el motor lo crea.
 	SetAdapter(name string)
 }
@@ -390,6 +397,18 @@ func (f *Firewall) SuspendForeign(ctx context.Context, rules []domain.ForeignRul
 
 func (f *Firewall) RestoreForeign(ctx context.Context) error {
 	return f.permits.RestoreForeign(ctx)
+}
+
+func (f *Firewall) InboundBlocked(ctx context.Context) ([]domain.FirewallBlock, error) {
+	return f.permits.InboundBlocked(ctx)
+}
+
+func (f *Firewall) AllowAdapters(ctx context.Context, blocks []domain.FirewallBlock) error {
+	return f.permits.AllowAdapters(ctx, blocks)
+}
+
+func (f *Firewall) WithdrawAdapters(ctx context.Context) error {
+	return f.permits.WithdrawAdapters(ctx)
 }
 
 func (f *Firewall) FirewallEnabled(ctx context.Context) ([]domain.FirewallProfileState, error) {

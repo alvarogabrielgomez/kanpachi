@@ -82,7 +82,12 @@ func (p *permisosFalsos) AuditForeign(context.Context, domain.GameProfile) ([]do
 }
 func (p *permisosFalsos) SuspendForeign(context.Context, []domain.ForeignRule) error { return nil }
 func (p *permisosFalsos) RestoreForeign(context.Context) error                       { return nil }
-func (p *permisosFalsos) SetAdapter(name string)                                     { p.adaptador = name }
+func (p *permisosFalsos) InboundBlocked(context.Context) ([]domain.FirewallBlock, error) {
+	return nil, nil
+}
+func (p *permisosFalsos) AllowAdapters(context.Context, []domain.FirewallBlock) error { return nil }
+func (p *permisosFalsos) WithdrawAdapters(context.Context) error                      { return nil }
+func (p *permisosFalsos) SetAdapter(name string)                                      { p.adaptador = name }
 
 func (p *permisosFalsos) FirewallEnabled(context.Context) ([]domain.FirewallProfileState, error) {
 	return nil, nil

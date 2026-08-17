@@ -217,6 +217,29 @@ type FirewallPort interface {
 	// también al arrancar el servicio, por si una salida sucia dejó algo.
 	RestoreForeign(ctx context.Context) error
 
+	// InboundBlocked says whether a FOREIGN firewall is going to swallow the
+	// inbound of the room's adapters. It is the question asked BEFORE hosting
+	// or joining: with a ufw denying, the room assembles perfectly and nobody
+	// gets in, and nothing on screen says so. Measured 2026-08-16 against the
+	// droplet.
+	//
+	// Empty means clear. **A read failure returns an error and never an empty
+	// list**: inventing "there is nothing" is the exact lie this method exists
+	// not to tell. Same contract as AuditForeign.
+	InboundBlocked(ctx context.Context) ([]domain.FirewallBlock, error)
+	// AllowAdapters opens the foreign firewall for the blocked adapters, WITH
+	// consent already given: the caller already showed the commands in
+	// [domain.FirewallBlock.Fix] and the person said yes. It runs exactly
+	// those, books what it added, and whatever was already open is neither
+	// touched nor booked: the book only holds what is ours, so undoing can
+	// never take an operator's rule away. See decision 36.
+	AllowAdapters(ctx context.Context, blocks []domain.FirewallBlock) error
+	// WithdrawAdapters removes EXACTLY what AllowAdapters booked, and nothing
+	// else. It runs when leaving the room and also when the service starts, in
+	// case a dirty exit left the door open. With an empty book it does nothing
+	// and does not fail: same contract as RestoreForeign.
+	WithdrawAdapters(ctx context.Context) error
+
 	// BindRoom acota las DOS capas a los adaptadores virtuales, y sin él la
 	// compuerta no se pone nunca.
 	//

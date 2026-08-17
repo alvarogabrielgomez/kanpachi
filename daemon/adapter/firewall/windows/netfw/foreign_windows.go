@@ -212,6 +212,27 @@ func (f *Firewall) RestoreForeign(ctx context.Context) error {
 	return saveSuspended(f.suspendPath, nil)
 }
 
+// InboundBlocked answers empty on Windows, and that is a stated cut, not a
+// measurement.
+//
+// The defect this method exists for was measured on LINUX (ufw swallowing the
+// adapters' SYNs, 2026-08-16). On Windows the inbound default-block belongs to
+// the Windows Firewall, and OUR permits layer already opens it per rule, so the
+// measured case does not apply as-is; a third-party suite blocking the virtual
+// adapters is plausible and UNMEASURED. Per the plan's rule, the Windows
+// adapter gets written after the case is measured, not before: answering a
+// guess here would be the exact lie InboundBlocked exists not to tell, so the
+// honest answer today is "nothing detected", said out loud in this comment.
+func (f *Firewall) InboundBlocked(context.Context) ([]domain.FirewallBlock, error) {
+	return nil, nil
+}
+
+// AllowAdapters has nothing to open while InboundBlocked reports nothing.
+func (f *Firewall) AllowAdapters(context.Context, []domain.FirewallBlock) error { return nil }
+
+// WithdrawAdapters has no book on Windows yet; nothing pending is the truth.
+func (f *Firewall) WithdrawAdapters(context.Context) error { return nil }
+
 // setEnabled writes Enabled on the rules whose fingerprint is in want.
 //
 // Rules of our own groups are skipped even if a key somehow matched. Disabling

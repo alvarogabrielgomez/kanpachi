@@ -57,6 +57,15 @@ func (*Permits) AuditForeign(context.Context, domain.GameProfile) ([]domain.Fore
 func (*Permits) SuspendForeign(context.Context, []domain.ForeignRule) error { return errSoloLinux }
 func (*Permits) RestoreForeign(context.Context) error                       { return nil }
 
+func (*Permits) InboundBlocked(context.Context) ([]domain.FirewallBlock, error) {
+	return nil, errSoloLinux
+}
+func (*Permits) AllowAdapters(context.Context, []domain.FirewallBlock) error { return errSoloLinux }
+
+// WithdrawAdapters does not fail, for the same reason RestoreForeign does not:
+// where nothing was ever opened, "no debts" is already true.
+func (*Permits) WithdrawAdapters(context.Context) error { return nil }
+
 func (*Permits) FirewallEnabled(context.Context) ([]domain.FirewallProfileState, error) {
 	return nil, errSoloLinux
 }

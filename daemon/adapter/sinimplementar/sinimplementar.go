@@ -162,6 +162,15 @@ func (Firewall) SuspendForeign(context.Context, []domain.ForeignRule) error {
 	return falla("desactivar reglas ajenas")
 }
 func (Firewall) RestoreForeign(context.Context) error { return falla("restaurar reglas ajenas") }
+func (Firewall) InboundBlocked(context.Context) ([]domain.FirewallBlock, error) {
+	return nil, falla("mirar si un firewall ajeno bloquea la entrada")
+}
+func (Firewall) AllowAdapters(context.Context, []domain.FirewallBlock) error {
+	return falla("abrir el firewall ajeno")
+}
+func (Firewall) WithdrawAdapters(context.Context) error {
+	return falla("cerrar lo abierto en el firewall ajeno")
+}
 func (Firewall) BindRoom(context.Context, netip.Prefix, netip.Prefix, domain.RoomBinding) error {
 	return falla("acotar la compuerta a los adaptadores")
 }
