@@ -47,6 +47,11 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _code = TextEditingController();
 
+  /// The invite preview is in flight: the click already happened and the trust
+  /// dialog is not up yet. It is what puts the join button in busy, because
+  /// that gap is a network round trip to the registry and can take seconds.
+  bool _resolvingInvite = false;
+
   /// El campo del nombre de sala. Su texto es una COPIA del borrador que vive
   /// en la sesión, y las dos direcciones están cableadas: lo que se escribe acá
   /// sube con [SessionCubit.setRoomNameDraft], y lo que cambie en el diálogo de
@@ -117,6 +122,9 @@ class _HomeScreenState extends State<HomeScreen> {
   /// on. The failure notice was drawn underneath and could not be reached.
   Future<void> _join() async {
     if (!InviteCode.isComplete(_code.text)) return;
+    // Reentry guard: Enter on the field fires this too, and a second preview
+    // during the first one would stack two trust dialogs.
+    if (_resolvingInvite) return;
     // No se entra: se PREGUNTA. Ese registro es la máquina de un tercero, y el
     // diálogo es donde se ve a cuál antes de hablarle. Quien confirma es quien
     // llama a `joinRoom`, así que este camino termina acá.
@@ -130,9 +138,16 @@ class _HomeScreenState extends State<HomeScreen> {
     // Resolver dentro del diálogo lo dejaría un instante sin ese bloque y con
     // el botón ya pulsable, que es enseñar la decisión antes que el dato del
     // que depende. Que falle no quita el diálogo: ver [TrustRequest.preview].
-    final PendingInvite? preview = await context
-        .read<SessionCubit>()
-        .previewInvite(_code.text);
+    // Con el botón en ocupado mientras tanto: la pregunta al registro tarda
+    // segundos enteros con un servidor lejos, y un botón que no reacciona al
+    // click es un click que se repite. Detectado en vivo el 2026-08-18.
+    setState(() => _resolvingInvite = true);
+    final PendingInvite? preview;
+    try {
+      preview = await context.read<SessionCubit>().previewInvite(_code.text);
+    } finally {
+      if (mounted) setState(() => _resolvingInvite = false);
+    }
     if (!mounted) return;
     _pedirConfianza(
       TrustRequest.joining(seed: seed, code: _code.text, preview: preview),
@@ -243,6 +258,7 @@ class _HomeScreenState extends State<HomeScreen> {
               roomName: _roomName,
               nameHint: _nameHint,
               canJoin: canJoin,
+              resolvingInvite: _resolvingInvite,
               missingSeed: _faltaServidor,
               daemonDown: session.daemonDown,
               seedDown: session.health.seedDown,
@@ -271,6 +287,7 @@ class _JoinAndCreate extends StatelessWidget {
     required this.roomName,
     required this.nameHint,
     required this.canJoin,
+    required this.resolvingInvite,
     required this.missingSeed,
     required this.daemonDown,
     required this.seedDown,
@@ -285,6 +302,11 @@ class _JoinAndCreate extends StatelessWidget {
   final TextEditingController roomName;
   final String nameHint;
   final bool canJoin;
+
+  /// La vista previa del código está en vuelo: el botón va en ocupado para que
+  /// el click tenga respuesta en el mismo instante, porque lo que sigue es una
+  /// vuelta por la red hasta el registro y tarda segundos con uno lejos.
+  final bool resolvingInvite;
 
   /// Lo escrito tiene forma de código y le falta el servidor. Se dice debajo
   /// del campo: un botón apagado sobre ocho caracteres que se ven completos no
@@ -350,6 +372,10 @@ class _JoinAndCreate extends StatelessWidget {
             label: 'Unirse',
             height: 42,
             variant: AppButtonVariant.primaryFlat,
+            // Ocupado mientras se resuelve qué hay detrás del código, que es
+            // una vuelta por la red: sin esto el click quedaba segundos sin
+            // respuesta y se repetía.
+            busy: resolvingInvite,
             // Apagado hasta que el código esté completo. Dejarlo encendido
             // llevaría a una espera que ya se sabe que va a fallar.
             onPressed: canJoin ? onJoin : null,
