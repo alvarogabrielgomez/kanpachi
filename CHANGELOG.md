@@ -10,7 +10,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Fixed
 
-- Stop saying the quarantine "could not be checked" for the first minute after every start: the sweep that measures it only ticks once the interval is over, so the daemon repaired the rules and then every face vouched for nothing about them. The start now measures before it publishes anything, whatever the recorded answer was. Found live on Windows with the 48 rules already written ([HASH](https://github.com/alvarogabrielgomez/kanpachi/commit/HASH))
+- Stop saying the quarantine "could not be checked" for the first minute after every start: the sweep that measures it only ticks once the interval is over, so the daemon repaired the rules and then every face vouched for nothing about them. The start now measures before it publishes anything, whatever the recorded answer was. Found live on Windows with the 48 rules already written ([20cf4b0](https://github.com/alvarogabrielgomez/kanpachi/commit/20cf4b0))
 
 ### Added
 
