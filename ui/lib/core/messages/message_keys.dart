@@ -526,6 +526,64 @@ enum ProbeOutcome {
   }
 }
 
+/// La cuarentena de base tal como se MIDIÓ, espejo de `quarantineVerdictName`
+/// en `view.go` del daemon.
+enum QuarantineVerdict {
+  /// Todas las reglas puestas, activas y diciendo lo que se escribió.
+  applied('applied'),
+
+  /// Parte está y parte no: reglas ausentes, deshabilitadas o editadas.
+  partial('partial'),
+
+  /// No hay ni una regla puesta.
+  absent('absent'),
+
+  /// No se pudo medir. NO es "apagada": es que nadie pudo mirar.
+  unknown('unknown');
+
+  const QuarantineVerdict(this.wire);
+
+  /// La cadena exacta del campo `verdict` de `QuarantineView`.
+  final String wire;
+
+  /// Lo que no se reconoce cae en [QuarantineVerdict.unknown], que es el único
+  /// que no afirma nada: leerlo como "puesta" pintaría protección que nadie
+  /// midió, y como "apagada" asustaría por un valor nuevo del daemon.
+  static QuarantineVerdict fromWire(String? wire) {
+    for (final QuarantineVerdict v in QuarantineVerdict.values) {
+      if (v.wire == wire) return v;
+    }
+    return QuarantineVerdict.unknown;
+  }
+}
+
+/// La RESPUESTA del usuario sobre la cuarentena, espejo de
+/// `quarantineDecisionName` en `view.go`. Viaja al lado de la medición porque
+/// el interruptor dibuja las dos: qué hay puesto, y si la pregunta sigue
+/// debida.
+enum QuarantineDecision {
+  yes('yes'),
+  no('no'),
+
+  /// Nadie contestó todavía. No es "no": es lo que hace que la pregunta se
+  /// haga exactamente una vez.
+  undecided('undecided');
+
+  const QuarantineDecision(this.wire);
+
+  final String wire;
+
+  /// Lo desconocido cae en [QuarantineDecision.undecided]: inventar un "no"
+  /// callaría la pregunta, e inventar un "sí" afirmaría un consentimiento que
+  /// nadie dio.
+  static QuarantineDecision fromWire(String? wire) {
+    for (final QuarantineDecision d in QuarantineDecision.values) {
+      if (d.wire == wire) return d;
+    }
+    return QuarantineDecision.undecided;
+  }
+}
+
 /// Which thing the user asked for. One per button that can fail.
 ///
 /// Lives here, next to the wire enums, and not in the session feature: this is
@@ -552,5 +610,6 @@ enum FailedAction {
   importCatalog,
   exportCatalog,
   suspendForeignRules,
+  quarantine,
   quit,
 }

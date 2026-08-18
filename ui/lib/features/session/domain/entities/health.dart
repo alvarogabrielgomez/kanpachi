@@ -25,6 +25,7 @@ class HealthReport {
     this.canary = const CanaryCheck.blind(),
     this.net = const NetDiagnostics.unknown(),
     this.seedDown = false,
+    this.quarantine = const QuarantineStatus.unknown(),
     this.returning,
   });
 
@@ -38,6 +39,7 @@ class HealthReport {
       // que el resto de este constructor: no saber jamás se pinta como un
       // hallazgo.
       seedDown = false,
+      quarantine = const QuarantineStatus.unknown(),
       returning = null;
 
   /// Los avisos vivos, **en el orden que los mandó el daemon**.
@@ -75,6 +77,14 @@ class HealthReport {
   /// contesta a él. Se apaga solo en cuanto el registro vuelva.
   final bool seedDown;
 
+  /// La cuarentena de base tal como se MIDIÓ, con la respuesta del usuario al
+  /// lado.
+  ///
+  /// Vive acá por el mismo criterio que [seedDown]: es de la MÁQUINA y no de
+  /// la sala, y hace falta justo sin sala, que es donde está el interruptor de
+  /// Configuración que la dibuja.
+  final QuarantineStatus quarantine;
+
   /// La sala a la que esta máquina está volviendo, si está volviendo a alguna.
   ///
   /// Vive acá por el mismo criterio que [seedDown], y con más razón: hace falta
@@ -105,8 +115,75 @@ class HealthReport {
       (json['net'] as Map<String, Object?>?) ?? const <String, Object?>{},
     ),
     seedDown: json['seed_down'] as bool? ?? false,
+    quarantine: QuarantineStatus.fromJson(
+      (json['quarantine'] as Map<String, Object?>?) ??
+          const <String, Object?>{},
+    ),
     returning: Returning.fromJson(json['returning']),
   );
+}
+
+/// La cuarentena de base: qué hay puesto DE VERDAD, y qué contestó el usuario.
+///
+/// Las dos mitades juntas a propósito, porque el interruptor dibuja las dos:
+/// el valor sale de la medición y jamás de la intención, y la respuesta dice
+/// si la pregunta sigue debida. Un daemon que no pudo medir manda `unknown`,
+/// que no se pinta ni como puesta ni como apagada.
+@immutable
+class QuarantineStatus {
+  const QuarantineStatus({
+    this.verdict = QuarantineVerdict.unknown,
+    this.decision = QuarantineDecision.undecided,
+    this.ports = const <int>[],
+    this.total = 0,
+    this.missing = 0,
+    this.disabled = 0,
+    this.drifted = 0,
+  });
+
+  /// Antes de haber preguntado. No afirma nada, igual que el resto del
+  /// informe: no saber jamás se pinta como un hallazgo.
+  const QuarantineStatus.unknown()
+    : verdict = QuarantineVerdict.unknown,
+      decision = QuarantineDecision.undecided,
+      ports = const <int>[],
+      total = 0,
+      missing = 0,
+      disabled = 0,
+      drifted = 0;
+
+  /// Qué hay puesto, medido del sistema en el último barrido.
+  final QuarantineVerdict verdict;
+
+  /// Qué contestó el usuario. [QuarantineDecision.undecided] es que la
+  /// pregunta sigue debida, que NO es lo mismo que "no".
+  final QuarantineDecision decision;
+
+  /// Los puertos que la cuarentena cierra en este sistema, esté puesta o no,
+  /// para poder decir QUÉ se cierra sin repetir la lista por cuenta propia.
+  final List<int> ports;
+
+  /// Cuántas reglas tiene la cuarentena entera acá, y las tres cuentas que
+  /// explican un veredicto parcial.
+  final int total;
+  final int missing;
+  final int disabled;
+  final int drifted;
+
+  static QuarantineStatus fromJson(Map<String, Object?> json) =>
+      QuarantineStatus(
+        verdict: QuarantineVerdict.fromWire(json['verdict'] as String?),
+        decision: QuarantineDecision.fromWire(json['decision'] as String?),
+        ports: <int>[
+          for (final Object? p
+              in json['ports'] as List<Object?>? ?? const <Object?>[])
+            if (p is num) p.toInt(),
+        ],
+        total: (json['total'] as num? ?? 0).toInt(),
+        missing: (json['missing'] as num? ?? 0).toInt(),
+        disabled: (json['disabled'] as num? ?? 0).toInt(),
+        drifted: (json['drifted'] as num? ?? 0).toInt(),
+      );
 }
 
 /// Lo que el daemon midió de la red que hay debajo del túnel.

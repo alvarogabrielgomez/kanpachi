@@ -8,7 +8,9 @@ import 'package:kanpachi_ui/core/design_system/atoms/app_switch.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_card.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
+import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/features/seed/presentation/widgets/seed_settings_card.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/update/presentation/widgets/update_check_card.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
@@ -187,10 +189,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: AppSpacing.x4l),
           ],
-          // El servidor va PRIMERO de los que quedan, y no al final: es el
-          // único ajuste que decide algo del producto, y los otros dos son
-          // sobre la app. En una copia portable es además el primero de todos,
-          // porque «Este equipo» no existe ahí.
+          // La cuarentena de base: el interruptor de la decisión, dibujado
+          // SIEMPRE de la medición y jamás de la intención. Apagar se
+          // confirma con una línea y encender no: poner protección no
+          // necesita permiso.
+          AppCard(
+            padding: AppSpacing.cardInset,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                const AppKicker('Puertos de esta PC'),
+                const SizedBox(height: AppSpacing.x5l),
+                AppSwitchRow(
+                  title:
+                      'Bloquear compartir archivos y Escritorio remoto '
+                      'hacia esta PC',
+                  note: _notaCuarentena(session.health.quarantine),
+                  value:
+                      session.health.quarantine.verdict ==
+                      QuarantineVerdict.applied,
+                  enabled:
+                      !session.isTogglingQuarantine &&
+                      session.health.quarantine.verdict !=
+                          QuarantineVerdict.unknown,
+                  onChanged: _cambiarCuarentena,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.x4l),
+          // El servidor decide algo del producto y los demás son sobre la
+          // app. En una copia portable es además de los primeros, porque
+          // «Este equipo» no existe ahí.
           const SeedSettingsCard(),
           const SizedBox(height: AppSpacing.x4l),
           const UpdateCheckCard(),
@@ -221,6 +251,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
+
+  /// Mueve el interruptor de la cuarentena. Encender va directo; apagar pasa
+  /// por la confirmación de una línea, que es quien llama al cubit si se
+  /// confirma.
+  void _cambiarCuarentena(bool encender) {
+    if (encender) {
+      unawaited(context.read<SessionCubit>().setQuarantine(enabled: true));
+      return;
+    }
+    context.read<ShellCubit>().showDialog(AppDialog.confirmQuarantineOff);
+  }
+
+  /// El copy del interruptor de la cuarentena, que dice también lo que NO
+  /// significa: un aviso de seguridad que solo asusta se apaga sin leerse. Y
+  /// lleva el puente síntoma→causa, porque nadie llega buscando la palabra
+  /// cuarentena: llegan con «no puedo compartir una carpeta».
+  String _notaCuarentena(QuarantineStatus q) => switch (q.verdict) {
+    QuarantineVerdict.applied =>
+      'Tu PC no responde cuando otra máquina le pide una carpeta compartida '
+          'o quiere entrar por Escritorio remoto. Vale para todas tus redes, '
+          'no solo la de Kanpachi. ¿Problemas para compartir archivos en red, '
+          'o para entrar a esta PC por Escritorio remoto? Fue esto: apágalo y '
+          'vuelve a funcionar enseguida.',
+    QuarantineVerdict.absent =>
+      'Tu PC responde a compartir archivos y a Escritorio remoto. En el wifi '
+          'de un bar o de un hotel, la gente de esa red puede pedirle tus '
+          'carpetas compartidas o el escritorio. Kanpachi no abrió nada de '
+          'eso, y la gente de tu sala tampoco llega ahí: lo tapa la '
+          'Protección Kanpachi mientras la sala está abierta. Enciéndelo '
+          'salvo que compartas carpetas desde esta PC o entres a ella por '
+          'Escritorio remoto.',
+    QuarantineVerdict.partial =>
+      'Está a medias: algo que no es Kanpachi la cambió. Enciéndelo para '
+          'reparar lo que falta.',
+    QuarantineVerdict.unknown =>
+      'Todavía no se pudo medir. El servicio contesta esto solo; si sigue '
+          'así, el diagnóstico dice más.',
+  };
 
   /// Lo que dice debajo del interruptor de arranque, que cambia con lo que se
   /// sabe.

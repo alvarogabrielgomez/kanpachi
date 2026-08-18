@@ -417,6 +417,14 @@ class PipeSessionRepository implements SessionRepository {
   Future<HealthReport> reapplyProtection() async =>
       HealthReport.fromJson(await _mapa(DaemonMethods.reapplyProtection));
 
+  @override
+  Future<HealthReport> quarantine({bool? enabled}) async =>
+      HealthReport.fromJson(
+        await _mapa(DaemonMethods.quarantine, <String, Object?>{
+          if (enabled != null) 'set': enabled ? 'on' : 'off',
+        }),
+      );
+
   // ------------------------------------------------------------------ plomería
 
   /// Convierte una vista de sala en entidad, resolviendo el juego.

@@ -71,6 +71,10 @@ enum AppDialog {
   /// crear sale del registro que esta máquina tiene configurado, y al entrar
   /// del código que te pegaron.
   trustSeed,
+
+  /// Apagar la cuarentena de base. Apagar SÍ se confirma y encender no:
+  /// poner protección no necesita permiso, quitarla conviene leerla una vez.
+  confirmQuarantineOff,
 }
 
 /// Cómo se listan los juegos.

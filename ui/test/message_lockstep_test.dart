@@ -253,6 +253,64 @@ void main() {
       },
     );
 
+    test(
+      'QuarantineVerdict tiene los mismos veredictos que quarantineVerdictName en Go',
+      () {
+        final Set<String> enGo = _cadenasDeLaFuncion(
+          repo: repo,
+          archivo: 'daemon/transport/protocol/view.go',
+          funcion: 'quarantineVerdictName',
+        );
+        final Set<String> enDart = QuarantineVerdict.values
+            .map((QuarantineVerdict v) => v.wire)
+            .toSet();
+
+        expect(
+          enGo,
+          isNotEmpty,
+          reason: 'no se leyó ningún veredicto de quarantineVerdictName',
+        );
+        expect(
+          enDart,
+          equals(enGo),
+          reason:
+              'QuarantineVerdict y quarantineVerdictName dejaron de coincidir. '
+              'Un veredicto que la UI no conoce cae en "no se pudo medir", y '
+              'el interruptor de Configuración se apaga en gris sin explicar '
+              'nada.',
+        );
+      },
+    );
+
+    test(
+      'QuarantineDecision tiene las mismas respuestas que quarantineDecisionName en Go',
+      () {
+        final Set<String> enGo = _cadenasDeLaFuncion(
+          repo: repo,
+          archivo: 'daemon/transport/protocol/view.go',
+          funcion: 'quarantineDecisionName',
+        );
+        final Set<String> enDart = QuarantineDecision.values
+            .map((QuarantineDecision d) => d.wire)
+            .toSet();
+
+        expect(
+          enGo,
+          isNotEmpty,
+          reason: 'no se leyó ninguna respuesta de quarantineDecisionName',
+        );
+        expect(
+          enDart,
+          equals(enGo),
+          reason:
+              'QuarantineDecision y quarantineDecisionName dejaron de '
+              'coincidir. Una respuesta que la UI no conoce cae en "sin '
+              'decidir", y la pantalla volvería a tratar como debida una '
+              'pregunta que ya se contestó.',
+        );
+      },
+    );
+
     test('FailureCode tiene los mismos códigos que protocol.Code en Go', () {
       final Set<String> enGo = _codigosDelProtocolo(repo);
       final Set<String> enDart = FailureCode.values
@@ -299,6 +357,14 @@ void main() {
     sinRepetidos(
       'CanaryVerdict',
       CanaryVerdict.values.map((CanaryVerdict v) => v.wire).toList(),
+    );
+    sinRepetidos(
+      'QuarantineVerdict',
+      QuarantineVerdict.values.map((QuarantineVerdict v) => v.wire).toList(),
+    );
+    sinRepetidos(
+      'QuarantineDecision',
+      QuarantineDecision.values.map((QuarantineDecision d) => d.wire).toList(),
     );
   });
 

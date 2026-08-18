@@ -782,6 +782,7 @@ abstract final class AppMessages {
     FailedAction.importCatalog => 'No se pudo importar el catálogo',
     FailedAction.exportCatalog => 'No se pudo exportar el catálogo',
     FailedAction.suspendForeignRules => 'No se pudo cambiar la regla del juego',
+    FailedAction.quarantine => 'No se pudo cambiar la cuarentena',
     FailedAction.quit => 'No se pudo cerrar Kanpachi',
   };
 

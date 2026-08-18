@@ -64,7 +64,7 @@ enum RoomWork {
 /// sala**: se puede pedir sin sala, no cambia el juego ni los miembros, y no
 /// tiene que apagar los botones de la sala mientras corre. Metido en el mismo
 /// enum, pulsar el botón de la alarma dejaría la pantalla entera en gris.
-enum ProtectionWork { none, reapplying }
+enum ProtectionWork { none, reapplying, togglingQuarantine }
 
 /// Qué se está haciendo con el código de la sala.
 ///
@@ -244,6 +244,8 @@ class SessionState {
 
   bool get isBusy => work != RoomWork.none;
   bool get isReapplying => protection == ProtectionWork.reapplying;
+  bool get isTogglingQuarantine =>
+      protection == ProtectionWork.togglingQuarantine;
   bool get isRenewingCode => code == CodeWork.renewing;
   bool get isRefreshing => refreshing;
 

@@ -12,7 +12,7 @@ library;
 
 import 'package:kanpachi_ui/core/timing/app_timing.dart';
 
-/// The 27 methods, with the exact name that travels on the wire.
+/// The 28 methods, with the exact name that travels on the wire.
 abstract final class DaemonMethods {
   static const String hello = 'hello';
 
@@ -41,6 +41,12 @@ abstract final class DaemonMethods {
   static const String probeHost = 'probe_host';
 
   static const String reapplyProtection = 'reapply_protection';
+
+  /// The base-quarantine switch, and its reading. With `set` on/off it IS the
+  /// user's decision, made true in that direction; without it, it only reads.
+  /// Both answer the whole status, because what the screen draws next is the
+  /// switch with a fresh measurement.
+  static const String quarantine = 'quarantine';
 
   /// The room THIS machine hosts, as it was left on disk.
   ///
@@ -132,6 +138,7 @@ const Map<String, Duration> kMethodTimeouts = <String, Duration>{
 
   DaemonMethods.activateProfile: Duration(seconds: 30),
   DaemonMethods.reapplyProtection: Duration(seconds: 30),
+  DaemonMethods.quarantine: Duration(seconds: 30),
   DaemonMethods.suspendForeignRules: Duration(seconds: 30),
   DaemonMethods.kickMember: Duration(seconds: 30),
   DaemonMethods.rotateInviteCode: Duration(seconds: 30),

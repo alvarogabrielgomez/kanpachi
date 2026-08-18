@@ -12,6 +12,7 @@ import 'package:kanpachi_ui/core/design_system/molecules/app_list.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
 import 'package:kanpachi_ui/core/messages/message_catalog.dart';
+import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/home/presentation/widgets/saved_room_notice.dart';
 import 'package:kanpachi_ui/features/home/presentation/widgets/returning_notice.dart';
@@ -454,9 +455,36 @@ class _HealthAlerts extends StatelessWidget {
               detail: alerts[i].detail,
             ),
             titleStyle: context.type.strongSm,
+            actions: alerts[i].kind == AlertKind.quarantineOff
+                ? const <Widget>[_CloseQuarantineButton()]
+                : null,
           ),
         ],
       ],
+    );
+  }
+}
+
+/// El botón del aviso de la cuarentena: el camino para aplicarla, al lado del
+/// problema y nunca solo el problema. Encender no se confirma, igual que en
+/// Configuración: poner protección no necesita permiso.
+class _CloseQuarantineButton extends StatelessWidget {
+  const _CloseQuarantineButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final bool trabajando = context
+        .watch<SessionCubit>()
+        .state
+        .isTogglingQuarantine;
+    return AppButton(
+      label: trabajando ? 'Cerrando…' : 'Cerrar esos puertos',
+      variant: AppButtonVariant.primaryFlat,
+      height: 34,
+      horizontalPadding: 15,
+      onPressed: trabajando
+          ? null
+          : () => context.read<SessionCubit>().setQuarantine(enabled: true),
     );
   }
 }

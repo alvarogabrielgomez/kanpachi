@@ -916,6 +916,25 @@ class SessionCubit extends Cubit<SessionState> {
     if (!isClosed) emit(state.copyWith(protection: ProtectionWork.none));
   }
 
+  /// El interruptor de la cuarentena de base, en la dirección que diga
+  /// `enabled`. La decisión ES la operación, y lo que vuelve es la salud con
+  /// la medición fresca, jamás un acuse: el interruptor se redibuja de lo que
+  /// quedó puesto de verdad.
+  ///
+  /// Misma bandera de trabajo que reponer la protección y por lo mismo: sin
+  /// apagar el interruptor mientras corre, un doble clic manda dos escrituras
+  /// del firewall a la vez.
+  Future<void> setQuarantine({required bool enabled}) async {
+    if (state.isTogglingQuarantine) return;
+    emit(state.copyWith(protection: ProtectionWork.togglingQuarantine));
+    await _try(FailedAction.quarantine, () async {
+      emit(
+        state.copyWith(health: await _repository.quarantine(enabled: enabled)),
+      );
+    });
+    if (!isClosed) emit(state.copyWith(protection: ProtectionWork.none));
+  }
+
   /// Saves a profile the user typed in.
   ///
   /// Returns null when it did not save, so the screen knows not to navigate

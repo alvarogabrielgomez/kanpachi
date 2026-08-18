@@ -585,7 +585,9 @@ class _AddressBox extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     AppKicker(
-                      room.selfIsHost ? 'Pásales esta dirección' : 'Conéctate a',
+                      room.selfIsHost
+                          ? 'Pásales esta dirección'
+                          : 'Conéctate a',
                       size: AppKickerSize.xs,
                     ),
                     const SizedBox(height: 5),

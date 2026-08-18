@@ -178,6 +178,15 @@ abstract interface class SessionRepository {
   /// pantalla enseñaría una alarma que ya no es cierta.
   Future<HealthReport> reapplyProtection();
 
+  /// El interruptor de la cuarentena de base: leer, o decidir.
+  ///
+  /// Con `enabled` es la DECISIÓN del usuario, hecha verdad en la dirección
+  /// que diga: encender la escribe y apagar la quita, las dos idempotentes.
+  /// Sin `enabled` solo lee. Una sola operación por lo mismo que [autostart]:
+  /// la pantalla que mueve el interruptor necesita de vuelta lo que quedó
+  /// puesto DE VERDAD, medido, y jamás la intención.
+  Future<HealthReport> quarantine({bool? enabled});
+
   /// Da de alta un juego que no estaba en el catálogo.
   Future<Game> saveManualGame(Game game);
 
