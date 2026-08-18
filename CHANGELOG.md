@@ -11,7 +11,7 @@ This file is in English, like commit messages and release notes, because a relea
 ### Fixed
 
 - Stop handing out a broken invite link when you are a guest: the key that unscrambles a room card is kept only by whoever hosts, so every guest was pasting a link ending in forty-three A's — thirty-two zero bytes — and whoever received it got a fragment that opens no card. A guest's link is now the dictated form, with no fragment, which enters the room just the same and shows the generic card. Reported live against the Linux CLI ([a00e14f](https://github.com/alvarogabrielgomez/kanpachi/commit/a00e14f))
-- List `quarantine` in `kanpachi help`, where it had never appeared: the command shipped in 0.5.0 with its three faces and nothing telling anybody it exists, because the help is drawn from a second list a new command has to be added to by hand. It gains its own section in the command reference too, symptom first ([HASH](https://github.com/alvarogabrielgomez/kanpachi/commit/HASH))
+- List `quarantine` in `kanpachi help`, where it had never appeared: the command shipped in 0.5.0 with its three faces and nothing telling anybody it exists, because the help is drawn from a second list a new command has to be added to by hand. It gains its own section in the command reference too, symptom first ([79bd3bc](https://github.com/alvarogabrielgomez/kanpachi/commit/79bd3bc))
 
 ## [0.6.0] - 2026-08-18
 
