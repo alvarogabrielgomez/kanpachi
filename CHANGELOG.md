@@ -10,7 +10,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Changed
 
-- One name per machine, kept by the daemon: the window, the terminal and the wizard all read and write the same one, so changing it anywhere changes it everywhere. Each face used to keep its own file side by side in the data folder, and the room showed whichever one had entered it — a window saying Alvaro and a room showing AlvaroGDeskt. Your existing name is adopted on the next start with nothing to answer, `kanpachi name` shows or changes it from the terminal, and a machine where nobody has chosen one still opens a room with a name derived from its own — said out loud, never written down, because a guess saved to disk is a guess that beats the real answer ([HASH](https://github.com/alvarogabrielgomez/kanpachi/commit/HASH))
+- One name per machine, kept by the daemon: the window, the terminal and the wizard all read and write the same one, so changing it anywhere changes it everywhere. Each face used to keep its own file side by side in the data folder, and the room showed whichever one had entered it — a window saying Alvaro and a room showing AlvaroGDeskt. Your existing name is adopted on the next start with nothing to answer, `kanpachi name` shows or changes it from the terminal, and a machine where nobody has chosen one still opens a room with a name derived from its own — said out loud, never written down, because a guess saved to disk is a guess that beats the real answer ([670cb6a](https://github.com/alvarogabrielgomez/kanpachi/commit/670cb6a))
 
 ### Fixed
 
