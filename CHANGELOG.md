@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.5.0] - 2026-08-18
+
 ### Changed
 
 - Stop closing this machine's risky server ports without asking: the base quarantine became YOUR decision, asked once at the door of `kanpachi host` and `join` with the exact ports listed and no default answer, `--quarantine on|off` answering it from a script, a terminal-less run without the flag refused on purpose, and the window never blocked on it. Saying yes closes them until you say otherwise, saying no removes what a yes had closed, every daemon start and `--reset` obey the recorded answer, and nothing but uninstalling or your own no ever removes it ([2fbbe5d](https://github.com/alvarogabrielgomez/kanpachi/commit/2fbbe5d), [8ac7234](https://github.com/alvarogabrielgomez/kanpachi/commit/8ac7234))
@@ -22,6 +24,9 @@ This file is in English, like commit messages and release notes, because a relea
 - Stop the Linux quarantine strangling the machine talking to ITSELF: a local process connecting to a quarantined port on 127.0.0.1 hung until its timeout, measured on the bench with a control port that connected instantly. The loopback is exempted first in both chains, which is what Windows already did at the system level — the quarantine protects from networks, and a machine talking to itself is not one ([88974b2](https://github.com/alvarogabrielgomez/kanpachi/commit/88974b2))
 - Answer `kanpachi quarantine` asked with nothing: the bare read travels without parameters, the daemon refused it with "faltan los parámetros", and the state-telling half of the new switch never worked. Found live the first time the command met a real daemon — the exact absent-params defect `seed` had already found and fixed on its own method ([3b33818](https://github.com/alvarogabrielgomez/kanpachi/commit/3b33818))
 - Let a GUEST disable the game's own leftover firewall rule on their machine: the notice offered the button and the daemon refused with "only the host can do that", a guard inherited from profile activation. The rule lives on the guest's own firewall and leaves their game reachable from their home network and from the whole room, so the suspension asks for a room and nothing else — which is what the restore-on-exit already assumed, running for every role since day one. Found live on 2026-08-18 as a guest in a friend's room ([3c91575](https://github.com/alvarogabrielgomez/kanpachi/commit/3c91575))
+- Show the quarantine notice on the ROOM screen, not only on the home: while playing you live on the room screen, and opening a room is precisely one of the notice's triggers, so it was firing exactly where the player was not looking. Found live: the CLI showed it, the window did not ([3f9238f](https://github.com/alvarogabrielgomez/kanpachi/commit/3f9238f))
+- Answer the Unirse click the instant it happens: asking the registry what is behind a code takes seconds with a distant one, and the button gave no reaction for that whole gap — a click without an answer is a click that gets repeated. It now spins and refuses reentry until the answer arrives ([40cba16](https://github.com/alvarogabrielgomez/kanpachi/commit/40cba16))
+- Give the window the way back to your last room: leaving on purpose or being kicked keeps the room with its automatic return off, and the CLI and the wizard already offered going back while the window never even asked the daemon. The home now shows the room with a "Volver a la sala" button that enters through the same trust confirmation as pasting the code ([8ce9cf4](https://github.com/alvarogabrielgomez/kanpachi/commit/8ce9cf4))
 
 ## [0.4.0] - 2026-08-17
 
@@ -317,6 +322,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.5.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.5.0
 [0.4.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.4.0
 [0.3.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.3.0
 [0.2.2]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.2.2
