@@ -52,11 +52,17 @@ Some ports are never opened by any profile and cannot be expressed in one:
 remote desktop, remote management, device discovery.
 
 Absence of a rule is not enough for these, because a game installer or another
-program may have left a permissive rule behind. So they are blocked
-**explicitly**, in both directions, in a separate rule group that the daemon
-writes on every start and **has no method to remove**. That missing capability
-is the protection: the quarantine stays in place while Kanpachi is stopped,
-crashed, or uninstalled from the running process's point of view.
+program may have left a permissive rule behind. So they can be blocked
+**explicitly**, in both directions, **on every network interface of the whole
+machine** — not just the virtual adapter — in a separate rule group. Closing
+ports that wide is a real trade (it is this machine's own file sharing and
+Remote Desktop that stop answering, everywhere), so it is the **user's
+decision**: Kanpachi asks once, recommends yes with the reasons spelled out,
+and the answer is a switch that works in both directions. Once the user says
+yes, every start repairs it, and **no automatic path can remove it** — not a
+sweep, not a restart, not a reset. That is the protection: the quarantine
+stays in place while Kanpachi is stopped, crashed, or half uninstalled, until
+the person who put it there says otherwise, or uninstalls.
 
 ### 3. A gate that makes the allow list complete
 

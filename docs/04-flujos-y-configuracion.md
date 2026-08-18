@@ -225,7 +225,7 @@ En orden: detener y borrar el servicio, purgar las reglas de **los dos grupos**,
 
 **El desinstalador es el único que borra los dos.** Es la razón por la que conviene que los nombres se parezcan, y también la trampa: la comparación va por igualdad exacta contra cada uno, jamás por prefijo contra "Kanpachi", porque el mismo atajo escrito dentro del daemon borraría la cuarentena en cada arranque.
 
-**Borrar la cuarentena es requisito de producto, no cortesía.** Dejar bloqueos explícitos sobre el 445 y el 3389 en toda la máquina con Kanpachi ya borrado deja al usuario sin compartir archivos ni Escritorio remoto, sin causa visible y sin nada que culpar. Por eso el desinstalador ejecuta la limpieza con el daemon todavía en disco y solo después elimina el servicio y los binarios.
+**Borrar la cuarentena es requisito de producto, no cortesía.** Dejar bloqueos explícitos sobre el 445 y el 3389 en toda la máquina con Kanpachi ya borrado deja al usuario sin compartir archivos ni Escritorio remoto. Ese mismo efecto existe con Kanpachi puesto y funcionando, y por eso dejó de ser silencioso: la cuarentena es la decisión del usuario, el puente síntoma→causa vive en el doctor, en Configuración y en `kanpachi quarantine`, y "sin causa visible" quedó reservado para la única máquina donde ninguna cara puede explicarlo, la que ya desinstaló. Por eso el desinstalador ejecuta la limpieza con el daemon todavía en disco y solo después elimina el servicio y los binarios.
 
 ### Hasta que exista, el comando de soporte
 

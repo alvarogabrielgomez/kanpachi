@@ -648,7 +648,7 @@ core/
 daemon/
   adapter/
     engine/kanpachi/
-    firewall/windowscom/
+    firewall/windows/netfw/
     netcfg/windows/
     catalog/jsonfile/
     library/steam/
@@ -715,7 +715,7 @@ Vale más que cualquier documento, porque no se puede ignorar sin querer. Si ese
 
 Existe en `internal/arch/arch_test.go` y lo ejecuta el job `core` del workflow de CI, en Ubuntu. Vive fuera de `core/` a propósito: necesita `os` y `path/filepath` para recorrer el disco, y ponerlo dentro lo obligaría a saltarse a sí mismo con una excepción, que es una regla más débil. Lleva un segundo test que comprueba el detector contra casos conocidos, porque un guardián que nunca se probó no es un guardián.
 
-**La mitad pura de los adaptadores partidos tiene su propio guardián**, y mira por ARCHIVO en vez de por paquete, que es lo que lo distingue del de arriba: ahí el paquete entero sí conoce Windows, y lo que se vigila es que la frontera esté donde dice estar. Un archivo sin sufijo `_windows` es lo que el job de Linux compila y prueba, y lo que se queda sin pruebas si alguien mete Windows dentro son justo las decisiones caras: el alcance de un bloqueo duro en `wfp`, qué dice cada regla en `windowscom`, qué rutas se ponen y cuál se borra en `netcfg`, qué prefijos se descartan en `routes`. El fallo sería silencioso, porque el paquete sigue compilando en la máquina donde se programa. La lista de imports prohibidos es más corta que la de `core`: la mitad pura sí puede leer y escribir ficheros, que es lo que hace el libro de ajustes; lo que no puede es hablar con Windows.
+**La mitad pura de los adaptadores partidos tiene su propio guardián**, y mira por ARCHIVO en vez de por paquete, que es lo que lo distingue del de arriba: ahí el paquete entero sí conoce Windows, y lo que se vigila es que la frontera esté donde dice estar. Un archivo sin sufijo `_windows` es lo que el job de Linux compila y prueba, y lo que se queda sin pruebas si alguien mete Windows dentro son justo las decisiones caras: el alcance de un bloqueo duro en `wfp`, qué dice cada regla en `windows/netfw`, qué rutas se ponen y cuál se borra en `netcfg`, qué prefijos se descartan en `routes`. El fallo sería silencioso, porque el paquete sigue compilando en la máquina donde se programa. La lista de imports prohibidos es más corta que la de `core`: la mitad pura sí puede leer y escribir ficheros, que es lo que hace el libro de ajustes; lo que no puede es hablar con Windows.
 
 #### El guardián del cableado
 
@@ -1781,7 +1781,7 @@ La primera corrida encontró dos caídas que ningún test del repo podía encont
 
 El verbo `probe` tenía un `DialTimeout` propio, y era exactamente el error que este binario existe para no cometer: medía otra cosa que la que corre el daemon, así que su verde no valía. Ahora usa `adapter/probe`, con el plazo del producto y sin bandera para cambiarlo, porque medir con otro plazo es medir otra cosa.
 
-### adapter/firewall/windowscom, la capa que ABRE
+### adapter/firewall/windows/netfw, la capa que ABRE
 
 Implementa la mitad de permisos que el adaptador compuesto usa. **No implementa `FirewallPort` por sí sola**, y esa distinción se hizo explícita: contener necesita las dos capas, y esta no puede acotar la compuerta.
 
@@ -2018,7 +2018,7 @@ La puerta tiene que estar abierta a desconocidos por definición: quien está en
 
 Escucha en **TCP 57623**, en la interfaz virtual y en ninguna otra. Fijo y no negociado, por lo mismo que el `/24` del vestíbulo: quien entra tiene que llegar sin haber hablado antes con nadie, y el canal por el que se negociaría un puerto es justamente el que se está montando.
 
-La interfaz nace en cuarentena, o sea sin ninguna regla de permiso, así que **el host tiene que abrirle un hueco a su propia puerta**. Ese hueco es la única regla que Kanpachi crea sin que ningún perfil la pida, va en el mismo conjunto declarativo que las de juego, y se describe en la decisión 4. Calcularlo aparte de `BuildRuleSet` no es organización: aquella devuelve vacío cuando no hay juego activo, que es el estado normal de una sala recién creada.
+La interfaz nace sin ninguna regla de permiso, así que **el host tiene que abrirle un hueco a su propia puerta**. Ese hueco es la única regla que Kanpachi crea sin que ningún perfil la pida, va en el mismo conjunto declarativo que las de juego, y se describe en la decisión 4. Calcularlo aparte de `BuildRuleSet` no es organización: aquella devuelve vacío cuando no hay juego activo, que es el estado normal de una sala recién creada.
 
 #### La tabla de mensajes, cerrada y por dirección
 
@@ -2183,9 +2183,9 @@ La regla que centraliza: **toda mutación persistente de Kanpachi o lleva etique
 
 **Ningún fallo corta la secuencia.** No hay un segundo intento: quien pide un reset lo pide porque nada más funciona, y abortar en el primer paso dejaría el resto puesto justo entonces. Se registran todos y se devuelven juntos.
 
-**El reset REPONE la cuarentena y no la quita**, y esa asimetría es el diseño entero. Lo que hace valiosa a la cuarentena es seguir puesta con el daemon detenido, deshabilitado o a medio desinstalar. Un reset por corrupción que se la llevara destruiría exactamente lo que protege del caso corrupción. Y conserva `last-room.json`: resetear la configuración no es olvidar a qué sala volver.
+**El reset REPONE la cuarentena solo con la decisión del usuario en sí, y no la quita nunca.** Un reset repone lo que el usuario eligió, jamás lo que el producto prefiere: con la decisión en no o sin tomar no escribe nada. Y quitarla tampoco es suyo, porque quitar la cuarentena es siempre el acto de una persona (decisión 37). Conserva `last-room.json`: resetear la configuración no es olvidar a qué sala volver.
 
-**El desinstalador es otra bandera**, `--uninstall-cleanup`, que hace lo mismo y además quita la cuarentena. Esa capacidad vive en **una sola función**, `windowscom.RemoveBaseQuarantineForUninstall`, con el nombre largo a propósito para que aparezca entero en cualquier búsqueda. Está cerrada por tres vías: `port.FirewallPort` no declara nada que pueda quitarla, así que ningún caso de uso puede pedirlo; un guardián exige que sea la única función del daemon que a la vez nombre el grupo base y llame a algo que borra; y otro exige que solo la llame el cableado de `cmd/kanpachid`. El primero de esos guardianes se escribió porque el que ya existía **no mordía**: buscaba llamadas con nombre de verbo destructivo y el grupo entre los argumentos, y el borrado real pasa por un helper propio con el grupo comparado contra el campo de una regla enumerada. Se comprobó escribiendo la función y viendo al guardián viejo callar.
+**El desinstalador es otra bandera**, `--uninstall-cleanup`, que hace lo mismo y además quita la cuarentena. Quitarla tiene exactamente DOS funciones con nombre cerrado, una por acto de persona: `netfw.RemoveBaseQuarantineForUninstall` (y su gemela de `nftpermits`), que solo llama el cableado de `cmd/kanpachid`, y `RemoveBaseQuarantineAtUserRequest`, que viaja por `port.FirewallPort` y solo puede llamar el caso de uso del consentimiento, `core/usecase/quarantine.go`. Los guardianes de `internal/arch/grupobase_test.go` lo sostienen por nombre y por llamador, y se escribieron mordiendo: el guardián viejo de llamadas destructivas **no mordía**, porque el borrado real pasa por un helper propio con el grupo comparado contra el campo de una regla enumerada, y se comprobó escribiendo la función y viéndolo callar. Los reescritos se comprobaron igual, mutilando el código por las cuatro vías y viéndolos ponerse rojos.
 
 Medido el 2026-08-05 con una sala real y el daemon muerto a lo bruto: quedaban una regla del grupo `Kanpachi`, seis filtros de compuerta y un `hosted-room.json`; tras el reset, cero y cero, la cuarentena entera en sus 48 reglas, sin motor huérfano, sin `hosted-room.json`, y una sala nueva se creó a continuación. Lo corre `scripts/measure-reset.ps1`.
 

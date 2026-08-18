@@ -447,9 +447,9 @@ Lo que **dejó de ser cierto** es que quien tenga el código entre para siempre.
 
 **Elección:**
 
-- Cuarentena en la interfaz virtual desde la instalación, en los tres perfiles.
+- Cuarentena de base en **toda la máquina**, en los tres perfiles, puesta cuando el usuario la elige. La tabla de abajo siempre dijo "en todas las interfaces"; la frase de esta lista decía "en la interfaz virtual" y era falsa, medido el 2026-08-16: 48 reglas con `InterfaceType: Any`. Quién la aplica y cuándo es la decisión 37, que la convirtió de automática en una decisión de la persona.
 - Se abre únicamente lo que pide el perfil del juego activo, únicamente en el host, únicamente hacia las IPs de miembros presentes en la sala.
-- 445, 3389, 22 y todo lo no listado: cerrado siempre. La API no tiene forma de abrirlos.
+- 445, 3389, 22 y todo lo no listado: cerrado siempre para los perfiles. La API no tiene forma de abrirlos, con o sin cuarentena.
 - Jamás exit node, jamás subnet routing, jamás IP forwarding. No existen como opción.
 
 **La UI lo hace visible:** "Zomboid, 2 puertos UDP, visibles para 4 personas". La seguridad que no se ve no genera confianza.
@@ -484,9 +484,9 @@ La segunda es de ciclo de vida. El daemon purga por grupo al arrancar. Con un so
 | Grupo | Quién lo pone | Qué lleva | Cuándo se va |
 |---|---|---|---|
 | `Kanpachi` | El daemon, en cada cambio de sala | Las reglas del juego activo y el hueco del canal | Purga del arranque, o salir de la sala |
-| `Kanpachi-base` | El daemon, en cada arranque, y solo AGREGA | La cuarentena de arriba | El desinstalador |
+| `Kanpachi-base` | El daemon, cuando la decisión del usuario está en sí, y solo AGREGA | La cuarentena de arriba | El desinstalador, o la decisión del usuario (ver la 37) |
 
-**El daemon jamás la BORRA,** así que la cuarentena sigue puesta con el servicio detenido, deshabilitado o a medio desinstalar. Lo vigila `internal/arch/grupobase_test.go`, que además comprueba lo que un lector distraído rompería sin notarlo: `Kanpachi` es prefijo de `Kanpachi-base`, así que una purga escrita con `HasPrefix` en vez de igualdad se lleva la cuarentena por delante.
+**Ningún camino automático la BORRA,** así que la cuarentena sigue puesta con el servicio detenido, deshabilitado o a medio desinstalar, salvo que una persona diga lo contrario. Lo vigila `internal/arch/grupobase_test.go`, que además comprueba lo que un lector distraído rompería sin notarlo: `Kanpachi` es prefijo de `Kanpachi-base`, así que una purga escrita con `HasPrefix` en vez de igualdad se lleva la cuarentena por delante.
 
 **Alternativa descartada:** meter la base dentro del conjunto deseado que el daemon reaplica. Deja de existir cada vez que el daemon no está, que es justo cuando más hace falta, y paga el costo de agregarle acción y dirección a `FirewallRule`.
 
@@ -494,19 +494,19 @@ La segunda es de ciclo de vida. El daemon purga por grupo al arrancar. Con un so
 
 Esto decía que la ponía el instalador y que el daemon jamás la nombraba. **No hay instalador**, y una cuarentena que depende de un programa que no existe es una promesa apagada: la máquina arranca sin ella y nadie se entera, porque todo sigue funcionando igual.
 
-**Elección:** la escribe el daemon en cada arranque, con `ApplyBaseQuarantine`, antes de `PurgeOwned`.
+**Elección:** la escribe el daemon en el arranque, con `ApplyBaseQuarantine`, antes de `PurgeOwned`, y **solo con la decisión del usuario en sí** (ver la 37). Antes de la purga y no después, porque la purga es el instante de menos protección de todo el arranque, con las reglas de la sala anterior cayendo.
 
-Antes de la purga y no después, porque la purga es el instante de menos protección de todo el arranque, con las reglas de la sala anterior cayendo. Y su fallo es fatal: un daemon que no pudo escribirla es un daemon con la promesa apagada, y arrancar igual le dejaría al usuario la app abierta diciendo que todo está bien encima de una máquina sin lo único que la protege con el servicio parado.
+Este renglón decía que su fallo era fatal, y esa invariante se derogó con la 37: un daemon que no arranca por no poder escribirla deja al usuario sin producto entero por una protección que él mismo eligió. Arrancar diciéndolo deja el barrido midiendo, la alerta contándolo, y el interruptor a mano para reintentar.
 
 **Lo que cambia es quién la pone. Lo que NO cambia es lo que la hace valiosa,** y por eso la regla que protege se movió en vez de desaparecer:
 
 | Antes | Ahora |
 |---|---|
-| El daemon jamás nombra el grupo base | Lo nombra **un solo paquete**, `daemon/adapter/firewall/windowscom/` |
-| — | **Ninguna llamada destructiva de `daemon/` puede apuntarle**, comprobado por AST |
-| — | **No existe el método para borrarla en `FirewallPort`**, comprobado sobre la interfaz |
+| El daemon jamás nombra el grupo base | Lo nombran **dos paquetes**, `daemon/adapter/firewall/windows/netfw/` y `daemon/adapter/firewall/linux/nftpermits/`, uno por sistema y ninguno más |
+| — | **Quitarla existe de DOS formas cerradas y ninguna automática**, comprobado por AST sobre el nombre y sobre los llamadores de cada una. Ver la 37 |
+| — | **`FirewallPort` la quita de UNA sola forma**, `RemoveBaseQuarantineAtUserRequest`, que solo puede llamar el caso de uso del consentimiento |
 
-El tercero es el que de verdad reemplaza al primero. Un barrido de llamadas caza a quien la borre hoy; una comprobación sobre la interfaz caza a quien haga posible borrarla mañana, y la capacidad es lo que hay que impedir.
+El tercero es el que de verdad reemplaza al primero. Un barrido de llamadas caza a quien la borre hoy; una comprobación sobre la interfaz caza a quien haga posible borrarla mañana por otro nombre, y la capacidad con otros llamadores es lo que hay que impedir.
 
 `ApplyBaseQuarantine` **solo agrega**. Repone lo que falte y reactiva una regla propia que alguien haya desactivado, en el sitio, sobre el objeto exacto que devuelve la enumeración. Una regla cuyo alcance cambió se avisa en el log y se deja: reescribirla obligaría a borrarla primero, y esa capacidad vale más que cerrar una edición que un administrador hizo a conciencia en su propia máquina.
 
@@ -528,7 +528,7 @@ Y el costo no era pequeño: sería la única regla de la cuarentena que **abre e
 
 ### El único hueco que no pide ningún perfil
 
-El canal de la sala de la decisión 23 necesita que el host escuche en un puerto de la interfaz virtual, y la interfaz nace en cuarentena. O sea que la cuarentena tiene exactamente una excepción que no pide ningún perfil, y conviene nombrarla en vez de descubrirla:
+El canal de la sala de la decisión 23 necesita que el host escuche en un puerto de la interfaz virtual, y la interfaz nace sin una sola regla de permiso. O sea que el deny-all tiene exactamente una excepción que no pide ningún perfil, y conviene nombrarla en vez de descubrirla:
 
 | Regla | Dónde escucha | Quién puede llegar | Mientras |
 |---|---|---|---|
@@ -1059,6 +1059,30 @@ El invitado, por su lado, reintenta en cada arranque de Kanpachi mientras su mar
 ```
 
 Probado contra la v2.6.4 fijada, con un seed en modo servidor público y tres clientes en dos redes distintas. El mismo JSON confirma lo otro que importa: **ahí no hay hostnames.** El nick viaja dentro de la red cifrada y el seed relaya sin descifrar, así que ni queriendo podría publicarlo. Esa es la razón de que la tarjeta exista.
+
+## 37. La cuarentena de base es la decisión del usuario, en los dos sentidos
+
+**El hueco, medido el 2026-08-16 sobre esta máquina y sobre el banco.** La cuarentena cierra doce puertos en la máquina ENTERA: 48 reglas en Windows, todas con `InterfaceType: Any`, `LocalAddress: Any`, `RemoteAddress: Any`, en los tres perfiles incluido el de dominio; en Linux es lo mismo en `table inet kanpachi-base`, hooks `input` y `output`, IPv4 e IPv6, sin una sola condición de interfaz. Las reglas salientes comparan el puerto **local**, así que bloquean a esta máquina haciendo de servidor y no de cliente: montar un NAS, entrar por RDP a otra PC y hacer `ssh` afuera quedan intactos, probado en vivo con `ssh` al banco con el bloqueo saliente del 22 activo. Lo que sí rompe, en toda interfaz, para siempre, y sobreviviendo al daemon apagado: entrar por RDP a la propia PC, WinRM, compartir una carpeta desde esta PC, administrarla en remoto, y el descubrimiento WSD de impresoras. Y el usuario no podía revertirlo: un bloqueo explícito le gana a cualquier permiso sin desempate por especificidad, deshabilitar la regla la reactivaba el próximo arranque, y la única salida era desinstalar.
+
+**El proyecto ya tenía escrito este daño, con estas palabras, y lo atribuía al momento equivocado.** "Sin causa visible y sin nada que culpar" estaba escrito como el fallo de un desinstalador que no corrió, y era el estado normal de toda máquina con Kanpachi instalado, desde el primer arranque.
+
+**La invariante que se deroga, y en qué mitad.** "El daemon la escribe en cada arranque y su fallo es fatal" muere entera. La que se conserva se afila: quitar la cuarentena sigue sin poder pasarle a un camino automático, y ahora la doctrina completa es **quitarla es siempre el acto de una persona**. Hay exactamente dos actos de persona: desinstalar (`RemoveBaseQuarantineForUninstall`, solo desde `--uninstall-cleanup`) y la decisión explícita del usuario (`RemoveBaseQuarantineAtUserRequest`, solo desde el caso de uso del consentimiento, `core/usecase/quarantine.go`). Un barrido, un arranque, un `--reset` o un evento del motor siguen sin poder quitarla, y los tres guardianes de `internal/arch/grupobase_test.go` lo sostienen por nombre y por llamador, mordida comprobada mutilando el código.
+
+**Elección.** Tres estados persistidos en `quarantine-decision.json`, sellado como el resto del estado: sin decidir, sí, no. "Sin decidir" no es "no": es lo que hace que la pregunta se haga exactamente una vez. **La decisión ES la operación, en los dos sentidos**: decir que sí escribe las reglas y decir que no las quita, las dos idempotentes, y se cambia de opinión cuando se quiera desde el interruptor de Configuración, el menú del asistente o `kanpachi quarantine on|off`. El arranque obedece: con sí comprueba y repara antes de la purga, con no o sin decidir no escribe nada, y su fallo dejó de ser fatal. `--reset` repone solo lo que el usuario eligió.
+
+**Dónde se pregunta, y la asimetría entre caras es deliberada.** En el CLI la elección es obligatoria al abrir o entrar a una sala: el daemon rechaza con `quarantine_undecided` cuando el llamador pidió preguntar (`quarantine: "ask"`), el mensaje enumera los puertos exactos, y el CLI pregunta sin valor por defecto. `--quarantine on|off` contesta desde un script, y sin terminal y sin bandera se rechaza: la ausencia de una terminal jamás es una respuesta. La bandera es propia y no `--yes`, porque `--yes` ya significa otras dos decisiones de seguridad y colgarle una tercera es como un consentimiento pierde el sentido. La ventana no pide que la rechacen y no se bloquea nunca: en la terminal la pregunta es el modo de interactuar, y una modal antes de jugar es lo que este producto prometió no hacer. Ahí el aviso está, bien visible, con el botón al lado.
+
+**El barrido MIDE y las caras cuentan.** `ExposureAudit.QuarantineState` lee del sistema y jamás de un recuerdo: una regla borrada, deshabilitada o editada se ve, con cuatro veredictos donde el cero es "no se pudo comprobar" y nunca "ausente". Sin la cuarentena puesta y con sala abierta se levanta `AlertQuarantineOff` en cada barrido, también con la decisión en no, y eso está bien: **el aviso es el estado y no un regaño**, lo ideal es tenerla puesta, y decir que no apaga los bloqueos y no el termómetro. La decisión se respeta en las operaciones, jamás en el silencio.
+
+**Por qué esto no es una capitulación.** Lo que contiene la sala no es la cuarentena: es la compuerta de WFP más la ausencia de reglas de permiso, y eso no se toca. Un miembro que quisiera llegar al 445 del host entra por el adaptador virtual, y ahí lo para la compuerta, cuyo bloqueo le gana a cualquier permiso ajeno (medido, decisión 27). La cuarentena cubre el rato sin sala, que es justo cuando no hay nadie de quien defenderse por esa vía. Decir que no devuelve la máquina a como estaba antes de instalar Kanpachi, y no toca lo que Kanpachi promete sobre la sala.
+
+**Alternativa descartada: automática con exenciones.** Detectar qué servicios usa la máquina y cerrar el resto. En Windows el 445 SIEMPRE tiene oyente, así que el heurístico dejaría la cuarentena en nada; y una exención calculada es una decisión de seguridad tomada por una heurística, que es lo que este producto no hace. La pregunta explícita enseña qué se va a cerrar antes de cerrar nada.
+
+**Alternativa descartada: preferencia guardada aparte de las reglas.** Un booleano por un lado y reglas por otro derivan: la preferencia dice sí con las reglas rotas, o no con las reglas puestas. Con la decisión como operación y el estado siempre medido, lo que la pantalla dice es lo que la máquina tiene.
+
+**Riesgos aceptados, con los ojos abiertos.** La mayoría va a decir que no, o no va a decidir nunca en Windows: la cuarentena pasa de ser lo que la máquina tiene a ser lo que algunos eligen. Se pierde defensa en profundidad para el caso de que la compuerta falle; lo que queda cubriendo eso es el canario, que mide la compuerta de verdad y levanta alarma. Y Windows cierra el 22 y Linux no, que con la cuarentena a pedido importa menos y sigue siendo una asimetría anotada.
+
+**Qué NO cambia.** El desinstalador sigue quitando las reglas en las dos plataformas y tolera que no haya ninguna. `forbiddenPorts` sigue entero: ningún perfil de juego puede pedir esos puertos, con o sin cuarentena. La compuerta y la ausencia de permisos, o sea lo que contiene la sala. Y `QuarantineRule` sigue sin poder expresar un permiso.
 
 ### Quién puede escribir una tarjeta
 

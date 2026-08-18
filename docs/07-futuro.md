@@ -183,15 +183,20 @@ que este producto pueda hacer aunque el resultado fuera útil.
 
 ## 11. El desinstalador, que tiene que borrar los DOS grupos de firewall
 
-Hoy no hay desinstalador, y la cuarentena de base la escribe el daemon en cada
-arranque, con un método que solo agrega. O sea que hay una forma de ponerla y
-ninguna de quitarla.
+El desinstalador existe desde que hay `--uninstall-cleanup`, y esta entrada se
+conserva por lo que documenta: por qué borrar los dos grupos es parte del
+producto. La cuarentena de base la escribe el daemon cuando la decisión del
+usuario está en sí, y quitarla tiene exactamente dos caminos, los dos de una
+persona: la propia decisión del usuario (`kanpachi quarantine off`, decisión 37)
+y el desinstalador.
 
 **Es requisito de producto, no cortesía.** Dejar bloqueos explícitos sobre el 445
 y el 3389 en toda la máquina con Kanpachi ya borrado deja al usuario sin
 compartir archivos ni Escritorio remoto, **sin causa visible y sin nada que
-culpar**. El síntoma aparece semanas después, en una máquina donde el producto ya
-no está instalado, así que nadie va a relacionarlo.
+culpar**: con el producto puesto ese estado lo explican el doctor, Configuración
+y `kanpachi quarantine`; desinstalado, no queda ninguna cara que lo cuente. El
+síntoma aparecería semanas después, en una máquina donde el producto ya no está
+instalado, así que nadie iba a relacionarlo.
 
 Lo que tiene que hacer, en este orden: detener y borrar el servicio, purgar los
 grupos `Kanpachi` y `Kanpachi-base` **por igualdad exacta de cada nombre y jamás

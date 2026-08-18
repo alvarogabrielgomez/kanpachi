@@ -19,7 +19,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Fixed
 
-- Stop the Linux quarantine strangling the machine talking to ITSELF: a local process connecting to a quarantined port on 127.0.0.1 hung until its timeout, measured on the bench with a control port that connected instantly. The loopback is exempted first in both chains, which is what Windows already did at the system level — the quarantine protects from networks, and a machine talking to itself is not one
+- Stop the Linux quarantine strangling the machine talking to ITSELF: a local process connecting to a quarantined port on 127.0.0.1 hung until its timeout, measured on the bench with a control port that connected instantly. The loopback is exempted first in both chains, which is what Windows already did at the system level — the quarantine protects from networks, and a machine talking to itself is not one ([88974b2](https://github.com/alvarogabrielgomez/kanpachi/commit/88974b2))
 
 ## [0.4.0] - 2026-08-17
 
