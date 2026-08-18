@@ -21,10 +21,12 @@ import 'package:kanpachi_ui/features/games/domain/steam_art.dart';
 import 'package:kanpachi_ui/features/room/presentation/widgets/canary_alarm.dart';
 import 'package:kanpachi_ui/features/room/presentation/widgets/copy_button.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
 import 'package:kanpachi_ui/features/session/presentation/widgets/failure_notice.dart';
+import 'package:kanpachi_ui/features/session/presentation/widgets/quarantine_off_notice.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/failure_navigation.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
@@ -343,6 +345,18 @@ class _RoomStatus extends StatelessWidget {
             body: Text('Regla desactivada. Se restaura al salir de la sala.'),
           ),
         );
+      }
+    }
+
+    // La máquina, después del juego: el aviso de la cuarentena sin poner se
+    // pinta también acá y no solo en el home, porque mientras se juega se vive
+    // en esta pantalla y abrir la sala es uno de sus disparadores. Detectado
+    // en vivo el 2026-08-18: el aviso subió, el CLI lo enseñó, y esta pantalla
+    // no. El molde es el aviso de la regla ajena de arriba: el problema con su
+    // camino al lado.
+    for (final HealthAlert alert in session.health.alerts) {
+      if (alert.kind == AlertKind.quarantineOff) {
+        blocks.add(QuarantineOffNotice(alert: alert));
       }
     }
 
