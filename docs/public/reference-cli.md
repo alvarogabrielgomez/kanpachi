@@ -262,6 +262,31 @@ last room you entered without adopting it** — with the command written out to
 copy. Adopting it silently would mean your next room is hosted on a stranger's
 server because you once accepted an invitation.
 
+### `quarantine [on|off]`
+
+Closes this machine's risky server ports — file sharing, remote desktop, remote
+management and printer discovery — **on every network it is connected to**, not
+only on Kanpachi's. With no argument it tells you the state.
+
+**Having trouble sharing a folder from this PC, or reaching it over Remote
+Desktop? This is why.** `kanpachi quarantine off` puts it back and takes effect
+immediately.
+
+It is your decision and Kanpachi asks it once, at the door of the first `host`
+or `join`, listing the exact ports and with no default answer. `--quarantine
+on|off` on those commands answers it from a script; with no terminal and no flag
+they refuse, because the absence of a terminal is not an answer.
+
+Saying yes closes them until you say otherwise, and every start repairs what
+went missing. Saying no removes what a yes had closed. Nothing else ever removes
+it — not a sweep, not a restart, not `--reset` — and a machine without it says
+so every time a room opens, because the notice is the state and not a scolding.
+
+What it does NOT change: reaching OTHER machines. The blocks compare the LOCAL
+port, so mounting a share, opening a remote desktop or `ssh`-ing out are all
+untouched. And the room is contained by something else entirely, so turning this
+off does not open your room to anybody.
+
 ### `password`
 
 The password of a registry that asks for one to host. Joining never needs it.

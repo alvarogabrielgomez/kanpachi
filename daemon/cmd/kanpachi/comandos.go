@@ -32,6 +32,12 @@ type comando struct {
 }
 
 // grupos ordena la ayuda por lo que se hace primero, y no alfabéticamente.
+//
+// **Un comando que no está acá no sale en `kanpachi help`**, aunque exista y
+// funcione. Le pasó a `quarantine`, que se publicó en 0.5.0 con sus tres bocas
+// y sin una sola línea que dijera que existe. Al agregar un comando a la tabla
+// de abajo hay que agregarlo también acá, y no hay nada que lo compruebe: es la
+// única lista del binario que puede quedarse corta en silencio.
 var grupos = []struct {
 	titulo  string
 	nombres []string
@@ -41,7 +47,7 @@ var grupos = []struct {
 	{"The game:", []string{"games", "game"}},
 	{"Checking:", []string{"exposure", "diag", "probe", "protect"}},
 	{"What was left from before:", []string{"pending", "resume", "discard", "last"}},
-	{"The system:", []string{"name", "seed", "password", "doctor", "upgrade"}},
+	{"The system:", []string{"name", "seed", "quarantine", "password", "doctor", "upgrade"}},
 	{"Other:", []string{"version", "help"}},
 }
 

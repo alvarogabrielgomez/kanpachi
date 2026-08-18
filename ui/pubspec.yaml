@@ -32,6 +32,10 @@ dependencies:
   # nadie. Subirla es un commit a propósito.
   ffi: 2.1.4
   win32: 6.3.0
+  # Debug-only puppeteering: lets an MCP agent tap, type, screenshot and hot
+  # reload this window. The binding only boots under kDebugMode (see main.dart);
+  # a release build never loads it.
+  marionette_flutter: ^0.6.0
   # Sin `shared_preferences`, y a propósito: escribe en %APPDATA%, que es fuera
   # de la carpeta de una copia portable y compartido con cualquier otro Kanpachi
   # de la máquina. Los ajustes de la ventana viven donde los datos del daemon.
