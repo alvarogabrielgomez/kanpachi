@@ -353,6 +353,11 @@ func (s *Session) onPeersChangedLocked(ctx context.Context) (domain.RoomState, e
 		// Quien acaba de entrar no estaba cuando se anunció lo anterior, así
 		// que su pantalla en sala arrancaría sin juego y sin nombre.
 		s.announceLocked(ctx)
+		// Y el ingreso es el otro checkpoint de la cuarentena: el aviso que ve
+		// el host cuando entra alguien tiene que hablar de ahora. Detrás del
+		// cambio de MIEMBROS a propósito, para no volver a medir en cada
+		// evento de la ráfaga que fa5850a acaba de apagar.
+		s.refreshQuarantineLocked(ctx)
 	}
 	s.logMemberDiffLocked(antes)
 	s.tellStaleMembersLocked(ctx)

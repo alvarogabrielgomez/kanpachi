@@ -400,11 +400,6 @@ type Session struct {
 	// en el diario para siempre.
 	cardPublishFailing bool
 
-	// quarantineDecision is the user's persisted answer about the base
-	// quarantine, loaded once at start and replaced only by DecideQuarantine.
-	// Undecided is what makes the faces ask exactly once. Guarded by mu.
-	quarantineDecision domain.QuarantineDecision
-
 	// tamperRepairs son las veces que se repusieron las reglas propias en esta
 	// sala.
 	//
@@ -547,8 +542,8 @@ func NewSession(ctx context.Context, d Deps) (*Session, error) {
 	// escribirla deja al usuario sin producto entero por una protección que él
 	// mismo eligió; arrancar diciéndolo deja el barrido midiendo, la alerta
 	// contándolo, y el interruptor a mano para reintentar.
-	s.quarantineDecision = s.loadQuarantineDecision()
-	if s.quarantineDecision == domain.QuarantineAccepted {
+	s.state.QuarantineDecision = s.loadQuarantineDecision()
+	if s.state.QuarantineDecision == domain.QuarantineAccepted {
 		if err := d.Firewall.ApplyBaseQuarantine(ctx, domain.BaseQuarantineFor(d.Quarantine)); err != nil {
 			d.Log.Error("no se pudo reponer la cuarentena de base que el usuario pidió", "error", err)
 		}

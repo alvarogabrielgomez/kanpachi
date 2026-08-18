@@ -349,7 +349,7 @@ func roomView(st domain.RoomState, missing string, now time.Time) RoomView {
 		v.Alerts = append(v.Alerts, AlertView{Kind: alertName(a.Kind), Detail: a.Detail})
 	}
 	v.Canary = canaryView(st.Canary)
-	v.Quarantine = quarantineView(st.Quarantine)
+	v.Quarantine = quarantineView(st.Quarantine, st.QuarantineDecision)
 	return v
 }
 
@@ -424,6 +424,10 @@ func canaryView(c domain.CanaryCheck) CanaryView {
 type QuarantineView struct {
 	// Verdict es "applied", "partial", "absent" o "unknown".
 	Verdict string `json:"verdict"`
+	// Decision es "undecided", "yes" o "no": la RESPUESTA del usuario, al lado
+	// de la medición, porque el interruptor dibuja las dos — qué hay puesto, y
+	// si la pregunta sigue debida.
+	Decision string `json:"decision"`
 	// Ports is what the quarantine closes on this system, whether it is in
 	// place or not, so a face can say WHAT gets closed without carrying its
 	// own copy of the list.
@@ -437,14 +441,30 @@ type QuarantineView struct {
 	Drifted  int `json:"drifted,omitempty"`
 }
 
-func quarantineView(q domain.QuarantineState) QuarantineView {
+func quarantineView(q domain.QuarantineState, d domain.QuarantineDecision) QuarantineView {
 	return QuarantineView{
 		Verdict:  quarantineVerdictName(q.Verdict),
+		Decision: quarantineDecisionName(d),
 		Ports:    q.Ports,
 		Total:    q.Total,
 		Missing:  q.Missing,
 		Disabled: q.Disabled,
 		Drifted:  q.Drifted,
+	}
+}
+
+func quarantineDecisionName(d domain.QuarantineDecision) string {
+	switch d {
+	case domain.QuarantineAccepted:
+		return "yes"
+	case domain.QuarantineDeclined:
+		return "no"
+	case domain.QuarantineUndecided:
+		// Explícito y no metido en el default, por lo mismo que en
+		// [quarantineVerdictName]: el candado de Dart corta en el `default`.
+		return "undecided"
+	default:
+		return "undecided"
 	}
 }
 
@@ -907,6 +927,8 @@ func alertName(k domain.AlertKind) string {
 		return "canary_leaking"
 	case domain.AlertGameLost:
 		return "game_lost"
+	case domain.AlertQuarantineOff:
+		return "quarantine_off"
 	default:
 		// Que este caso exista no lo vuelve aceptable: una alerta que llega como
 		// "unknown" no la pinta nadie, así que el módulo de exposición avisa al

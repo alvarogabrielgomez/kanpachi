@@ -381,6 +381,21 @@ const (
 	// while reopening, and nothing in the sweep measures it again. What clears it
 	// is picking a game, which is exactly what has to be done.
 	AlertGameLost
+	// AlertQuarantineOff: la cuarentena de base no está puesta entera, así que
+	// esta máquina contesta en los puertos de servidor peligrosos (compartir
+	// archivos, Escritorio remoto, administración remota, descubrimiento) en
+	// cualquier red a la que se conecte.
+	//
+	// No distingue por qué: el usuario dijo que no, nunca decidió, o alguien
+	// la rompió a medias — el detalle sí lo dice. **El aviso es el ESTADO y no
+	// un regaño por una vez**: lo ideal es tenerla puesta, y una máquina sin
+	// ella lo dice cada vez que hay sala. La decisión de no tenerla se respeta
+	// en las operaciones, jamás en el silencio: decir que no apaga los
+	// bloqueos, no el termómetro.
+	//
+	// Solo con sala abierta, igual que el firewall ajeno: en reposo enseñaría
+	// a ignorar la pantalla, y en reposo el estado ya lo cuenta el interruptor.
+	AlertQuarantineOff
 )
 
 // AllAlertKinds son todos los valores del enum, que NO es lo mismo que las que
@@ -413,6 +428,7 @@ func AllAlertKinds() []AlertKind {
 		AlertAuditFailed,
 		AlertGateLeaking,
 		AlertGameLost,
+		AlertQuarantineOff,
 	}
 }
 

@@ -126,6 +126,22 @@ abstract final class AppMessages {
           'hay ningún puerto abierto y quien entre no va a poder jugar.',
       hint: 'Vuelve a elegir el juego.',
     ),
+    // El copy dice también lo que NO significa, porque un aviso de seguridad
+    // que solo asusta se apaga sin leerse. Y no regaña: el aviso es el
+    // ESTADO, sale igual si el usuario decidió no tener la cuarentena, y esa
+    // decisión se respeta en las operaciones y no en el silencio.
+    AlertKind.quarantineOff => const AppMessage(
+      severity: MessageSeverity.warn,
+      title: 'Tu PC responde a compartir archivos y a Escritorio remoto',
+      body:
+          'Si te conectas al wifi de un bar, de un hotel o de la casa de '
+          'alguien, la gente de esa red le puede pedir a tu PC tus carpetas '
+          'compartidas o el escritorio. Kanpachi no abrió nada de eso, y la '
+          'gente de tu sala tampoco llega ahí: eso lo tapa la Protección '
+          'Kanpachi mientras la sala está abierta. El peligro son las otras '
+          'redes, y ahí Kanpachi no está mirando.',
+      hint: 'Se enciende en Configuración.',
+    ),
   };
 
   /// Lo que se le cuenta al usuario sobre una regla de firewall que Kanpachi no
@@ -293,6 +309,17 @@ abstract final class AppMessages {
           'Un cortafuegos que no es Kanpachi deniega la entrada en su '
           'adaptador, así que nadie podría llegar. Abrirlo es cosa de '
           'ese programa.',
+    ),
+    // En Windows este código no llega: la ventana no pide que la rechacen por
+    // esto. La copia existe igual porque el catálogo es completo por
+    // construcción.
+    FailureCode.quarantineUndecided => const AppMessage(
+      severity: MessageSeverity.neutral,
+      title: 'Falta contestar la pregunta de la cuarentena',
+      body:
+          'Esta máquina todavía no decidió si Kanpachi cierra sus puertos '
+          'de servidor peligrosos. Se decide en Configuración, y se puede '
+          'cambiar cuando quieras.',
     ),
     FailureCode.noRoom => const AppMessage(
       severity: MessageSeverity.neutral,

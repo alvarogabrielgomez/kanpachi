@@ -523,6 +523,10 @@ func nombreDeAlerta(s string) string {
 		return "audit failed"
 	case "canary_leaking":
 		return "leak detected"
+	case "game_lost":
+		return "game not restored"
+	case "quarantine_off":
+		return "quarantine off"
 	default:
 		return s
 	}

@@ -73,6 +73,16 @@ const (
 	// pulsarlo con nada roto no lo toca.
 	MethodReapplyProtection Method = "reapply_protection"
 
+	// MethodQuarantine es el interruptor de la cuarentena de base, y también
+	// su lectura: con `set` en "on" u "off" ES la decisión del usuario, hecha
+	// verdad en la dirección que diga, y sin `set` no toca nada. En los dos
+	// casos devuelve el estado ENTERO, porque lo que la pantalla dibuja
+	// después es el interruptor con la medición fresca, no un acuse.
+	//
+	// Idempotente en las dos direcciones: encender con todo puesto repara lo
+	// que falte, apagar sin nada puesto es la intención ya cumplida.
+	MethodQuarantine Method = "quarantine"
+
 	// MethodSavedRoom, MethodResumeRoom y MethodDiscardSavedRoom son la sala
 	// que ESTA máquina hospeda, tal como quedó en disco.
 	//
@@ -199,6 +209,7 @@ var métodos = map[Method]bool{
 	MethodExposure:            true,
 	MethodProbeHost:           true,
 	MethodReapplyProtection:   true,
+	MethodQuarantine:          true,
 	MethodSavedRoom:           true,
 	MethodResumeRoom:          true,
 	MethodDiscardSavedRoom:    true,

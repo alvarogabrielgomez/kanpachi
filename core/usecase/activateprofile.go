@@ -59,6 +59,12 @@ func (s *Session) ActivateProfile(ctx context.Context, gameID string) (domain.Ro
 	// loss, it is a decision. See [domain.AlertGameLost].
 	s.state.DropAlerts(domain.AlertGameLost)
 
+	// Cambiar de juego es uno de los checkpoints de la cuarentena que pidió el
+	// dueño: la medición se refresca acá para que el aviso del barrido hable
+	// de AHORA y no de hace un minuto. Mide y jamás aplica: aplicar es de la
+	// decisión del usuario, y de nadie más.
+	s.refreshQuarantineLocked(ctx)
+
 	// Los ajustes del adaptador salen del perfil, así que cambiar de juego los
 	// cambia. Sin juego, AdapterStateFor los devuelve todos apagados, que es
 	// lo que hace que quitar el juego revierta las rutas sin que nadie tenga

@@ -192,6 +192,28 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 					b.Manager, strings.Join(b.Adapters, " y "), strings.Join(b.Fix, " && ")),
 			})
 		}
+
+		// La cuarentena sin poner entra por la misma puerta y con el mismo
+		// argumento: solo con sala abierta, porque en reposo enseñaría a
+		// ignorar la pantalla y el interruptor ya cuenta el estado. El aviso
+		// es el ESTADO y no un regaño: sale igual si el usuario dijo que no,
+		// porque decir que no apaga los bloqueos y no el termómetro.
+		switch s.state.Quarantine.Verdict {
+		case domain.QuarantineAbsent:
+			found = append(found, domain.Alert{
+				Kind: domain.AlertQuarantineOff,
+				Detail: "esta PC contesta a compartir archivos y a Escritorio remoto en todas " +
+					"sus redes: la cuarentena de base no está puesta",
+			})
+		case domain.QuarantinePartial:
+			q := s.state.Quarantine
+			found = append(found, domain.Alert{
+				Kind: domain.AlertQuarantineOff,
+				Detail: fmt.Sprintf("a la cuarentena de base le falta parte: de %d reglas hay "+
+					"%d ausentes, %d deshabilitadas y %d editadas",
+					q.Total, q.Missing, q.Disabled, q.Drifted),
+			})
+		}
 	}
 
 	// El veredicto se calcula ACÁ y no en el adaptador: el adaptador mide y el

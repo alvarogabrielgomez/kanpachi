@@ -19,7 +19,7 @@ import (
 func (s *Session) QuarantineDecision() domain.QuarantineDecision {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.quarantineDecision
+	return s.state.QuarantineDecision
 }
 
 // QuarantineQuestion is what the room's door needs in ONE read: whether the
@@ -28,7 +28,7 @@ func (s *Session) QuarantineDecision() domain.QuarantineDecision {
 func (s *Session) QuarantineQuestion() (domain.QuarantineDecision, []uint16) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.quarantineDecision, domain.QuarantinePorts(s.deps.Quarantine)
+	return s.state.QuarantineDecision, domain.QuarantinePorts(s.deps.Quarantine)
 }
 
 // DecideQuarantine records the user's answer and makes it true, in whichever
@@ -65,7 +65,7 @@ func (s *Session) DecideQuarantine(ctx context.Context, wanted bool) (domain.Qua
 	if err := s.deps.State.SaveQuarantineDecision(raw); err != nil {
 		return domain.QuarantineState{}, fmt.Errorf("guardando la decisión de la cuarentena: %w", err)
 	}
-	s.quarantineDecision = decision
+	s.state.QuarantineDecision = decision
 
 	var opErr error
 	if wanted {
@@ -83,15 +83,28 @@ func (s *Session) DecideQuarantine(ctx context.Context, wanted bool) (domain.Qua
 	// Measured even when the operation failed, and stored where the sweep
 	// stores it: the faces read ONE truth about the quarantine, and it is
 	// never this function's intention.
-	if q, err := s.deps.Audit.QuarantineState(ctx); err != nil {
-		s.deps.Log.Warn("no se pudo medir la cuarentena tras la decisión", "error", err)
-		s.state.Quarantine = domain.QuarantineState{}
-	} else {
-		s.state.Quarantine = q
-	}
+	s.refreshQuarantineLocked(ctx)
 	s.snapshot()
 
 	return s.state.Quarantine, opErr
+}
+
+// refreshQuarantineLocked re-measures the base quarantine and stores what the
+// machine HAS, never what anybody meant. On a failed read it stores the zero,
+// whose verdict is Unknown: leaving the previous measurement up would have
+// the screen vouching for something nobody just measured. Assumes the lock.
+//
+// Besides the sweep's cadence, it runs at the CHECKPOINTS: after a decision,
+// when the game changes, and when somebody joins — the moments the owner
+// asked the notice to be current at, instead of up to a sweep late.
+func (s *Session) refreshQuarantineLocked(ctx context.Context) {
+	q, err := s.deps.Audit.QuarantineState(ctx)
+	if err != nil {
+		s.deps.Log.Warn("no se pudo medir la cuarentena de base", "error", err)
+		s.state.Quarantine = domain.QuarantineState{}
+		return
+	}
+	s.state.Quarantine = q
 }
 
 // loadQuarantineDecision reads the persisted answer at start.

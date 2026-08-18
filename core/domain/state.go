@@ -230,6 +230,13 @@ type RoomState struct {
 	// Its zero verdict is "could not check", never "absent".
 	Quarantine QuarantineState
 
+	// QuarantineDecision is the user's persisted ANSWER, next to the
+	// measurement so the faces can draw the one screen that needs both: a
+	// switch shows what is in place, and whether the question is still owed.
+	// Loaded once at start, replaced only by the consent use case,
+	// machine-level like the measurement above it.
+	QuarantineDecision QuarantineDecision
+
 	// Gen sube en CADA vaciado de la sala, e identifica a la sala viva.
 	//
 	// Existe por la ronda del canario, que suelta el candado hasta diez segundos

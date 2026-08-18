@@ -527,6 +527,30 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 		}
 		return result(probeView(r))
 
+	case MethodQuarantine:
+		p, e := decodeStrict[struct {
+			// Set vacío solo lee. "on" y "off" SON la decisión.
+			Set string `json:"set,omitempty"`
+		}](req.Params)
+		if e != nil {
+			return nil, e
+		}
+		switch p.Set {
+		case "":
+			return s.room(s.api.Status())
+		case "on", "off":
+			// El error de la operación viaja JUNTO al estado, como en la
+			// expulsión a medias: la palabra quedó anotada y la pantalla tiene
+			// que redibujar el interruptor con lo medido, diga lo que diga el
+			// error.
+			if _, err := s.api.DecideQuarantine(ctx, p.Set == "on"); err != nil {
+				return s.roomWithError(s.api.Status(), errorFor(err))
+			}
+			return s.room(s.api.Status())
+		default:
+			return nil, badRequest(`set tiene que ser "on" u "off", o no venir`)
+		}
+
 	case MethodReapplyProtection:
 		// Devuelve el estado ENTERO y no un acuse, porque la pantalla tiene que
 		// redibujarse: reponer programa la ronda que puede apagar la alarma, y el

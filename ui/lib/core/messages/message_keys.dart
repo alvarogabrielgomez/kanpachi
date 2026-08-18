@@ -63,7 +63,16 @@ enum AlertKind {
   /// The only one that talks about ports that are NOT open. The case is the host
   /// that restarts: the room comes back with its code and without its game, so
   /// people join and the server does not answer.
-  gameLost('game_lost');
+  gameLost('game_lost'),
+
+  /// La cuarentena de base no está puesta entera: esta PC contesta en los
+  /// puertos de servidor peligrosos (compartir archivos, Escritorio remoto)
+  /// en cualquier red a la que se conecte.
+  ///
+  /// El aviso es el ESTADO y no un regaño por una vez: sale igual si el
+  /// usuario decidió no tenerla, porque decir que no apaga los bloqueos y no
+  /// el termómetro.
+  quarantineOff('quarantine_off');
 
   const AlertKind(this.wire);
 
@@ -213,6 +222,12 @@ enum FailureCode {
   badRequest('bad_request'),
   unauthorized('unauthorized'),
   tooLarge('too_large'),
+
+  /// La pregunta de la cuarentena de base sigue sin contestar, y quien llamó
+  /// pidió que eso rechace. La ventana nunca lo pide, así que este código no
+  /// le llega; la copia existe igual porque el catálogo es completo por
+  /// construcción.
+  quarantineUndecided('quarantine_undecided'),
 
   /// Ya hay una sala abierta.
   busy('busy'),
