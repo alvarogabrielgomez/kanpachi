@@ -437,6 +437,7 @@ class ScreenPrompt extends StatelessWidget {
     this.enabled = true,
     this.busy = false,
     this.onBack,
+    this.beforeAction,
     super.key,
   });
 
@@ -490,6 +491,13 @@ class ScreenPrompt extends StatelessWidget {
 
   final VoidCallback? onBack;
 
+  /// Lo que va entre la explicación y el botón, cuando la pantalla tiene algo
+  /// que preguntar además de lo que se escribe. Hoy lo pide el alta, que
+  /// ofrece ahí dejar la máquina como se recomienda: va pegado al botón porque
+  /// es ESE botón el que lo va a aplicar, y separarlo del campo es lo que
+  /// impide leerlo como parte del nombre.
+  final Widget? beforeAction;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -533,6 +541,10 @@ class ScreenPrompt extends StatelessWidget {
           if (explainer != null) ...<Widget>[
             const SizedBox(height: AppSpacing.x7l),
             explainer!,
+          ],
+          if (beforeAction != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.x7l),
+            beforeAction!,
           ],
           const SizedBox(height: AppSpacing.x8l),
           AppButton(

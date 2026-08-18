@@ -541,6 +541,23 @@ El canal de la sala de la decisión 23 necesita que el host escuche en un puerto
 
 **Se recalcula con los miembros presentes, como las de juego.** Consecuencia buena y gratis: expulsar cierra el hueco para el expulsado en el firewall, y no solo en la lista del oyente. Son dos capas que fallan por motivos distintos, que es la doctrina de la decisión 26 aplicada acá.
 
+#### Cuándo se abre y cuándo se cierra, entero
+
+Esta es la pregunta que el hueco genera cada vez que alguien lo lee, así que la respuesta va escrita y no deducida. **Las dos reglas viven exactamente lo que vive la sala**, y no un segundo más:
+
+| Momento | Qué pasa con el hueco |
+|---|---|
+| Sin sala | **No existe.** No es que esté cerrado: no hay ninguna regla escrita |
+| Se abre la sala | Se escribe la puerta. La de la sala no, todavía no hay nadie |
+| Entra alguien | Se recalcula el conjunto entero y aparece la de la sala, acotada a esa IP |
+| Se expulsa a alguien | Se recalcula: su IP sale de la lista en el acto |
+| Se cierra la sala | Se aplica el conjunto VACÍO y las dos desaparecen |
+| Arranca el daemon | Se purga el grupo entero antes de nada, así que una muerte sucia no las deja atrás |
+
+**Y se reparan solas, sin que nadie las repare.** Van en el mismo conjunto declarativo que las de juego, y el adaptador calcula la diferencia contra las reglas que el sistema tiene **de verdad** en cada aplicación. Si alguien borra el hueco a mano, el siguiente `applyPolicy` lo repone; si alguien añade uno, sobra y se va. Por eso no existe —ni hace falta— una operación de "reponer el puerto de control": lo que se repone es el conjunto, y `kanpachi protect` (`reapply_protection`) es exactamente eso. Fuera de una sala esa orden contesta `ErrNoRoom`, y es correcto: no hay conjunto que reponer.
+
+**Medido en Linux el 2026-08-18**, en el droplet, con el producto de verdad: sin sala, `kanpachi exposure` dice "Kanpachi no tiene ningún puerto abierto"; abierta la sala y sin nadie dentro, **una sola** regla, `tcp 57623 hacia 198.19.220.0/24`, marcada como control y sin una sola regla de juego; cerrada la sala, cero puertos otra vez. La compuerta queda cargada con su esqueleto y **cero permisos**, que es el estado más cerrado posible, y el arranque siguiente la barre.
+
 Lo que NO vive en el conjunto declarativo: la cuarentena de base, o sea el bloqueo de los puertos prohibidos en las dos direcciones. La escribe el daemon en cada arranque con el grupo `Kanpachi-base`, y jamás la borra. Es la instalación, no la sala.
 
 ## 5. Cliente solo Windows en la v1

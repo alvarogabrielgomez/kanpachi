@@ -75,6 +75,10 @@ enum AppDialog {
   /// Apagar la cuarentena de base. Apagar SÍ se confirma y encender no:
   /// poner protección no necesita permiso, quitarla conviene leerla una vez.
   confirmQuarantineOff,
+
+  /// Qué hace la casilla del alta. No decide nada: explica lo que el botón de
+  /// abajo va a aplicar, y se cierra. La decisión vive en la casilla.
+  recommendedSetup,
 }
 
 /// Cómo se listan los juegos.

@@ -23,6 +23,7 @@ import 'package:kanpachi_ui/features/seed/presentation/widgets/trust_seed_dialog
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
 import 'package:kanpachi_ui/features/settings/presentation/pages/settings_page.dart';
+import 'package:kanpachi_ui/features/onboarding/presentation/widgets/recommended_setup.dart';
 import 'package:kanpachi_ui/features/settings/presentation/widgets/settings_dialogs.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/shell_bars.dart';
@@ -490,6 +491,7 @@ class _DialogLayer extends StatelessWidget {
             ? const SizedBox.shrink()
             : TrustSeedDialog(request: shell.trust!),
       AppDialog.confirmQuarantineOff => const ConfirmQuarantineOffDialog(),
+      AppDialog.recommendedSetup => const RecommendedSetupDialog(),
     };
   }
 }

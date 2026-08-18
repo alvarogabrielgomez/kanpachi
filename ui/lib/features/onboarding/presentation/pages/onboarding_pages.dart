@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
@@ -7,6 +9,7 @@ import 'package:kanpachi_ui/core/design_system/molecules/app_ambient_background.
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
+import 'package:kanpachi_ui/features/onboarding/presentation/widgets/recommended_setup.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
 
@@ -106,6 +109,16 @@ class _NicknameScreenState extends State<NicknameScreen> {
 
   void _onTyped() => setState(() {});
 
+  /// Whether Continuar also leaves the machine set up as recommended.
+  ///
+  /// Ticked by default, and it is the ONE place in the product where the
+  /// quarantine is answered without the person typing an answer. That is
+  /// defensible for exactly one reason: it is written on screen, next to the
+  /// button, with what it does one click away, before anything happens. It is
+  /// not an automatic path — it is this click, and unticking it leaves the
+  /// decision UNTAKEN rather than answering no.
+  bool _recomendada = true;
+
   bool get _valid => _controller.text.trim().length >= _minNickname;
 
   @override
@@ -121,7 +134,15 @@ class _NicknameScreenState extends State<NicknameScreen> {
   /// for.
   void _continue() {
     if (!_valid) return;
-    context.read<SessionCubit>().setNickname(_controller.text);
+    final SessionCubit session = context.read<SessionCubit>();
+    session.setNickname(_controller.text);
+    // The recommended setup rides the SAME button, and only during sign-up.
+    // Changing your name later is changing your name: a screen that also
+    // rewrote the machine's firewall because you fixed a typo would be doing
+    // something nobody asked for, from a screen whose title says otherwise.
+    if (widget.fromOnboarding && _recomendada) {
+      unawaited(session.setQuarantine(enabled: true));
+    }
     context.read<ShellCubit>().go(AppScreen.home);
   }
 
@@ -145,6 +166,14 @@ class _NicknameScreenState extends State<NicknameScreen> {
       // rechazarlo acá es lo que permite que el rechazo hable de lo escrito.
       enabled: _valid,
       onSubmit: _continue,
+      // Solo en el alta. Fuera de ella esta pantalla guarda un nombre y nada
+      // más, así que ni se ofrece ni se menciona.
+      beforeAction: widget.fromOnboarding
+          ? RecommendedSetupRow(
+              value: _recomendada,
+              onChanged: (bool v) => setState(() => _recomendada = v),
+            )
+          : null,
       // **Sin flecha en el alta, y con ella al cambiarlo.** En el alta esto es
       // el principio del camino y no hay a dónde volver; peor, volver sería
       // saltarse lo único que la app necesita para poder hacer algo. Cambiarlo

@@ -244,6 +244,21 @@ void main() {
           expect(desbordes, isEmpty, reason: desbordes.join('\n'));
         });
       }
+
+      // El del alta va sobre SU pantalla y sin sala, que es donde se abre de
+      // verdad: es el más largo de todos, con tres bloques y una despedida.
+      testWidgets('${AppDialog.recommendedSetup} cabe', (
+        WidgetTester tester,
+      ) async {
+        final List<String> desbordes = await desbordesDe(
+          tester,
+          ventana: ventana.value,
+          pantalla: AppScreen.nickname,
+          dialogo: AppDialog.recommendedSetup,
+        );
+
+        expect(desbordes, isEmpty, reason: desbordes.join('\n'));
+      });
     });
   }
 
