@@ -167,7 +167,7 @@ verdad, y su resultado es el log que dejan.
 | `measure-engine-end-to-end.ps1` | los cuatro fallos fijos del motor, producto entero |
 | `measure-directory.ps1` | el registro de seeds contra el real |
 | `canary-two-machines.ps1` | la Protección Kanpachi vista desde otra máquina |
-| `clean-engine-rules.ps1` | limpia reglas de firewall que dejó el EasyTier de serie |
+| `clean-firewall-leftovers.ps1` | limpia las reglas de firewall que quedaron por binarios de Kanpachi: las del EasyTier de serie, las que Windows escribe sola para cualquier programa que escuche, y las de builds viejas. Simula por defecto |
 
 `release-notes.ps1` extrae la sección del changelog de una versión, y es lo
 que hace fallar una publicación con changelog vacío a propósito. `lib\` no se

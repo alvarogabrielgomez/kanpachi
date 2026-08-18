@@ -707,7 +707,7 @@ agujereando NAT por UDP, que necesita la otra punta y llega con el directorio.
 
 Quedan 17 reglas menos en la máquina, y ninguna es de Kanpachi: eran del motor
 viejo y de los avisos de Windows durante el desarrollo. Las quita
-`scripts/clean-engine-rules.ps1`, que va en seco salvo con `-Apply`.
+`scripts/clean-firewall-leftovers.ps1`, que va en seco salvo con `-Apply`.
 
 **2. La compuerta de WFP no la encendía nadie.** `firewall.SetScope` solo lo
 llamaba `internal/fwprobe`. En el daemon real `specsFor` devolvía nil y `Apply`

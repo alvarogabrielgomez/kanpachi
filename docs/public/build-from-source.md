@@ -128,7 +128,7 @@ These are not tests. They start real things and each states what it needs:
 | `measure-network-change.ps1` | behaviour when the network changes underneath |
 | `measure-return.ps1` | going back to the last room |
 | `canary-two-machines.ps1` | the two-machine case, which one machine cannot fake |
-| `clean-engine-rules.ps1` | removes engine-written firewall rules left behind |
+| `clean-firewall-leftovers.ps1` | removes firewall rules left behind by Kanpachi binaries |
 | `build-test-tools.ps1` | builds the probes the above use |
 
 Their output is the deliverable when a claim in the documentation needs

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Removes the firewall rules the OLD engine left behind on this machine.
+  Removes the firewall rules Kanpachi's binaries left behind on this machine.
 
 .DESCRIPTION
   # What those rules are and why they are wrong
@@ -29,10 +29,15 @@
 
   # What it deletes, and what it does not
 
-  Only what Kanpachi caused. It is recognised two ways:
+  Only what Kanpachi caused, in three shapes:
 
-    - the program path names a Kanpachi binary;
-    - the rule name names a Kanpachi adapter.
+    - the program path names a Kanpachi binary. This covers BOTH what the old
+      engine wrote and what WINDOWS writes on its own: the system adds an allow
+      rule for any binary that starts listening, named after the executable,
+      with no group, one per distinct path. The uninstaller does not take those
+      (it purges by group) and nothing in the product can see them either;
+    - the rule name names a Kanpachi adapter;
+    - the rule name is one an older build of the product used.
 
   A user's own EasyTier install, with its own adapter and its own executable,
   matches NEITHER and is left untouched. Deleting somebody else's software is
@@ -41,6 +46,15 @@
   It does not touch the Kanpachi group or Kanpachi-base either: the daemon
   purges the first one on every start, and the second one is the quarantine,
   which is worth precisely because it stays in place with Kanpachi switched off.
+  That is checked explicitly and not left to the matchers.
+
+  # Why the UNINSTALLER does not do this
+
+  Because Kanpachi does not delete rules it did not write. It is the same rule
+  that makes a game's own leftover rule get switched off with consent and put
+  back on the way out, instead of deleted. An uninstaller sweeping by executable
+  name would be exercising exactly the capability the product promises not to
+  have. So it is a tool, run on purpose, that says what it will do first.
 
   # Dry by default
 
@@ -75,9 +89,22 @@ if ($Apply) {
 # name, for the same reason the adapter kills orphans by full path: this runs
 # elevated, and acting on any file that happens to share a name would be acting
 # on somebody else's install.
-$ours = @('kanpachi-engine.exe', 'kanpachi-engine-spike.exe')
+$ours = @(
+    'kanpachi-engine.exe', 'kanpachi-engine-spike.exe',
+    # Windows writes its own allow rule for ANY binary that starts listening,
+    # named after the executable and with no group, one per distinct path. Our
+    # binaries get them like any other program does, the uninstaller does not
+    # take them (it purges by group), and nothing in the product can see them.
+    # Measured on the development machine on 2026-08-18: 82 for the engine, 44
+    # for the daemon, 16 for roomprobe, with the product already uninstalled.
+    'kanpachid.exe', 'roomprobe.exe'
+)
 
-Step "looking for rules the engine left"
+# Rule names from older builds of the product, pointing at paths that no longer
+# exist. They carry no group either, so nothing else finds them.
+$legacyNames = @('Kanpachi service', 'Kanpachi tunnel engine', 'kanpachid', 'kanpachi-engine')
+
+Step "looking for rules left behind by Kanpachi binaries"
 
 # Two BULK queries and one table, never one query per rule.
 #
@@ -109,9 +136,16 @@ $candidates = Get-NetFirewallRule -ErrorAction SilentlyContinue | ForEach-Object
     # once the adapter is gone, Windows returns the GUID there instead of the
     # alias, so filtering by alias would match nothing in exactly the normal
     # case, which is a machine with no room open.
-    $byName = $rule.DisplayName -like 'EasyTier kanpachi*'
+    $byName = ($rule.DisplayName -like 'EasyTier kanpachi*') -or
+              ($legacyNames -contains $rule.DisplayName)
 
-    if ($byProgram -or $byName) {
+    # The two groups the product owns are OFF LIMITS, and it is checked here and
+    # not trusted to the matchers above: the daemon purges its own group on
+    # every start, and the quarantine is worth precisely because it stays with
+    # Kanpachi switched off. Everything this script deletes has no group.
+    $isOurs = $rule.Group -eq 'Kanpachi' -or $rule.Group -eq 'Kanpachi-base'
+
+    if (($byProgram -or $byName) -and -not $isOurs) {
         [PSCustomObject]@{
             Rule    = $rule
             Name    = $rule.DisplayName

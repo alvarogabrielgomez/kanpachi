@@ -227,6 +227,22 @@ En orden: detener y borrar el servicio, purgar las reglas de **los dos grupos**,
 
 **Borrar la cuarentena es requisito de producto, no cortesía.** Dejar bloqueos explícitos sobre el 445 y el 3389 en toda la máquina con Kanpachi ya borrado deja al usuario sin compartir archivos ni Escritorio remoto. Ese mismo efecto existe con Kanpachi puesto y funcionando, y por eso dejó de ser silencioso: la cuarentena es la decisión del usuario, el puente síntoma→causa vive en el doctor, en Configuración y en `kanpachi quarantine`, y "sin causa visible" quedó reservado para la única máquina donde ninguna cara puede explicarlo, la que ya desinstaló. Por eso el desinstalador ejecuta la limpieza con el daemon todavía en disco y solo después elimina el servicio y los binarios.
 
+### Lo que Windows escribe solo, y que el desinstalador NO se lleva
+
+**Windows crea reglas de permiso de entrada para cualquier binario que se ponga a escuchar**, con el nombre del ejecutable, sin grupo, en Privado y Público, y una por cada ruta distinta. Los binarios de Kanpachi las reciben como cualquier otro programa, y no las escribe Kanpachi.
+
+**Medido en esta máquina el 2026-08-18**, con el producto ya desinstalado: 82 reglas `kanpachi-engine.exe`, 44 `kanpachid.exe` y 16 `roomprobe.exe`, todas de entrada, permitir, sin grupo. El control que descarta que sean nuestras: en la misma máquina había 70 de `cli.test.exe`, que es un binario de test de Go, y 6 de Visual Studio Code, con la forma idéntica. Los números altos son de desarrollo, donde cada carpeta temporal de cada portable estrena la suya; en una instalación normal la ruta no cambia y son dos o cuatro.
+
+Tres consecuencias, y conviene tenerlas escritas antes de que alguien las descubra mirando el firewall:
+
+1. **El producto no las ve.** `PurgeOwned`, `Enforcement` y la medición de la cuarentena comparan el grupo por igualdad exacta, y estas no tienen grupo. No salen en la pantalla de exposición.
+2. **Sobreviven al desinstalador**, que purga por los dos grupos.
+3. **Se parecen a lo que el fork borró de EasyTier**, o sea permiso de entrada hacia el ejecutable en toda interfaz. La diferencia importa: aquellas las escribía el programa por su cuenta, sin forma de apagarlas y sin que nadie las pidiera; estas las escribe el sistema operativo para cualquier programa que escuche, y el usuario puede verlas y quitarlas en la consola del firewall como las de cualquier otra aplicación.
+
+**Y el desinstalador sigue sin tocarlas, a propósito.** Kanpachi no borra reglas que no escribió: es la misma regla que hace que las reglas ajenas de un juego se desactiven con consentimiento y se restauren al salir, en vez de borrarse. Un desinstalador que barriera por nombre de ejecutable estaría estrenando justo la capacidad que el producto promete no tener. Lo que sí hay es una herramienta a mano, `scripts/clean-firewall-leftovers.ps1`, que las enumera y las quita si se le pide, con simulación por defecto.
+
+**Lo que esto NO abre.** El daemon no escucha en ningún puerto de las interfaces físicas —su API local es un named pipe, y el canal de la sala vive en la interfaz virtual—, y el motor arranca con `--no-listener`. Un permiso de entrada hacia un ejecutable que no escucha no abre nada. Lo que queda expuesto es lo que el motor abre para el P2P, que es lo que el producto necesita para funcionar. Y la cuarentena de base le gana igual: un bloqueo explícito de puerto vence a un permiso por programa sin desempate por especificidad.
+
 ### Hasta que exista, el comando de soporte
 
 Consola de PowerShell **elevada**:
@@ -491,7 +507,7 @@ Las sondas son binarios; quien las orquesta contra un daemon de verdad son estos
 | `measure-network-change.ps1` | qué sobrevive a que Windows reidentifique la red |
 | `measure-engine-end-to-end.ps1` | el motor entero contra `kanpachi.accentio.dev` |
 | `canary-two-machines.ps1` | **la Protección Kanpachi con dos máquinas, en tres fases.** Su encabezado ES el runbook, con por qué la fase 2 no es opcional |
-| `clean-engine-rules.ps1` | quita las reglas que el motor VIEJO dejó puestas. En una máquina limpia no hay nada que quitar |
+| `clean-firewall-leftovers.ps1` | quita las reglas de firewall que quedaron por binarios de Kanpachi: las del motor VIEJO, las que Windows escribe sola para cualquier programa que escuche, y las de builds viejas. Simula salvo con `-Apply` |
 
 Ninguno se distribuye ni lo llama el producto. **Y la carpeta se barre cada tanto:** un script que midió algo que ya está escrito y que nadie va a volver a correr se borra, porque una carpeta con restos hace que nadie sepa cuál es el que se corre de verdad.
 
