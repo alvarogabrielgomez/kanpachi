@@ -83,6 +83,14 @@ abstract final class DaemonMethods {
   /// machine entered — that one decides nothing, it only prefills the field.
   static const String ownSeed = 'own_seed';
 
+  /// Read, and optionally change, the name rooms show you by.
+  ///
+  /// Third of the family of [autostart] and [ownSeed], same shape and same
+  /// reason. It also answers the SUGGESTION, derived from this machine's own
+  /// name, which is never written down: on disk it would stop being
+  /// distinguishable from a chosen name, and then it would win.
+  static const String nickname = 'nickname';
+
   /// El password del registro propio. Ver `protocol.MethodSeedPassword`.
   ///
   /// La respuesta es un acuse vacío: no vuelven tokens, no vuelve el estado de

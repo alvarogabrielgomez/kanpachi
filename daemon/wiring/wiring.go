@@ -19,7 +19,11 @@ package wiring
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
@@ -71,6 +75,110 @@ func SeedFromDisk(store SeedReader, log port.Logger) string {
 		return ""
 	}
 	return seed
+}
+
+// thisHostname is the machine's name, and it never fails.
+//
+// It exists so `core` keeps not importing `os`: what the session receives is a
+// string, and turning it into a legal nickname is the domain's job. See
+// [domain.NicknameFromHost].
+func thisHostname() string {
+	h, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return h
+}
+
+// ProfileStore is the sliver of the state store the adoption below needs.
+type ProfileStore interface {
+	LoadProfile() ([]byte, error)
+	SaveProfile([]byte) error
+}
+
+// AdoptLegacyNickname moves the name from wherever a face used to keep it into
+// the file the daemon owns, exactly once, and then removes the old one.
+//
+// # What it is repairing
+//
+// Until the daemon owned the name, each face kept its own: the window wrote the
+// `nickname` key of `ui-prefs.json` and the terminal wrote `nickname.txt`, both
+// in this same directory. A machine that used both ended up with two names, and
+// the room showed whichever face entered it. Measured on 2026-08-18.
+//
+// # Why the derived one is thrown away
+//
+// Because the terminal wrote its GUESS to disk — the machine's own name,
+// cleaned up — and once written it stopped being distinguishable from a name
+// somebody chose. That is the defect, more than the duplication: it is why
+// `AlvaroGDeskt` beat `Alvaro`. Anything identical to what this machine would
+// derive today is treated as a guess and dropped.
+//
+// # Why the window wins the tie
+//
+// Because it is the one a person typed into a field. The terminal's file could
+// also hold a typed name, from `--nick`, and there is no way to tell the two
+// apart once on disk; between a value that is certainly chosen and one that may
+// be a leftover, the certain one wins.
+//
+// It runs only when there is no profile yet, so it costs one failed read per
+// start after the first. Nothing here fails a startup: a machine that ends up
+// with no name gets asked for one, which is the same place a fresh install
+// starts from.
+func AdoptLegacyNickname(store ProfileStore, dataDir, hostname string, log port.Logger) {
+	if raw, err := store.LoadProfile(); err == nil && !domain.ParseProfile(raw).Nick.IsZero() {
+		return
+	}
+
+	derivado := domain.NicknameFromHost(hostname)
+	limpiar := func(candidato, origen string) (domain.Nickname, string, bool) {
+		nick, err := domain.ParseNickname(strings.TrimSpace(candidato))
+		if err != nil {
+			return domain.Nickname{}, "", false
+		}
+		if nick.String() == derivado.String() {
+			return domain.Nickname{}, "", false
+		}
+		return nick, origen, true
+	}
+
+	viejo := filepath.Join(dataDir, "nickname.txt")
+	var elegido domain.Nickname
+	var origen string
+	if b, err := os.ReadFile(filepath.Join(dataDir, "ui-prefs.json")); err == nil {
+		var prefs struct {
+			Nickname string `json:"nickname"`
+		}
+		if json.Unmarshal(b, &prefs) == nil {
+			if nick, de, ok := limpiar(prefs.Nickname, "ui-prefs.json"); ok {
+				elegido, origen = nick, de
+			}
+		}
+	}
+	if elegido.IsZero() {
+		if b, err := os.ReadFile(viejo); err == nil {
+			if nick, de, ok := limpiar(string(b), "nickname.txt"); ok {
+				elegido, origen = nick, de
+			}
+		}
+	}
+
+	if !elegido.IsZero() {
+		raw, err := domain.EncodeProfile(domain.Profile{Nick: elegido})
+		if err == nil && store.SaveProfile(raw) == nil {
+			log.Info("se adoptó el nombre que guardaba una cara",
+				"apodo", elegido.String(), "de", origen)
+		}
+	}
+
+	// El fichero del CLI se borra pase lo que pase: con el nombre adoptado ya
+	// no hace falta, y sin adoptar era el nombre derivado, o sea nada que
+	// perder. Dejarlo sería dejar un segundo escritor a la vista. El de la
+	// ventana NO se toca: sigue guardando el tamaño de la ventana y la
+	// narración, y quien le quita la clave del nombre es ella misma.
+	if err := os.Remove(viejo); err != nil && !os.IsNotExist(err) {
+		log.Warn("no se pudo retirar el nickname.txt viejo", "error", err)
+	}
 }
 
 // ControlIdentity turns this installation's long-term key into what the control

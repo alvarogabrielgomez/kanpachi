@@ -482,6 +482,10 @@ type apiFalsa struct {
 	// que se entró. Vacíos por omisión, que es una instalación nueva.
 	seed     string
 	sugerido string
+	// apodo es el nombre de esta máquina y apodoSugerido el que saldría del
+	// nombre del equipo. Vacíos por omisión, que es no haber elegido ninguno.
+	apodo         string
+	apodoSugerido string
 	// passwordLen es cuántos caracteres llegó a SeedPassword, y no cuáles. Ver
 	// [apiFalsa.SeedPassword].
 	passwordLen     int
@@ -617,6 +621,19 @@ func (a *apiFalsa) SetOwnSeed(_ context.Context, seed string) (string, error) {
 	}
 	a.seed = limpio
 	return limpio, nil
+}
+
+// El nombre de esta máquina, con la misma forma que el registro: se guarda lo
+// último que se fijó para poder comprobar que escribir y releer coinciden.
+func (a *apiFalsa) Nickname() string          { return a.apodo }
+func (a *apiFalsa) SuggestedNickname() string { return a.apodoSugerido }
+func (a *apiFalsa) SetNickname(_ context.Context, nick string) (string, error) {
+	limpio, err := domain.ParseNickname(nick)
+	if err != nil {
+		return "", err
+	}
+	a.apodo = limpio.String()
+	return a.apodo, nil
 }
 
 // SeedPassword guarda LA LONGITUD de lo que llegó y no lo que llegó.

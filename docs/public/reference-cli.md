@@ -25,7 +25,7 @@ command drops the client and never the room.
 kanpachi
 ```
 
-opens a wizard driven with the arrow keys: it asks for a nickname the first
+opens a wizard driven with the arrow keys: it asks for a name the first
 time, then offers what makes sense for the state the machine is in. It exists so
 a server installed a minute ago is usable without reading this page. Everything
 it does has a subcommand below.
@@ -228,6 +228,24 @@ go back by hand.
 
 ## The system
 
+### `name [name]`
+
+The name rooms show you by. With no argument it shows it.
+
+**It is one name per machine, shared with the window and the wizard.** They all
+ask the daemon, which keeps it in `profile.json` beside the rest of its state,
+so changing it in one place changes it everywhere.
+
+If nobody has chosen one, rooms show you by a name derived from the machine's
+own — cleaned up to letters and digits, twelve at most. That derived name is a
+**suggestion and is never written down**: `host` and `join` use it and say so on
+stderr, and this command prints it with the line to type if you want it kept.
+A suggestion saved to disk stops being distinguishable from a name somebody
+chose, and then it wins over the real one.
+
+`--nick <name>` does the same thing on the way into a room, and is remembered
+for the same reason: you typed it.
+
 ### `seed [host]`
 
 The registry this machine **opens** rooms on. With no argument it shows it.
@@ -309,7 +327,7 @@ The list, grouped by what gets done first rather than alphabetically. `--help`,
 
 | Flag | Meaning |
 |---|---|
-| `--nick <name>` | how the room sees you. Remembered, so it is needed once |
+| `--nick <name>` | how the room sees you. The daemon remembers it, so it is needed once, and `kanpachi name` shows or changes it |
 | `--json` | the daemon's raw answer, unrendered |
 | `--data <dir>` | a different data directory |
 | `--pipe <path>` | a different control channel. `--socket` is the same flag |

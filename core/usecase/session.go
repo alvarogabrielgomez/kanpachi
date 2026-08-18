@@ -147,6 +147,21 @@ type Deps struct {
 	// administra su servidor. Falta esto y el daemon no arranca. Ver `validate`.
 	Quarantine domain.QuarantineSystem
 
+	// Hostname es el nombre de ESTA máquina, y de él sale el apodo que se
+	// SUGIERE cuando nadie eligió uno.
+	//
+	// # Por qué se inyecta, igual que Quarantine
+	//
+	// Por lo mismo: este paquete no mira el sistema. Y por algo más concreto:
+	// la derivación tiene que estar en un solo sitio. Cuando la tenía también
+	// el CLI, las dos copias podían separarse, y la del CLI además escribía su
+	// resultado en disco, con lo que una sugerencia se volvía indistinguible
+	// de una elección. Ver [domain.NicknameFromHost].
+	//
+	// Vacío se admite: lo que sale entonces es el apodo de respaldo, que
+	// tampoco se guarda. Por eso no está en `validate`.
+	Hostname string
+
 	// Progress es el diario de la operación larga en curso. Ver [Journal].
 	//
 	// **Es el ÚNICO opcional de esta lista**, y por eso no está en `validate`:

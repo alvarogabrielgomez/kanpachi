@@ -170,7 +170,18 @@ func main() {
 
 // ─── El apodo, en disco ──────────────────────────────────────────────────────
 
-func rutaApodo(datos string) string { return filepath.Join(datos, "nickname.txt") }
+// El fichero es PROPIO de la sonda, y el nombre lo dice.
+//
+// Compartía `nickname.txt` con el CLI a propósito, para que la misma máquina no
+// acabara con dos nombres. Ese fichero ya no existe: el nombre del producto lo
+// guarda el daemon en `profile.json` y las tres caras se lo preguntan. Una
+// sonda apuntada con `-data` al directorio del producto volvería a ser un
+// segundo escritor de un dato que ahora tiene dueño, así que escribe el suyo.
+//
+// Y la sonda sigue PREGUNTANDO el nombre en el primer arranque en vez de
+// derivarlo, que es la política correcta de una herramienta de medida: lo que
+// mide tiene que ser lo que alguien pidió medir.
+func rutaApodo(datos string) string { return filepath.Join(datos, "roomprobe-nickname.txt") }
 
 func leerApodo(datos string) string {
 	b, err := os.ReadFile(rutaApodo(datos))

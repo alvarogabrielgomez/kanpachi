@@ -1,4 +1,5 @@
 import 'package:kanpachi_ui/core/platform/app_preferences.dart';
+import 'package:kanpachi_ui/core/platform/machine_profile.dart';
 import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/daemon_connector.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/pipe_session_repository.dart';
@@ -27,6 +28,9 @@ abstract final class IocManager {
     /// Si el daemon dijo, en la línea de comandos, que está reabriendo la sala
     /// del arranque anterior. Ver `kResumeHostedRoomFlag` en `main.dart`.
     bool resumingHostedRoom = false,
+
+    /// El nombre que el daemon guarda, ya leído del disco. Ver [MachineProfile].
+    MachineProfile? profile,
   }) {
     Injector.instance = injector ?? GetItInjector();
     if (preferences != null) {
@@ -34,13 +38,14 @@ abstract final class IocManager {
         () => preferences,
       );
     }
-    _registerSession(preferences, resumingHostedRoom);
+    _registerSession(preferences, profile, resumingHostedRoom);
     _registerShell(portable);
     _registerUpdate(preferences);
   }
 
   static void _registerSession(
     AppPreferences? preferences,
+    MachineProfile? profile,
     bool resumingHostedRoom,
   ) {
     final Injector i = Injector.instance;
@@ -62,7 +67,9 @@ abstract final class IocManager {
       () => SessionCubit(
         i.get<SessionRepository>(),
         preferences: preferences,
-        nickname: preferences?.nickname ?? '',
+        // Del perfil que escribe el DAEMON, no de los ajustes de esta ventana:
+        // el nombre es uno por máquina. Ver [MachineProfile].
+        nickname: profile?.nickname ?? '',
         // Off when there is nowhere to have stored it, which is the tests.
         // The stored default already leans on the build kind; see
         // [AppPreferences.verbose].

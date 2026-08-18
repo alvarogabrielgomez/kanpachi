@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Changed
+
+- One name per machine, kept by the daemon: the window, the terminal and the wizard all read and write the same one, so changing it anywhere changes it everywhere. Each face used to keep its own file side by side in the data folder, and the room showed whichever one had entered it — a window saying Alvaro and a room showing AlvaroGDeskt. Your existing name is adopted on the next start with nothing to answer, `kanpachi name` shows or changes it from the terminal, and a machine where nobody has chosen one still opens a room with a name derived from its own — said out loud, never written down, because a guess saved to disk is a guess that beats the real answer ([HASH](https://github.com/alvarogabrielgomez/kanpachi/commit/HASH))
+
 ### Fixed
 
 - Keep the room's name on every guest's screen when the host announces without one: an empty name in an announce means the host has no name to send, never a rename, and taking it wiped the name learned from the invite one heartbeat after joining. The room header now also picks the name up when it arrives late, which is how it reaches whoever entered with the bare code ([84c9d92](https://github.com/alvarogabrielgomez/kanpachi/commit/84c9d92))

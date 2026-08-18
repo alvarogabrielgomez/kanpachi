@@ -132,10 +132,15 @@ class _NicknameScreenState extends State<NicknameScreen> {
   /// `create_room` and `join_room` without one, so continuing with an empty
   /// field produces an app that opens and cannot do the only two things it is
   /// for.
-  void _continue() {
+  /// Y se ESPERA a que el daemon lo confirme antes de navegar. Guardarlo es lo
+  /// único que esta pantalla existe para hacer: seguir con el nombre sin
+  /// guardar dejaría el alta hecha en la pantalla y sin hacer en la máquina, y
+  /// la portada de después pidiendo el nombre otra vez en el próximo arranque.
+  Future<void> _continue() async {
     if (!_valid) return;
     final SessionCubit session = context.read<SessionCubit>();
-    session.setNickname(_controller.text);
+    if (!await session.setNickname(_controller.text)) return;
+    if (!mounted) return;
     // The recommended setup rides the SAME button, and only during sign-up.
     // Changing your name later is changing your name: a screen that also
     // rewrote the machine's firewall because you fixed a typo would be doing

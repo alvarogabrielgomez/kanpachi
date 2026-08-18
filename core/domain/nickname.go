@@ -60,6 +60,70 @@ func ParseNickname(s string) (Nickname, error) {
 	return Nickname{value: string(runes)}, nil
 }
 
+// NicknameFromHost turns this machine's host name into a legal nickname, to
+// SUGGEST when nobody chose one. It never fails.
+//
+// # Why the cleaning, and why the host name is not enough on its own
+//
+// Because the nickname rule is far narrower than a host name's: ASCII letters
+// and digits, twelve of them. A server called `mc-01.casa.lan` is a perfectly
+// ordinary host name and an illegal nickname, and what comes back from the
+// daemon then is `bad_nickname`, which explains nothing to somebody who never
+// chose a name at all.
+//
+// The domain goes first: `mc-01.casa.lan` wants to be `mc01`, and dragging
+// `casalan` along would spend the twelve on the part that identifies nobody.
+//
+// # Why the host arrives as a parameter
+//
+// So this package keeps not importing `os`. That is what lets the domain run
+// under the Linux CI whatever machine it is compiled on, and it is the same
+// reason [QuarantineSystem] is injected instead of detected.
+//
+// # It is a suggestion and it is never persisted
+//
+// Whoever calls this ANSWERS with it and stores nothing. A derived name that
+// gets written becomes indistinguishable from a chosen one, and then it beats
+// the real one: measured on 2026-08-18, a machine whose window said "Alvaro"
+// entered a room as "AlvaroGDeskt" because the terminal had written its guess
+// to disk once.
+func NicknameFromHost(host string) Nickname {
+	base := host
+	if i := indexByte(base, '.'); i >= 0 {
+		base = base[:i]
+	}
+
+	var clean []rune
+	for _, r := range base {
+		isASCIILetter := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+		isASCIIDigit := r >= '0' && r <= '9'
+		if isASCIILetter || isASCIIDigit {
+			clean = append(clean, r)
+		}
+		if len(clean) >= NicknameMaxLen {
+			break
+		}
+	}
+	if len(clean) == 0 {
+		// A host name that leaves neither a letter nor a digit exists (`_`, or
+		// one written entirely in another alphabet). Rather than fail, a name
+		// that works and that says where it came from.
+		return Nickname{value: "kanpachi"}
+	}
+	return Nickname{value: string(clean)}
+}
+
+// indexByte avoids importing `strings` for one lookup, which would be the only
+// import this file has beyond the errors it declares.
+func indexByte(s string, b byte) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] == b {
+			return i
+		}
+	}
+	return -1
+}
+
 // String devuelve el nombre. Es seguro para mostrar y para pasar como
 // argumento a un proceso hijo, porque ParseNickname ya descartó todo lo que no
 // sea alfanumérico ASCII.

@@ -4,11 +4,15 @@ package usecase
 //
 // # Por qué es del daemon y no de cada cara
 //
-// Porque lo usa la fábrica de registros, que vive acá dentro, y porque las dos
-// caras tienen que ver el mismo valor. Es la diferencia con el apodo, que sí es
-// del cliente: aquél viaja como parámetro en cada orden, así que dos caras con
-// dos apodos distintos son dos personas distintas y eso es correcto. Un daemon
-// con dos registros distintos según quién pregunte no es nada.
+// Porque lo usa la fábrica de registros, que vive acá dentro, y porque las
+// caras tienen que ver el mismo valor. Un daemon con dos registros distintos
+// según quién pregunte no es nada.
+//
+// El apodo se guarda acá por la MISMA razón, y hubo un tiempo en que este
+// comentario decía lo contrario: que el apodo era del cliente porque viaja como
+// parámetro en cada orden. Viajar como parámetro y tener dueño son cosas
+// distintas, y confundirlas costó dos ficheros en la misma carpeta y una
+// máquina con dos nombres. Ver [Session.Nickname].
 
 import (
 	"context"

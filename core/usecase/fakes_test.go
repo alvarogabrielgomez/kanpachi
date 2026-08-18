@@ -1162,9 +1162,31 @@ type mockState struct {
 	// cuarentena is the persisted quarantine decision; nil is the absent
 	// file, o sea sin decidir, que es el arranque normal del banco.
 	cuarentena []byte
-	deleted    int
+	// profile is the machine's own profile; nil is the absent file, o sea que
+	// nadie eligió nombre todavía.
+	profile []byte
+	deleted int
 
 	errSave error
+}
+
+func (e *mockState) LoadProfile() ([]byte, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.profile == nil {
+		return nil, errors.New("no hay perfil guardado")
+	}
+	return append([]byte(nil), e.profile...), nil
+}
+
+func (e *mockState) SaveProfile(raw []byte) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.errSave != nil {
+		return e.errSave
+	}
+	e.profile = append([]byte(nil), raw...)
+	return nil
 }
 
 func (e *mockState) LoadQuarantineDecision() ([]byte, error) {

@@ -45,6 +45,10 @@ const (
 	// QuarantineDecisionFile is the user's answer to "close these ports on
 	// this machine". Absent IS undecided; see [Store.LoadQuarantineDecision].
 	QuarantineDecisionFile = "quarantine-decision.json"
+
+	// ProfileFile is what this machine remembers about the person: today, the
+	// name others see. In the clear, like the seed; see [Store.LoadProfile].
+	ProfileFile = "profile.json"
 )
 
 // ErrNoState es que el archivo no está.
@@ -140,6 +144,27 @@ func (s *Store) ClearRoom() error          { return s.clear(HostedRoomFile) }
 // al seed de un código pegado.
 func (s *Store) LoadSeed() ([]byte, error) { return s.loadPlain(SeedFile) }
 func (s *Store) SaveSeed(raw []byte) error { return s.savePlain(SeedFile, raw) }
+
+// LoadProfile y SaveProfile son el SEGUNDO par sin sello, y pasa el mismo test
+// de dos motivos que pasó `seed.txt`.
+//
+//  1. **No es un secreto.** El nombre va pintado en la pantalla de cada miembro
+//     de la sala y dentro de cada tarjeta que esta máquina reparte. Sellarlo
+//     protegería de nadie.
+//  2. **Y sellarlo rompería algo que hace falta.** La ventana lo lee DIRECTO
+//     del disco, antes del primer frame, para saber si tiene que enseñar el
+//     alta o la portada. Con el fichero sellado esa decisión pasaría a
+//     depender de una llamada por el pipe, o sea de que el daemon ya esté
+//     arriba: la pantalla parpadearía del alta a la portada en cada arranque,
+//     o la ventana se quedaría esperando. Es el mismo argumento que hace que
+//     `kanpachi upgrade` necesite el seed en claro.
+//
+// **Escribe solo el daemon**, y eso no es estética. En el producto instalado el
+// directorio de datos deja a Users en solo lectura y la ventana corre con el
+// token del usuario de la sesión, así que es el único proceso de los tres que
+// puede escribir acá.
+func (s *Store) LoadProfile() ([]byte, error) { return s.loadPlain(ProfileFile) }
+func (s *Store) SaveProfile(raw []byte) error { return s.savePlain(ProfileFile, raw) }
 
 func (s *Store) LoadLast() ([]byte, error) { return s.load(LastRoomFile) }
 func (s *Store) SaveLast(raw []byte) error { return s.save(LastRoomFile, raw) }

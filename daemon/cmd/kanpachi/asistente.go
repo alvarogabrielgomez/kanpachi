@@ -440,16 +440,37 @@ func menuDeComprobaciones(ctx context.Context, op opciones) error {
 	return nil
 }
 
+// cambiarNombre pregunta el nombre y lo guarda DONDE lo guardan las otras dos
+// caras, que desde hoy es el daemon.
+//
+// Antes leía el fichero del CLI y escribía por un camino que se tragaba el
+// fallo: la pantalla decía que sí y el nombre podía no haberse guardado. Ahora
+// el error sube, que es lo que hace que en el producto instalado esto empiece a
+// funcionar de verdad — ahí el que puede escribir en el directorio de datos es
+// el daemon, y ninguna de las dos caras.
 func cambiarNombre(ctx context.Context, op opciones) error {
-	actual := leerApodo(op.datos)
+	c, err := abrir(op)
+	if err != nil {
+		return conAviso(ctx, op, err)
+	}
+	defer func() { _ = c.Close() }()
+
+	actual, sugerido, err := pedirApodo(c, "")
+	if err != nil {
+		return conAviso(ctx, op, err)
+	}
+	// Sin nombre elegido se prellena con la sugerencia, que es lo que se usaría
+	// igual al entrar a una sala. Enseñarla acá es la diferencia entre elegirla
+	// y que se elija sola.
+	if actual == "" {
+		actual = sugerido
+	}
 	nuevo, err := texto("Your name:", "The other members of the room see it. "+
 		"Letters and digits only, up to 12.", actual)
 	if err != nil {
 		return err
 	}
-	// Se valida por el mismo camino que usan los subcomandos, y ahí es donde se
-	// guarda: así no hay dos sitios que decidan qué nombre vale.
-	if _, err := apodo(opciones{datos: op.datos, nick: nuevo}); err != nil {
+	if _, _, err := pedirApodo(c, nuevo); err != nil {
 		return conAviso(ctx, op, err)
 	}
 	return nil

@@ -17,22 +17,22 @@ import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 /// support. See `docs/03`.
 ///
 /// What is left is the handful of things the daemon has no opinion about: the
-/// name you are seen by, which is an argument to `create_room` and `join_room`
-/// and nothing the daemon stores, and whether this window narrates what the
-/// daemon is doing.
+/// window size, and whether this window narrates what the daemon is doing.
 ///
 /// **Autostart is deliberately NOT here.** Whether Kanpachi comes up with
 /// Windows is the Service Control Manager's answer to give, and it is asked
 /// over the pipe. A copy on this side would be a second truth for one fact,
 /// and the one on screen would be the one that does not decide.
 ///
-/// # Why the nickname doubles as the onboarding flag
+/// **And the NICKNAME is no longer here either**, for exactly that reason. It
+/// lived here on the argument that the daemon did not store it, which was true
+/// and beside the point: the terminal kept its own copy in the same folder, so
+/// one machine had two names and the room showed whichever face entered it.
+/// Measured on 2026-08-18. It is daemon state now, read from `profile.json` by
+/// [MachineProfile] and written over the pipe. That also fixes the harder half:
+/// in the installed product this window cannot write in the data directory at
+/// all, so what looked like saving a name was doing nothing.
 ///
-/// Because onboarding is two screens and the second one is the nickname, so
-/// "has a nickname" and "has been through onboarding" are the same fact. A
-/// second key would be a second source of truth for one thing, and the day
-/// they disagreed the app would either ask again for a name it already has or
-/// skip a step that never happened.
 /// # Why a file of ours and not `shared_preferences`
 ///
 /// Because `shared_preferences` writes to `%APPDATA%\<company>\<product>`, and
@@ -52,7 +52,6 @@ class AppPreferences {
   /// The file, beside the token and the identity key.
   static const String fileName = 'ui-prefs.json';
 
-  static const String _nicknameKey = 'nickname';
   static const String _verboseKey = 'verbose';
   static const String _windowWidthKey = 'window_width';
   static const String _windowHeightKey = 'window_height';
@@ -92,6 +91,11 @@ class AppPreferences {
         final Object? read = jsonDecode(await file.readAsString());
         if (read is Map<String, dynamic>) {
           values = Map<String, Object?>.from(read);
+          // La clave del nombre se retira al abrir, así el primer cambio de
+          // cualquier ajuste deja el fichero sin ella. No se lee para nada: el
+          // daemon ya la adoptó en su arranque, y dejarla acá sería dejar a la
+          // vista un valor que no manda en nada. Ver [MachineProfile].
+          values.remove('nickname');
         }
       }
     } on Object catch (e) {
@@ -123,25 +127,6 @@ class AppPreferences {
   String _texto(String key) {
     final Object? v = _values[key];
     return v is String ? v.trim() : '';
-  }
-
-  /// The name you are seen by, or empty if there is none yet.
-  String get nickname => _texto(_nicknameKey);
-
-  /// Whether onboarding is done. See the class doc for why this is the same
-  /// question as having a nickname.
-  bool get onboarded => nickname.isNotEmpty;
-
-  /// Saves the nickname. An empty one is REMOVED rather than stored, so that
-  /// "no name" is one state and not two.
-  Future<void> setNickname(String value) async {
-    final String clean = value.trim();
-    if (clean.isEmpty) {
-      _values.remove(_nicknameKey);
-    } else {
-      _values[_nicknameKey] = clean;
-    }
-    await _save();
   }
 
   /// Whether this window narrates, step by step, what the daemon is doing.

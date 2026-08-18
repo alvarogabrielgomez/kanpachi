@@ -611,5 +611,6 @@ enum FailedAction {
   exportCatalog,
   suspendForeignRules,
   quarantine,
+  setNickname,
   quit,
 }

@@ -87,10 +87,8 @@ type API interface {
 	// OwnSeed, SuggestedSeed y SetOwnSeed son el registro de esta máquina.
 	//
 	// Están en la API y no en el host de la interfaz porque **son estado del
-	// daemon**: de acá sale a quién se le pide abrir una sala, y las dos caras
-	// del cliente, la ventana y la terminal, tienen que ver el mismo valor. Es la
-	// diferencia con el apodo, que viaja como parámetro en cada orden y por eso
-	// puede vivir en cada cliente.
+	// daemon**: de acá sale a quién se le pide abrir una sala, y las caras del
+	// cliente, la ventana y la terminal, tienen que ver el mismo valor.
 	OwnSeed() string
 	SuggestedSeed() string
 	// SetOwnSeed lleva contexto porque COMPRUEBA que el registro conteste antes
@@ -99,6 +97,22 @@ type API interface {
 	// SeedPassword entrega el password del registro propio. Ver
 	// [MethodSeedPassword] para lo que no vuelve ni queda de él.
 	SeedPassword(ctx context.Context, password string) error
+
+	// Nickname, SuggestedNickname y SetNickname son el nombre de esta máquina,
+	// y están acá por lo mismo que el registro: hay una máquina y tres caras,
+	// así que hay un nombre. Cuando cada cara lo guardaba por su cuenta, la
+	// ventana decía «Alvaro» y la terminal entraba a la sala como
+	// «AlvaroGDeskt». Medido el 2026-08-18.
+	//
+	// El apodo SIGUE viajando como parámetro de crear y entrar, y el daemon
+	// sigue sin persistir lo que llega por ahí. Lo que cambió es quién lo
+	// recuerda entre sala y sala.
+	Nickname() string
+	SuggestedNickname() string
+	// SetNickname lleva contexto por simetría con [API.SetOwnSeed], y a
+	// diferencia de aquél no habla con nadie: un nombre no necesita que ningún
+	// servidor conteste, así que esto funciona sin conexión.
+	SetNickname(ctx context.Context, nick string) (string, error)
 
 	SavedRoom() (domain.HostedRoom, bool)
 	ResumeRoom(ctx context.Context) (domain.RoomState, error)
@@ -643,6 +657,9 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 	case MethodOwnSeed:
 		return s.ownSeed(ctx, req.Params)
 
+	case MethodNickname:
+		return s.nickname(ctx, req.Params)
+
 	case MethodSeedPassword:
 		return s.seedPassword(ctx, req.Params)
 
@@ -883,6 +900,41 @@ func (s *Server) ownSeed(ctx context.Context, params json.RawMessage) (json.RawM
 		// pantalla la enseña marcada como sugerencia.
 		Suggested string `json:"suggested"`
 	}{s.api.OwnSeed(), s.api.SuggestedSeed()})
+}
+
+// nickname lee o cambia el nombre con el que esta máquina entra a las salas.
+//
+// Copia exacta de la forma de [Server.ownSeed], parámetros opcionales incluidos:
+// sin ellos es una lectura, y el valor se RELEE después de escribir porque lo
+// que se guarda es el nombre ya validado.
+//
+// La sugerencia viaja siempre, también cuando hay nombre elegido. Cuesta una
+// derivación de nada y le ahorra al que pregunta una segunda llamada el día que
+// quiera enseñar de dónde saldría el nombre si se borrara el suyo.
+func (s *Server) nickname(ctx context.Context, params json.RawMessage) (json.RawMessage, *Error) {
+	var p struct {
+		Nickname *string `json:"nickname"`
+	}
+	if len(params) > 0 {
+		leído, e := decodeStrict[struct {
+			Nickname *string `json:"nickname"`
+		}](params)
+		if e != nil {
+			return nil, e
+		}
+		p.Nickname = leído.Nickname
+	}
+	if p.Nickname != nil {
+		if _, err := s.api.SetNickname(ctx, *p.Nickname); err != nil {
+			return nil, errorFor(err)
+		}
+	}
+	return result(struct {
+		Nickname string `json:"nickname"`
+		// Suggested sale del nombre de ESTA máquina, y no se guarda nunca.
+		// Quien entra a una sala sin nombre elegido usa este y lo dice.
+		Suggested string `json:"suggested"`
+	}{s.api.Nickname(), s.api.SuggestedNickname()})
 }
 
 // seedPassword entrega el password del registro propio.

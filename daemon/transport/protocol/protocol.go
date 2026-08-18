@@ -166,6 +166,25 @@ const (
 	// en dos llamadas dejaría un instante en el que enseña una y no la otra.
 	MethodOwnSeed Method = "own_seed"
 
+	// MethodNickname lee o cambia el nombre con el que esta máquina entra a las
+	// salas.
+	//
+	// Es el tercero de la familia de [MethodAutostart] y [MethodOwnSeed], y por
+	// el mismo motivo: uno solo para leer y para escribir, porque la pantalla
+	// que lo cambia tiene que releerlo justo después para dibujar lo que quedó.
+	//
+	// Devuelve además la SUGERENCIA, derivada del nombre de esta máquina, y esa
+	// derivación vive en un solo sitio a propósito. Cuando la tenía también el
+	// CLI, la sugerencia se escribía en disco y dejaba de distinguirse de una
+	// elección: por eso una máquina cuya ventana decía «Alvaro» entraba a las
+	// salas como «AlvaroGDeskt».
+	//
+	// **Esto no cambia cómo el nombre llega a una sala.** `create_room` y
+	// `join_room` lo siguen llevando como parámetro y el daemon sigue sin
+	// persistir lo que llega por ahí: si lo hiciera, una ventana vieja que
+	// reenvía su copia pisaría el nombre elegido desde la terminal.
+	MethodNickname Method = "nickname"
+
 	// MethodSeedPassword entrega el password del registro propio, para poder
 	// HOSPEDAR en un seed cerrado.
 	//
@@ -222,6 +241,7 @@ var métodos = map[Method]bool{
 	MethodShutdown:            true,
 	MethodAutostart:           true,
 	MethodOwnSeed:             true,
+	MethodNickname:            true,
 	MethodSeedPassword:        true,
 }
 

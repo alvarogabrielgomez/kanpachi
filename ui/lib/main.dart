@@ -8,6 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/theme/app_theme.dart';
 import 'package:kanpachi_ui/core/platform/app_log.dart';
 import 'package:kanpachi_ui/core/platform/app_preferences.dart';
+import 'package:kanpachi_ui/core/platform/machine_profile.dart';
 import 'package:kanpachi_ui/core/platform/single_instance.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/density_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
@@ -21,6 +22,7 @@ import 'package:kanpachi_ui/features/shell/presentation/widgets/window_size_memo
 import 'package:kanpachi_ui/features/update/presentation/cubit/update_cubit.dart';
 import 'package:kanpachi_ui/ioc/injector.dart';
 import 'package:kanpachi_ui/ioc/ioc_manager.dart';
+import 'package:marionette_flutter/marionette_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// La bandera con la que el daemon pide abrir la ventana.
@@ -145,7 +147,15 @@ String? _valorDe(List<String> args, String bandera) {
 }
 
 Future<void> _arrancar(List<String> args) async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // In debug, Marionette's binding takes the regular one's place so an MCP
+  // agent can drive this window: tap, type, screenshot, hot reload. It extends
+  // WidgetsFlutterBinding, so everything downstream sees the binding it
+  // expects. A release build boots the plain binding and never loads it.
+  if (kDebugMode) {
+    MarionetteBinding.ensureInitialized();
+  } else {
+    WidgetsFlutterBinding.ensureInitialized();
+  }
 
   // **Antes que nada.** Si ya hay un Kanpachi corriendo, este proceso solo
   // existe para avisarle, y eso ya lo hizo `claim`. Seguir adelante abriría una
@@ -182,10 +192,19 @@ Future<void> _arrancar(List<String> args) async {
     defaultVerbose: kDebugMode || PipeNames.isPortable,
   );
 
+  // El nombre ya no está ahí dentro: lo guarda el daemon, y esta ventana lo LEE
+  // del mismo directorio, igual que lee el token. Sigue siendo una lectura de
+  // disco antes del primer frame, así que la decisión de qué pantalla abrir no
+  // pasa a depender de que el daemon ya esté arriba. Ver [MachineProfile].
+  final MachineProfile profile = await MachineProfile.open(
+    dir: PipeNames.dataDir,
+  );
+
   // El marcador se lee ACÁ, una vez, y baja por el registro de dependencias.
   // La pantalla que lo necesita vive en presentación y no puede importar infra.
   IocManager.register(
     preferences: preferences,
+    profile: profile,
     portable: PipeNames.isPortable,
     resumingHostedRoom: args.contains(kResumeHostedRoomFlag),
   );
@@ -194,7 +213,7 @@ Future<void> _arrancar(List<String> args) async {
     size: preferences.windowSize ?? AppSpacing.initialWindow,
   );
   runApp(
-    KanpachiApp(onboarded: preferences.onboarded, preferences: preferences),
+    KanpachiApp(onboarded: profile.onboarded, preferences: preferences),
   );
 }
 

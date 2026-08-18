@@ -441,16 +441,35 @@ class SessionCubit extends Cubit<SessionState> {
     }
   }
 
-  /// Sets the name you are seen by, and remembers it.
+  /// Sets the name you are seen by, and has the DAEMON remember it.
   ///
-  /// Remembering matters more than it looks: without it, onboarding came back
-  /// on every start, and the daemon rejects `create_room` without a name — so
-  /// a forgotten nickname is not a cosmetic annoyance, it is an app that
-  /// cannot open a room.
-  void setNickname(String value) {
-    final String clean = value.trim();
-    emit(state.copyWith(nickname: clean));
-    unawaited(_preferences?.setNickname(clean));
+  /// # Why it goes over the pipe and not into this window's own file
+  ///
+  /// Because the name is one fact about the machine and three faces ask about
+  /// it. While this window kept its own copy, the terminal kept another beside
+  /// it and the room showed whichever face entered it: measured on
+  /// 2026-08-18, this window saying "Alvaro" and the room showing
+  /// "AlvaroGDeskt". And in the installed product this window cannot write in
+  /// the data directory at all, so the copy it kept was a save that silently
+  /// did nothing.
+  ///
+  /// # Why it emits only after the daemon confirms
+  ///
+  /// Because remembering matters more than it looks: the daemon refuses
+  /// `create_room` and `join_room` without a name, so a name that looks saved
+  /// and is not produces an app that opens and cannot do the two things it is
+  /// for. Returns false when it did not save, so the screen knows not to move
+  /// on; the reason is already on screen by then, put there by [_try].
+  Future<bool> setNickname(String value) async {
+    bool ok = false;
+    await _try(FailedAction.setNickname, () async {
+      final MachineNickname n = await _repository.nickname(
+        nickname: value.trim(),
+      );
+      emit(state.copyWith(nickname: n.chosen));
+      ok = n.chosen.isNotEmpty;
+    });
+    return ok;
   }
 
   /// Guarda qué juego se está confirmando. El diálogo lo lee de acá.

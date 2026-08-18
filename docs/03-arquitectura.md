@@ -2473,10 +2473,18 @@ ProgramData\Kanpachi\
                              refresco, sellado Y con ACL propia. Jamás el password,
                              y jamás el token de acceso, que vive quince minutos
   suspended-rules.json       reglas ajenas desactivadas y su estado previo
-  ui-prefs.json              lo que la VENTANA recuerda: apodo, tamaño, si narra
-                             los pasos, y la versión publicada que ya vio. Lo
-                             escribe Flutter, y vive acá para que una copia
-                             portable se lleve sus ajustes dentro de la carpeta
+  profile.json               el nombre con el que ESTA máquina entra a las salas.
+                             Lo escribe el DAEMON y lo leen las tres caras. En
+                             claro por lo mismo que seed.txt: no es secreto —va
+                             pintado en la pantalla de cada miembro— y la ventana
+                             lo lee del disco antes del primer frame para saber si
+                             enseña el alta o la portada
+  ui-prefs.json              lo que la VENTANA recuerda: tamaño, si narra los
+                             pasos, y la versión publicada que ya vio. Lo escribe
+                             Flutter, y vive acá para que una copia portable se
+                             lleve sus ajustes dentro de la carpeta. **El apodo ya
+                             no está acá**: era el segundo sitio donde vivía el
+                             mismo dato, ver profile.json
   logs\kanpachi.log          lo que el daemon dice, Y la traza de un pánico, que
                              antes se perdía. En todo modo salvo consola, que va a
                              la salida estándar, que es donde mira quien programa.
@@ -2494,6 +2502,8 @@ ACL de ProgramData: escritura solo SYSTEM y Administradores, lectura para usuari
 **El daemon es la única fuente de verdad.** Cerrar la ventana no cierra la sala, así que el estado tiene que sobrevivir a la UI. La UI lo lee por `Status()` y persiste únicamente cosas de presentación, como el tamaño de la ventana. Guardar la sala también del lado de Flutter crearía dos verdades que se desincronizan justo en el caso que el producto promete soportar, que es cerrar la ventana con la partida viva.
 
 Eso poco que la ventana recuerda va en `ui-prefs.json`, **dentro del mismo directorio de datos** y no en `%APPDATA%`, que es donde lo dejaba `shared_preferences`. Medido: un solo fichero de perfil compartido por la copia portable, el producto instalado y cada compilación de desarrollo de esta máquina. Así que una copia portable llegaba a otra PC sin apodo con su carpeta de datos entera al lado, borrar la carpeta dejaba rastro fuera, y dos productos que pueden convivir no podían discrepar sobre el tamaño de su propia ventana.
+
+**El apodo salió de ahí el 2026-08-18, y el motivo vale para cualquier dato que venga después.** Estaba en `ui-prefs.json` con el argumento de que el daemon no lo guardaba, que era cierto y no era el punto: la terminal guardaba el suyo al lado, en `nickname.txt`, así que una máquina tenía dos nombres y la sala enseñaba el de la cara que hubiera entrado. Medido: la ventana decía «Alvaro» y la sala «AlvaroGDeskt». Hoy vive en `profile.json`, lo escribe el daemon por el método `nickname` del protocolo, y la ventana lo lee del disco igual que lee `api.token`. La regla que queda: **la ventana solo recuerda lo que no le importa a nadie más**, y cualquier dato que una segunda cara vaya a preguntar es del daemon desde el primer día. Hay un motivo mecánico además del ordenado: en el producto instalado el directorio da a Users solo lectura y la ventana corre sin elevar, así que lo que escribía ahí fallaba callado.
 
 **`seed-token.json` es el único fichero de este árbol con ACL propia además del sello**, y `identity.key` el único con ACL propia sin sello. El motivo es el mismo y apunta al revés: el directorio da lectura a todos los usuarios de la máquina a propósito, para que la interfaz lea `api.token` sin elevar, así que un fichero nuevo hereda esa ACL. El sello ya lo vuelve ilegible sin `identity.key`; la ACL está encima porque **el valor por omisión es el permisivo**, y el día que alguien agregue un camino que escriba en claro, lo que quede es lo que el directorio conceda.
 

@@ -29,12 +29,12 @@ abstract interface class SessionRepository {
   /// Crea una sala. `game` en null es una sala vacía, que es lo normal: el
   /// juego se elige adentro.
   ///
-  /// El apodo es un ARGUMENTO y no un estado guardado, porque en el cable lo es:
-  /// `create_room` y `join_room` lo reciben, y no existe ningún `set_nickname`
-  /// entre los métodos del daemon. Un repositorio que fuera a buscarlo a algún
-  /// sitio estaría inventando una capa de identidad que el protocolo no tiene, y
-  /// el primer fallo sería una sala creada con un apodo que el usuario cambió
-  /// tres pantallas atrás.
+  /// El apodo sigue siendo un ARGUMENTO acá, porque en el cable lo es:
+  /// `create_room` y `join_room` lo reciben, y la sala se construye con lo que
+  /// se pasó, jamás con lo que el daemon recuerde. Lo que cambió es que existe
+  /// un sitio donde recordarlo entre sala y sala, [nickname], porque hay una
+  /// máquina y tres caras y el nombre es uno: mientras cada cara lo guardaba,
+  /// la ventana decía «Alvaro» y la sala enseñaba «AlvaroGDeskt».
   Future<Room> createRoom({
     required String name,
     required String nickname,
@@ -228,6 +228,16 @@ abstract interface class SessionRepository {
   /// recorta en silencio: acá lo que se escribe es a qué máquina va a hablar
   /// este proceso, y recortarlo sería marcar a otra.
   Future<OwnSeed> ownSeed({String? seed});
+
+  /// Lee, y opcionalmente cambia, el nombre con el que esta máquina entra a las
+  /// salas. Misma forma que [ownSeed] y por lo mismo.
+  ///
+  /// **Lo guarda el daemon y no esta ventana**, y hay un motivo más duro que el
+  /// orden: en el producto instalado el directorio de datos deja a Users en
+  /// solo lectura y esta ventana corre con el token del usuario de la sesión,
+  /// así que una escritura desde acá falla callada. Ver [MachineProfile], que
+  /// es la lectura del mismo dato antes del primer frame.
+  Future<MachineNickname> nickname({String? nickname});
 
   /// Entrega el password del registro propio, para poder HOSPEDAR en él.
   ///

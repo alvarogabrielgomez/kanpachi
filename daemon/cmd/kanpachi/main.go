@@ -33,6 +33,7 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/daemon/paths"
 	"github.com/accentiostudios/kanpachi/daemon/transport/client"
 	"github.com/accentiostudios/kanpachi/daemon/transport/pipe"
@@ -272,6 +273,16 @@ func leerFlags(args []string) (opciones, []string, error) {
 			return op, nil, err
 		}
 		op.espera = d
+	}
+
+	// El apodo, por el mismo motivo y en el mismo sitio: es un valor de bandera,
+	// así que uno malo se rechaza sin hablar con nadie. Rechazarlo acá no
+	// protege al daemon —que lo valida igual, porque es la frontera— sino que
+	// hace que el mensaje llegue antes de abrir una conexión.
+	if op.nick != "" {
+		if _, err := domain.ParseNickname(op.nick); err != nil {
+			return op, nil, uso("--nick %q is not valid: %v", op.nick, err)
+		}
 	}
 	return op, resto, nil
 }

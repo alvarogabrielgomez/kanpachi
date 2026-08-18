@@ -14,7 +14,7 @@ is that if something can be decided once, it is not asked.
 | `C:\Program Files\Kanpachi\kanpachid.exe` | the daemon, which runs as the service |
 | `C:\Program Files\Kanpachi\kanpachiui.exe` | the window |
 | `C:\Program Files\Kanpachi\` | plus the Flutter bundle, the engine, its DLLs and the factory catalogue |
-| `C:\ProgramData\Kanpachi\` | state: identity key, API token, the room |
+| `C:\ProgramData\Kanpachi\` | state: identity key, API token, the room, the name you are seen by |
 
 `ProgramData\Kanpachi` is created **by the installer**, with its own ACL, and the
 daemon refuses to start if it is missing rather than creating it. That ACL is
@@ -82,7 +82,7 @@ somebody unzipped it.
 | `/usr/share/kanpachi/builtin.json` | the game catalogue shipped with the package |
 | `/usr/share/doc/kanpachi/` | copyright, third-party notices, and the two GNU texts |
 | `/etc/kanpachi/quarantine.nft` | the base quarantine, written by the daemon |
-| `/var/lib/kanpachi/` | state: identity key, API token, the room. Mode `0700` |
+| `/var/lib/kanpachi/` | state: identity key, API token, the room, the name you are seen by. Mode `0700` |
 | `/run/kanpachi/api.sock` | the control socket, in a `0700` root-owned directory |
 
 The catalogue in `/usr/share` is the package's; a user's own lives separately in

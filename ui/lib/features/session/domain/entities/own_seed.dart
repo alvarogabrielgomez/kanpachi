@@ -37,3 +37,23 @@ class OwnSeed {
   @override
   int get hashCode => Object.hash(configured, suggested);
 }
+
+/// El nombre de esta máquina, tal como lo guarda el daemon.
+///
+/// Misma forma que [OwnSeed] y por el mismo motivo: la pantalla que lo cambia
+/// enseña a la vez lo elegido y de dónde saldría si no hubiera nada elegido, y
+/// separarlas en dos llamadas dejaría un instante enseñando una y no la otra.
+class MachineNickname {
+  const MachineNickname({this.chosen = '', this.suggested = ''});
+
+  /// Vacío hasta que alguien elige uno. Es el estado normal de un alta sin
+  /// terminar, y no es un fallo.
+  final String chosen;
+
+  /// El que saldría del nombre del equipo. **No se guarda nunca**: escrito en
+  /// disco dejaría de distinguirse de uno elegido, y entonces le ganaría.
+  final String suggested;
+
+  /// Con el que se entraría a una sala ahora mismo.
+  String get effective => chosen.isNotEmpty ? chosen : suggested;
+}

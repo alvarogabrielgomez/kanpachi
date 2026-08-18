@@ -41,8 +41,10 @@ const nonceLen = 12
 // estricto del dominio rechaza el que no le toca. Meterlo sería una defensa
 // contra algo que ya falla ruidoso.
 //
-// El quinto, `seed.txt`, no pasa por acá: va en claro a propósito, y el motivo
-// está donde se guarda. Ver [Store.SaveSeed].
+// Dos no pasan por acá, `seed.txt` y `profile.json`: van en claro a propósito,
+// y el motivo está donde se guarda cada uno. Los dos pasan el mismo test —no
+// son secretos, y sellarlos rompería algo que hace falta con el daemon caído o
+// antes de que conteste. Ver [Store.SaveSeed] y [Store.SaveProfile].
 func sellar(clave [32]byte, plano []byte) ([]byte, error) {
 	gcm, err := nuevoGCM(clave)
 	if err != nil {

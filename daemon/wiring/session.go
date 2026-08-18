@@ -210,6 +210,11 @@ func BuildSession(ctx context.Context, p SessionParams) (Built, error) {
 		out.OwnSeed = SeedFromDisk(out.State, log)
 	}
 
+	// Antes de la sesión, porque la sesión ya contesta el nombre y tiene que
+	// contestar el bueno desde la primera vez que se le pregunte. Es de una
+	// sola pasada: con el perfil escrito no vuelve a mirar los ficheros viejos.
+	AdoptLegacyNickname(out.State, p.DataDir, thisHostname(), log)
+
 	// One registry client per seed. `Tokens` is the SAME sealed store that
 	// keeps the room, so the refresh token of a closed seed survives a restart
 	// for every binary — the probe used to drop it and ask for the password on
@@ -253,6 +258,7 @@ func BuildSession(ctx context.Context, p SessionParams) (Built, error) {
 		Rand:        rand.Reader,
 		Log:         log,
 		Progress:    out.Journal,
+		Hostname:    thisHostname(),
 	})
 	if err != nil {
 		return out, err

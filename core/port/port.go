@@ -338,8 +338,12 @@ type CatalogStore interface {
 // invariantes. Un adaptador que decidiera qué es una sala válida movería la
 // política fuera de core.
 //
-// Five files, five different reasons:
+// Six files, six different reasons:
 //
+//	profile.json      Both. What this machine remembers about the person, which
+//	                  today is the name others see. In the clear, because the
+//	                  window reads it straight off disk before its first frame.
+//	                  See [StateStore.LoadProfile].
 //	hosted-room.json  HOST ONLY. The room this machine opened. It says "there
 //	                  is a room to reopen", and only closing the room clears
 //	                  it. See [Session.SavedRoom].
@@ -407,6 +411,26 @@ type StateStore interface {
 	// Que falte es lo normal hasta que alguien lo escriba, y no es un error.
 	LoadSeed() ([]byte, error)
 	SaveSeed([]byte) error
+
+	// LoadProfile and SaveProfile keep what this machine remembers about the
+	// person: today, the name other members see.
+	//
+	// # Why the daemon owns a name each face used to keep
+	//
+	// Because there is one machine and three faces, so there is one name. With
+	// nobody owning it, the window wrote `ui-prefs.json` and the terminal wrote
+	// `nickname.txt`, in the same folder, and whichever ran last won the room:
+	// measured on 2026-08-18, a window saying "Alvaro" and a room showing
+	// "AlvaroGDeskt". The name still travels as a PARAMETER of `create_room`
+	// and `join_room` — that has not changed, and the room is still built from
+	// what the caller passed — what changed is who remembers it between rooms.
+	//
+	// There is no Clear, for the same reason the quarantine decision has none:
+	// a name, once chosen, is only ever replaced by another name. Absent is
+	// "nobody chose one yet", and what answers then is a suggestion nobody
+	// writes down. See [domain.Profile].
+	LoadProfile() ([]byte, error)
+	SaveProfile([]byte) error
 
 	// LoadQuarantineDecision and SaveQuarantineDecision keep the user's answer
 	// to "close these ports on this machine". The absent file IS undecided,

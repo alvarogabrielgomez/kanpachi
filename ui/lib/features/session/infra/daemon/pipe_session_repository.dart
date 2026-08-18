@@ -151,6 +151,18 @@ class PipeSessionRepository implements SessionRepository {
   }
 
   @override
+  Future<MachineNickname> nickname({String? nickname}) async {
+    final Map<String, Object?> r = await _mapa(
+      DaemonMethods.nickname,
+      <String, Object?>{'nickname': ?nickname},
+    );
+    return MachineNickname(
+      chosen: r['nickname'] as String? ?? '',
+      suggested: r['suggested'] as String? ?? '',
+    );
+  }
+
+  @override
   Future<void> seedPassword(String password) async {
     // `_mapa` and not a typed reader: the answer is an empty acknowledgement on
     // purpose, so there is nothing to read out of it. See

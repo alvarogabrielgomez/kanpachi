@@ -783,6 +783,7 @@ abstract final class AppMessages {
     FailedAction.exportCatalog => 'No se pudo exportar el catálogo',
     FailedAction.suspendForeignRules => 'No se pudo cambiar la regla del juego',
     FailedAction.quarantine => 'No se pudo cambiar la cuarentena',
+    FailedAction.setNickname => 'No se pudo guardar tu nombre',
     FailedAction.quit => 'No se pudo cerrar Kanpachi',
   };
 

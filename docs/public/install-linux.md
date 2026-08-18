@@ -76,9 +76,16 @@ The full list of paths, units and state is in
 kanpachi
 ```
 
-With no arguments you get the assistant. It asks for a nickname the first time,
-then offers to open a room or enter one, and it is the sensible starting point
-on a server that was installed a minute ago.
+With no arguments you get the assistant. It asks for a name the first time,
+prefilled with one derived from this machine's own, then offers to open a room
+or enter one, and it is the sensible starting point on a server that was
+installed a minute ago.
+
+Nothing forces you to answer it: `kanpachi host` on a machine where nobody chose
+a name uses the derived one, says so on stderr, and opens the room. That keeps a
+scripted first run working with no file, no network and no questions. What it
+does not do is write the derived name down, so `kanpachi name <yours>` later is
+still the first time anybody chose one.
 
 Everything the assistant does has a direct subcommand as well — `kanpachi host`,
 `kanpachi join <code>`, `kanpachi status`. The whole list is in

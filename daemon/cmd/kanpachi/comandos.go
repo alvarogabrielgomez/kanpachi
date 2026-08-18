@@ -17,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/daemon/transport/client"
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
@@ -42,7 +41,7 @@ var grupos = []struct {
 	{"The game:", []string{"games", "game"}},
 	{"Checking:", []string{"exposure", "diag", "probe", "protect"}},
 	{"What was left from before:", []string{"pending", "resume", "discard", "last"}},
-	{"The system:", []string{"seed", "password", "doctor", "upgrade"}},
+	{"The system:", []string{"name", "seed", "password", "doctor", "upgrade"}},
 	{"Other:", []string{"version", "help"}},
 }
 
@@ -96,6 +95,8 @@ func init() {
 			correr: cmdDiscard},
 		"last": {breve: "the last room you entered as a guest",
 			correr: cmdLast},
+		"name": {args: "[name]", breve: "the name rooms show you by, shared with the window; bare, it shows it",
+			correr: cmdName},
 		"seed": {args: "[host]", breve: "the registry this machine opens rooms on; with no host, shows it",
 			correr: cmdSeed},
 		"password": {breve: "the password of a registry that asks for one to host. Never on the command line",
@@ -710,6 +711,56 @@ func cmdQuarantine(_ context.Context, op opciones, args []string) error {
 // Porque la siguiente sala que abras se hospedaría en el servidor de un
 // desconocido sin que nadie lo haya decidido. Lo que ese registro sí hace es
 // aparecer acá como sugerencia, para no tener que ir a buscarlo a un chat.
+// cmdName lee o cambia el nombre con el que esta máquina entra a las salas.
+//
+// Molde de [cmdSeed], que es el comando hermano: cero o un argumento, y con el
+// valor vacío se imprime la sugerencia como un comando listo para pegar en vez
+// de aplicarla sola. Aplicarla sola sería exactamente el defecto que este
+// cambio arregla, con el nombre del equipo ascendido a elección de nadie.
+func cmdName(_ context.Context, op opciones, args []string) error {
+	nuevo := ""
+	switch len(args) {
+	case 0:
+	case 1:
+		nuevo = args[0]
+		if strings.HasPrefix(nuevo, "-") {
+			return uso("name takes a name, not a flag: kanpachi name alvaro")
+		}
+	default:
+		return uso("name takes at most one name, and a name has no spaces")
+	}
+
+	c, err := abrir(op)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = c.Close() }()
+
+	var params any
+	if nuevo != "" {
+		params = struct {
+			Nickname string `json:"nickname"`
+		}{nuevo}
+	}
+	v, hecho, err := pedir[struct {
+		Nickname  string `json:"nickname"`
+		Suggested string `json:"suggested"`
+	}](c, op, protocol.MethodNickname, params)
+	if hecho || err != nil {
+		return err
+	}
+
+	if v.Nickname == "" {
+		fmt.Println("Nobody has chosen a name on this machine yet.")
+		fmt.Printf("\n  Rooms would show you as %s, taken from this machine's name.\n", v.Suggested)
+		fmt.Println("  To choose one:  kanpachi name alvaro")
+		return nil
+	}
+	fmt.Printf("Rooms show you as %s.\n", v.Nickname)
+	fmt.Println("\n  It is the same name in the window, the wizard and here.")
+	return nil
+}
+
 func cmdSeed(_ context.Context, op opciones, args []string) error {
 	nuevo := ""
 	switch len(args) {
@@ -764,34 +815,84 @@ func cmdSeed(_ context.Context, op opciones, args []string) error {
 
 // ─── El apodo ────────────────────────────────────────────────────────────────
 
-// apodo decide con qué nombre se entra, y lo recuerda.
+// apodo decide con qué nombre se entra, y ya NO lo recuerda: lo recuerda el
+// daemon, que es la única pieza que las tres caras comparten.
 //
-// El orden es: lo que se pidió con `--nick`, lo que se guardó la vez anterior,
-// y el nombre del equipo. Los tres pasan por [domain.ParseNickname], que es la
-// misma validación que aplica el daemon: rechazar acá no protege al daemon, solo
-// hace que el mensaje llegue antes de esperar un minuto por una sala.
+// # Qué arregla que el fichero ya no sea de acá
+//
+// Que esta máquina tenga un nombre y no dos. La terminal guardaba el suyo en
+// `nickname.txt` y la ventana el suyo en `ui-prefs.json`, en la misma carpeta,
+// y la sala enseñaba el de la cara que hubiera entrado: medido el 2026-08-18,
+// una ventana que decía «Alvaro» y una sala que enseñaba «AlvaroGDeskt».
+//
+// # Y lo derivado NUNCA se guarda
+//
+// Esa es la mitad del arreglo, más que la unificación. La rama de abajo escribía
+// en disco el nombre del equipo ya limpio, y una vez escrito dejaba de
+// distinguirse de un nombre elegido: por eso le ganaba al de verdad. Hoy el
+// daemon lo SUGIERE, la terminal lo usa y lo dice por stderr, y nadie lo
+// persiste. Con `--nick` sí se guarda, porque eso lo tecleó una persona.
+//
+// La derivación tampoco vive acá: vive en el daemon, que corre en la misma
+// máquina, así que el nombre del equipo es el mismo y una copia menos es una
+// copia que no se puede separar.
 func apodo(op opciones) (string, error) {
-	if op.nick != "" {
-		n, err := domain.ParseNickname(op.nick)
-		if err != nil {
-			return "", uso("--nick %q is not valid: %v", op.nick, err)
-		}
-		guardarApodo(op.datos, n.String())
-		return n.String(), nil
-	}
-	if guardado := leerApodo(op.datos); guardado != "" {
-		if n, err := domain.ParseNickname(guardado); err == nil {
-			return n.String(), nil
-		}
-		// Uno guardado que ya no vale se ignora en silencio y se recalcula: pudo
-		// escribirlo una versión con otras reglas, y morirse por eso dejaría a
-		// alguien sin poder abrir una sala hasta que encontrara el fichero.
-	}
-	n, err := domain.ParseNickname(nombreDeApodoPorDefecto())
+	c, err := abrir(op)
 	if err != nil {
-		return "", fmt.Errorf("could not derive a name from this machine: %w.\n"+
-			"  Pass one by hand with --nick", err)
+		return "", err
 	}
-	guardarApodo(op.datos, n.String())
-	return n.String(), nil
+	defer func() { _ = c.Close() }()
+	return apodoCon(c, op)
+}
+
+// apodoCon es lo mismo sobre una conexión ya abierta.
+//
+// No pasa por `pedir` a propósito: `pedir` imprime el JSON crudo con `--json`, y
+// esto es un paso interno de crear o entrar, no la respuesta al comando.
+func apodoCon(c *client.Client, op opciones) (string, error) {
+	elegido, sugerido, err := pedirApodo(c, op.nick)
+	if err != nil {
+		return "", err
+	}
+	if elegido != "" {
+		return elegido, nil
+	}
+	if sugerido == "" {
+		return "", fmt.Errorf("this machine has no name yet and none could be derived.\n" +
+			"  Choose one:  kanpachi name <yours>")
+	}
+	// Por stderr y en una línea: lo que se está haciendo es correcto y no hay
+	// que pararlo —el droplet headless y cualquier script dependen de que un
+	// primer arranque sin nada configurado funcione— y a la vez nadie eligió
+	// este nombre, así que se dice y se dice cómo cambiarlo.
+	fmt.Fprintf(os.Stderr, "kanpachi: using %s, derived from this machine's name."+
+		" `kanpachi name <yours>` to change it.\n", sugerido)
+	return sugerido, nil
+}
+
+// pedirApodo es la llamada pelada: con un nombre lo fija, sin él solo lee, y en
+// los dos casos devuelve el elegido y el sugerido.
+//
+// No pasa por `pedir` a propósito: `pedir` imprime el JSON crudo con `--json`,
+// y esto es un paso interno de crear, entrar o del asistente, no la respuesta al
+// comando que alguien escribió. El que sí es esa respuesta es [cmdName].
+func pedirApodo(c *client.Client, nuevo string) (elegido, sugerido string, err error) {
+	var params any
+	if nuevo != "" {
+		params = struct {
+			Nickname string `json:"nickname"`
+		}{nuevo}
+	}
+	raw, err := c.Call(protocol.MethodNickname, params)
+	if err != nil {
+		return "", "", err
+	}
+	var v struct {
+		Nickname  string `json:"nickname"`
+		Suggested string `json:"suggested"`
+	}
+	if e := json.Unmarshal(raw, &v); e != nil {
+		return "", "", fmt.Errorf("parsing the answer to %s: %w", protocol.MethodNickname, e)
+	}
+	return v.Nickname, v.Suggested, nil
 }

@@ -221,7 +221,9 @@ El daemon imprime el nombre del pipe y el token al arrancar. La segunda llamada 
 
 ## Desinstalación
 
-En orden: detener y borrar el servicio, purgar las reglas de **los dos grupos**, "Kanpachi" y "Kanpachi-base", eliminar el adaptador Wintun, borrar ProgramData, borrar Program Files y borrar `Roaming AppData\Accentio Studios\Kanpachi\shared_preferences.json`. Este último no vive junto al bundle: es donde `shared_preferences_windows` guarda nickname, onboarding, tamaño de ventana y ajustes mediante el Application Support de Windows. Criterio de calidad: instalar y desinstalar veinte veces seguidas en una VM sin dejar rastro.
+En orden: detener y borrar el servicio, purgar las reglas de **los dos grupos**, "Kanpachi" y "Kanpachi-base", eliminar el adaptador Wintun, borrar ProgramData, borrar Program Files y borrar `Roaming AppData\Accentio Studios\Kanpachi\shared_preferences.json`. Criterio de calidad: instalar y desinstalar veinte veces seguidas en una VM sin dejar rastro.
+
+**Ese último fichero es LEGADO, y la limpieza se queda por eso.** La ventana usó `shared_preferences`, que escribe en el Application Support de Windows, o sea fuera de la carpeta del producto; hoy escribe `ui-prefs.json` dentro del directorio de datos, y el apodo ni siquiera está ahí, lo guarda el daemon en `profile.json`. Lo que borra esa línea es lo que dejó una versión anterior en la máquina de alguien que actualizó. Retirarla es una decisión aparte, y el día que se tome mueve a la vez este párrafo, el `.iss` y `internal/arch/suministro_test.go`, que comprueba el literal.
 
 **El desinstalador es el único que borra los dos.** Es la razón por la que conviene que los nombres se parezcan, y también la trampa: la comparación va por igualdad exacta contra cada uno, jamás por prefijo contra "Kanpachi", porque el mismo atajo escrito dentro del daemon borraría la cuarentena en cada arranque.
 
