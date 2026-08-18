@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.6.0] - 2026-08-18
+
 ### Changed
 
 - One name per machine, kept by the daemon: the window, the terminal and the wizard all read and write the same one, so changing it anywhere changes it everywhere. Each face used to keep its own file side by side in the data folder, and the room showed whichever one had entered it — a window saying Alvaro and a room showing AlvaroGDeskt. Your existing name is adopted on the next start with nothing to answer, `kanpachi name` shows or changes it from the terminal, and a machine where nobody has chosen one still opens a room with a name derived from its own — said out loud, never written down, because a guess saved to disk is a guess that beats the real answer ([670cb6a](https://github.com/alvarogabrielgomez/kanpachi/commit/670cb6a))
@@ -336,6 +338,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.6.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.0
 [0.5.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.5.0
 [0.4.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.4.0
 [0.3.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.3.0
