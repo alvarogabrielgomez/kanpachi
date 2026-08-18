@@ -65,3 +65,7 @@ profile.cov
 # Go workspace file
 go.work
 go.work.sum
+# La carpeta portable que deja `scripts/kanpachi-portable.ps1` en su salida por
+# defecto. Mismo motivo que /dist/: es el producto armado, no la receta, y
+# dentro lleva `kanpachi-data\` con la `identity.key` de quien lo corrió.
+/Kanpachi/
