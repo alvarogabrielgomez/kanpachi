@@ -170,13 +170,42 @@ func TestElEnlaceLlevaLaClaveYLaURLDictadaNo(t *testing.T) {
 	}
 	room := Room{InviteID: id, Seed: "seed.midominio.com"}
 
+	// Una clave de verdad. Este test usaba la de CERO, o sea que afirmaba que
+	// el fragmento estaba cuando lo que había era treinta y dos ceros, que es
+	// exactamente el defecto que se vio en vivo el 2026-08-18.
 	var key [CardKeyLen]byte
+	for i := range key {
+		key[i] = byte(i + 1)
+	}
 	link := room.InviteLink(key)
 	if !strings.HasPrefix(link, "https://seed.midominio.com/A7K2-M9QX#") {
 		t.Fatalf("el enlace no tiene la forma esperada: %q", link)
 	}
 	if strings.Contains(room.InviteURL(), "#") {
 		t.Fatalf("la URL dictada lleva fragmento: %q", room.InviteURL())
+	}
+}
+
+// TestSinClaveElEnlaceNoLlevaFragmento es el caso del INVITADO.
+//
+// La clave la guardan solo los caminos del host, así que quien entró a la sala
+// de otro tiene el valor cero. Pegarlo producía un enlace terminado en cuarenta
+// y tres "A" que no abre ninguna tarjeta. Lo honesto es la forma sin fragmento,
+// que entra igual.
+func TestSinClaveElEnlaceNoLlevaFragmento(t *testing.T) {
+	id, err := ParseInviteID("A7K2M9QX")
+	if err != nil {
+		t.Fatal(err)
+	}
+	room := Room{InviteID: id, Seed: "seed.midominio.com"}
+
+	var sinClave [CardKeyLen]byte
+	link := room.InviteLink(sinClave)
+	if strings.Contains(link, "#") {
+		t.Fatalf("el enlace de un invitado lleva un fragmento inventado: %q", link)
+	}
+	if link != "https://seed.midominio.com/A7K2-M9QX" {
+		t.Fatalf("el enlace sin clave no es la URL dictada: %q", link)
 	}
 }
 

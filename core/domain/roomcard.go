@@ -217,7 +217,22 @@ func ParseCardKeyFragment(s string) ([CardKeyLen]byte, error) {
 //
 // [Room.InviteURL] devuelve la forma sin clave, que es la que se dicta por
 // teléfono. Esta es la que se copia al portapapeles y se pega en Telegram.
+//
+// # Sin clave devuelve la forma sin fragmento, y eso no es un caso raro
+//
+// Es el caso de todo INVITADO. La clave de la tarjeta la guardan solo los
+// caminos del host —crear, renovar y reabrir—, así que quien entró a la sala de
+// otro tiene el valor cero, y pegarlo producía un enlace terminado en cuarenta y
+// tres "A", que son treinta y dos ceros en base64url. **No era cosmético**: quien
+// lo recibiera traía un fragmento que no abre ninguna tarjeta.
+//
+// La forma sin fragmento sí sirve: quien la reciba entra igual y ve la tarjeta
+// genérica, porque la clave nunca fue lo que abre la sala. Reportado en vivo
+// sobre el CLI de Linux el 2026-08-18.
 func (r Room) InviteLink(key [CardKeyLen]byte) string {
+	if key == ([CardKeyLen]byte{}) {
+		return "https://" + r.InviteURL()
+	}
 	return "https://" + r.InviteURL() + "#" + CardKeyFragment(key)
 }
 

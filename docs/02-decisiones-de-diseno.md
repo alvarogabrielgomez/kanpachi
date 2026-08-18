@@ -746,6 +746,8 @@ La tarjeta de sala guarda nombre y nick del host. Va cifrada con una clave que *
 
 De ahí sale que el fragmento sea **enriquecimiento opcional**: un ID dictado por teléfono y tecleado a mano abre la página igual, con la tarjeta genérica y el contador vivo. El nombre de la sala aparece solo cuando llegó el link entero.
 
+**Y por eso el enlace de un INVITADO va sin fragmento, en vez de con uno inventado.** La clave la guardan solo los caminos del host —crear, renovar y reabrir—, así que quien entró a la sala de otro tiene el valor cero, y hasta el 2026-08-18 se pegaba igual: el enlace terminaba en cuarenta y tres «A», que son treinta y dos ceros en base64url. No era cosmético, porque quien lo recibiera traía un fragmento que no abre ninguna tarjeta. La regla queda dicha una sola vez, en `Room.InviteLink`: **sin clave, la forma dictada**, que entra igual y enseña la tarjeta genérica. Reportado en vivo sobre el CLI de Linux.
+
 Consecuencia aceptada: la vista previa en el chat dice "Sala de Kanpachi, 4 jugando" y nunca el nombre de la sala, porque el servidor que la genera tampoco puede leerlo. Es el único punto reversible de esta decisión. Volverla plana daría previa rica a cambio de que el operador vea el nombre de cada sala y el nick de cada host.
 
 **Tres reglas de la página:**
