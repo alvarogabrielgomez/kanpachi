@@ -528,12 +528,24 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 		return result(probeView(r))
 
 	case MethodQuarantine:
-		p, e := decodeStrict[struct {
-			// Set vacío solo lee. "on" y "off" SON la decisión.
+		// Set vacío solo lee. "on" y "off" SON la decisión.
+		//
+		// Sin parámetros es LEER, y es la mitad más usada: `kanpachi
+		// quarantine` a secas manda `params` ausente, igual que `seed` a secas,
+		// y `decodeStrict` contestaba "faltan los parámetros". Mismo arreglo
+		// medido que [Server.ownSeed]: que un método acepte parámetros ausentes
+		// es una decisión de ESE método.
+		var p struct {
 			Set string `json:"set,omitempty"`
-		}](req.Params)
-		if e != nil {
-			return nil, e
+		}
+		if len(req.Params) > 0 {
+			leído, e := decodeStrict[struct {
+				Set string `json:"set,omitempty"`
+			}](req.Params)
+			if e != nil {
+				return nil, e
+			}
+			p = leído
 		}
 		switch p.Set {
 		case "":

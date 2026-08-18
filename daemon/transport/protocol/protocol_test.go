@@ -1057,3 +1057,40 @@ func TestReponerSinSalaFallaConSuCodigo(t *testing.T) {
 		t.Fatalf("no se tradujo el error: %+v", resp)
 	}
 }
+
+// La mitad más usada del interruptor es LEER, y leer viaja sin parámetros:
+// `kanpachi quarantine` a secas manda `params` ausente, igual que `seed` a
+// secas. Medido contra el daemon en vivo el 2026-08-18: `decodeStrict`
+// contestaba "faltan los parámetros" y el comando de solo mirar fallaba.
+func TestMirarLaCuarentenaViajaSinParametros(t *testing.T) {
+	s, api := servidor(t)
+	saluda(t, s, tokenDePrueba)
+	api.estado = domain.RoomState{Conn: domain.StateConnected, Name: "Los panas"}
+
+	var v RoomView
+	lee(t, pide(t, s, `{"id":9,"method":"quarantine"}`), &v)
+
+	if api.decididos != 0 {
+		t.Fatalf("mirar decidió %d veces", api.decididos)
+	}
+	if v.Name != "Los panas" {
+		t.Fatalf("no volvió el estado: %+v", v)
+	}
+}
+
+// Con `set` la palabra ES la decisión, y el que la lleva tiene que quedar
+// anotado exactamente una vez.
+func TestElInterruptorDeLaCuarentenaDecide(t *testing.T) {
+	s, api := servidor(t)
+	saluda(t, s, tokenDePrueba)
+
+	var v RoomView
+	lee(t, pide(t, s, `{"id":9,"method":"quarantine","params":{"set":"off"}}`), &v)
+
+	if api.decididos != 1 || api.decisión != domain.QuarantineDeclined {
+		t.Fatalf("la palabra no quedó anotada: decididos=%d decisión=%v", api.decididos, api.decisión)
+	}
+	if resp := pide(t, s, `{"id":10,"method":"quarantine","params":{"set":"maybe"}}`); resp.Error == nil || resp.Error.Code != CodeBadRequest {
+		t.Fatalf("un set que no es no se rechazó: %+v", resp)
+	}
+}
