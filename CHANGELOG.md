@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Changed
+
+- Stop closing this machine's risky server ports without asking: the base quarantine became YOUR decision, asked once at the door of `kanpachi host` and `join` with the exact ports listed and no default answer, `--quarantine on|off` answering it from a script, a terminal-less run without the flag refused on purpose, and the window never blocked on it. Saying yes closes them until you say otherwise, saying no removes what a yes had closed, every daemon start and `--reset` obey the recorded answer, and nothing but uninstalling or your own no ever removes it
+
 ### Added
 
 - Measure whether the base quarantine is actually in force, once a minute, from the system itself: every rule present, some missing, disabled or edited away, none at all, or could-not-check, each its own answer. It travels in the status every face polls, visible today under `quarantine` in `kanpachi status --json`, and it is what the upcoming notices and the doctor will read ([ab1f223](https://github.com/alvarogabrielgomez/kanpachi/commit/ab1f223))

@@ -234,6 +234,10 @@ func cmdWatch(ctx context.Context, op opciones, _ []string) error {
 
 func cmdHost(_ context.Context, op opciones, args []string) error {
 	args, sinPreguntar := sacarSí(args)
+	args, cuarentena, err := sacarCuarentena(args)
+	if err != nil {
+		return err
+	}
 	nick, err := apodo(op)
 	if err != nil {
 		return err
@@ -265,14 +269,16 @@ func cmdHost(_ context.Context, op opciones, args []string) error {
 		fmt.Println("Opening the room. This takes about a minute: two adapters have to")
 		fmt.Println("come up, the credential has to be exchanged, and the MTU measured.")
 	}
-	return conSalaAbriendoFirewall(op, protocol.MethodCreateRoom, sinPreguntar, func(allowFirewall bool) any {
-		return struct {
-			Nickname      string `json:"nickname"`
-			Name          string `json:"name"`
-			Replace       bool   `json:"replace,omitempty"`
-			AllowFirewall bool   `json:"allow_firewall,omitempty"`
-		}{nick, nombre, replace, allowFirewall}
-	})
+	return conSalaConsintiendo(op, protocol.MethodCreateRoom, sinPreguntar, cuarentena,
+		func(allowFirewall bool, quarantine string) any {
+			return struct {
+				Nickname      string `json:"nickname"`
+				Name          string `json:"name"`
+				Replace       bool   `json:"replace,omitempty"`
+				AllowFirewall bool   `json:"allow_firewall,omitempty"`
+				Quarantine    string `json:"quarantine,omitempty"`
+			}{nick, nombre, replace, allowFirewall, quarantine}
+		})
 }
 
 // cmdJoin pasa el texto TAL CUAL lo pegó la persona.
@@ -283,6 +289,10 @@ func cmdHost(_ context.Context, op opciones, args []string) error {
 // distinta de la que se quiere probar.
 func cmdJoin(_ context.Context, op opciones, args []string) error {
 	args, sinPreguntar := sacarSí(args)
+	args, cuarentena, err := sacarCuarentena(args)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		return uso("join needs the code or the link.\n" +
 			"  Every form works as long as it carries the registry:\n" +
@@ -312,14 +322,16 @@ func cmdJoin(_ context.Context, op opciones, args []string) error {
 	if !op.json {
 		fmt.Println("Entering...")
 	}
-	return conSalaAbriendoFirewall(op, protocol.MethodJoinRoom, sinPreguntar, func(allowFirewall bool) any {
-		return struct {
-			Code          string `json:"code"`
-			Nickname      string `json:"nickname"`
-			Replace       bool   `json:"replace,omitempty"`
-			AllowFirewall bool   `json:"allow_firewall,omitempty"`
-		}{args[0], nick, replace, allowFirewall}
-	})
+	return conSalaConsintiendo(op, protocol.MethodJoinRoom, sinPreguntar, cuarentena,
+		func(allowFirewall bool, quarantine string) any {
+			return struct {
+				Code          string `json:"code"`
+				Nickname      string `json:"nickname"`
+				Replace       bool   `json:"replace,omitempty"`
+				AllowFirewall bool   `json:"allow_firewall,omitempty"`
+				Quarantine    string `json:"quarantine,omitempty"`
+			}{args[0], nick, replace, allowFirewall, quarantine}
+		})
 }
 
 func cmdLeave(_ context.Context, op opciones, _ []string) error {

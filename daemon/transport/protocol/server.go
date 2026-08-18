@@ -37,6 +37,14 @@ type API interface {
 	// and what would open it. See [usecase.ErrFirewallBlocks].
 	CreateRoom(ctx context.Context, nick domain.Nickname, roomName string, replace, allowFirewall bool) (domain.RoomState, error)
 	JoinRoom(ctx context.Context, input string, nick domain.Nickname, replace, allowFirewall bool) (domain.RoomState, error)
+	// QuarantineQuestion and DecideQuarantine are the door and the switch of
+	// the base quarantine. The door only refuses callers that ASKED to be
+	// refused (`quarantine: "ask"`), which is how the CLI makes the choice
+	// mandatory while the window never blocks; the switch is the decision made
+	// true in either direction, idempotent both ways. See
+	// [usecase.Session.DecideQuarantine].
+	QuarantineQuestion() (domain.QuarantineDecision, []uint16)
+	DecideQuarantine(ctx context.Context, wanted bool) (domain.QuarantineState, error)
 	LeaveRoom(ctx context.Context) domain.RoomState
 	ActivateProfile(ctx context.Context, gameID string) (domain.RoomState, error)
 	KickMember(ctx context.Context, ip netip.Addr) (domain.RoomState, error)
@@ -318,8 +326,16 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 			// safety: opening a foreign firewall that blocks the room's
 			// inbound. See [usecase.ErrFirewallBlocks].
 			AllowFirewall bool `json:"allow_firewall,omitempty"`
+			// Quarantine is the caller's stance on the base-quarantine
+			// question: "" says nothing (the window's stance), "ask" demands a
+			// refusal while undecided (the CLI's), and "on"/"off" IS the
+			// decision, recorded and made true before the room opens.
+			Quarantine string `json:"quarantine,omitempty"`
 		}](req.Params)
 		if e != nil {
+			return nil, e
+		}
+		if e := s.quarantineGate(ctx, p.Quarantine); e != nil {
 			return nil, e
 		}
 		nick, err := domain.ParseNickname(p.Nickname)
@@ -335,8 +351,12 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 			Nickname      string `json:"nickname"`
 			Replace       bool   `json:"replace,omitempty"`
 			AllowFirewall bool   `json:"allow_firewall,omitempty"`
+			Quarantine    string `json:"quarantine,omitempty"`
 		}](req.Params)
 		if e != nil {
+			return nil, e
+		}
+		if e := s.quarantineGate(ctx, p.Quarantine); e != nil {
 			return nil, e
 		}
 		nick, err := domain.ParseNickname(p.Nickname)

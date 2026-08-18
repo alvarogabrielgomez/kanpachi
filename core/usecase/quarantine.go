@@ -22,6 +22,15 @@ func (s *Session) QuarantineDecision() domain.QuarantineDecision {
 	return s.quarantineDecision
 }
 
+// QuarantineQuestion is what the room's door needs in ONE read: whether the
+// question is still owed, and what closing would close. The ports come from
+// the domain so what gets offered and what gets closed cannot disagree.
+func (s *Session) QuarantineQuestion() (domain.QuarantineDecision, []uint16) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.quarantineDecision, domain.QuarantinePorts(s.deps.Quarantine)
+}
+
 // DecideQuarantine records the user's answer and makes it true, in whichever
 // direction: accepting writes the base quarantine, declining removes it.
 //

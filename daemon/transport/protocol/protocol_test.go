@@ -475,6 +475,9 @@ type apiFalsa struct {
 	reposiciones int
 	errReponer   error
 
+	decisión  domain.QuarantineDecision
+	decididos int
+
 	// seed es el registro de esta máquina y sugerido el de la última sala a la
 	// que se entró. Vacíos por omisión, que es una instalación nueva.
 	seed     string
@@ -496,6 +499,22 @@ func (a *apiFalsa) CreateRoom(context.Context, domain.Nickname, string, bool, bo
 
 func (a *apiFalsa) JoinRoom(context.Context, string, domain.Nickname, bool, bool) (domain.RoomState, error) {
 	return a.estado, nil
+}
+
+// decisión is what QuarantineQuestion answers; the zero is undecided, which
+// is what the gate refuses "ask" over.
+func (a *apiFalsa) QuarantineQuestion() (domain.QuarantineDecision, []uint16) {
+	return a.decisión, domain.QuarantinePorts(domain.QuarantineWindows)
+}
+
+func (a *apiFalsa) DecideQuarantine(_ context.Context, wanted bool) (domain.QuarantineState, error) {
+	if wanted {
+		a.decisión = domain.QuarantineAccepted
+	} else {
+		a.decisión = domain.QuarantineDeclined
+	}
+	a.decididos++
+	return domain.QuarantineState{}, nil
 }
 
 func (a *apiFalsa) LeaveRoom(context.Context) domain.RoomState { return a.estado }

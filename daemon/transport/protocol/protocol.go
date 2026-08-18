@@ -247,6 +247,18 @@ const (
 	// como tabla.
 	CodeFirewallBlocks Code = "firewall_blocks"
 
+	// CodeQuarantineUndecided es que abrir o entrar exige contestar primero la
+	// pregunta de la cuarentena de base, y nadie la contestó todavía.
+	//
+	// Solo sale cuando el LLAMADOR pidió preguntar (`quarantine: "ask"`). La
+	// ventana no lo pide y no se bloquea nunca; el CLI lo pide siempre, que es
+	// la asimetría deliberada entre caras: en la terminal la pregunta es el
+	// modo de interactuar, y en la ventana una modal antes de jugar es lo que
+	// el producto prometió no hacer. El mensaje enumera los puertos exactos; el
+	// CLI lo muestra, pregunta sin valor por defecto, y reintenta con `on` u
+	// `off`.
+	CodeQuarantineUndecided Code = "quarantine_undecided"
+
 	CodeBusy        Code = "busy"          // ya hay sala
 	CodeNoRoom      Code = "no_room"       // la operación necesita una y no hay
 	CodeNotHost     Code = "not_host"      // solo el host puede
