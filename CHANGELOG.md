@@ -8,11 +8,6 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
-### Fixed
-
-- Stop handing out a broken invite link when you are a guest: the key that unscrambles a room card is kept only by whoever hosts, so every guest was pasting a link ending in forty-three A's — thirty-two zero bytes — and whoever received it got a fragment that opens no card. A guest's link is now the dictated form, with no fragment, which enters the room just the same and shows the generic card. Reported live against the Linux CLI ([a00e14f](https://github.com/alvarogabrielgomez/kanpachi/commit/a00e14f))
-- List `quarantine` in `kanpachi help`, where it had never appeared: the command shipped in 0.5.0 with its three faces and nothing telling anybody it exists, because the help is drawn from a second list a new command has to be added to by hand. It gains its own section in the command reference too, symptom first ([79bd3bc](https://github.com/alvarogabrielgomez/kanpachi/commit/79bd3bc))
-
 ## [0.6.0] - 2026-08-18
 
 ### Changed
@@ -21,6 +16,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Fixed
 
+- Stop handing out a broken invite link when you are a guest: the key that unscrambles a room card is kept only by whoever hosts, so every guest was pasting a link ending in forty-three A's — thirty-two zero bytes — and whoever received it got a fragment that opens no card. A guest's link is now the dictated form, with no fragment, which enters the room just the same and shows the generic card. Reported live against the Linux CLI ([a00e14f](https://github.com/alvarogabrielgomez/kanpachi/commit/a00e14f))
+- List `quarantine` in `kanpachi help`, where it had never appeared: the command shipped in 0.5.0 with its three faces and nothing telling anybody it exists, because the help is drawn from a second list a new command has to be added to by hand. It gains its own section in the command reference too, symptom first ([79bd3bc](https://github.com/alvarogabrielgomez/kanpachi/commit/79bd3bc))
 - Keep the room's name on every guest's screen when the host announces without one: an empty name in an announce means the host has no name to send, never a rename, and taking it wiped the name learned from the invite one heartbeat after joining. The room header now also picks the name up when it arrives late, which is how it reaches whoever entered with the bare code ([84c9d92](https://github.com/alvarogabrielgomez/kanpachi/commit/84c9d92))
 - Stop saying the quarantine "could not be checked" for the first minute after every start: the sweep that measures it only ticks once the interval is over, so the daemon repaired the rules and then every face vouched for nothing about them. The start now measures before it publishes anything, whatever the recorded answer was. Found live on Windows with the 48 rules already written ([20cf4b0](https://github.com/alvarogabrielgomez/kanpachi/commit/20cf4b0))
 
