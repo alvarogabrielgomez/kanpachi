@@ -172,6 +172,20 @@ class _RoomHeaderState extends State<_RoomHeader> {
     text: widget.room.name,
   );
 
+  /// El nombre puede llegar DESPUÉS de entrar: quien entra con el código
+  /// pelado no trae la tarjeta, y lo aprende del primer anuncio del host. El
+  /// controller se sembró una vez, así que sin esto el header se quedaba en
+  /// blanco para siempre. Solo se copia lo que cambió de verdad, para no
+  /// pisarle el cursor a un host que está renombrando: el nombre del estado
+  /// solo se mueve cuando el propio commit de ese host lo movió.
+  @override
+  void didUpdateWidget(_RoomHeader old) {
+    super.didUpdateWidget(old);
+    if (widget.room.name != old.room.name && widget.room.name != _name.text) {
+      _name.text = widget.room.name;
+    }
+  }
+
   @override
   void dispose() {
     _name.dispose();

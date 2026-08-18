@@ -558,7 +558,9 @@ Esta es la pregunta que el hueco genera cada vez que alguien lo lee, así que la
 
 **Medido en Linux el 2026-08-18**, en el droplet, con el producto de verdad: sin sala, `kanpachi exposure` dice "Kanpachi no tiene ningún puerto abierto"; abierta la sala y sin nadie dentro, **una sola** regla, `tcp 57623 hacia 198.19.220.0/24`, marcada como control y sin una sola regla de juego; cerrada la sala, cero puertos otra vez. La compuerta queda cargada con su esqueleto y **cero permisos**, que es el estado más cerrado posible, y el arranque siguiente la barre.
 
-Lo que NO vive en el conjunto declarativo: la cuarentena de base, o sea el bloqueo de los puertos prohibidos en las dos direcciones. La escribe el daemon en cada arranque con el grupo `Kanpachi-base`, y jamás la borra. Es la instalación, no la sala.
+**Y medido en Windows el mismo día**, en esta máquina, hospedando con el portable: antes de la sala, cero reglas del grupo `Kanpachi`; abierta la sala, **una sola**, `Inbound TCP 57623` con remoto `198.19.117.0/24` — la /24 del lobby de esa sala, que no es la del droplet porque cada seed reparte la suya — y `kanpachi exposure` contando exactamente esa; cerrada la sala, cero otra vez. Las dos plataformas dicen lo mismo con sus dos firewalls.
+
+Lo que NO vive en el conjunto declarativo: la cuarentena de base, o sea el bloqueo de los puertos prohibidos en las dos direcciones. Va con su propio grupo `Kanpachi-base`, la escribe la decisión del usuario y solo la borra desinstalar o su propio no (decisión 37). Es la máquina, no la sala.
 
 ## 5. Cliente solo Windows en la v1
 
@@ -958,6 +960,8 @@ El puerto es fijo y no negociado, por lo mismo que el `/24` del vestíbulo: quie
 | Repartir el código nuevo | Al renovar, el host se lo manda cifrado a los que están dentro |
 
 **Sobre el latido, un matiz que no lo contradice.** La conexión sigue siendo el latido para el caso normal, y no se agrega ningún ping. Lo que se agrega es que el host **repite cada 2 minutos el anuncio de sala que ya existía**, el mismo que manda al cambiar de juego, de nombre o de miembros. El motivo es que el borde de la conexión es una señal que puede no llegar jamás: un socket TCP medio abierto sobrevive horas a una máquina apagada de golpe. Con la repetición, el silencio pasa a ser medible.
+
+**Y un nombre vacío en el anuncio no informa, así que el invitado no lo toma.** Ninguna cara ofrece renombrar una sala a nada, o sea que el anuncio sin nombre solo lo produce un host que no tiene nombre que mandar. Tomarlo cambiaba un nombre aprendido de la tarjeta o del propio disco por un blanco: medido en vivo el 2026-08-18, un host que anunciaba sin nombre le borraba «Merwebo Zomboid» de la pantalla a cada invitado un latido después de entrar. El id del juego no lleva este guard, porque ahí el vacío SÍ dice algo: ningún juego activo.
 
 ### El código nuevo viaja a los que están dentro
 

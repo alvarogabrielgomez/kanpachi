@@ -10,6 +10,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Fixed
 
+- Keep the room's name on every guest's screen when the host announces without one: an empty name in an announce means the host has no name to send, never a rename, and taking it wiped the name learned from the invite one heartbeat after joining. The room header now also picks the name up when it arrives late, which is how it reaches whoever entered with the bare code ([HASH](https://github.com/alvarogabrielgomez/kanpachi/commit/HASH))
 - Stop saying the quarantine "could not be checked" for the first minute after every start: the sweep that measures it only ticks once the interval is over, so the daemon repaired the rules and then every face vouched for nothing about them. The start now measures before it publishes anything, whatever the recorded answer was. Found live on Windows with the 48 rules already written ([20cf4b0](https://github.com/alvarogabrielgomez/kanpachi/commit/20cf4b0))
 
 ### Added

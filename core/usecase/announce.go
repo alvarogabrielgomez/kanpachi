@@ -66,7 +66,15 @@ func (s *Session) OnRoomAnnounce(ctx context.Context, raw domain.RoomAnnounce) (
 	}
 
 	a := raw.Sanitize()
-	s.state.Name = a.RoomName
+	// An empty name is NO INFORMATION, never a rename: no face offers renaming
+	// a room to nothing, so the only machines that announce an empty name are
+	// hosts that never had one to send. Taking it would trade a name this
+	// machine learned from the card or from its own disk for a blank. Measured
+	// live on 2026-08-18: a host announcing without a name wiped "Merwebo
+	// Zomboid" off every guest's screen one heartbeat after they joined.
+	if a.RoomName != "" {
+		s.state.Name = a.RoomName
+	}
 	s.announcedGame = a.GameID
 
 	previo := s.state.Game
