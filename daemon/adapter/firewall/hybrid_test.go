@@ -93,6 +93,11 @@ func (p *permisosFalsos) FirewallEnabled(context.Context) ([]domain.FirewallProf
 	return nil, nil
 }
 
+func (p *permisosFalsos) QuarantineState(context.Context) (domain.QuarantineState, error) {
+	// The zero verdict is Unknown, same as a real adapter that could not read.
+	return domain.QuarantineState{}, nil
+}
+
 func (p *permisosFalsos) Enforcement(context.Context) (domain.Enforcement, error) {
 	if p.fallaMedida != nil {
 		return domain.Enforcement{}, p.fallaMedida

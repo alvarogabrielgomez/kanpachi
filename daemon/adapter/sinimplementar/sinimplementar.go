@@ -240,6 +240,9 @@ func (Audit) Enforcement(context.Context) (domain.Enforcement, error) {
 func (Audit) RouterMappings(context.Context) ([]domain.PortMapping, error) {
 	return nil, falla("consultar los mapeos del router")
 }
+func (Audit) QuarantineState(context.Context) (domain.QuarantineState, error) {
+	return domain.QuarantineState{}, falla("medir la cuarentena de base")
+}
 
 // Events es la excepción: canales que NUNCA emiten.
 //

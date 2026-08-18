@@ -43,6 +43,41 @@ func appliedRules(all []liveRule) []domain.AppliedRule {
 	return out
 }
 
+// quarantineTally counts what is wrong with the base quarantine as it stands.
+//
+// It ONLY counts; the verdict over the counts is [domain.MeasuredQuarantine],
+// which is domain and needs no firewall. Pure and tested on Linux for the same
+// reason as appliedRules above: a bug here does not break anything visible, it
+// paints the screen green.
+//
+// The drifted count is the case that until now went to ONE log line, in
+// ApplyBaseQuarantine, and nowhere a person looks: a rule of ours that
+// somebody edited until it stopped matching still counts as present to
+// anything counting by name, and it blocks nothing. Disabled is checked
+// before drift on purpose — sameScope compares Enabled too, so without the
+// order a disabled rule would tally as drifted and the repair on offer would
+// be the wrong one.
+func quarantineTally(all []liveRule, want []ruleSpec) (missing, disabled, drifted int) {
+	live := make(map[string]liveRule, len(all))
+	for _, c := range all {
+		if c.Group == domain.FirewallGroupBase {
+			live[c.Name] = c
+		}
+	}
+	for _, s := range want {
+		l, ok := live[s.Name]
+		switch {
+		case !ok:
+			missing++
+		case !l.Enabled:
+			disabled++
+		case !l.spec().sameScope(s):
+			drifted++
+		}
+	}
+	return missing, disabled, drifted
+}
+
 // profileMask is the NET_FW_PROFILE_TYPE2 value of one domain profile.
 //
 // It exists as its own function, with an error rather than a default, because

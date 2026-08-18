@@ -95,6 +95,19 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 		medido = e
 	}
 
+	// The base quarantine is measured in the same sweep and STORED, not judged
+	// into an alert here: whether a machine without it should say so, and how
+	// loudly, is each face's decision, and the faces read the state. Measuring
+	// from the system, never from a memory of what was applied, is what lets a
+	// rule somebody deleted or edited show up at all.
+	cuarentena := domain.QuarantineState{}
+	if q, err := s.deps.Audit.QuarantineState(ctx); err != nil {
+		s.deps.Log.Warn("no se pudo medir la cuarentena de base", "error", err)
+		sinRespuesta = append(sinRespuesta, "si la cuarentena de base sigue puesta")
+	} else {
+		cuarentena = q
+	}
+
 	// The foreign firewall that blocks inbound is asked about in the same
 	// sweep: a ufw enabled MID-room turns a working room into one nobody can
 	// enter, with every other check still green. The alert below is the only
@@ -152,6 +165,12 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 	// vale igual sin sala, que es justamente cuando más sirve: es el estado que
 	// dice si se va a poder abrir una.
 	s.state.SeedDown = caído
+
+	// Machine-level like SeedDown, and stored for the same reason: it is worth
+	// the most precisely when there is no room. On a failed read it stores the
+	// zero, whose verdict is Unknown — leaving the previous measurement up
+	// would have the screen vouching for something nobody just measured.
+	s.state.Quarantine = cuarentena
 
 	// El barrido es una entrada que OBSERVA, así que también hace vencer los
 	// plazos. Si salió de la sala, los hallazgos recién calculados describen

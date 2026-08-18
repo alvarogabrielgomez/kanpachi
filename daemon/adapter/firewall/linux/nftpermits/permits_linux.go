@@ -182,6 +182,24 @@ func (p *Permits) Enforcement(context.Context) (domain.Enforcement, error) {
 	return domain.Enforcement{Gate: domain.GateAbsent}, nil
 }
 
+// QuarantineState measures the base quarantine as the kernel has it RIGHT NOW.
+//
+// It reads the live ruleset and never this object's memory of what was
+// applied: a table somebody flushed or a rule somebody deleted has to show,
+// and `p.skipped` cannot show it. What counts as present is decided in
+// state.go, untagged, for the reason written there.
+func (p *Permits) QuarantineState(ctx context.Context) (domain.QuarantineState, error) {
+	ruleset, err := listRuleset(ctx)
+	if err != nil {
+		return domain.QuarantineState{}, err
+	}
+	rules := domain.BaseQuarantineFor(domain.QuarantineLinux)
+	if !quarantineTableLoaded(ruleset) {
+		return domain.MeasuredQuarantine(domain.QuarantineLinux, len(rules), 0, 0), nil
+	}
+	return domain.MeasuredQuarantine(domain.QuarantineLinux, missingFromRuleset(ruleset, rules), 0, 0), nil
+}
+
 // ApplyBaseQuarantine escribe la cuarentena y la deja cargada.
 //
 // # Solo AGREGA, jamás borra

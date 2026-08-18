@@ -94,6 +94,7 @@ func ControlIdentity(priv ed25519.PrivateKey) control.Identity {
 type FirewallAudit interface {
 	FirewallEnabled(ctx context.Context) ([]domain.FirewallProfileState, error)
 	Enforcement(ctx context.Context) (domain.Enforcement, error)
+	QuarantineState(ctx context.Context) (domain.QuarantineState, error)
 }
 
 // Exposure joins the two halves of the audit WITHOUT embedding them.
@@ -124,4 +125,8 @@ func (e Exposure) Enforcement(ctx context.Context) (domain.Enforcement, error) {
 
 func (e Exposure) RouterMappings(ctx context.Context) ([]domain.PortMapping, error) {
 	return e.Router.RouterMappings(ctx)
+}
+
+func (e Exposure) QuarantineState(ctx context.Context) (domain.QuarantineState, error) {
+	return e.FW.QuarantineState(ctx)
 }

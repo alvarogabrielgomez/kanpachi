@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Added
+
+- Measure whether the base quarantine is actually in force, once a minute, from the system itself: every rule present, some missing, disabled or edited away, none at all, or could-not-check, each its own answer. It travels in the status every face polls, visible today under `quarantine` in `kanpachi status --json`, and it is what the upcoming notices and the doctor will read
+
 ## [0.4.0] - 2026-08-17
 
 ### Added

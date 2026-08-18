@@ -198,6 +198,91 @@ func BaseQuarantineFor(sys QuarantineSystem) []QuarantineRule {
 	return out
 }
 
+// QuarantinePorts is the list of ports the quarantine closes on the named
+// system, one entry per port, whether the quarantine is in place or not.
+//
+// It exists for the faces: an alert or a consent prompt has to say WHAT gets
+// closed, and without this each face would carry its own copy of the list,
+// drifting. It returns a fresh slice because on Windows the internal list is
+// the domain's own backing array, and a caller sorting its copy must not be
+// able to reorder what every other caller reads.
+func QuarantinePorts(sys QuarantineSystem) []uint16 {
+	return append([]uint16(nil), quarantinePortsFor(sys)...)
+}
+
+// QuarantineVerdict is the measured answer to "is the base quarantine in
+// place", read off the system and never recalled from memory.
+//
+// The zero value is Unknown ON PURPOSE: an adapter that fails to read returns
+// the zero state, and the screen says "could not check" instead of painting
+// either green or red over a measurement that never happened. Same doctrine as
+// [Enforcement]'s zero.
+type QuarantineVerdict uint8
+
+const (
+	// QuarantineUnknown is that the system could not be read.
+	QuarantineUnknown QuarantineVerdict = iota
+	// QuarantineAbsent is that not one rule of the quarantine is in place.
+	QuarantineAbsent
+	// QuarantinePartial is that some of it is there and some is not: rules
+	// missing, present but disabled, or edited until they stopped saying what
+	// was written. The last one is the hole that matters most, because the
+	// rule still counts as present to anything that counts by name, and it
+	// blocks nothing.
+	QuarantinePartial
+	// QuarantineApplied is that every rule is present, enabled and saying what
+	// was written.
+	QuarantineApplied
+)
+
+// QuarantineState is the base quarantine as it stands on this machine.
+//
+// It travels in the room state so every face reads the same measurement, and
+// it is machine-level like [RoomState.SeedDown]: it describes the machine, not
+// the room, so it survives leaving one.
+type QuarantineState struct {
+	Verdict QuarantineVerdict
+
+	// Ports is what the quarantine closes on this system, so a face can say
+	// WHAT without carrying its own copy of the list.
+	Ports []uint16
+
+	// Total is how many rules the full quarantine has on this system, and the
+	// three counters below say why the verdict is not Applied. Disabled and
+	// Drifted can only happen on Windows: an nftables rule cannot be switched
+	// off in place, and editing one is deleting and re-adding it, so on Linux
+	// every failure shows up as Missing.
+	Total    int
+	Missing  int
+	Disabled int
+	Drifted  int
+}
+
+// MeasuredQuarantine turns an adapter's tally into the verdict.
+//
+// The adapter COUNTS and this judges, which is the same split as
+// [Enforcement.Diff] and for the same reason: what counts as "applied" is
+// policy, and policy has to be testable without a firewall in the room.
+func MeasuredQuarantine(sys QuarantineSystem, missing, disabled, drifted int) QuarantineState {
+	total := len(BaseQuarantineFor(sys))
+	st := QuarantineState{
+		Ports:    QuarantinePorts(sys),
+		Total:    total,
+		Missing:  missing,
+		Disabled: disabled,
+		Drifted:  drifted,
+	}
+	switch {
+	case missing >= total:
+		st.Verdict = QuarantineAbsent
+	case missing == 0 && disabled == 0 && drifted == 0:
+		st.Verdict = QuarantineApplied
+	default:
+		st.Verdict = QuarantinePartial
+	}
+	return st
+}
+
 // quarantineName arma el nombre que va a ver el usuario en la consola del
 // Firewall de Windows.
 //

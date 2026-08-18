@@ -81,6 +81,26 @@ func (a *Audit) Enforcement(ctx context.Context) (domain.Enforcement, error) {
 	}, nil
 }
 
+// QuarantineState measures the base quarantine against what BaseQuarantine
+// says it should be, on the live store.
+//
+// The desired set is recomputed here rather than remembered from the last
+// ApplyBaseQuarantine, and that is the whole point of the method: a rule
+// somebody deleted, disabled or edited has to show, and a memory cannot show
+// it. Reading and counting are split so the counting runs under the Linux CI.
+func (a *Audit) QuarantineState(ctx context.Context) (domain.QuarantineState, error) {
+	want, err := QuarantineSpecs(domain.BaseQuarantine())
+	if err != nil {
+		return domain.QuarantineState{}, err
+	}
+	all, err := a.fw.liveRules(ctx)
+	if err != nil {
+		return domain.QuarantineState{}, err
+	}
+	missing, disabled, drifted := quarantineTally(all, want)
+	return domain.MeasuredQuarantine(domain.QuarantineWindows, missing, disabled, drifted), nil
+}
+
 // gate reports the state of the packet-filter gate.
 //
 // # Read this before changing it

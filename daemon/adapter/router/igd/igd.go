@@ -103,6 +103,11 @@ func (r *Router) Enforcement(context.Context) (domain.Enforcement, error) {
 	return domain.Enforcement{}, fmt.Errorf("igd: la contención puesta la mide el adaptador del firewall")
 }
 
+// QuarantineState tampoco. Mismo motivo que [Router.FirewallEnabled].
+func (r *Router) QuarantineState(context.Context) (domain.QuarantineState, error) {
+	return domain.QuarantineState{}, fmt.Errorf("igd: la cuarentena de base la mide el adaptador del firewall")
+}
+
 // RouterMappings devuelve los reenvíos de puerto que el router tiene puestos.
 func (r *Router) RouterMappings(ctx context.Context) ([]domain.PortMapping, error) {
 	ctx, cancel := context.WithTimeout(ctx, timing.IGDWholeBudget)

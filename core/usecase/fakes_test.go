@@ -787,7 +787,7 @@ type mockAudit struct {
 	compuerta     domain.GateState
 	mapeos        []domain.PortMapping
 
-	// err rompe los TRES métodos, que es el adaptador entero caído.
+	// err rompe TODOS los métodos, que es el adaptador entero caído.
 	err error
 	// Y estos rompen uno solo. Hacen falta porque las tres comprobaciones no
 	// valen lo mismo: las dos locales sostienen la promesa y la del router falla
@@ -797,6 +797,12 @@ type mockAudit struct {
 	errPerfiles error
 	errIntactas error
 	errMapeos   error
+
+	// cuarentenaMedida is what QuarantineState answers; its zero verdict is
+	// Unknown, same as a real adapter that could not read. errCuarentena
+	// breaks only that method, like the three above it.
+	cuarentenaMedida domain.QuarantineState
+	errCuarentena    error
 }
 
 func (a *mockAudit) FirewallEnabled(context.Context) ([]domain.FirewallProfileState, error) {
@@ -844,6 +850,12 @@ func (a *mockAudit) tamper() {
 
 func (a *mockAudit) RouterMappings(context.Context) ([]domain.PortMapping, error) {
 	return a.mapeos, primerError(a.errMapeos, a.err)
+}
+
+// cuarentenaMedida is what QuarantineState answers; its zero verdict is
+// Unknown, same as the real adapters on a failed read.
+func (a *mockAudit) QuarantineState(context.Context) (domain.QuarantineState, error) {
+	return a.cuarentenaMedida, primerError(a.errCuarentena, a.err)
 }
 
 func primerError(errs ...error) error {

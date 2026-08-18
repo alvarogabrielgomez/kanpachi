@@ -544,14 +544,21 @@ type SocketInspector interface {
 // responde una pregunta que Kanpachi no controla y que anula su promesa si
 // nadie la mira. Ninguno bloquea: devuelven hallazgos, jamás errores fatales.
 //
-// Que un método falle NO se calla: los dos primeros levantan AlertAuditFailed,
-// porque "no se pudo comprobar" y "todo en orden" se ven igual desde la
-// pantalla. El tercero no, y esa asimetría es deliberada: la mayoría de los
-// routers nunca contestan al IGD
+// Que un método falle NO se calla: todos menos el del router levantan
+// AlertAuditFailed, porque "no se pudo comprobar" y "todo en orden" se ven
+// igual desde la pantalla. La excepción del router es deliberada: la mayoría
+// de los routers nunca contestan al IGD
 type ExposureAudit interface {
     FirewallEnabled(ctx context.Context) ([]domain.FirewallProfileState, error)
-    OwnRulesIntact(ctx context.Context) (bool, error)
+    // Mide lo puesto en las dos capas; el veredicto lo da
+    // domain.Enforcement.Diff, que es dominio y corre sin Windows
+    Enforcement(ctx context.Context) (domain.Enforcement, error)
     RouterMappings(ctx context.Context) ([]domain.PortMapping, error) // SOLO LECTURA
+    // Mide la cuarentena de base tal como está en el sistema, jamás como se
+    // aplicó: una regla borrada, deshabilitada o editada tiene que verse, y un
+    // recuerdo de lo escrito no puede verla. El cero del estado es "no se pudo
+    // comprobar", que nunca se pinta igual que "ausente"
+    QuarantineState(ctx context.Context) (domain.QuarantineState, error)
 }
 
 // ControlChannel es el canal de la sala de la decisión 23. Serve lo llama SOLO

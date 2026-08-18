@@ -224,6 +224,12 @@ type RoomState struct {
 	// usuario y no lleva botón: no hay nada que pulsar salvo esperar.
 	SeedDown bool
 
+	// Quarantine is the base quarantine as MEASURED on this machine, refreshed
+	// by the same sweep as the alerts. Machine-level like SeedDown: it
+	// describes the machine and not the room, so clearRoom leaves it alone.
+	// Its zero verdict is "could not check", never "absent".
+	Quarantine QuarantineState
+
 	// Gen sube en CADA vaciado de la sala, e identifica a la sala viva.
 	//
 	// Existe por la ronda del canario, que suelta el candado hasta diez segundos
@@ -334,6 +340,11 @@ func (r RoomState) Clone() RoomState {
 	// todavía: acá el que muta corre en otra goroutine por diseño.
 	out.Canary.Asked = append([]CanaryAsked(nil), r.Canary.Asked...)
 	out.Canary.Answers = append([]CanaryAnswer(nil), r.Canary.Answers...)
+	// The measured quarantine carries the port list. Nobody mutates it after
+	// the sweep stores it, and it gets copied anyway by the same argument as
+	// the game profile above: one assignment in an operation that already
+	// serialises the whole room.
+	out.Quarantine.Ports = append([]uint16(nil), r.Quarantine.Ports...)
 	return out
 }
 

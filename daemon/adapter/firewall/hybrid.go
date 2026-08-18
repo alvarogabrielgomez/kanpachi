@@ -80,6 +80,10 @@ type PermitAudit interface {
 	// compuerta en AUSENTE porque desde ahí no hay forma de saberlo. Esa
 	// respuesta la pisa [Firewall.Enforcement] con la medición de verdad.
 	Enforcement(ctx context.Context) (domain.Enforcement, error)
+	// QuarantineState measures the base quarantine as the system has it. It
+	// sits on the audit and not on [Permits] because it only reads, and an
+	// audit with a hand on the methods that write is the opposite of an audit.
+	QuarantineState(ctx context.Context) (domain.QuarantineState, error)
 }
 
 // Gate es la capa que CIERRA todo lo demás.
@@ -415,6 +419,13 @@ func (f *Firewall) WithdrawAdapters(ctx context.Context) error {
 
 func (f *Firewall) FirewallEnabled(ctx context.Context) ([]domain.FirewallProfileState, error) {
 	return f.audit.FirewallEnabled(ctx)
+}
+
+// QuarantineState passes the permit layer's measurement through untouched.
+// Unlike [Firewall.Enforcement] there is no second half to overwrite: the
+// quarantine has no gate layer, on either system.
+func (f *Firewall) QuarantineState(ctx context.Context) (domain.QuarantineState, error) {
+	return f.audit.QuarantineState(ctx)
 }
 
 // Enforcement mide las DOS capas y no juzga ninguna.

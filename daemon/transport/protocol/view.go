@@ -84,6 +84,11 @@ type RoomView struct {
 	// botón para descubrir que su protección se cayó.
 	Canary CanaryView `json:"canary"`
 
+	// Quarantine is the base quarantine as MEASURED on this machine, refreshed
+	// by the same sweep as the alerts. Machine-level like SeedDown: it does not
+	// empty when the room does, because it describes the machine.
+	Quarantine QuarantineView `json:"quarantine"`
+
 	// LastExit es por qué se volvió a la pantalla de inicio. Vacío es que no
 	// hay nada que explicar.
 	LastExit string `json:"last_exit,omitempty"`
@@ -344,6 +349,7 @@ func roomView(st domain.RoomState, missing string, now time.Time) RoomView {
 		v.Alerts = append(v.Alerts, AlertView{Kind: alertName(a.Kind), Detail: a.Detail})
 	}
 	v.Canary = canaryView(st.Canary)
+	v.Quarantine = quarantineView(st.Quarantine)
 	return v
 }
 
@@ -412,6 +418,53 @@ func canaryView(c domain.CanaryCheck) CanaryView {
 		})
 	}
 	return v
+}
+
+// QuarantineView is the base quarantine as measured, never as remembered.
+type QuarantineView struct {
+	// Verdict es "applied", "partial", "absent" o "unknown".
+	Verdict string `json:"verdict"`
+	// Ports is what the quarantine closes on this system, whether it is in
+	// place or not, so a face can say WHAT gets closed without carrying its
+	// own copy of the list.
+	Ports []uint16 `json:"ports,omitempty"`
+	// Total is how many rules the full quarantine has here, and the three
+	// counters say why the verdict is "partial". Disabled and Drifted only
+	// happen on Windows; see [domain.QuarantineState].
+	Total    int `json:"total,omitempty"`
+	Missing  int `json:"missing,omitempty"`
+	Disabled int `json:"disabled,omitempty"`
+	Drifted  int `json:"drifted,omitempty"`
+}
+
+func quarantineView(q domain.QuarantineState) QuarantineView {
+	return QuarantineView{
+		Verdict:  quarantineVerdictName(q.Verdict),
+		Ports:    q.Ports,
+		Total:    q.Total,
+		Missing:  q.Missing,
+		Disabled: q.Disabled,
+		Drifted:  q.Drifted,
+	}
+}
+
+func quarantineVerdictName(v domain.QuarantineVerdict) string {
+	switch v {
+	case domain.QuarantineApplied:
+		return "applied"
+	case domain.QuarantinePartial:
+		return "partial"
+	case domain.QuarantineAbsent:
+		return "absent"
+	case domain.QuarantineUnknown:
+		// Explícito y no metido en el default, aunque devuelvan lo mismo, por
+		// lo mismo que en [canaryVerdictName]: el candado que compara esta
+		// función con el enum de Dart corta el fuente en el `default`, así que
+		// un valor que solo viva ahí no entra en el contrato.
+		return "unknown"
+	default:
+		return "unknown"
+	}
 }
 
 func canaryVerdictName(v domain.CanaryVerdict) string {

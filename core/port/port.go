@@ -511,6 +511,20 @@ type ExposureAudit interface {
 	// nunca". No hay método para crear ni para borrar, y esa ausencia es
 	// deliberada.
 	RouterMappings(ctx context.Context) ([]domain.PortMapping, error)
+	// QuarantineState measures the base quarantine as it stands on the system
+	// RIGHT NOW, never as it was applied: a rule somebody deleted, disabled or
+	// edited has to show, and a memory of what was written cannot show it.
+	//
+	// It lives HERE and not on FirewallPort on purpose. This is the read-only
+	// interface, and the guardian that watches the word "quarantine" next to a
+	// destructive verb watches the writing one; a measuring method must not
+	// share a room with it. The adapter only counts what is wrong, and
+	// [domain.MeasuredQuarantine] judges the counts.
+	//
+	// Failing returns the zero state, whose verdict is Unknown: "could not
+	// check" and "absent" must never look alike on the one screen whose job is
+	// telling them apart.
+	QuarantineState(ctx context.Context) (domain.QuarantineState, error)
 }
 
 // Prober marca un puerto TCP de OTRA máquina y dice qué contestó.

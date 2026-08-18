@@ -74,6 +74,10 @@ func (*Permits) Enforcement(context.Context) (domain.Enforcement, error) {
 	return domain.Enforcement{}, errSoloLinux
 }
 
+func (*Permits) QuarantineState(context.Context) (domain.QuarantineState, error) {
+	return domain.QuarantineState{}, errSoloLinux
+}
+
 func (*Permits) FileOnDisk() (bool, error) { return false, errSoloLinux }
 
 func QuarantineLoaded(context.Context) (bool, error) { return false, errSoloLinux }
