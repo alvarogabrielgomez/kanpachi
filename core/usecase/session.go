@@ -577,6 +577,17 @@ func NewSession(ctx context.Context, d Deps) (*Session, error) {
 	// quedaría esperando a que Windows termine. Es el único camino por el que
 	// la promesa de que nada retrasa una respuesta se rompía.
 	s.mu.Lock()
+	// Measured HERE and not left to the sweep, because the sweep's ticker fires
+	// for the first time a whole interval after boot: until then the stored
+	// state is the zero, whose verdict is Unknown, and every face would be
+	// saying "nobody could look" about a quarantine this very function just
+	// repaired. Measured live on Windows the 2026-08-18: 48 rules written at
+	// boot and `kanpachi quarantine` answering "could not be checked".
+	//
+	// It runs whatever the decision was. A machine that said no is exactly
+	// where a leftover rule matters most, and the answer to "did the boot
+	// really leave it off" has to come from the system, not from the word.
+	s.refreshQuarantineLocked(ctx)
 	s.snapshot()
 	s.mu.Unlock()
 	return s, nil
