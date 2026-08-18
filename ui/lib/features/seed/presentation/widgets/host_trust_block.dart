@@ -46,7 +46,14 @@ class HostTrustBlock extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             _Titular(invite: invite),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.lg),
+            // **Con alarma hay dos huellas y llevan etiqueta**, porque lo que
+            // se pide es compararlas y sin nombre no se sabe cuál es cuál. Con
+            // una sola no hay nada que distinguir, así que en su sitio va el
+            // icono de la huella: la palabra HUELLA delante de una huella no
+            // agrega nada, y su columna de ancho fijo era lo que dejaba la
+            // fila desalineada del texto de arriba. Visto en pantalla el
+            // 2026-08-18.
             if (alarma) ...<Widget>[
               _Huella(
                 etiqueta: 'ANTES',
@@ -60,11 +67,7 @@ class HostTrustBlock extends StatelessWidget {
                 resaltada: true,
               ),
             ] else
-              _Huella(
-                etiqueta: 'HUELLA',
-                valor: invite.fingerprint,
-                resaltada: false,
-              ),
+              _Huella(valor: invite.fingerprint, resaltada: false),
           ],
         ),
       ),
@@ -78,27 +81,25 @@ class _Titular extends StatelessWidget {
 
   final PendingInvite invite;
 
-  /// El nombre con el que se identifica, o algo neutro cuando no vino tarjeta.
-  /// Jamás se afirma que sea quien dice: eso es la decisión 21.
-  String get _nick =>
-      invite.hostNick.isEmpty ? 'Quien hospeda' : invite.hostNick;
-
+  /// **Sin nombres, y no por falta de sitio.** Este bloque habla de una LLAVE,
+  /// y de quién es esa llave no dice nada: eso es lo que lo separa de una
+  /// cuenta verificada, y lo dice el comentario de [HostTrustBlock] desde el
+  /// primer día. El nombre además casi nunca llega, así que el texto caía en
+  /// un «Quien hospeda» que se leía como el nombre de alguien. Visto en
+  /// pantalla el 2026-08-18.
   String get _texto => switch (invite.verdict) {
     HostVerdict.llaveCambiada =>
-      'Ojo: $_nick te invitó antes con otra llave. Puede que haya reinstalado '
-          'Windows, y puede que no sea la misma persona. Compara las dos '
-          'huellas con quien te pasó el código antes de entrar.',
+      'Ojo: esta sala viene firmada con otra llave. Puede ser un Windows '
+          'reinstalado, y puede no ser la misma persona. Compara las dos '
+          'huellas con quien te pasó el código.',
     HostVerdict.conocida =>
       invite.knownRooms > 1
-          ? 'Ya jugaste con $_nick, en ${invite.knownRooms} salas. Es la misma '
-                'llave de siempre.'
-          : 'Ya jugaste con $_nick. Es la misma llave de la otra vez.',
+          ? 'La misma llave de siempre, ya en ${invite.knownRooms} salas.'
+          : 'La misma llave con la que ya jugaste.',
     HostVerdict.renombrada =>
-      'Es la llave de ${invite.knownNick}, con la que ya jugaste. Ahora se '
-          'identifica como $_nick.',
+      'La misma llave con la que ya jugaste. El nombre cambió.',
     HostVerdict.nueva =>
-      'Es la primera vez que entras a una sala de $_nick. No hay con qué '
-          'comparar todavía: a partir de ahora esta ventana lo reconoce.',
+      'Primera vez con esta llave. Desde ahora esta ventana la reconoce.',
     HostVerdict.unverified => '',
   };
 
@@ -106,60 +107,71 @@ class _Titular extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final bool alarma = invite.verdict == HostVerdict.llaveCambiada;
+    // **El icono solo con alarma.** El de la huella se mudó a la huella, y
+    // dos huellas en la misma caja eran una de más. Sin icono el texto ocupa
+    // la caja entera, que es lo que hace que una frase de una línea se lea
+    // como una frase y no como un aviso.
+    final Widget texto = Text(
+      _texto,
+      style: context.type.bodySm.copyWith(
+        color: alarma ? colors.text : colors.textMuted,
+        height: 1.55,
+      ),
+    );
+    if (!alarma) return texto;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Padding(
           padding: const EdgeInsets.only(top: 2),
           child: IconTheme(
-            data: IconThemeData(color: alarma ? colors.danger : colors.accent),
-            child: alarma
-                ? const WarnGlyph()
-                : const Icon(Icons.fingerprint_rounded, size: 17),
+            data: IconThemeData(color: colors.danger),
+            child: const WarnGlyph(),
           ),
         ),
         const SizedBox(width: AppSpacing.md),
-        Expanded(
-          child: Text(
-            _texto,
-            style: context.type.bodySm.copyWith(
-              color: alarma ? colors.text : colors.textMuted,
-              height: 1.55,
-            ),
-          ),
-        ),
+        Expanded(child: texto),
       ],
     );
   }
 }
 
 /// Una huella, en monoespaciada, que es lo que se compara carácter a carácter.
+///
+/// Sin etiqueta lleva el icono de la huella en su sitio, con el mismo ancho
+/// que ocupaba la palabra, así las dos formas de la caja alinean su columna de
+/// dígitos en la misma vertical.
 class _Huella extends StatelessWidget {
-  const _Huella({
-    required this.etiqueta,
-    required this.valor,
-    required this.resaltada,
-  });
+  const _Huella({required this.valor, required this.resaltada, this.etiqueta});
 
-  final String etiqueta;
+  final String? etiqueta;
   final String valor;
   final bool resaltada;
+
+  static const double _anchoEtiqueta = 54;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     if (valor.isEmpty) return const SizedBox.shrink();
+    final String? e = etiqueta;
     return Row(
       children: <Widget>[
         SizedBox(
-          width: 54,
-          child: Text(
-            etiqueta,
-            style: context.type.monoSm.copyWith(
-              color: colors.textMuted,
-              letterSpacing: 1.2,
-            ),
-          ),
+          width: _anchoEtiqueta,
+          child: e == null
+              ? Icon(
+                  Icons.fingerprint_rounded,
+                  size: 19,
+                  color: colors.textMuted,
+                )
+              : Text(
+                  e,
+                  style: context.type.monoSm.copyWith(
+                    color: colors.textMuted,
+                    letterSpacing: 1.2,
+                  ),
+                ),
         ),
         Expanded(
           child: Text(
