@@ -10,7 +10,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Changed
 
-- Stop closing this machine's risky server ports without asking: the base quarantine became YOUR decision, asked once at the door of `kanpachi host` and `join` with the exact ports listed and no default answer, `--quarantine on|off` answering it from a script, a terminal-less run without the flag refused on purpose, and the window never blocked on it. Saying yes closes them until you say otherwise, saying no removes what a yes had closed, every daemon start and `--reset` obey the recorded answer, and nothing but uninstalling or your own no ever removes it
+- Stop closing this machine's risky server ports without asking: the base quarantine became YOUR decision, asked once at the door of `kanpachi host` and `join` with the exact ports listed and no default answer, `--quarantine on|off` answering it from a script, a terminal-less run without the flag refused on purpose, and the window never blocked on it. Saying yes closes them until you say otherwise, saying no removes what a yes had closed, every daemon start and `--reset` obey the recorded answer, and nothing but uninstalling or your own no ever removes it ([2fbbe5d](https://github.com/alvarogabrielgomez/kanpachi/commit/2fbbe5d), [8ac7234](https://github.com/alvarogabrielgomez/kanpachi/commit/8ac7234))
 
 ### Added
 
