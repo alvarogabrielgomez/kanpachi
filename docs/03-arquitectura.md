@@ -2622,7 +2622,7 @@ Las comprobaciones van en CADA uso, no solo la primera vez: `last-room.json` gua
 
 ### El repo, y las skills que influyen en lo que se escribe
 
-46 skills de `samber/cc-skills-golang`, en `.agents/skills` y enlazadas desde `.claude/skills`.
+46 skills de `samber/cc-skills-golang`, en `.agents/skills`, que está en `.gitignore`: lo que hay en el repo es el manifiesto, no el contenido. Hubo además una copia **trackeada** en `.claude/skills`, del commit de bootstrap, y se retiró el 2026-08-18: eran los mismos ficheros en dos sitios, con uno solo vigilado por `skills.sums`, o sea la forma exacta de que el que nadie mira se quede viejo.
 
 | # | Riesgo | Estado |
 |---|---|---|
