@@ -63,7 +63,7 @@ them.
 For a development loop, the portable folder is faster and needs no installer:
 
 ```powershell
-.\scripts\build-portable.ps1             # builds .\Kanpachi and starts it
+.\scripts\build-portable.ps1             # builds dist\Kanpachi and starts it
 .\scripts\build-portable.ps1 debug       # interface in debug, daemon in a visible console
 ```
 

@@ -65,7 +65,8 @@ profile.cov
 # Go workspace file
 go.work
 go.work.sum
-# La carpeta portable que deja `scripts/build-portable.ps1` en su salida por
-# defecto. Mismo motivo que /dist/: es el producto armado, no la receta, y
+# La carpeta portable que `scripts/build-portable.ps1` dejaba en la raíz
+# cuando su salida por defecto era el directorio actual; hoy sale a dist\.
+# Se queda por si un -Output viejo la trae de vuelta: es producto armado, y
 # dentro lleva `kanpachi-data\` con la `identity.key` de quien lo corrió.
 /Kanpachi/

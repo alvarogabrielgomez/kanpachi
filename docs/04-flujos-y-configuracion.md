@@ -158,7 +158,7 @@ Lo que cuesta y se dice: la interfaz de Flutter se compila **dos veces en releas
 Hay una segunda forma de repartir Kanpachi además del instalador: una carpeta que se copia y funciona, sin nada que registrar. Es lo que cabe en un ZIP y lo que se lleva una llave USB. Qué la define y qué cuesta está en `03-arquitectura.md`; acá está cómo se produce.
 
 ```
-.\scripts\build-portable.ps1                        arma .\Kanpachi y lo arranca
+.\scripts\build-portable.ps1                        arma dist\Kanpachi y lo arranca
 .\scripts\build-portable.ps1 debug                  daemon de consola a la vista, interfaz en debug
 .\scripts\build-portable.ps1 -Output D:\x -NoLaunch        solo armar, para comprimir
 ```

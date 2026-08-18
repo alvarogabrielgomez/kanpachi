@@ -57,7 +57,7 @@ comprimir y mandar, con el marcador `kanpachi.portable` que hace que el daemon
 guarde sus datos ahí mismo y corra sin servicio:
 
 ```powershell
-.\scripts\build-portable.ps1              # arma .\Kanpachi y la arranca (UAC)
+.\scripts\build-portable.ps1              # arma dist\Kanpachi y la arranca (UAC)
 .\scripts\build-portable.ps1 -NoLaunch    # solo arma, para comprimir
 .\scripts\build-portable.ps1 debug        # daemon de consola a la vista
 ```

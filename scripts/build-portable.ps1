@@ -60,10 +60,14 @@ param(
     [ValidateSet('prod', 'debug')]
     [string]$Mode = 'prod',
 
-    # Where it gets built. By default a subfolder of the current directory, and
-    # not the current directory itself: the folder IS the unit that gets copied,
-    # and mixed with whatever else was beside it, it cannot even be zipped.
-    [string]$Output = (Join-Path (Get-Location).Path 'Kanpachi'),
+    # Where it gets built. Empty means dist\Kanpachi at the repository root,
+    # where every other build-* leaves its artifact — it used to default to
+    # .\Kanpachi in the CURRENT directory, which put a 74 MB product folder
+    # wherever the console happened to stand, the repository root included.
+    # A subfolder and not dist\ itself: the folder IS the unit that gets
+    # copied, and mixed with whatever else was beside it, it cannot even be
+    # zipped.
+    [string]$Output = '',
 
     # The engine comes from another repository. Empty picks the MOST RECENT
     # among the places where it ends up built, and stops if it is older than
@@ -90,6 +94,8 @@ function Note($t) { Write-Host "  --   $t" -ForegroundColor DarkGray }
 $repo = Split-Path -Parent $PSScriptRoot
 $failures = 0
 . (Join-Path $PSScriptRoot 'lib\engine.ps1')
+
+if (-not $Output) { $Output = Join-Path $repo 'dist\Kanpachi' }
 
 $daemonExe = Join-Path $Output 'kanpachid.exe'
 $uiExe = Join-Path $Output 'kanpachiui.exe'
