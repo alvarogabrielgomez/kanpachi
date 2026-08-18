@@ -1,6 +1,6 @@
 ; Instalador de Kanpachi. Compilar:
 ;
-;   .\scripts\prepare-payload.ps1 -Output .\dist\carga
+;   .\scripts\build-production.ps1 -Output .\dist\carga
 ;   ISCC.exe /DCarga=".\dist\carga" installer\kanpachi.iss
 ;
 ; El criterio de aceptacion completo sigue siendo el de docs/04: instalar y
@@ -31,7 +31,7 @@
 #define UiExe          "kanpachiui.exe"
 ; Lanzador + abrir ventana. Mismo binario, papel distinto: ver docs/03.
 #define ArgShow        "--show"
-; La carga que arma prepare-payload.ps1. Se pasa con /DCarga=...
+; La carga que arma build-production.ps1. Se pasa con /DCarga=...
 #ifndef Carga
   #define Carga        "..\dist\carga"
 #endif

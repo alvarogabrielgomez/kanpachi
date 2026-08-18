@@ -88,7 +88,7 @@ Aceptado el diálogo, sigue lo de siempre: `sc stop` y hasta 120 segundos espera
 
 Son dos piezas y su estado es distinto:
 
-- **La carga**, `scripts/prepare-payload.ps1`. Compila el daemon con `-trimpath` y `-H windowsgui`, la interfaz en release con su bundle entero, copia `builtin.json`, `Packet.dll`, `wintun.dll` y `WinDivert64.sys`, trae el motor del otro repositorio, y deja un `SHA256SUMS`. **Medido**: 21 ficheros, 72 MB, antes de que entrara el `.sys`. Ojo con de dónde salen esos tres ficheros de `third_party\easytier`: están en `.gitignore` por tamaño, así que en un runner limpio no existen y el workflow los baja del release oficial de EasyTier antes de llamar a este script.
+- **La carga**, `scripts/build-production.ps1`. Compila el daemon con `-trimpath` y `-H windowsgui`, la interfaz en release con su bundle entero, copia `builtin.json`, `Packet.dll`, `wintun.dll` y `WinDivert64.sys`, trae el motor del otro repositorio, y deja un `SHA256SUMS`. **Medido**: 21 ficheros, 72 MB, antes de que entrara el `.sys`. Ojo con de dónde salen esos tres ficheros de `third_party\easytier`: están en `.gitignore` por tamaño, así que en un runner limpio no existen y el workflow los baja del release oficial de EasyTier antes de llamar a este script.
 - **El instalador**, `installer/kanpachi.iss`, para Inno Setup 6. **Compilado y ejecutado de verdad.** La primera instalación pública, `v0.1.1`, encontró un servicio previo que apuntaba a `C:\kt\carga`: `sc create` devolvió que ya existía y el script ignoró el código, así que conservó la ruta y el arranque manual. Ahora `sc config` impone ruta, cuenta y tipo en cada instalación y cada comando obligatorio corta el setup si falla. El criterio completo sigue siendo instalar y desinstalar veinte veces en una VM sin dejar rastro.
 - **La publicación**, `.github/workflows/release.yml`. Es quien corre las dos piezas de arriba de verdad, en un runner de Windows, con Inno Setup instalado ahí mismo.
 
@@ -158,9 +158,9 @@ Lo que cuesta y se dice: la interfaz de Flutter se compila **dos veces en releas
 Hay una segunda forma de repartir Kanpachi además del instalador: una carpeta que se copia y funciona, sin nada que registrar. Es lo que cabe en un ZIP y lo que se lleva una llave USB. Qué la define y qué cuesta está en `03-arquitectura.md`; acá está cómo se produce.
 
 ```
-.\scripts\kanpachi-portable.ps1                     arma .\Kanpachi y lo arranca
-.\scripts\kanpachi-portable.ps1 debug               daemon de consola a la vista, interfaz en debug
-.\scripts\kanpachi-portable.ps1 -Output D:\x -NoLaunch     solo armar, para comprimir
+.\scripts\build-portable.ps1                        arma .\Kanpachi y lo arranca
+.\scripts\build-portable.ps1 debug                  daemon de consola a la vista, interfaz en debug
+.\scripts\build-portable.ps1 -Output D:\x -NoLaunch        solo armar, para comprimir
 ```
 
 Una sola orden hace lo que antes eran seis pasos a mano: compilar el daemon, compilar la interfaz, copiar el catálogo y las DLL, traer el motor del otro repositorio, escribir el marcador y arrancarlo todo con los permisos que necesita. El modo por omisión es producción.
@@ -190,7 +190,7 @@ C:\kt\stage\pipeprobe.exe -data C:\ruta\a\datos status
 C:\kt\stage\pipeprobe.exe -data C:\ruta\a\datos -no-token status
 ```
 
-`prepare-stage.ps1` sigue siendo el banco de pruebas con las sondas dentro, y `kanpachi-portable.ps1 debug` es lo otro: la carpeta que se reparte, compilada en depuración. Para medir un adaptador suelto sirve el stage; para ver el producto entero funcionando, la carpeta portable.
+`prepare-stage.ps1` sigue siendo el banco de pruebas con las sondas dentro, y `build-portable.ps1 debug` es lo otro: la carpeta que se reparte, compilada en depuración. Para medir un adaptador suelto sirve el stage; para ver el producto entero funcionando, la carpeta portable.
 
 **`go run` no alcanza para nada que abra una sala**, y conviene saberlo antes de
 perder una tarde: el daemon busca el motor y el catálogo al lado de su propio
@@ -407,7 +407,7 @@ Cuatro decisiones que sostienen que funcione:
 
 Lo mismo que `roombundle`, con el producto entero en vez de la sonda: el daemon, la interfaz con todo su bundle de Flutter, el motor, las DLL y el marcador. Unos 78 MB. Del otro lado es doble clic, un UAC, y Kanpachi abierto — **sin instalar nada**: ni servicio, ni arranque con Windows, ni accesos directos, ni ProgramData.
 
-Lo que empotra es la salida de `kanpachi-portable.ps1 -NoLaunch`, o sea la carpeta portable de verdad. Una sola receta, no dos que se desincronizan, por el mismo motivo por el que el instalador copia `{#Carga}\*` en vez de enumerar los veintitantos ficheros de Flutter.
+Lo que empotra es la salida de `build-portable.ps1 -NoLaunch`, o sea la carpeta portable de verdad. Una sola receta, no dos que se desincronizan, por el mismo motivo por el que el instalador copia `{#Carga}\*` en vez de enumerar los veintitantos ficheros de Flutter.
 
 Cinco diferencias con `roombundle`, todas medidas:
 
@@ -469,7 +469,7 @@ El YAML de los tres workflows quedó de pegamento: eventos, checkouts, toolchain
 | Script | Qué hace |
 |---|---|
 | `fetch-third-party.ps1` | baja los siete binarios de EasyTier del release oficial a `third_party\easytier`. Casa única de la URL y de la versión; las sumas viven en `internal/arch/easytier.sums` y en `02`, y las comprueba el guardián de suministro. Sirve igual en un clone recién hecho |
-| `package-windows.ps1` | el cliente de Windows entero: sella la versión en los recursos, arma la carga, corre Inno Setup, arma el portable y escribe `SHA256SUMS-windows`. Comprueba lo que necesita ANTES de escribir nada, porque el primer paso reescribe los `.syso` que están versionados |
+| `build-installer.ps1` | el cliente de Windows entero: sella la versión en los recursos, arma la carga, corre Inno Setup, arma el portable y escribe `SHA256SUMS-windows`. Comprueba lo que necesita ANTES de escribir nada, porque el primer paso reescribe los `.syso` que están versionados |
 | `release-notes.ps1` | escribe el tramo del `CHANGELOG.md` de una versión, para el cuerpo de la publicación. Falla si esa sección no existe o está vacía, que es lo que impide etiquetar sin decir qué cambió |
 | `build-seed.sh` | los dos `kanpseed` de Linux, `index.html` y `SHA256SUMS-seed-linux` |
 | `build-deb.sh --strict` | el `.deb` del cliente de Linux. Con `--strict`, el piso de glibc pasa de aviso a parada y escribe `SHA256SUMS-linux`. Sin la bandera avisa y sigue, que es lo correcto en una máquina de desarrollo |

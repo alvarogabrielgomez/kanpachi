@@ -51,7 +51,7 @@
 //
 //	scripts\build-portable-bundle.ps1
 //
-// El script arma la carpeta portable con `kanpachi-portable.ps1 -NoLaunch`,
+// El script arma la carpeta portable con `build-portable.ps1 -NoLaunch`,
 // la copia a `internal/kanpachibundle/carga/` y compila con `-tags bundle`.
 //
 // # Lo que hay que saber antes de mandarlo

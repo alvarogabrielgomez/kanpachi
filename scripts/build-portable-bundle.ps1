@@ -16,7 +16,7 @@
 
     HOW IT IS BUILT, in three steps
 
-      1. kanpachi-portable.ps1 -NoLaunch builds the real portable folder. It is
+      1. build-portable.ps1 -NoLaunch builds the real portable folder. It is
          the same one used by hand, so there are no two recipes that can drift
          apart.
       2. That folder is copied into internal\kanpachibundle\carga\, because
@@ -113,7 +113,8 @@ Step 'the engine, which comes from another repository'
 # The bundle is what gets sent to another person. An old engine inside it is not
 # discovered here: it is discovered on their machine, with no log on the side of
 # whoever built it.
-$engineRoot = Join-Path (Split-Path -Parent $repo) 'kanpachi-engine'
+. (Join-Path $PSScriptRoot 'lib\engine.ps1')
+$engineRoot = Find-KanpachiEngineRepo -KanpachiRepo $repo
 
 if ($RebuildEngine) {
     if (-not (Test-Path (Join-Path $engineRoot 'Cargo.toml'))) {
@@ -128,47 +129,20 @@ if ($RebuildEngine) {
     if ($LASTEXITCODE -ne 0) { throw 'the engine did not build' }
 }
 
-if (-not $Engine) {
-    # The MOST RECENT of the ones that exist, and not the first one that shows
-    # up. There are several places because the engine is built several ways, and
-    # which of them holds the good one depends on how it was built last time.
-    # Picking by a fixed order is picking by habit.
-    $Engine = @(
-        'C:\kt\release\kanpachi-engine.exe',
-        'C:\kt\stage\kanpachi-engine.exe',
-        (Join-Path $engineRoot 'target\release\kanpachi-engine.exe')
-    ) | Where-Object { Test-Path $_ } |
-        Sort-Object { (Get-Item $_).LastWriteTime } -Descending |
-        Select-Object -First 1
-}
+# The resolution and the staleness check live in lib\engine.ps1, shared with
+# build-portable.ps1 and build-production.ps1: one list of places, one check,
+# instead of the five private conventions that used to disagree.
+if (-not $Engine) { $Engine = Resolve-KanpachiEngine -EngineRoot $engineRoot }
 
 if (-not $Engine -or -not (Test-Path $Engine)) {
     Fail 'there is no engine built anywhere'
-    Note 'build it with -RebuildEngine, or pass its path with -Engine'
+    Note 'build it with scripts\build-engine.ps1 or -RebuildEngine, or pass its path with -Engine'
     throw 'no engine, no bundle: you can talk to the daemon, you cannot open a room'
 }
 $engineInfo = Get-Item $Engine
 Ok ("engine: {0}" -f $Engine)
 Note ("built on {0}, {1} MB" -f $engineInfo.LastWriteTime, [math]::Round($engineInfo.Length / 1MB, 1))
-
-# The check that matters: that the binary is newer than its own source.
-if (Test-Path $engineRoot) {
-    $sources = @(Get-ChildItem (Join-Path $engineRoot 'src') -Recurse -File -ErrorAction SilentlyContinue) +
-               @(Get-ChildItem $engineRoot -File -Filter 'Cargo.toml' -ErrorAction SilentlyContinue) +
-               @(Get-ChildItem $engineRoot -File -Filter 'build.rs' -ErrorAction SilentlyContinue)
-    $newest = $sources | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if ($newest -and $newest.LastWriteTime -gt $engineInfo.LastWriteTime) {
-        Fail 'the engine is OLDER than its source code'
-        Note ("  {0} is from {1}" -f $newest.Name, $newest.LastWriteTime)
-        Note ("  the binary is from {0}" -f $engineInfo.LastWriteTime)
-        Note 'rebuild it with -RebuildEngine, or pass the good one with -Engine'
-        throw 'an old engine does not get packaged: the failure shows up on the other person''s machine'
-    }
-    Ok 'the engine is newer than its source, it is not stale'
-}
-else {
-    Note "the engine repo is not at $engineRoot, staleness cannot be checked"
-}
+Assert-KanpachiEngineFresh -Engine $Engine -EngineRoot $engineRoot
 
 # ---------------------------------------------------------------------------
 Step 'building the portable folder'
@@ -177,7 +151,7 @@ Step 'building the portable folder'
 # packaged, and -Clean so the identity key and the last room of an earlier run
 # do not slip in: that would travel inside the .exe all the way to somebody
 # else's machine.
-& (Join-Path $PSScriptRoot 'kanpachi-portable.ps1') -Output $stage -Engine $Engine -NoLaunch -Clean
+& (Join-Path $PSScriptRoot 'build-portable.ps1') -Output $stage -Engine $Engine -NoLaunch -Clean
 if ($LASTEXITCODE -ne 0) { throw 'the portable folder could not be built' }
 
 # ---------------------------------------------------------------------------

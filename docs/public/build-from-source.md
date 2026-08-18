@@ -46,7 +46,7 @@ Two things it deliberately does not do:
 ## Building the Windows client
 
 ```powershell
-.\scripts\package-windows.ps1
+.\scripts\build-installer.ps1
 ```
 
 Five steps: stamp the version into the Windows resources, assemble the payload
@@ -63,8 +63,8 @@ them.
 For a development loop, the portable folder is faster and needs no installer:
 
 ```powershell
-.\scripts\kanpachi-portable.ps1          # builds .\Kanpachi and starts it
-.\scripts\kanpachi-portable.ps1 debug    # interface in debug, daemon in a visible console
+.\scripts\build-portable.ps1             # builds .\Kanpachi and starts it
+.\scripts\build-portable.ps1 debug       # interface in debug, daemon in a visible console
 ```
 
 ## Building the Linux package

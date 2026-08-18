@@ -235,13 +235,13 @@ El UAC por arranque es la consecuencia directa de no haber instalado nada: el pe
 
 **El directorio de datos lo crea el daemon, y solo en portable.** En el producto instalado lo crea el instalador con su ACL, y crearlo desde el daemon perdería esa ACL en silencio. En portable no hay instalador, así que la alternativa a crearlo es que la carpeta no arranque nunca. Lo que se pierde queda escrito en la tabla de arriba.
 
-La carpeta la arma `scripts\kanpachi-portable.ps1`, que compila las dos mitades, copia el catálogo y las DLL, escribe el marcador y arranca. Ver `04-flujos-y-configuracion.md`.
+La carpeta la arma `scripts\build-portable.ps1`, que compila las dos mitades, copia el catálogo y las DLL, escribe el marcador y arranca. Ver `04-flujos-y-configuracion.md`.
 
 #### El bundle: esa misma carpeta dentro de un solo ejecutable
 
 Una carpeta portable funciona y **no se puede mandar por chat**. Son quince archivos que hay que mantener juntos: el daemon, la interfaz con todo su bundle de Flutter —su DLL, sus plugins y su `data\`—, el motor, las DLL y el marcador. Un ZIP descomprimido a medias, o alguien que arrastra solo el `.exe` que reconoce, es una carpeta que no arranca y un "no me anda" sin ninguna pista.
 
-`kanpachi-portable.exe` empotra esa carpeta entera con `go:embed`, la suelta en un directorio temporal, corre `kanpachid --daemon --show` y borra el temporal al salir. Unos 78 MB. Lo arma `scripts\build-portable-bundle.ps1`, y lo que empotra es la salida de `kanpachi-portable.ps1`, o sea la MISMA receta que se usa a mano: no hay dos listas de archivos que se puedan desincronizar, por lo mismo que el instalador copia `{#Carga}\*` en vez de enumerar.
+`kanpachi-portable.exe` empotra esa carpeta entera con `go:embed`, la suelta en un directorio temporal, corre `kanpachid --daemon --show` y borra el temporal al salir. Unos 78 MB. Lo arma `scripts\build-portable-bundle.ps1`, y lo que empotra es la salida de `build-portable.ps1`, o sea la MISMA receta que se usa a mano: no hay dos listas de archivos que se puedan desincronizar, por lo mismo que el instalador copia `{#Carga}\*` en vez de enumerar.
 
 Lo que lo hace funcionar, y qué pasa si falta:
 

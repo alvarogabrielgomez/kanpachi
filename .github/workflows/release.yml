@@ -120,20 +120,24 @@ jobs:
           channel: stable
           cache: true
 
-      # Lo que la cadena de Rust del motor necesita, y cada cosa por su razón.
-      # Es lo mismo que hace `build.yml` del otro repositorio.
-      - uses: ilammy/msvc-dev-cmd@v1
-      - name: protoc y libclang para el motor
-        run: |
-          choco install protoc --no-progress -y
-          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+      # La cadena de Rust del motor la arma su PROPIO script, el mismo que se
+      # usa a mano: localiza vcvars64, protoc, libclang y 7-Zip por su cuenta.
+      # Acá se instala lo único que a la imagen del runner le falta, protoc, en
+      # la ruta de chocolatey que ese script ya conoce.
+      - name: protoc para el motor
+        run: choco install protoc --no-progress -y
 
       - name: Inno Setup
         run: choco install innosetup --no-progress -y
 
+      # `build-engine.ps1` delega en `scripts\build.ps1` del repositorio del
+      # motor: una sola receta, la misma a mano y acá. El target dir se fija
+      # DENTRO del workspace, en la misma ruta que dejaba el `cargo build`
+      # inline de antes, así el paso de empaquetar recibe el binario donde
+      # siempre.
       - name: Compilar el motor
-        working-directory: motor
-        run: cargo build --release
+        shell: pwsh
+        run: .\scripts\build-engine.ps1 -Repo motor -TargetDir motor\target
 
       # `/third_party/` está en .gitignore por tamaño (~80 MB), así que el
       # checkout llega SIN las DLL del motor y el empaquetado cortaría. El
@@ -159,7 +163,7 @@ jobs:
       - name: Empaquetar el cliente de Windows
         shell: pwsh
         run: |
-          .\scripts\package-windows.ps1 `
+          .\scripts\build-installer.ps1 `
             -Version "$env:VERSION" `
             -VersionNum "$env:VERSION_NUM" `
             -Engine "$env:GITHUB_WORKSPACE\motor\target\release\kanpachi-engine.exe" `
@@ -398,9 +402,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler libclang-dev build-essential pkg-config
 
+      # The engine's OWN script, the same one used by hand: it checks the
+      # toolchain, builds, and states the binary's glibc floor, which is what
+      # decides which Ubuntu the package runs on. Explicit `bash` so this does
+      # not depend on the other checkout's execute bit, and the target dir is
+      # pinned to where the inline `cargo build` used to leave it, so the
+      # packaging step below receives the binary where it always did.
       - name: Compilar el motor
-        working-directory: motor
-        run: cargo build --release
+        run: CARGO_TARGET_DIR="$PWD/motor/target" bash motor/scripts/build-linux.sh
 
       # The same tests the Windows job runs before packaging, and for the same
       # reason: what gets published passes the tests that pass today.

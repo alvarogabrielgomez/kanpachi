@@ -17,13 +17,14 @@
 # Go binaries, and the binary being signed has to be the one that was tested.
 # Same criterion as release-seed.yml.
 #
-#   .\scripts\prepare-payload.ps1
-#   .\scripts\prepare-payload.ps1 -Output .\dist\carga -Engine ..\kanpachi-engine\target\release\kanpachi-engine.exe
+#   .\scripts\build-production.ps1
+#   .\scripts\build-production.ps1 -Output .\dist\carga -Engine ..\kanpachi-engine\target\release\kanpachi-engine.exe
 #
-# The defaults are RELATIVE TO THE REPOSITORY. They used to point at C:\kt,
+# The output default is RELATIVE TO THE REPOSITORY. It used to point at C:\kt,
 # which is one machine's working directory and exists on no other one and not in
 # CI: anybody cloning the repository and running this got a payload written into
-# a path that means nothing.
+# a path that means nothing. The engine is FOUND, not defaulted: the shared
+# list in lib\engine.ps1, newest build wins, stale stops.
 #
 # No elevation needed: this only compiles and copies.
 
@@ -31,7 +32,9 @@
 param(
     [string]$Output = "",
     # The engine comes from the other repository, and is not built here: it is
-    # Rust, with its own toolchain. Empty looks for it beside this repository.
+    # Rust, with its own toolchain. Empty picks the MOST RECENT among the
+    # places where it ends up built (lib\engine.ps1), and stops if it is older
+    # than its own source.
     [string]$Engine = "",
     # The version being packaged, without the "v". The workflow writes it from
     # the tag; by hand it stays "dev".
@@ -56,10 +59,12 @@ function Note($t) { Write-Host "  --   $t" -ForegroundColor DarkGray }
 # directory.
 $repo = Split-Path -Parent $PSScriptRoot
 $failures = 0
+. (Join-Path $PSScriptRoot 'lib\engine.ps1')
 
 if ([string]::IsNullOrWhiteSpace($Output)) { $Output = Join-Path $repo 'dist\carga' }
+$engineRoot = Find-KanpachiEngineRepo -KanpachiRepo $repo
 if ([string]::IsNullOrWhiteSpace($Engine)) {
-    $Engine = Join-Path (Split-Path -Parent $repo) 'kanpachi-engine\target\release\kanpachi-engine.exe'
+    $Engine = Resolve-KanpachiEngine -EngineRoot $engineRoot
 }
 
 if (Test-Path $Output) {
@@ -173,14 +178,15 @@ foreach ($c in $copies) {
 
 Step "the engine, which comes from another repository"
 
-if (Test-Path $Engine) {
+if ($Engine -and (Test-Path $Engine)) {
+    Assert-KanpachiEngineFresh -Engine $Engine -EngineRoot $engineRoot
     Copy-Item -Path $Engine -Destination (Join-Path $Output 'kanpachi-engine.exe') -Force
     $mb = [math]::Round((Get-Item $Engine).Length / 1MB, 1)
-    Ok ("kanpachi-engine.exe  {0} MB" -f $mb)
+    Ok ("kanpachi-engine.exe  {0} MB ({1})" -f $mb, $Engine)
 }
 else {
-    Fail "the engine is not at $Engine"
-    Note "build it in kanpachi-engine and pass its path with -Engine"
+    Fail "there is no engine built anywhere"
+    Note "build it with scripts\build-engine.ps1, or pass its path with -Engine"
     $failures++
 }
 

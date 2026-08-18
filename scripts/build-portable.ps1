@@ -43,15 +43,15 @@
                         visible.
 
 .EXAMPLE
-    .\scripts\kanpachi-portable.ps1
+    .\scriptsuild-portable.ps1
     Builds .\Kanpachi and starts it in production mode.
 
 .EXAMPLE
-    .\scripts\kanpachi-portable.ps1 debug
+    .\scriptsuild-portable.ps1 debug
     The same in development mode: console daemon in sight, interface in debug.
 
 .EXAMPLE
-    .\scripts\kanpachi-portable.ps1 -Output D:\share\Kanpachi -NoLaunch
+    .\scriptsuild-portable.ps1 -Output D:\share\Kanpachi -NoLaunch
     Only builds the folder, to zip it up and send it.
 #>
 [CmdletBinding()]
@@ -65,9 +65,10 @@ param(
     # and mixed with whatever else was beside it, it cannot even be zipped.
     [string]$Output = (Join-Path (Get-Location).Path 'Kanpachi'),
 
-    # The engine comes from another repository. By default it is looked for in
-    # the stage.
-    [string]$Engine = 'C:\kt\stage\kanpachi-engine.exe',
+    # The engine comes from another repository. Empty picks the MOST RECENT
+    # among the places where it ends up built, and stops if it is older than
+    # its own source: the list and the reasons live in lib\engine.ps1.
+    [string]$Engine = '',
 
     # Build and do not start. It is what you want before zipping.
     [switch]$NoLaunch,
@@ -88,6 +89,7 @@ function Note($t) { Write-Host "  --   $t" -ForegroundColor DarkGray }
 # directory: an elevated console starts in system32.
 $repo = Split-Path -Parent $PSScriptRoot
 $failures = 0
+. (Join-Path $PSScriptRoot 'lib\engine.ps1')
 
 $daemonExe = Join-Path $Output 'kanpachid.exe'
 $uiExe = Join-Path $Output 'kanpachiui.exe'
@@ -256,14 +258,17 @@ foreach ($c in $copies) {
 # ---------------------------------------------------------------------------
 Step 'the engine, which comes from another repository'
 
-if (Test-Path $Engine) {
+$engineRoot = Find-KanpachiEngineRepo -KanpachiRepo $repo
+if (-not $Engine) { $Engine = Resolve-KanpachiEngine -EngineRoot $engineRoot }
+if ($Engine -and (Test-Path $Engine)) {
+    Assert-KanpachiEngineFresh -Engine $Engine -EngineRoot $engineRoot
     Copy-Item -Path $Engine -Destination (Join-Path $Output 'kanpachi-engine.exe') -Force
     $mb = [math]::Round((Get-Item $Engine).Length / 1MB, 1)
-    Ok ('kanpachi-engine.exe  {0} MB' -f $mb)
+    Ok ('kanpachi-engine.exe  {0} MB ({1})' -f $mb, $Engine)
 }
 else {
-    Fail "the engine is not at $Engine"
-    Note 'build it in the kanpachi-engine repository and pass its path with -Engine'
+    Fail 'there is no engine built anywhere'
+    Note 'build it with scriptsuild-engine.ps1, or pass its path with -Engine'
     Note 'without it you can talk to the daemon, you cannot open a room'
     $failures++
 }

@@ -7,7 +7,7 @@
 /kanpseed
 
 # Todo lo que se ARMA para entregar. Ahí escriben las tres cosas que empaquetan:
-# `prepare-payload.ps1` (dist\carga), `release.yml` y `release-seed.yml`. Son
+# `build-production.ps1` (dist\carga), `release.yml` y `release-seed.yml`. Son
 # binarios de decenas de MB y salen de compilar, así que versionarlos es guardar
 # el resultado en vez de la receta. Sin esta línea, un `git add -A` distraído se
 # lleva 11 MB de kanpseed al repositorio.
@@ -65,7 +65,7 @@ profile.cov
 # Go workspace file
 go.work
 go.work.sum
-# La carpeta portable que deja `scripts/kanpachi-portable.ps1` en su salida por
+# La carpeta portable que deja `scripts/build-portable.ps1` en su salida por
 # defecto. Mismo motivo que /dist/: es el producto armado, no la receta, y
 # dentro lleva `kanpachi-data\` con la `identity.key` de quien lo corrió.
 /Kanpachi/
