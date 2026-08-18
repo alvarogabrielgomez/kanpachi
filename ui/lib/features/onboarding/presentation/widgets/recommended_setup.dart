@@ -133,7 +133,7 @@ class RecommendedSetupDialog extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xl),
           const _Punto(
-            title: 'Se queda hasta que vos lo saques',
+            title: 'Se queda hasta que lo desactives',
             body:
                 'No se apaga al cerrar la sala ni Kanpachi. Está en '
                 'Configuración.',
@@ -142,8 +142,8 @@ class RecommendedSetupDialog extends StatelessWidget {
           const _Punto(
             title: 'Lo que NO cambia',
             body:
-                'Llegar a OTRAS máquinas —su escritorio, sus carpetas— y '
-                'navegar siguen igual. Desmarcá la casilla si compartís '
+                'Llegar a OTRAS máquinas, a su escritorio o a sus carpetas, '
+                'y navegar siguen igual. Desmarca la casilla si compartes '
                 'carpetas desde esta PC.',
           ),
         ],

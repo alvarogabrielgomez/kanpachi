@@ -66,6 +66,8 @@ Reglas de escritura:
 - Cuando una decisión nueva invalide una vieja, corrige la vieja. No dejes dos versiones conviviendo.
 - Cuando algo se descarte, escribe **por qué**, no solo que se descartó. El propósito es que nadie lo reabra sin argumento nuevo.
 - Español, sin conjunciones adversativas (`pero`, `sin embargo`, `aunque`, `sino`), sin guiones largos como conectores. Usa comas.
+- **Español NEUTRO, y vale para los documentos y para el copy de la app.** Nada de voseo ni de formas regionales: `desmarca` y no `desmarcá`, `si compartes` y no `si compartís`, `puedes` y no `podés`. Kanpachi lo usa gente de varios países y el producto no tiene por qué sonar del de quien lo escribe. La forma verbal es la de tú, sin `vos` y sin `ustedes` como plural de confianza.
+- **La prohibición del guion largo como conector vale también para el copy de la app**, y no solo para los documentos. Un guion que separa datos sigue estando bien: la etiqueta `— puertos —` de una lista, o el `—` que ocupa el sitio de un dato que no hay.
 
 ### El changelog
 
