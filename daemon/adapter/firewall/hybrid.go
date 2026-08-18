@@ -50,9 +50,12 @@ import (
 // Permits es la capa que ABRE.
 type Permits interface {
 	Apply(ctx context.Context, desired domain.RuleSet) error
-	// ApplyBaseQuarantine es la ÚNICA de esta interfaz que no es de la sala.
-	// Escribe lo que falte de la cuarentena de base y no borra nada.
+	// ApplyBaseQuarantine y su retirada son los dos únicos de esta interfaz
+	// que no son de la sala. Uno escribe lo que falte de la cuarentena de base;
+	// el otro la quita, solo porque la persona lo pidió, y sus llamadores los
+	// vigila el guardián del grupo base. Ver [port.FirewallPort].
 	ApplyBaseQuarantine(ctx context.Context, rules []domain.QuarantineRule) error
+	RemoveBaseQuarantineAtUserRequest(ctx context.Context) error
 	PurgeOwned(ctx context.Context) error
 	AuditForeign(ctx context.Context, p domain.GameProfile) ([]domain.ForeignRule, error)
 	SuspendForeign(ctx context.Context, rules []domain.ForeignRule) error
@@ -367,6 +370,14 @@ func (f *Firewall) Apply(ctx context.Context, desired domain.RuleSet) error {
 // es lo único que ese candado protege.
 func (f *Firewall) ApplyBaseQuarantine(ctx context.Context, rules []domain.QuarantineRule) error {
 	return f.permits.ApplyBaseQuarantine(ctx, rules)
+}
+
+// RemoveBaseQuarantineAtUserRequest also goes to the permit layer only, for
+// the same asymmetry as above: the quarantine never had a gate half. This
+// delegate is one of the two callers the guardian allows — the other is the
+// consent use case, which is who reaches it through the port.
+func (f *Firewall) RemoveBaseQuarantineAtUserRequest(ctx context.Context) error {
+	return f.permits.RemoveBaseQuarantineAtUserRequest(ctx)
 }
 
 // PurgeOwned borra lo de las dos capas, y en el orden inverso al de Apply.

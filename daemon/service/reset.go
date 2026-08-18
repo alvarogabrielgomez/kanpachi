@@ -22,10 +22,13 @@ import (
 //
 // # Lo que repone, y por qué esa asimetría es deliberada
 //
-// Repone la cuarentena de base y NO la quita. Lo que hace que la cuarentena
-// valga es seguir puesta con el daemon detenido, así que un reset por corrupción
-// que se la llevara destruiría justo lo que protege del caso corrupción.
-// Quitarla es del desinstalador, y el desinstalador no es esto.
+// Repone la cuarentena de base SOLO si el usuario la eligió, y NO la quita
+// nunca. Un reset repone lo que el usuario pidió, jamás lo que el producto
+// prefiere: con la decisión en no, o sin tomar, escribirla sería decidir por
+// él. Y quitarla tampoco es de acá, porque quitar es siempre el acto de una
+// persona — el desinstalador o la decisión explícita — y un reset por
+// corrupción que se la llevara destruiría justo lo que protege del caso
+// corrupción. Lo vigila el guardián del grupo base.
 //
 // Conserva `last-room.json`. Resetear la configuración no tiene por qué borrar a
 // qué sala volver: son dos cosas distintas y juntarlas convierte una limpieza en
@@ -58,10 +61,15 @@ func Reset(ctx context.Context, d ResetDeps) error {
 		d.Log.Info("motores huérfanos terminados", "cantidad", n)
 	}
 
-	// 2. La cuarentena de base, ANTES de purgar. La purga es el instante de
-	// menos protección: se lleva las reglas de la sala y todavía no hay nada
-	// nuevo. Es el mismo orden que el arranque, por la misma razón.
-	falló("reponiendo la cuarentena de base", d.Firewall.ApplyBaseQuarantine(ctx, domain.BaseQuarantineFor(d.Quarantine)))
+	// 2. La cuarentena de base, ANTES de purgar y SOLO con la decisión del
+	// usuario en sí. La purga es el instante de menos protección: se lleva las
+	// reglas de la sala y todavía no hay nada nuevo. Es el mismo orden que el
+	// arranque, por la misma razón, y el mismo respeto a la decisión.
+	if quarantineAccepted(d) {
+		falló("reponiendo la cuarentena de base", d.Firewall.ApplyBaseQuarantine(ctx, domain.BaseQuarantineFor(d.Quarantine)))
+	} else {
+		d.Log.Info("la cuarentena de base no se repone: no hay una decisión del usuario que la pida")
+	}
 
 	// 3. Las dos capas de la sala. `PurgeOwned` se lleva el grupo propio y las
 	// ranuras de la compuerta, en el orden que corresponde, que lo decide el
@@ -88,8 +96,20 @@ func Reset(ctx context.Context, d ResetDeps) error {
 		return fmt.Errorf("el reset terminó con %d paso(s) fallidos: %w",
 			len(fallos), errors.Join(fallos...))
 	}
-	d.Log.Info("reset completo: cuarentena repuesta, sala purgada, ajustes revertidos")
+	d.Log.Info("reset completo: sala purgada, ajustes revertidos, y la cuarentena como el usuario la eligió")
 	return nil
+}
+
+// quarantineAccepted reads the persisted decision. Anything absent or
+// unreadable counts as undecided, and undecided does not get rules written
+// over it: a reset that cannot read the answer must not invent one.
+func quarantineAccepted(d ResetDeps) bool {
+	raw, err := d.State.LoadQuarantineDecision()
+	if err != nil {
+		return false
+	}
+	decision, _, err := domain.DecodeQuarantineDecision(raw)
+	return err == nil && decision == domain.QuarantineAccepted
 }
 
 // ResetDeps son las piezas que el reset necesita, como interfaces MÍNIMAS.
@@ -140,6 +160,9 @@ type ResetEngine interface {
 // aparece a propósito: no se borra.
 type ResetState interface {
 	ClearRoom() error
+	// LoadQuarantineDecision se LEE y jamás se escribe: el reset obedece la
+	// decisión, no la toma.
+	LoadQuarantineDecision() ([]byte, error)
 }
 
 // Logger es la rebanada del log que hace falta acá.

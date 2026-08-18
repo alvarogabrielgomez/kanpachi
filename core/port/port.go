@@ -12,12 +12,14 @@
 //   - No existe crear ni borrar mapeos en el router. ExposureAudit solo lee.
 //   - No existe observar procesos. SocketInspector saca una foto puntual y
 //     únicamente lo llama el creador de perfiles.
-//   - No existe BORRAR la cuarentena de base. El daemon la escribe y la repone
-//     en cada arranque, porque no hay instalador que la ponga, y no tiene cómo
-//     quitarla: [FirewallPort.ApplyBaseQuarantine] solo agrega. Por eso sigue
-//     puesta con el servicio detenido. Y no cabe en un RuleSet aunque se
-//     quisiera: necesita bloqueo y salida, y [domain.FirewallRule] no puede
-//     expresar ninguno de los dos. Ver [domain.QuarantineRule].
+//   - Quitar la cuarentena de base existe de UNA sola forma, la retirada a
+//     pedido del usuario, y la llama solo su caso de uso: la decisión de la
+//     persona ES la operación, en los dos sentidos. Ningún camino automático
+//     puede quitarla — ni un barrido, ni un arranque, ni un `--reset` — y eso
+//     lo vigilan los guardianes de internal/arch por nombre y por llamador.
+//     La cuarentena no cabe en un RuleSet aunque se quisiera: necesita bloqueo
+//     y salida, y [domain.FirewallRule] no puede expresar ninguno de los dos.
+//     Ver [domain.QuarantineRule].
 //
 // Lo que no existe en la interfaz no se puede llamar por error.
 package port
@@ -163,19 +165,30 @@ type FirewallPort interface {
 
 	// ApplyBaseQuarantine escribe la cuarentena de base y REPONE lo que falte.
 	//
-	// **No existe el método para borrarla, y esa ausencia es la protección.** Lo
-	// que la cuarentena vale es seguir puesta con el daemon detenido, así que la
-	// capacidad de quitarla no puede vivir en la interfaz que el daemon usa. Un
-	// guardián en internal/arch falla si aparece un método que junte un verbo
-	// destructivo con "Base" o "Quarantine".
-	//
 	// Es aditivo y IDEMPOTENTE: agrega lo que falta y no toca lo que ya está.
 	// Llamarlo con la cuarentena entera puesta no escribe nada.
 	//
-	// Lo llama [NewSession] al arrancar, ANTES de PurgeOwned. Antes y no después
-	// porque la purga es el instante de menos protección de todo el arranque,
-	// con las reglas de la sala anterior cayendo.
+	// Lo llama [NewSession] al arrancar, ANTES de PurgeOwned y SOLO con la
+	// decisión del usuario en sí. Antes y no después porque la purga es el
+	// instante de menos protección de todo el arranque, con las reglas de la
+	// sala anterior cayendo.
 	ApplyBaseQuarantine(ctx context.Context, rules []domain.QuarantineRule) error
+
+	// RemoveBaseQuarantineAtUserRequest takes the base quarantine down because
+	// the PERSON said so, and for no other reason.
+	//
+	// It is the one method of this interface that may remove it, with this
+	// exact name, and the guardians in internal/arch hold that in three ways:
+	// no other method may combine a destructive verb with the quarantine, no
+	// function inside the adapters may delete it under another name, and the
+	// only caller allowed is the consent use case — never a sweep, a start, a
+	// `--reset` or an engine event. "It removed itself" is the regression all
+	// of that exists to make impossible.
+	//
+	// Idempotent: removing what is not there succeeds, because the intention
+	// is already true. What could not be removed (a name somebody else's rule
+	// shares, on Windows) is left alone and logged, same as PurgeOwned.
+	RemoveBaseQuarantineAtUserRequest(ctx context.Context) error
 
 	// PurgeOwned borra todo lo etiquetado con [domain.FirewallGroup]. Se llama al
 	// arrancar el servicio, antes de aplicar nada: una muerte sucia del daemon
@@ -394,6 +407,13 @@ type StateStore interface {
 	// Que falte es lo normal hasta que alguien lo escriba, y no es un error.
 	LoadSeed() ([]byte, error)
 	SaveSeed([]byte) error
+
+	// LoadQuarantineDecision and SaveQuarantineDecision keep the user's answer
+	// to "close these ports on this machine". The absent file IS undecided,
+	// which is why there is no Clear: a decision, once taken, is only ever
+	// replaced by another decision. See [domain.QuarantineDecision].
+	LoadQuarantineDecision() ([]byte, error)
+	SaveQuarantineDecision([]byte) error
 
 	// LoadSeedToken, SaveSeedToken y ClearSeedToken guardan el refresh token de
 	// un seed que pide password para hospedar.

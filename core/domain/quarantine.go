@@ -1,6 +1,10 @@
 package domain
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+	"time"
+)
 
 // La cuarentena de base: los bloqueos que sobreviven al servicio detenido.
 //
@@ -196,6 +200,84 @@ func BaseQuarantineFor(sys QuarantineSystem) []QuarantineRule {
 		}
 	}
 	return out
+}
+
+// QuarantineDecision is the user's answer to "close these ports on this
+// machine", and it has three states because two would lie.
+//
+// Undecided is NOT "no": it is what makes the question get asked exactly
+// once. It is also the zero value and the meaning of the file being absent,
+// so a machine that never answered cannot be told apart from one that
+// answered by accident.
+//
+// The decision IS the operation, in both directions: recording Accepted
+// writes the quarantine and recording Declined removes it. There is no
+// preference stored on one side and rules standing on the other — see the
+// consent use case.
+type QuarantineDecision uint8
+
+const (
+	QuarantineUndecided QuarantineDecision = iota
+	QuarantineAccepted
+	QuarantineDeclined
+)
+
+// quarantineDecisionJSON is the on-disk schema. Closed, like every persisted
+// shape in this package.
+type quarantineDecisionJSON struct {
+	Decision  string `json:"decision"`
+	DecidedAt string `json:"decided_at"`
+}
+
+// EncodeQuarantineDecision serialises a decision somebody actually took.
+//
+// Undecided is not encodable ON PURPOSE: the absent file already means that,
+// and two spellings of the same state contradict each other the day one is
+// forgotten. The timestamp is for the faces — "you switched this off" reads
+// differently with a date next to it.
+func EncodeQuarantineDecision(d QuarantineDecision, when time.Time) ([]byte, error) {
+	var s string
+	switch d {
+	case QuarantineAccepted:
+		s = "yes"
+	case QuarantineDeclined:
+		s = "no"
+	default:
+		return nil, fmt.Errorf("%w: la decisión de la cuarentena sin tomar no se guarda: "+
+			"el fichero ausente ya significa eso", ErrPersistedShape)
+	}
+	return json.MarshalIndent(quarantineDecisionJSON{
+		Decision:  s,
+		DecidedAt: when.UTC().Format(time.RFC3339),
+	}, "", "  ")
+}
+
+// DecodeQuarantineDecision is the only decoder of the decision file.
+//
+// Strict like the rest: unknown fields reject the file. An unreadable or
+// malformed file decodes to an ERROR and never to a decision, and the caller
+// treats that as undecided-with-a-log-line: inventing a "no" would silently
+// strip the machine of what the user asked for, and inventing a "yes" would
+// close ports nobody agreed to close.
+func DecodeQuarantineDecision(raw []byte) (QuarantineDecision, time.Time, error) {
+	j, err := decodeStrict[quarantineDecisionJSON](raw)
+	if err != nil {
+		return QuarantineUndecided, time.Time{}, err
+	}
+	when, err := time.Parse(time.RFC3339, j.DecidedAt)
+	if err != nil {
+		return QuarantineUndecided, time.Time{}, fmt.Errorf("%w: la fecha de la decisión: %v",
+			ErrPersistedShape, err)
+	}
+	switch j.Decision {
+	case "yes":
+		return QuarantineAccepted, when, nil
+	case "no":
+		return QuarantineDeclined, when, nil
+	default:
+		return QuarantineUndecided, time.Time{}, fmt.Errorf("%w: decisión desconocida %q",
+			ErrPersistedShape, j.Decision)
+	}
 }
 
 // QuarantinePorts is the list of ports the quarantine closes on the named

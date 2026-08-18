@@ -400,6 +400,11 @@ type Session struct {
 	// en el diario para siempre.
 	cardPublishFailing bool
 
+	// quarantineDecision is the user's persisted answer about the base
+	// quarantine, loaded once at start and replaced only by DecideQuarantine.
+	// Undecided is what makes the faces ask exactly once. Guarded by mu.
+	quarantineDecision domain.QuarantineDecision
+
 	// tamperRepairs son las veces que se repusieron las reglas propias en esta
 	// sala.
 	//
@@ -525,19 +530,28 @@ func NewSession(ctx context.Context, d Deps) (*Session, error) {
 		issued:    make(map[netip.Addr]domain.Credential),
 	}
 
-	// La cuarentena de base va ANTES de la purga, y el orden es de seguridad.
+	// La cuarentena de base dejó de aplicarse a ciegas: es la DECISIÓN del
+	// usuario, y el arranque la respeta en las dos direcciones. Con la decisión
+	// en sí, se comprueba y se repone lo que falte, que sigue siendo lo que el
+	// usuario pidió — reparar no es decidir por él. Con la decisión en no, o
+	// sin tomar, no se escribe nada: el barrido la mide igual y las caras
+	// cuentan el estado. Quitarla tampoco pasa por acá, ni por ningún camino
+	// automático; eso lo vigila el guardián del grupo base por nombre y por
+	// llamador.
 	//
-	// La purga es el instante de menos protección de todo el arranque: se lleva
-	// las reglas de la sala anterior y todavía no hay ninguna nueva. Poner la
-	// cuarentena primero es lo que hace que ese hueco esté cubierto.
+	// Cuando SE escribe, va ANTES de la purga, y el orden es de seguridad: la
+	// purga es el instante de menos protección de todo el arranque, con las
+	// reglas de la sala anterior cayendo y ninguna nueva puesta.
 	//
-	// Y es fatal, igual que el fallo de la purga tres líneas más abajo. Un
-	// daemon que no pudo escribir la cuarentena es un daemon con la promesa
-	// apagada, y seguir arrancando dejaría al usuario con la app abierta,
-	// diciendo que todo está bien, sobre una máquina sin lo único que la protege
-	// con el servicio detenido.
-	if err := d.Firewall.ApplyBaseQuarantine(ctx, domain.BaseQuarantineFor(d.Quarantine)); err != nil {
-		return nil, fmt.Errorf("escribiendo la cuarentena de base: %w", err)
+	// Y su fallo dejó de ser fatal. Un daemon que no arranca por no poder
+	// escribirla deja al usuario sin producto entero por una protección que él
+	// mismo eligió; arrancar diciéndolo deja el barrido midiendo, la alerta
+	// contándolo, y el interruptor a mano para reintentar.
+	s.quarantineDecision = s.loadQuarantineDecision()
+	if s.quarantineDecision == domain.QuarantineAccepted {
+		if err := d.Firewall.ApplyBaseQuarantine(ctx, domain.BaseQuarantineFor(d.Quarantine)); err != nil {
+			d.Log.Error("no se pudo reponer la cuarentena de base que el usuario pidió", "error", err)
+		}
 	}
 	if err := d.Firewall.PurgeOwned(ctx); err != nil {
 		return nil, fmt.Errorf("purgando las reglas de la ejecución anterior: %w", err)

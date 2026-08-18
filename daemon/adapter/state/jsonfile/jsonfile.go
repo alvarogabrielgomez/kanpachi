@@ -41,6 +41,10 @@ const (
 	// KnownHostsFile is the book of hosts this machine has played with. Sealed,
 	// like the room state; see [Store.LoadKnownHosts].
 	KnownHostsFile = "known-hosts.json"
+
+	// QuarantineDecisionFile is the user's answer to "close these ports on
+	// this machine". Absent IS undecided; see [Store.LoadQuarantineDecision].
+	QuarantineDecisionFile = "quarantine-decision.json"
 )
 
 // ErrNoState es que el archivo no está.
@@ -177,6 +181,14 @@ func (s *Store) ClearSeedToken() error          { return s.clear(SeedTokenFile) 
 // clean exit should do.
 func (s *Store) LoadKnownHosts() ([]byte, error) { return s.load(KnownHostsFile) }
 func (s *Store) SaveKnownHosts(raw []byte) error { return s.save(KnownHostsFile, raw) }
+
+// LoadQuarantineDecision and SaveQuarantineDecision keep the quarantine
+// answer. Sealed like the default, and what the seal buys here is the same as
+// the fingerprint book's: no secret inside, and a process without privileges
+// must not be able to PLANT a decision the user never took. There is no
+// Clear: a decision is only ever replaced by another decision.
+func (s *Store) LoadQuarantineDecision() ([]byte, error) { return s.load(QuarantineDecisionFile) }
+func (s *Store) SaveQuarantineDecision(raw []byte) error { return s.save(QuarantineDecisionFile, raw) }
 
 // saveProtected escribe y después le pone al fichero su propia ACL.
 //

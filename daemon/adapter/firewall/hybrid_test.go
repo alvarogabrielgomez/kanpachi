@@ -71,6 +71,12 @@ func (p *permisosFalsos) ApplyBaseQuarantine(_ context.Context, r []domain.Quara
 	return p.fallaCuarentena
 }
 
+func (p *permisosFalsos) RemoveBaseQuarantineAtUserRequest(context.Context) error {
+	p.d.anota("permisos.retirada")
+	p.cuarentena = nil
+	return nil
+}
+
 func (p *permisosFalsos) PurgeOwned(context.Context) error {
 	p.d.anota("permisos.purga")
 	return p.fallaPurga

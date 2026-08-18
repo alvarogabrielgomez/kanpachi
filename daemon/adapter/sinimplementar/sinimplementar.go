@@ -154,6 +154,9 @@ func (Firewall) Apply(context.Context, domain.RuleSet) error { return falla("apl
 func (Firewall) ApplyBaseQuarantine(context.Context, []domain.QuarantineRule) error {
 	return falla("aplicar la cuarentena de base")
 }
+func (Firewall) RemoveBaseQuarantineAtUserRequest(context.Context) error {
+	return falla("retirar la cuarentena de base")
+}
 func (Firewall) PurgeOwned(context.Context) error { return falla("purgar el grupo Kanpachi") }
 func (Firewall) AuditForeign(context.Context, domain.GameProfile) ([]domain.ForeignRule, error) {
 	return nil, falla("buscar reglas ajenas")

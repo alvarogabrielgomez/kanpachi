@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 )
@@ -70,11 +71,21 @@ func (m *motorReset) KillOrphans() int {
 type estadoReset struct {
 	d   *diarioReset
 	err error
+	// decisión is what LoadQuarantineDecision hands back; nil is the absent
+	// file, o sea sin decidir.
+	decisión []byte
 }
 
 func (e *estadoReset) ClearRoom() error {
 	e.d.anota("sala")
 	return e.err
+}
+
+func (e *estadoReset) LoadQuarantineDecision() ([]byte, error) {
+	if e.decisión == nil {
+		return nil, errors.New("no hay decisión guardada")
+	}
+	return e.decisión, nil
 }
 
 type logMudoReset struct{}
@@ -89,6 +100,15 @@ func armadoReset() (ResetDeps, *diarioReset, *fwReset, *netcfgReset, *motorReset
 	nc := &netcfgReset{d: d}
 	mt := &motorReset{d: d}
 	st := &estadoReset{d: d}
+	// El banco arranca con la decisión del usuario en SÍ. Lo que estos tests
+	// afirman es el orden y la reposición, y las dos solo existen con la
+	// decisión tomada: sin ella el reset no escribe la cuarentena, que es lo
+	// que respeta la decisión y no un hueco del banco.
+	raw, err := domain.EncodeQuarantineDecision(domain.QuarantineAccepted, time.Unix(0, 0))
+	if err != nil {
+		panic(err)
+	}
+	st.decisión = raw
 	return ResetDeps{
 		Firewall: fw, NetCfg: nc, Engine: mt, State: st, Log: logMudoReset{},
 		// Cualquiera de los dos sirve acá: lo que este banco prueba es el ORDEN
@@ -146,11 +166,14 @@ func TestUnPasoQueFallaNoCancelaLosDemás(t *testing.T) {
 	}
 }
 
-// El reset REPONE la cuarentena y no la quita, y esa asimetría es el diseño.
+// El reset REPONE la cuarentena que el usuario eligió y no la quita, y esa
+// asimetría es el diseño.
 //
 // Lo que hace valiosa a la cuarentena es seguir puesta con el daemon detenido.
 // Un reset se pide cuando la configuración está corrupta y nada arranca:
 // quitarla ahí destruiría exactamente lo que protege del caso que lo motivó.
+// El banco tiene la decisión en sí, así que lo que se afirma acá es que el
+// reset la obedece reponiendo; sin decisión no escribiría nada.
 func TestElResetReponeLaCuarentenaEnVezDeQuitarla(t *testing.T) {
 	deps, _, fw, _, _, _ := armadoReset()
 	if err := Reset(context.Background(), deps); err != nil {

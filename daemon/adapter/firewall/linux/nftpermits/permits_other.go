@@ -50,6 +50,8 @@ func (*Permits) ApplyBaseQuarantine(context.Context, []domain.QuarantineRule) er
 	return errSoloLinux
 }
 
+func (*Permits) RemoveBaseQuarantineAtUserRequest(context.Context) error { return errSoloLinux }
+
 func (*Permits) AuditForeign(context.Context, domain.GameProfile) ([]domain.ForeignRule, error) {
 	return nil, errSoloLinux
 }

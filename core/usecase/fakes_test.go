@@ -191,6 +191,9 @@ type mockFirewall struct {
 	// cuarentenaTrasPurgas lleva cuántas purgas se habían hecho en cada llamada
 	// a la cuarentena. Un cero ahí es la afirmación de que fue primero.
 	cuarentenaTrasPurgas []int
+	// cuarentenaRetirada cuenta las retiradas a pedido: la afirmación es que
+	// SOLO la decisión del usuario llega acá, jamás un camino automático.
+	cuarentenaRetirada int
 
 	// acotado es a qué está acotada la compuerta ahora, y vacío es sin acotar.
 	acotado netip.Prefix
@@ -280,6 +283,17 @@ func (f *mockFirewall) ApplyBaseQuarantine(_ context.Context, rules []domain.Qua
 	// de que la purga deje la máquina sin las reglas de la sala anterior.
 	f.cuarentenaTrasPurgas = append(f.cuarentenaTrasPurgas, f.purgas)
 	f.cuarentena = rules
+	return nil
+}
+
+func (f *mockFirewall) RemoveBaseQuarantineAtUserRequest(context.Context) error {
+	if f.errCuarentena != nil {
+		return f.errCuarentena
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cuarentenaRetirada++
+	f.cuarentena = nil
 	return nil
 }
 
@@ -1145,9 +1159,31 @@ type mockState struct {
 	seed       []byte
 	seedToken  []byte
 	knownHosts []byte
+	// cuarentena is the persisted quarantine decision; nil is the absent
+	// file, o sea sin decidir, que es el arranque normal del banco.
+	cuarentena []byte
 	deleted    int
 
 	errSave error
+}
+
+func (e *mockState) LoadQuarantineDecision() ([]byte, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.cuarentena == nil {
+		return nil, errors.New("no hay decisión guardada")
+	}
+	return append([]byte(nil), e.cuarentena...), nil
+}
+
+func (e *mockState) SaveQuarantineDecision(raw []byte) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.errSave != nil {
+		return e.errSave
+	}
+	e.cuarentena = append([]byte(nil), raw...)
+	return nil
 }
 
 func (e *mockState) LoadRoom() ([]byte, error) {
