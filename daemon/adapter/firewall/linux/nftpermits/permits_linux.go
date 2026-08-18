@@ -48,6 +48,7 @@ import (
 	"sync"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/quarantine"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/safewrite"
 )
 
@@ -99,30 +100,6 @@ type Permits struct {
 	// log. Un recorte que solo se anota en el log es un recorte silencioso: la
 	// pantalla diría que la cuarentena está puesta, y lo estaría a medias.
 	skipped []uint16
-}
-
-// splitInUse parte la cuarentena entre lo que hay que saltar y lo que se cierra.
-//
-// Devuelve los PUERTOS saltados y las REGLAS que quedan, que son dos formas
-// distintas porque cada puerto produce cuatro reglas y lo que hay que reportar
-// es el puerto.
-func splitInUse(rules []domain.QuarantineRule, escuchando map[uint16]bool) ([]uint16, []domain.QuarantineRule) {
-	var puertos []uint16
-	vistos := map[uint16]bool{}
-	quedan := make([]domain.QuarantineRule, 0, len(rules))
-
-	for _, r := range rules {
-		if !escuchando[r.From] {
-			quedan = append(quedan, r)
-			continue
-		}
-		if !vistos[r.From] {
-			vistos[r.From] = true
-			puertos = append(puertos, r.From)
-		}
-	}
-	sort.Slice(puertos, func(i, j int) bool { return puertos[i] < puertos[j] })
-	return puertos, quedan
 }
 
 // New abre la capa.
@@ -241,7 +218,7 @@ func (p *Permits) ApplyBaseQuarantine(ctx context.Context, rules []domain.Quaran
 		return fmt.Errorf("antes de cerrar puertos hay que saber cuáles están en uso: %w", err)
 	}
 
-	usados, quedan := splitInUse(rules, escuchando)
+	usados, quedan := quarantine.SplitInUse(rules, escuchando)
 	p.skipped = usados
 	for _, r := range usados {
 		// Se anota UNA por puerto y no una por regla: son cuatro reglas por
@@ -356,7 +333,14 @@ func writeRules(b *strings.Builder, rules []domain.QuarantineRule, in bool) erro
 		if r.In != in {
 			continue
 		}
-		proto, err := protoName(r.Proto)
+		// La misma precondición que aplica el escritor de Windows, y acá no
+		// estaba: este lado comprobaba el protocolo y no el rango, así que un
+		// rango al revés se escribía en el fichero y lo rechazaba `nft` al
+		// cargarlo, con un mensaje que habla de sintaxis y no de la regla.
+		if err := quarantine.Validate(r); err != nil {
+			return err
+		}
+		proto, err := quarantine.ProtoName(r.Proto)
 		if err != nil {
 			return fmt.Errorf("regla %q: %w", r.Name, err)
 		}
@@ -364,22 +348,8 @@ func writeRules(b *strings.Builder, rules []domain.QuarantineRule, in bool) erro
 		if in {
 			campo = "dport"
 		}
-		puerto := fmt.Sprintf("%d", r.From)
-		if r.From != r.To {
-			puerto = fmt.Sprintf("%d-%d", r.From, r.To)
-		}
+		puerto := quarantine.PortRange(r.From, r.To)
 		fmt.Fprintf(b, "\t\t%s %s %s drop comment %q\n", proto, campo, puerto, r.Name)
 	}
 	return nil
-}
-
-func protoName(p domain.Proto) (string, error) {
-	switch p {
-	case domain.ProtoTCP:
-		return "tcp", nil
-	case domain.ProtoUDP:
-		return "udp", nil
-	default:
-		return "", fmt.Errorf("protocolo %v: la cuarentena se escribe por protocolo concreto", p)
-	}
 }

@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/quarantine"
 )
 
 // Windows protocol numbers, as INetFwRule.Protocol wants them.
@@ -174,7 +175,10 @@ func protocolOf(p domain.Proto) (int32, error) {
 
 // portsOf renders the range the way Windows wants it: a single port on its own,
 // a range with a dash.
-func portsOf(r domain.FirewallRule) string { return portRange(r.From, r.To) }
+//
+// Shared with the quarantine writer and with the nftables one, which is the
+// only way three renderers of the same range stay the same range.
+func portsOf(r domain.FirewallRule) string { return quarantine.PortRange(r.From, r.To) }
 
 // remoteOf renders who may reach the rule.
 //

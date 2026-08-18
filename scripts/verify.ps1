@@ -108,6 +108,7 @@ $portablePackages = @(
     './daemon/adapter/canary/...', './daemon/adapter/identity/...',
     './daemon/adapter/directory/...', './daemon/adapter/firewall',
     './daemon/adapter/firewall/gate/...',
+    './daemon/adapter/firewall/quarantine/...',
     './daemon/adapter/firewall/windows/wfp/...',
     './daemon/adapter/firewall/windows/netfw/...'
 )

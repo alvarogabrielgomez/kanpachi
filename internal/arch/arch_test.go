@@ -39,6 +39,13 @@ import (
 // nftables en Linux. Una llamada a un sistema concreto ahí dentro convierte la
 // decisión compartida en la decisión de uno solo, y el otro se entera cuando ya
 // no compila.
+//
+// `firewall/quarantine` es el quinto, y entra por el mismo argumento que
+// `gate`: es lo que los dos sistemas comparten ANTES de traducir, o sea si una
+// regla se puede escribir, cómo se lee un rango de puertos, y qué puertos hay
+// que dejar en paz porque ya hay algo escuchando. Eso último vivía detrás de un
+// `//go:build linux` sin motivo, así que la aritmética que decide cuáles de los
+// servicios del usuario sobreviven solo se podía ejercitar en Linux.
 var puros = []string{
 	"../../core",
 	"../../daemon/service",
@@ -46,6 +53,7 @@ var puros = []string{
 	"../../daemon/transport/wire",
 	"../../daemon/transport/control",
 	"../../daemon/adapter/firewall/gate",
+	"../../daemon/adapter/firewall/quarantine",
 }
 
 // prohibidos son los imports que no pueden aparecer en core.

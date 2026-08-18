@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/quarantine"
 )
 
 // The base quarantine, translated to the Windows shape.
@@ -47,12 +48,15 @@ import (
 // machine's 445 or 22. Blocking by REMOTE port would break those, permanently,
 // because the quarantine outlives the daemon.
 func quarantineSpecFor(r domain.QuarantineRule) (ruleSpec, error) {
+	// The precondition is shared with the Linux writer, and it has to be: this
+	// file used to check the port range and the nftables one did not, which is
+	// the drift that a rule list travelling to two translators invites.
+	if err := quarantine.Validate(r); err != nil {
+		return ruleSpec{}, err
+	}
 	proto, err := protocolOf(r.Proto)
 	if err != nil {
 		return ruleSpec{}, fmt.Errorf("quarantine rule %q: %w", r.Name, err)
-	}
-	if r.From == 0 || r.To == 0 || r.From > r.To {
-		return ruleSpec{}, fmt.Errorf("quarantine rule %q: bad port range %d-%d", r.Name, r.From, r.To)
 	}
 
 	direction := int32(dirOut)
@@ -66,7 +70,7 @@ func quarantineSpecFor(r domain.QuarantineRule) (ruleSpec, error) {
 		Direction:  direction,
 		Action:     actionBlock,
 		Protocol:   proto,
-		LocalPorts: portRange(r.From, r.To),
+		LocalPorts: quarantine.PortRange(r.From, r.To),
 		Profiles:   profileAll,
 		Enabled:    true,
 	}, nil
@@ -87,12 +91,4 @@ func QuarantineSpecs(rules []domain.QuarantineRule) ([]ruleSpec, error) {
 		out = append(out, s)
 	}
 	return out, nil
-}
-
-// portRange renders the range the way Windows wants it.
-func portRange(from, to uint16) string {
-	if from == to {
-		return fmt.Sprintf("%d", from)
-	}
-	return fmt.Sprintf("%d-%d", from, to)
 }
