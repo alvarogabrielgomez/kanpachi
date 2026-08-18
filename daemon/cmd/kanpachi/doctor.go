@@ -38,6 +38,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -257,6 +258,88 @@ func chequeoDelCanal() chequeo {
 			return fallar("%v", err).con(pistaDeConexión(op))
 		},
 	}
+}
+
+// chequeoDeLaCuarentenaMedida asks the DAEMON what the quarantine measurement
+// says, decision included. It is the Windows quarantine check — the first one
+// this face has — and it is the symptom→cause bridge: whoever runs the doctor
+// over "I cannot share a folder" has to find the cause here without knowing
+// the word quarantine.
+//
+// # What --fix may and may not do here
+//
+// Fixing REPAIRS what the user chose, and never chooses for them. Partial, or
+// absent with the answer on yes, is a broken yes and gets repaired with
+// `quarantine on`. Absent by the user's own no is a CHOICE and paints as a
+// notice with no fix; absent with the question unanswered likewise, naming
+// where to answer it.
+func chequeoDeLaCuarentenaMedida() chequeo {
+	return chequeo{
+		nombre: "the base quarantine",
+		mirar: func(_ context.Context, op opciones) veredicto {
+			q, err := cuarentenaDelDaemon(op)
+			if err != nil {
+				return noSeSabe("the daemon is not answering, so nobody can measure it: %v", err)
+			}
+			switch q.Verdict {
+			case "applied":
+				return ok("on: nobody reaches this PC's file sharing or Remote Desktop. " +
+					"If YOU need those, `kanpachi quarantine off`")
+			case "partial":
+				return fallar("of %d rules, %d missing, %d disabled and %d edited: "+
+					"something other than Kanpachi changed it",
+					q.Total, q.Missing, q.Disabled, q.Drifted).
+					con("kanpachi quarantine on")
+			case "absent":
+				switch q.Decision {
+				case "no":
+					return avisar("off, by this machine's own decision. Sharing folders and " +
+						"entering this PC over Remote Desktop work; on strange networks " +
+						"they are reachable. `kanpachi quarantine on` closes them")
+				case "yes":
+					return fallar("you asked for it and it is NOT in place").
+						con("kanpachi quarantine on")
+				default:
+					return avisar("off, and the question is unanswered. `kanpachi quarantine on` " +
+						"closes file sharing and Remote Desktop INTO this PC on every " +
+						"network (recommended)")
+				}
+			default:
+				return noSeSabe("the daemon could not read the firewall")
+			}
+		},
+		arreglar: func(_ context.Context, op opciones) error {
+			// Only the broken-yes cases reach here, so `on` repairs a choice
+			// already made instead of making one.
+			c, err := abrir(op)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = c.Close() }()
+			_, err = c.Call(protocol.MethodQuarantine, struct {
+				Set string `json:"set"`
+			}{"on"})
+			return err
+		},
+	}
+}
+
+// cuarentenaDelDaemon pide el estado y recorta la vista de la cuarentena.
+func cuarentenaDelDaemon(op opciones) (protocol.QuarantineView, error) {
+	c, err := abrir(op)
+	if err != nil {
+		return protocol.QuarantineView{}, err
+	}
+	defer func() { _ = c.Close() }()
+	raw, err := c.Call(protocol.MethodStatus, nil)
+	if err != nil {
+		return protocol.QuarantineView{}, err
+	}
+	var v protocol.RoomView
+	if e := json.Unmarshal(raw, &v); e != nil {
+		return protocol.QuarantineView{}, e
+	}
+	return v.Quarantine, nil
 }
 
 // chequeoDelMotor mira que el motor esté donde el daemon lo va a buscar.

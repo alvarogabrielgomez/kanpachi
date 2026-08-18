@@ -239,10 +239,12 @@ func chequeoDeLaCuarentena() chequeo {
 		nombre: "the base quarantine",
 		mirar: func(ctx context.Context, _ opciones) veredicto {
 			if _, err := os.Stat(nftpermits.QuarantineFile); os.IsNotExist(err) {
-				// Antes del primer arranque del daemon no hay fichero, y eso es
-				// normal: lo escribe él. No hay nada roto que arreglar.
-				return avisar("%s is not there yet: the daemon writes it on start",
-					nftpermits.QuarantineFile)
+				// Sin fichero no hay nada roto: la cuarentena es la DECISIÓN del
+				// usuario desde que dejó de aplicarse sola, y el fichero solo
+				// existe con la decisión en sí. Se dice dónde se decide.
+				return avisar("not in place. It is this machine's decision now: " +
+					"`kanpachi quarantine on` closes file sharing and Remote Desktop " +
+					"INTO this machine on every network (recommended)")
 			}
 			puesta, err := nftpermits.QuarantineLoaded(ctx)
 			if err != nil {

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
@@ -502,6 +503,58 @@ func motivoDeSalida(s string) string {
 		return "the tunnel was lost"
 	default:
 		return s
+	}
+}
+
+// pintarCuarentena is the symptom→cause bridge: the person who reads this
+// arrives with "I cannot share a folder" or "I cannot reach my PC over Remote
+// Desktop", never with the word quarantine. The state names the symptom in
+// both directions, says what it does NOT mean, and hands the exact command.
+func pintarCuarentena(w io.Writer, q protocol.QuarantineView) {
+	puertos := make([]string, len(q.Ports))
+	for i, p := range q.Ports {
+		puertos[i] = strconv.Itoa(int(p))
+	}
+
+	fmt.Fprintln(w)
+	switch q.Verdict {
+	case "applied":
+		fmt.Fprintln(w, "  QUARANTINE   on: Kanpachi is blocking file sharing and Remote Desktop")
+		fmt.Fprintln(w, "               INTO this PC, on all its networks.")
+		fmt.Fprintf(w, "  Ports        %s\n", strings.Join(puertos, ", "))
+		fmt.Fprintln(w, "\n  Having trouble sharing a folder FROM this PC, or entering it over")
+		fmt.Fprintln(w, "  Remote Desktop? This is why. `kanpachi quarantine off` turns it off")
+		fmt.Fprintln(w, "  and they work again right away. Reaching OTHER machines' shares and")
+		fmt.Fprintln(w, "  desktops was never affected.")
+	case "partial":
+		fmt.Fprintf(w, "  QUARANTINE   partial: of %d rules, %d are missing, %d disabled, %d edited.\n",
+			q.Total, q.Missing, q.Disabled, q.Drifted)
+		fmt.Fprintln(w, "\n  Something other than Kanpachi changed it. `kanpachi quarantine on`")
+		fmt.Fprintln(w, "  repairs what is missing.")
+	case "absent":
+		fmt.Fprintln(w, "  QUARANTINE   off: this PC answers file sharing and Remote Desktop on")
+		fmt.Fprintln(w, "               every network it joins.")
+		fmt.Fprintf(w, "  Would close  %s\n", strings.Join(puertos, ", "))
+		fmt.Fprintln(w, "\n  What that means: on a bar's or a hotel's wifi, people on that network")
+		fmt.Fprintln(w, "  can ask this PC for its shared folders or its desktop. What it does")
+		fmt.Fprintln(w, "  NOT mean: Kanpachi did not open any of it and never does, your room's")
+		fmt.Fprintln(w, "  members cannot reach it while the room is open, and nobody reaches it")
+		fmt.Fprintln(w, "  from the internet. `kanpachi quarantine on` closes it — recommended,")
+		fmt.Fprintln(w, "  unless this PC shares folders or gets entered over Remote Desktop.")
+	default:
+		fmt.Fprintln(w, "  QUARANTINE   could not be checked. That is not \"off\": it is that")
+		fmt.Fprintln(w, "               nobody could look. `kanpachi doctor` says more.")
+	}
+
+	switch q.Decision {
+	case "yes":
+		fmt.Fprintln(w, "\n  Your answer   yes, close them. Every start repairs it.")
+	case "no":
+		fmt.Fprintln(w, "\n  Your answer   no, leave them open. Kanpachi respects it and keeps")
+		fmt.Fprintln(w, "                saying what state the machine is in.")
+	default:
+		fmt.Fprintln(w, "\n  Your answer   not given yet. Opening or joining a room from the")
+		fmt.Fprintln(w, "                terminal will ask once.")
 	}
 }
 

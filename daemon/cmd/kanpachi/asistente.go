@@ -141,11 +141,34 @@ func presentNoRoomMenu(ctx context.Context, op opciones, st protocol.RoomView) e
 			opciones = append(opciones, volver)
 		}
 	}
+	// El interruptor de la cuarentena, con el estado en la propia etiqueta, que
+	// es la forma que tiene un menú de terminal de ser un interruptor. Es donde
+	// lo va a encontrar quien no leyó nada. Sin medición no se ofrece: alternar
+	// a ciegas no es un interruptor, y «Check the system» ya cuenta el porqué.
+	cuarentena, encender := "", true
+	switch st.Quarantine.Verdict {
+	case "applied":
+		cuarentena, encender = "Quarantine is ON: reopen this PC's server ports (file sharing, Remote Desktop)", false
+	case "absent":
+		cuarentena = "Quarantine is OFF: close this PC's risky server ports (recommended)"
+	case "partial":
+		cuarentena = "Quarantine is HALF ON: repair it (close the ports again)"
+	}
+	if cuarentena != "" {
+		opciones = append(opciones, cuarentena)
+	}
 	opciones = append(opciones, juegos, comprobar, actualiza, nombre, salir)
 
 	sel, err := elegir("What do we do:", opciones)
 	if err != nil {
 		return err
+	}
+	if cuarentena != "" && sel == cuarentena {
+		set := "on"
+		if !encender {
+			set = "off"
+		}
+		return conAviso(ctx, op, cmdQuarantine(ctx, op, []string{set}))
 	}
 	switch sel {
 	case abrir:

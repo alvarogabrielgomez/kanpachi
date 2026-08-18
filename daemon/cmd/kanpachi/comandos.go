@@ -85,6 +85,9 @@ func init() {
 			correr: cmdProbe},
 		"protect": {breve: "put Kanpachi Protection back. It is idempotent",
 			correr: cmdProtect},
+		"quarantine": {args: "[on|off]",
+			breve:  "close this PC's risky server ports on every network; bare, it tells the state",
+			correr: cmdQuarantine},
 		"pending": {breve: "whether a room was left open from the previous start",
 			correr: cmdPending},
 		"resume": {breve: "reopen that room with the same code",
@@ -640,6 +643,57 @@ func cmdLast(_ context.Context, op opciones, _ []string) error {
 }
 
 // ─── El registro de esta máquina ─────────────────────────────────────────────
+
+// cmdQuarantine es el interruptor de la cuarentena de base, y su lectura.
+//
+// `on` y `off` SON la decisión, en la dirección que digan, y las dos son
+// idempotentes: encender con todo puesto repara lo que falte, apagar sin nada
+// puesto ya está cumplido. A secas cuenta el estado con el puente
+// síntoma→causa, que es lo que va a leer quien llegue con "no puedo compartir
+// una carpeta" sin saber la palabra cuarentena. Con `--json`, la tercera boca
+// imprime el estado entero.
+//
+// Apagar no pregunta: el comando escrito ES la intención, igual que `rotate`.
+// Lo que sí hace es decir la verdad de una línea sobre lo que acaba de pasar.
+func cmdQuarantine(_ context.Context, op opciones, args []string) error {
+	set := ""
+	if len(args) > 0 {
+		switch args[0] {
+		case "on", "off":
+			set = args[0]
+		default:
+			return uso("quarantine takes on, off, or nothing to show the state")
+		}
+	}
+
+	c, err := abrir(op)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = c.Close() }()
+
+	var params any
+	if set != "" {
+		params = struct {
+			Set string `json:"set"`
+		}{set}
+	}
+	v, hecho, err := pedir[protocol.RoomView](c, op, protocol.MethodQuarantine, params)
+	if hecho || err != nil {
+		return err
+	}
+
+	switch set {
+	case "on":
+		fmt.Println("Done. Those ports are closed on every network of this machine, until")
+		fmt.Println("you turn it off. Your rooms and games are not affected.")
+	case "off":
+		fmt.Println("Done. This PC answers file sharing and Remote Desktop again, on all")
+		fmt.Println("its networks. Your Kanpachi room does not change.")
+	}
+	pintarCuarentena(os.Stdout, v.Quarantine)
+	return nil
+}
 
 // cmdSeed enseña o cambia el registro en el que esta máquina abre sus salas.
 //

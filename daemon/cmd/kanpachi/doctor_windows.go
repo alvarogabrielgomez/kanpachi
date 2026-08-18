@@ -41,6 +41,7 @@ func chequeosDelSistema() []chequeo {
 		chequeoDelServicio(),
 		chequeoDelDirectorioDeDatos(),
 		chequeoDelCanal(),
+		chequeoDeLaCuarentenaMedida(),
 		chequeoDelMotor(motorAlLadoDelDaemon()),
 		chequeoDelAdaptadorVirtual(),
 	}
