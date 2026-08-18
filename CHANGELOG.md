@@ -10,7 +10,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Added
 
-- Show the way back actually moving: while a return attempt runs, the home notice fills the same progress bar the waits use, fed by the daemon's real steps; between attempts the countdown text carries, as before. Asked for while watching a real return that said it was returning with nothing moving
+- Show the way back actually moving: while a return attempt runs, the home notice fills the same progress bar the waits use, fed by the daemon's real steps; between attempts the countdown text carries, as before. Asked for while watching a real return that said it was returning with nothing moving ([029ad84](https://github.com/alvarogabrielgomez/kanpachi/commit/029ad84))
 - Leave the machine set up as recommended straight from the sign-up screen: a ticked-by-default box next to Continuar closes this PC's risky server ports when you save your name, with a "?" that explains in three lines what that means before it happens — it holds on every network, it stays until you remove it, and reaching OTHER machines never changes. Unticking it answers nothing: the decision stays untaken and the first room from the terminal still asks. Changing your name later shows no box and touches nothing but the name ([c7eea89](https://github.com/alvarogabrielgomez/kanpachi/commit/c7eea89))
 
 ## [0.5.0] - 2026-08-18
