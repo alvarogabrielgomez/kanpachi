@@ -2,6 +2,7 @@ import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/last_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/own_seed.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/saved_room.dart';
@@ -372,6 +373,18 @@ class PipeSessionRepository implements SessionRepository {
     // Sin código no hay nada que ofrecer, y ofrecer una sala sin código dejaría
     // un diálogo del que no se puede salir haciendo lo que propone.
     return pendiente.understood ? pendiente : null;
+  }
+
+  @override
+  Future<LastRoom?> lastRoom() async {
+    final Map<String, Object?> v = await _mapa(DaemonMethods.lastRoom);
+    // `{"found": false}` es la respuesta normal: casi siempre no se estuvo en
+    // ninguna sala ajena. No es un error.
+    if ((v['found'] as bool?) != true) return null;
+    final Object? sala = v['room'];
+    if (sala is! Map<String, Object?>) return null;
+    final LastRoom last = LastRoom.fromJson(sala);
+    return last.understood ? last : null;
   }
 
   @override

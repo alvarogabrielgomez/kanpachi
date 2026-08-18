@@ -1,6 +1,7 @@
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/last_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/own_seed.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/saved_room.dart';
@@ -121,6 +122,12 @@ abstract interface class SessionRepository {
   /// cierre. Consumirlo al preguntar haría que cerrar la ventana perdiera la
   /// sala sin que nadie lo pidiera.
   Future<SavedRoom?> savedRoom();
+
+  /// La última sala ajena en la que se estuvo, con su interruptor de vuelta
+  /// automática. Nulo cuando el daemon no recuerda ninguna. Igual que
+  /// [savedRoom], preguntarlo NO lo consume: es un archivo que sigue ahí
+  /// hasta entrar a otra sala o descartarlo.
+  Future<LastRoom?> lastRoom();
 
   /// Reabre esa sala: la misma red, el mismo código y el mismo enlace.
   ///

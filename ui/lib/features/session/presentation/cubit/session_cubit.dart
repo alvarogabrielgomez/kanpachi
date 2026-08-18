@@ -9,6 +9,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/last_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/own_seed.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/saved_room.dart';
@@ -357,6 +358,12 @@ class SessionCubit extends Cubit<SessionState> {
       final SavedRoom? anterior = sala == null
           ? await _repository.savedRoom()
           : null;
+      // La última sala ajena, con la misma regla: solo se pregunta sin sala.
+      // La portada la ofrece solo con la vuelta automática apagada, que es el
+      // camino manual que el CLI y el asistente ya tenían.
+      final LastRoom? lastKnown = sala == null
+          ? await _repository.lastRoom()
+          : null;
       if (isClosed) return;
       emit(
         state.copyWith(
@@ -366,6 +373,8 @@ class SessionCubit extends Cubit<SessionState> {
           invite: incoming,
           savedRoom: anterior,
           clearSavedRoom: anterior == null,
+          lastRoom: lastKnown,
+          clearLastRoom: lastKnown == null,
           daemonDown: false,
           // Volver a estar dentro de una sala tras haberla perdido de vista
           // tiene que devolver también la fase, o la app se queda con la sala

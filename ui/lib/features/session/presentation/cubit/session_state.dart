@@ -4,6 +4,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/last_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/saved_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 
@@ -100,6 +101,7 @@ class SessionState {
     this.verbose = false,
     this.invite,
     this.savedRoom,
+    this.lastRoom,
   });
 
   final SessionPhase phase;
@@ -216,6 +218,12 @@ class SessionState {
   /// consume, así que sigue ofreciéndose hasta que se reabre o se cierra.
   final SavedRoom? savedRoom;
 
+  /// La última sala ajena que el daemon recuerda, con la vuelta automática
+  /// apagada o encendida. La portada solo la ofrece apagada y sin sala: es el
+  /// camino de vuelta manual que el CLI y el asistente ya tenían y la ventana
+  /// no llamaba jamás (2026-08-18).
+  final LastRoom? lastRoom;
+
   bool get hasRoom => room != null;
 
   /// Whether a long operation is in flight and the window is on hold.
@@ -275,6 +283,8 @@ class SessionState {
     bool clearInvite = false,
     SavedRoom? savedRoom,
     bool clearSavedRoom = false,
+    LastRoom? lastRoom,
+    bool clearLastRoom = false,
   }) => SessionState(
     phase: phase ?? this.phase,
     room: clearRoom ? null : (room ?? this.room),
@@ -295,5 +305,6 @@ class SessionState {
     verbose: verbose ?? this.verbose,
     invite: clearInvite ? null : (invite ?? this.invite),
     savedRoom: clearSavedRoom ? null : (savedRoom ?? this.savedRoom),
+    lastRoom: clearLastRoom ? null : (lastRoom ?? this.lastRoom),
   );
 }

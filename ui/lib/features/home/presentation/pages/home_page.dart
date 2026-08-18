@@ -15,6 +15,7 @@ import 'package:kanpachi_ui/core/messages/message_catalog.dart';
 import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/home/presentation/widgets/saved_room_notice.dart';
+import 'package:kanpachi_ui/features/home/presentation/widgets/last_room_notice.dart';
 import 'package:kanpachi_ui/features/home/presentation/widgets/returning_notice.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
 import 'package:kanpachi_ui/features/games/domain/steam_art.dart';
@@ -120,8 +121,13 @@ class _HomeScreenState extends State<HomeScreen> {
   /// join that failed put the room screen up with no room behind it: an empty
   /// window with no way back, because every control there needs a room to act
   /// on. The failure notice was drawn underneath and could not be reached.
-  Future<void> _join() async {
-    if (!InviteCode.isComplete(_code.text)) return;
+  Future<void> _join() => _joinWith(_code.text);
+
+  /// The same door for the typed code and for the way back to the last room:
+  /// one preview, one trust dialog, one reentry guard. Going back is entering
+  /// again, with everything entering asks.
+  Future<void> _joinWith(String invite) async {
+    if (!InviteCode.isComplete(invite)) return;
     // Reentry guard: Enter on the field fires this too, and a second preview
     // during the first one would stack two trust dialogs.
     if (_resolvingInvite) return;
@@ -131,7 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
     //
     // El nombre sale del código PEGADO, y este lado no lo normaliza: el texto
     // viaja tal cual al daemon, que es la frontera de entrada hostil.
-    final String seed = InviteCode.seedOf(_code.text);
+    final String seed = InviteCode.seedOf(invite);
     if (seed.isEmpty) return;
     // Se le pregunta al daemon qué hay detrás del código ANTES de enseñar el
     // diálogo, para que la huella de quien hospeda esté ahí cuando aparece.
@@ -144,13 +150,13 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _resolvingInvite = true);
     final PendingInvite? preview;
     try {
-      preview = await context.read<SessionCubit>().previewInvite(_code.text);
+      preview = await context.read<SessionCubit>().previewInvite(invite);
     } finally {
       if (mounted) setState(() => _resolvingInvite = false);
     }
     if (!mounted) return;
     _pedirConfianza(
-      TrustRequest.joining(seed: seed, code: _code.text, preview: preview),
+      TrustRequest.joining(seed: seed, code: invite, preview: preview),
     );
   }
 
@@ -242,6 +248,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 onReopen: () => context.read<SessionCubit>().resumeSavedRoom(),
                 onDiscard: () =>
                     context.read<SessionCubit>().discardSavedRoom(),
+              ),
+              const SizedBox(height: AppSpacing.x5l),
+            ],
+            // La vuelta manual, solo con la automática apagada y sin nada
+            // más ofreciéndose: mientras el daemon vuelve solo lo cuenta
+            // ReturningNotice, y la sala propia guardada tiene su aviso.
+            if (session.lastRoom != null &&
+                !session.lastRoom!.autoReturn &&
+                session.health.returning == null &&
+                session.savedRoom == null &&
+                !session.hasRoom) ...<Widget>[
+              LastRoomNotice(
+                last: session.lastRoom!,
+                onReturn: () => _joinWith(session.lastRoom!.invite),
               ),
               const SizedBox(height: AppSpacing.x5l),
             ],
