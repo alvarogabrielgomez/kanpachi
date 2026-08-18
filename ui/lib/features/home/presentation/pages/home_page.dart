@@ -276,6 +276,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
             if (session.health.returning != null) ...<Widget>[
               ReturningNotice(
+                progress: session.progress,
                 returning: session.health.returning!,
                 seedDown: session.health.seedDown,
                 onLeave: () => context.read<SessionCubit>().leave(),

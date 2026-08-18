@@ -19,6 +19,7 @@ class AppMessageNotice extends StatelessWidget {
     required this.message,
     this.titleStyle,
     this.actions,
+    this.below,
     this.pulse = false,
     super.key,
   });
@@ -32,6 +33,12 @@ class AppMessageNotice extends StatelessWidget {
   /// Los botones, cuando el aviso pide decidir algo. El catálogo no los trae:
   /// el texto es del producto y la acción es de la pantalla.
   final List<Widget>? actions;
+
+  /// Lo que va debajo del texto y encima de los botones, cuando el aviso
+  /// enseña algo que no es texto. Lo pidió la vuelta a la sala, que pinta ahí
+  /// su barra de progreso mientras el intento corre. Mismo reparto que
+  /// [actions]: el texto es del catálogo, y lo que se dibuja, de la pantalla.
+  final Widget? below;
 
   final bool pulse;
 
@@ -48,9 +55,16 @@ class AppMessageNotice extends StatelessWidget {
       MessageSeverity.error => AppNoticeTone.error,
     };
 
-    final Widget body = _MessageBody(message: message);
+    Widget body = _MessageBody(message: message);
+    if (below != null) {
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[body, below!],
+      );
+    }
 
-    if (message.title == null && actions == null) {
+    if (message.title == null && actions == null && below == null) {
       return AppNotice.line(body: body, tone: tone, pulse: pulse);
     }
     return AppNotice(

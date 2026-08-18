@@ -364,6 +364,13 @@ class SessionCubit extends Cubit<SessionState> {
       final LastRoom? lastKnown = sala == null
           ? await _repository.lastRoom()
           : null;
+      // Los pasos del intento de vuelta, solo mientras hay vuelta: el aviso de
+      // la portada pinta con ellos su barra. El sondeo denso de las esperas no
+      // corre acá, porque volver es del daemon y no una operación que la
+      // ventana haya pedido; el latido alcanza para una barra de fondo.
+      final Progress? vuelta = sala == null && salud.returning != null
+          ? await _repository.progress()
+          : null;
       if (isClosed) return;
       emit(
         state.copyWith(
@@ -375,6 +382,7 @@ class SessionCubit extends Cubit<SessionState> {
           clearSavedRoom: anterior == null,
           lastRoom: lastKnown,
           clearLastRoom: lastKnown == null,
+          progress: vuelta,
           daemonDown: false,
           // Volver a estar dentro de una sala tras haberla perdido de vista
           // tiene que devolver también la fase, o la app se queda con la sala

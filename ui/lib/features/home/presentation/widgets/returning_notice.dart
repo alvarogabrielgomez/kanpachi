@@ -1,7 +1,13 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_progress_bar.dart';
+import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
+import 'package:kanpachi_ui/core/messages/loading_phrases.dart';
 import 'package:kanpachi_ui/core/messages/message_catalog.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/progress.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/returning.dart';
 
 /// El aviso de que esta máquina está volviendo a una sala en la que estuvo.
@@ -23,6 +29,7 @@ class ReturningNotice extends StatelessWidget {
   const ReturningNotice({
     required this.returning,
     required this.onLeave,
+    this.progress,
     this.seedDown = false,
     super.key,
   });
@@ -39,8 +46,29 @@ class ReturningNotice extends StatelessWidget {
   /// dónde mirar, y no es lo mismo un host dormido que un servidor caído.
   final bool seedDown;
 
+  /// Los pasos del intento EN CURSO, cuando lo hay. Entre intento e intento no
+  /// llega ninguno y la barra no se pinta: ahí lo que corre es el reloj, y eso
+  /// ya lo dice el texto. Pedido el 2026-08-18, mirando una vuelta real: el
+  /// aviso decía que volvía y nada se movía mientras el intento avanzaba de
+  /// verdad por sus pasos.
+  final Progress? progress;
+
+  /// Cuánto lleva el intento, con la vara de ENTRAR a una sala: volver es
+  /// entrar con la credencial guardada, así que pasa por los mismos sitios.
+  /// Mismo tope que el loading, para que el final real sea el que la llena.
+  double get _avance {
+    final int hechos = progress?.steps.length ?? 0;
+    if (hechos == 0) return 0;
+    return math.min(
+      hechos / expectedSteps(LoadingFlow.joining),
+      maxLoadingFraction,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final Progress? p = progress;
+    final bool intentando = p != null && p.running && p.steps.isNotEmpty;
     return AppMessageNotice(
       message: AppMessages.returning(
         room: returning.name,
@@ -50,6 +78,12 @@ class ReturningNotice extends StatelessWidget {
         seedDown: seedDown,
       ),
       pulse: true,
+      below: intentando
+          ? Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.x3l),
+              child: AppProgressBar(value: _avance),
+            )
+          : null,
       actions: <Widget>[
         AppButton(
           label: 'Salir de la sala',
