@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
+import 'package:kanpachi_ui/core/design_system/molecules/app_dialog.dart';
 import 'package:kanpachi_ui/core/design_system/theme/app_theme.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/density_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
@@ -155,6 +157,37 @@ void main() {
               '$pantalla se dibujó en un cuerpo colapsado: el test no '
               'estaría probando nada.',
         );
+      }
+
+      // **Un diálogo que no entra NO desborda, y ese fue el verde falso.**
+      // [AppModal] mete su contenido en un `SingleChildScrollView`, que se
+      // queda tan contento con lo que no cabe: recorta y deja recorrer, sin
+      // una línea de aviso. El caso real es del 2026-08-18: el diálogo del
+      // alta cortaba su propio botón por abajo con los tres tamaños en verde,
+      // y lo vio el dueño en pantalla.
+      //
+      // Lo que se exige NO es que no haya scroll —una ventana de 520 px de
+      // alto con un diálogo largo lo va a necesitar, y para eso está—, es que
+      // **el botón que cierra el diálogo se vea sin recorrer nada**. Un
+      // diálogo cuyo texto se recorre es incómodo; uno cuya única salida está
+      // fuera de la pantalla es un callejón.
+      if (dialogo != AppDialog.none || confianza != null) {
+        final Finder botones = find.descendant(
+          of: find.byType(AppModal),
+          matching: find.byType(AppButton),
+        );
+        for (final Element e in botones.evaluate()) {
+          final RenderBox caja = e.renderObject! as RenderBox;
+          final double abajo =
+              caja.localToGlobal(Offset.zero).dy + caja.size.height;
+          if (abajo > ventana.height + 0.5) {
+            desbordes.add(
+              'el botón "${(e.widget as AppButton).label}" del diálogo '
+              'termina en ${abajo.toStringAsFixed(0)} px y la ventana mide '
+              '${ventana.height.toInt()}: hay que recorrer para llegar a él.',
+            );
+          }
+        }
       }
     } finally {
       FlutterError.onError = anterior;

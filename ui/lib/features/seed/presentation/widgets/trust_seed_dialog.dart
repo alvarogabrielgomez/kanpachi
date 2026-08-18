@@ -101,6 +101,43 @@ class _TrustSeedDialogState extends State<TrustSeedDialog> {
 
     return AppModal(
       onDismiss: abandonar,
+      footer: AppModalActions(
+        stretch: true,
+        // Con la huella cambiada el botón dice lo que hace de verdad y deja
+        // de ser el camino cómodo: se pinta como el de cancelar. No se
+        // quita, porque el aviso avisa y quitarlo sería bloquear con otro
+        // nombre. Ver [HostTrustBlock].
+        confirmLabel: _huellaCambiada
+            ? 'Entrar igual'
+            : (entrando ? 'Confiar y entrar' : 'Confiar y crear'),
+        confirmVariant: _huellaCambiada
+            ? AppButtonVariant.ghost
+            : AppButtonVariant.primaryFlat,
+        onCancel: abandonar,
+        onConfirm: () async {
+          shell.closeDialog();
+          // El juego, si lo hubo, sale de la sesión y no de la petición:
+          // quien lo eligió fue el diálogo anterior y ahí sigue guardado.
+          //
+          // **Sin `dropHostIntent` acá.** Confirmar no abandona: la
+          // creación que arranca es la que decide, y es ella la que
+          // recuerda la intención cuando falla por falta de contraseña.
+          // `replace` viaja tal cual llegó: quien decidió si hacía falta
+          // preguntar fue el daemon, y quien preguntó fue el diálogo de
+          // antes. Acá solo se pasa.
+          final bool ok = entrando
+              ? await session.joinRoom(
+                  widget.request.code,
+                  replace: widget.request.replace,
+                )
+              : await session.createRoom(
+                  name: _nombreFinal,
+                  game: session.state.pendingGame,
+                  replace: widget.request.replace,
+                );
+          if (ok) shell.go(AppScreen.room);
+        },
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -127,44 +164,6 @@ class _TrustSeedDialogState extends State<TrustSeedDialog> {
           ],
           const SizedBox(height: AppSpacing.lg),
           SeedTrustBlock(joining: entrando),
-          const SizedBox(height: AppSpacing.x5l),
-          AppModalActions(
-            stretch: true,
-            // Con la huella cambiada el botón dice lo que hace de verdad y deja
-            // de ser el camino cómodo: se pinta como el de cancelar. No se
-            // quita, porque el aviso avisa y quitarlo sería bloquear con otro
-            // nombre. Ver [HostTrustBlock].
-            confirmLabel: _huellaCambiada
-                ? 'Entrar igual'
-                : (entrando ? 'Confiar y entrar' : 'Confiar y crear'),
-            confirmVariant: _huellaCambiada
-                ? AppButtonVariant.ghost
-                : AppButtonVariant.primaryFlat,
-            onCancel: abandonar,
-            onConfirm: () async {
-              shell.closeDialog();
-              // El juego, si lo hubo, sale de la sesión y no de la petición:
-              // quien lo eligió fue el diálogo anterior y ahí sigue guardado.
-              //
-              // **Sin `dropHostIntent` acá.** Confirmar no abandona: la
-              // creación que arranca es la que decide, y es ella la que
-              // recuerda la intención cuando falla por falta de contraseña.
-              // `replace` viaja tal cual llegó: quien decidió si hacía falta
-              // preguntar fue el daemon, y quien preguntó fue el diálogo de
-              // antes. Acá solo se pasa.
-              final bool ok = entrando
-                  ? await session.joinRoom(
-                      widget.request.code,
-                      replace: widget.request.replace,
-                    )
-                  : await session.createRoom(
-                      name: _nombreFinal,
-                      game: session.state.pendingGame,
-                      replace: widget.request.replace,
-                    );
-              if (ok) shell.go(AppScreen.room);
-            },
-          ),
         ],
       ),
     );

@@ -15,11 +15,25 @@ class AppModal extends StatelessWidget {
   const AppModal({
     required this.child,
     required this.onDismiss,
+    this.footer,
     this.width = 430,
     super.key,
   });
 
   final Widget child;
+
+  /// Lo que se queda QUIETO abajo mientras el resto se recorre: las acciones.
+  ///
+  /// Sin esto los botones viajaban dentro del área que se recorre, y un
+  /// diálogo más alto que la ventana los dejaba fuera de la pantalla. El
+  /// comentario de abajo decía que el scroll evitaba justamente eso, y no lo
+  /// evitaba: con el botón dentro, se los come igual. Medido el 2026-08-18
+  /// con el diálogo del alta, cortado por su propio botón, y con el de
+  /// confianza del seed en la ventana mínima.
+  ///
+  /// Lo que se recorre es el TEXTO, que es lo que puede crecer. La salida
+  /// está siempre a la vista.
+  final Widget? footer;
 
   /// Clic fuera del cuadro. Siempre existe: un modal sin salida es una
   /// trampa, y ninguno de estos tres es obligatorio.
@@ -72,12 +86,22 @@ class AppModal extends StatelessWidget {
                         ),
                       ],
                     ),
-                    // Si no cabe a lo alto, se recorre. Un modal que se sale
-                    // de la ventana se come sus propios botones, y entonces
-                    // no hay forma de confirmar ni de cancelar lo que vino a
-                    // preguntar. Pasa de verdad: ventana en el mínimo, o el
-                    // texto largo de la regla ajena.
-                    child: SingleChildScrollView(child: child),
+                    // Si no cabe a lo alto, se recorre el CONTENIDO, y las
+                    // acciones se quedan abajo a la vista. Pasa de verdad:
+                    // ventana en el mínimo, o el texto largo de la regla
+                    // ajena. `Flexible` y no `Expanded`: un diálogo corto
+                    // tiene que seguir midiendo lo que mide.
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        Flexible(child: SingleChildScrollView(child: child)),
+                        if (footer != null) ...<Widget>[
+                          const SizedBox(height: AppSpacing.x6l),
+                          footer!,
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ),

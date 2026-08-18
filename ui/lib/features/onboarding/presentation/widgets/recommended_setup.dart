@@ -102,6 +102,14 @@ class RecommendedSetupDialog extends StatelessWidget {
     final ShellCubit shell = context.read<ShellCubit>();
     return AppModal(
       onDismiss: shell.closeDialog,
+      // Un solo botón y no [AppModalActions]: no hay nada que cancelar, esto
+      // explica y se cierra. La casilla se marca o se desmarca en la pantalla
+      // de atrás, que es donde estaba la decisión.
+      footer: AppButton(
+        label: 'Entendido',
+        height: 39.5,
+        onPressed: shell.closeDialog,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -112,55 +120,37 @@ class RecommendedSetupDialog extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xl),
           Text(
-            'Al continuar, Kanpachi cierra en esta PC los puertos por los que '
-            'otras máquinas piden carpetas compartidas, Escritorio remoto y '
-            'administración remota.',
+            'Al continuar, esta PC deja de responder cuando le piden carpetas '
+            'compartidas, Escritorio remoto o administración remota.',
             style: context.type.body.copyWith(color: colors.textOnChip),
           ),
-          const SizedBox(height: AppSpacing.x5l),
-          const _Punto(
-            title: 'Vale para todas tus redes, no solo para Kanpachi',
-            body:
-                'Es lo que te protege en el wifi de un bar o de un hotel, que '
-                'es donde Kanpachi no está mirando. Tu sala ya estaba tapada '
-                'sin esto.',
-          ),
           const SizedBox(height: AppSpacing.x3l),
           const _Punto(
-            title: 'Se queda puesto hasta que vos lo saques',
+            title: 'Vale en todas tus redes',
             body:
-                'No se apaga al cerrar la sala ni al cerrar Kanpachi. Se '
-                'desactiva en Configuración cuando quieras.',
+                'Te protege en el wifi de un bar o de un hotel, que es donde '
+                'Kanpachi no está mirando. Tu sala ya estaba tapada sin esto.',
           ),
-          const SizedBox(height: AppSpacing.x3l),
+          const SizedBox(height: AppSpacing.xl),
+          const _Punto(
+            title: 'Se queda hasta que vos lo saques',
+            body:
+                'No se apaga al cerrar la sala ni Kanpachi. Está en '
+                'Configuración.',
+          ),
+          const SizedBox(height: AppSpacing.xl),
           const _Punto(
             title: 'Lo que NO cambia',
             body:
-                'Entrar por Escritorio remoto a OTRAS máquinas, abrir carpetas '
-                'compartidas de otros y navegar siguen igual. Solo deja de '
-                'responder esta PC cuando se lo piden a ella.',
-          ),
-          const SizedBox(height: AppSpacing.x5l),
-          Text(
-            'Si compartís carpetas desde esta PC o entrás a ella por '
-            'Escritorio remoto, desmarcá la casilla: no se aplica nada y '
-            'podés decidirlo después.',
-            style: context.type.bodySm.copyWith(color: colors.textMuted),
-          ),
-          const SizedBox(height: AppSpacing.x6l),
-          // Un solo botón y no [AppModalActions]: no hay nada que cancelar,
-          // esto explica y se cierra. La casilla se marca o se desmarca en la
-          // pantalla de atrás, que es donde estaba la decisión.
-          SizedBox(
-            width: double.infinity,
-            child: AppButton(
-              label: 'Entendido',
-              height: 39.5,
-              onPressed: shell.closeDialog,
-            ),
+                'Llegar a OTRAS máquinas —su escritorio, sus carpetas— y '
+                'navegar siguen igual. Desmarcá la casilla si compartís '
+                'carpetas desde esta PC.',
           ),
         ],
       ),
+      // Un solo botón y no [AppModalActions]: no hay nada que cancelar, esto
+      // explica y se cierra. La casilla se marca o se desmarca en la pantalla
+      // de atrás, que es donde estaba la decisión.
     );
   }
 }

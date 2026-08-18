@@ -23,6 +23,14 @@ class ConfirmQuarantineOffDialog extends StatelessWidget {
     return AppModal(
       width: 420,
       onDismiss: shell.closeDialog,
+      footer: AppModalActions(
+        confirmLabel: 'Reabrirlos',
+        onCancel: shell.closeDialog,
+        onConfirm: () {
+          context.read<SessionCubit>().setQuarantine(enabled: false);
+          shell.closeDialog();
+        },
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -36,15 +44,6 @@ class ConfirmQuarantineOffDialog extends StatelessWidget {
             'Tu PC vuelve a responder a compartir archivos y a Escritorio '
             'remoto en todas tus redes. Tu sala de Kanpachi no cambia.',
             style: context.type.body.copyWith(color: colors.textOnChip),
-          ),
-          const SizedBox(height: AppSpacing.x6l),
-          AppModalActions(
-            confirmLabel: 'Reabrirlos',
-            onCancel: shell.closeDialog,
-            onConfirm: () {
-              context.read<SessionCubit>().setQuarantine(enabled: false);
-              shell.closeDialog();
-            },
           ),
         ],
       ),

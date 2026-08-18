@@ -57,7 +57,16 @@ class _HomeScreenState extends State<HomeScreen> {
   /// en la sesión, y las dos direcciones están cableadas: lo que se escribe acá
   /// sube con [SessionCubit.setRoomNameDraft], y lo que cambie en el diálogo de
   /// confianza baja por el oyente de [build]. Ver [SessionState.roomNameDraft].
-  final TextEditingController _roomName = TextEditingController();
+  ///
+  /// **Nace con lo que ya hubiera**, y esa era la mitad que faltaba: el oyente
+  /// solo baja los CAMBIOS, así que un borrador escrito antes —en el diálogo
+  /// de confianza, que lo edita en cada tecla— dejaba este campo vacío
+  /// enseñando su sugerencia, y los dos sitios decían cosas distintas del
+  /// mismo dato. Visto en pantalla el 2026-08-18: la portada con la
+  /// sugerencia y el diálogo con lo escrito.
+  late final TextEditingController _roomName = TextEditingController(
+    text: context.read<SessionCubit>().state.roomNameDraft,
+  );
 
   /// Se sortea una vez y se queda. Volver a sortearlo en cada rebuild haría
   /// que el nombre sugerido bailara mientras se escribe el código de al lado.
