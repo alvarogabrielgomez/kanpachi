@@ -17,6 +17,10 @@ This file is in English, like commit messages and release notes, because a relea
 - Flip the quarantine like the switch it is, from any face: in the window's Configuración, drawn from the measurement and never from the intention, with plain words on what each position means and a one-line confirmation only when reopening the ports; from the wizard's menu entry that carries its state in its own label; and with `kanpachi quarantine on|off`, whose bare form tells the state in symptom-first words — "having trouble sharing a folder from this PC? this is why" — for whoever arrives without knowing the word quarantine. A room open without it shows the notice with the close-them button right next to it, and `kanpachi doctor` explains it on both systems, fixing only what a recorded yes asked for ([964449a](https://github.com/alvarogabrielgomez/kanpachi/commit/964449a), [3787bc3](https://github.com/alvarogabrielgomez/kanpachi/commit/3787bc3), [96827d1](https://github.com/alvarogabrielgomez/kanpachi/commit/96827d1))
 - Measure whether the base quarantine is actually in force, once a minute, from the system itself: every rule present, some missing, disabled or edited away, none at all, or could-not-check, each its own answer. It travels in the status every face polls, visible today under `quarantine` in `kanpachi status --json`, and it is what the upcoming notices and the doctor will read ([ab1f223](https://github.com/alvarogabrielgomez/kanpachi/commit/ab1f223))
 
+### Fixed
+
+- Stop the Linux quarantine strangling the machine talking to ITSELF: a local process connecting to a quarantined port on 127.0.0.1 hung until its timeout, measured on the bench with a control port that connected instantly. The loopback is exempted first in both chains, which is what Windows already did at the system level — the quarantine protects from networks, and a machine talking to itself is not one
+
 ## [0.4.0] - 2026-08-17
 
 ### Added

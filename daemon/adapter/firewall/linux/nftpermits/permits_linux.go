@@ -326,12 +326,22 @@ func quarantineScript(rules []domain.QuarantineRule) (string, error) {
 	// de todo lo demás, así que la cuarentena le gana a cualquier `accept` que
 	// alguien tenga más abajo, incluido el nuestro.
 	fmt.Fprintf(&b, "\t\ttype filter hook input priority filter - 10; policy accept;\n")
+	// El loopback se exime PRIMERO, y es un defecto medido y no una cortesía:
+	// en el banco, un proceso local conectando a 127.0.0.1:5985 se COLGABA
+	// hasta el timeout con la tabla cargada, y el mismo test en un puerto
+	// fuera de la lista conectaba al instante. Windows exime el loopback a
+	// nivel del sistema y este hook no, así que sin esta línea las dos
+	// plataformas prometen cosas distintas. La forma del fallo era la peor:
+	// no rebota, se cuelga. La cuarentena protege de las REDES; una máquina
+	// hablándose a sí misma no es una red.
+	fmt.Fprintf(&b, "\t\tiifname \"lo\" accept\n")
 	if err := writeRules(&b, orden, true); err != nil {
 		return "", err
 	}
 	fmt.Fprintf(&b, "\t}\n")
 	fmt.Fprintf(&b, "\tchain output {\n")
 	fmt.Fprintf(&b, "\t\ttype filter hook output priority filter - 10; policy accept;\n")
+	fmt.Fprintf(&b, "\t\toifname \"lo\" accept\n")
 	if err := writeRules(&b, orden, false); err != nil {
 		return "", err
 	}
