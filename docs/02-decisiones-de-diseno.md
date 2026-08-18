@@ -619,6 +619,8 @@ Por eso la auditoría no es un detalle de cortesía sobre la red de casa, es par
 
 Al activar un perfil, `netfw` audita si existe una regla de entrada permisiva para el ejecutable del juego en los perfiles Privado o Público. Si la hay, la UI lo dice y ofrece desactivarla mientras dure la sala, restaurándola al salir.
 
+**La desactivación la pide cada máquina sobre la suya, invitado incluido.** La regla vive en el firewall de quien la tiene, y la segunda mitad del hueco —el ejecutable abierto a toda la sala por `kanpachi0`— la sufre el miembro igual que el host. Medido en vivo el 2026-08-18: el aviso le ofrecía el botón al invitado y el daemon lo negaba con un guard de host heredado de la activación del perfil. Hoy la suspensión pide sala y nada más, que es lo que la restauración al salir ya asumía, porque corre para cualquier rol desde el primer día.
+
 **Razones.** Forzar el bind acotado depende de que cada juego lo permita y de editar sus archivos, invasivo y frágil. Ignorarlo contradice la promesa central del producto: si Kanpachi existe para que nadie exponga su máquina, avisar de una exposición que ya está ahí es exactamente su trabajo. Refuerza el mensaje: Kanpachi no solo evita abrir puertos, cierra los que otros dejaron abiertos.
 
 **Costo aceptado:** tocar reglas que Kanpachi no creó. Mitigación: nunca se borran, solo se desactivan; se registra su estado previo; se restauran al salir de la sala y también en el arranque del servicio si quedó algo pendiente por una salida sucia. Siempre con confirmación explícita del usuario, jamás automático.

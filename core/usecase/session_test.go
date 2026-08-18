@@ -440,6 +440,36 @@ func TestSoloElHostPuedeLasTresOperaciones(t *testing.T) {
 	}
 }
 
+// La suspensión de la regla ajena NO es una operación del host: la regla vive
+// en el firewall de ESTA máquina y la deja alcanzable desde su LAN y desde
+// kanpachi0 (decisión 12), así que la pide cualquier miembro sobre sí mismo.
+// Llevaba requireHost heredado y el 2026-08-18 se vio en vivo: al invitado el
+// aviso le ofrecía el botón y el daemon se lo negaba. Sala sí hace falta,
+// porque la suspensión dura lo que dura la sala.
+func TestElInvitadoSuspendeLaReglaAjenaDeSuMáquina(t *testing.T) {
+	b := nuevoBanco(t)
+	regla := []domain.ForeignRule{{Name: "Project Zomboid", Executable: `C:PZpz64.exe`}}
+
+	if err := b.session.SuspendForeignRules(ctx(), regla); !errors.Is(err, ErrNoRoom) {
+		t.Errorf("sin sala tiene que negar con ErrNoRoom: %v", err)
+	}
+
+	b.control.credencial = domain.Credential{
+		ID: "c1", Token: "t", NetworkName: "kanpachi-real",
+		VirtualIP: netip.MustParseAddr("100.87.3.5"),
+		Subnet:    netip.MustParsePrefix("100.87.3.0/24"),
+	}
+	if _, err := b.session.JoinRoom(ctx(), "A7K2M9QX@seed.midominio.com", nick(t, "humberto"), false, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.session.SuspendForeignRules(ctx(), regla); err != nil {
+		t.Fatalf("el invitado no pudo suspender la regla de su propia máquina: %v", err)
+	}
+	if n := len(b.firewall.suspendió); n != 1 {
+		t.Errorf("el firewall tenía que anotar 1 regla suspendida y anotó %d", n)
+	}
+}
+
 // TestEntrarPasaPorElVestíbuloYSaleDeÉl.
 //
 // El orden importa: quedarse en el vestíbulo después de entrar mantendría

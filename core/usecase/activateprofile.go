@@ -130,15 +130,25 @@ func (s *Session) BlockingForeignRules(ctx context.Context, gameID string) ([]do
 // Nunca se borran, solo se desactivan, y el estado previo se persiste antes de
 // tocar nada. Se restauran al salir de la sala y también al arrancar el
 // servicio, por si una salida sucia dejó algo suspendido.
+//
+// Lo puede pedir CUALQUIER miembro, no solo el host, y el porqué importa: la
+// regla vive en el firewall de ESTA máquina y la deja alcanzable desde su LAN
+// y desde kanpachi0 (decisión 12, la segunda mitad del hueco), así que
+// suspenderla es un acto de esta máquina sobre sí misma. Llevaba requireHost
+// heredado de la activación del perfil, y el 2026-08-18 se vio en vivo lo que
+// eso producía: al invitado el aviso le ofrecía el botón y el daemon se lo
+// negaba. La restauración al salir y al arrancar ya corría para cualquier rol;
+// esto empareja la ida con la vuelta. Sala sí hace falta: la suspensión es
+// "mientras dure la sala", y sin sala no hay salida que la restaure.
 func (s *Session) SuspendForeignRules(ctx context.Context, rules []domain.ForeignRule) error {
 	if len(rules) == 0 {
 		return nil
 	}
 	s.mu.Lock()
-	err := s.requireHost()
+	inRoom := s.state.Conn.InRoom()
 	s.mu.Unlock()
-	if err != nil {
-		return err
+	if !inRoom {
+		return ErrNoRoom
 	}
 	if err := s.deps.Firewall.SuspendForeign(ctx, rules); err != nil {
 		return fmt.Errorf("desactivando las reglas del juego: %w", err)

@@ -21,6 +21,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 - Stop the Linux quarantine strangling the machine talking to ITSELF: a local process connecting to a quarantined port on 127.0.0.1 hung until its timeout, measured on the bench with a control port that connected instantly. The loopback is exempted first in both chains, which is what Windows already did at the system level — the quarantine protects from networks, and a machine talking to itself is not one ([88974b2](https://github.com/alvarogabrielgomez/kanpachi/commit/88974b2))
 - Answer `kanpachi quarantine` asked with nothing: the bare read travels without parameters, the daemon refused it with "faltan los parámetros", and the state-telling half of the new switch never worked. Found live the first time the command met a real daemon — the exact absent-params defect `seed` had already found and fixed on its own method ([3b33818](https://github.com/alvarogabrielgomez/kanpachi/commit/3b33818))
+- Let a GUEST disable the game's own leftover firewall rule on their machine: the notice offered the button and the daemon refused with "only the host can do that", a guard inherited from profile activation. The rule lives on the guest's own firewall and leaves their game reachable from their home network and from the whole room, so the suspension asks for a room and nothing else — which is what the restore-on-exit already assumed, running for every role since day one. Found live on 2026-08-18 as a guest in a friend's room
 
 ## [0.4.0] - 2026-08-17
 
