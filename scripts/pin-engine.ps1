@@ -38,15 +38,20 @@ foreach ($line in $sums -split "`n") {
 if (-not $windows) { throw "SHA256SUMS-engine of $Tag has no line for kanpachi-engine.exe" }
 if (-not $linux) { throw "SHA256SUMS-engine of $Tag has no line for kanpachi-engine" }
 
+# Windows PowerShell 5.1 reads a BOM-less file as the system ANSI codepage and
+# writes UTF-8 WITH a BOM, so a plain read-modify-write mangles every accented
+# character and every em-dash in the header, and prepends a BOM the awk in
+# release.yml would then read as part of the first key. Both ends are pinned
+# to UTF-8 without BOM instead.
 # Rewrite only the three value lines; the header explains itself and stays.
-$lines = Get-Content $pin
+$lines = Get-Content $pin -Encoding UTF8
 $rewritten = $lines | ForEach-Object {
     if ($_ -match '^tag\s') { "tag $Tag" }
     elseif ($_ -match '^sha256-windows\s') { "sha256-windows $windows" }
     elseif ($_ -match '^sha256-linux\s') { "sha256-linux $linux" }
     else { $_ }
 }
-Set-Content -Path $pin -Value $rewritten -Encoding utf8
+[System.IO.File]::WriteAllLines($pin, $rewritten, [System.Text.UTF8Encoding]::new($false))
 
 Write-Host ""
 Write-Host "engine.pin now says:"
