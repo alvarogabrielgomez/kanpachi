@@ -91,6 +91,11 @@ abstract final class DaemonMethods {
   /// distinguishable from a chosen name, and then it would win.
   static const String nickname = 'nickname';
 
+  /// Which engine this installation carries: build id and network library,
+  /// read off the file's sentinels by the daemon. Read-only, for the settings
+  /// screen's version detail.
+  static const String engineInfo = 'engine_info';
+
   /// El password del registro propio. Ver `protocol.MethodSeedPassword`.
   ///
   /// La respuesta es un acuse vacío: no vuelven tokens, no vuelve el estado de

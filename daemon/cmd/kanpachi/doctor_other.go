@@ -13,3 +13,6 @@ func chequeosDelSistema() []chequeo { return []chequeo{chequeoDelCanal()} }
 func pistaDeElevación() string {
 	return "The local channel is written for Windows and for Linux."
 }
+
+// rutaDelMotor contesta vacío: sin producto no hay motor que nombrar.
+func rutaDelMotor() string { return "" }

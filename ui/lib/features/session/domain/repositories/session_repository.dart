@@ -1,3 +1,4 @@
+import 'package:kanpachi_ui/features/session/domain/entities/engine_info.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
@@ -238,6 +239,11 @@ abstract interface class SessionRepository {
   /// así que una escritura desde acá falla callada. Ver [MachineProfile], que
   /// es la lectura del mismo dato antes del primer frame.
   Future<MachineNickname> nickname({String? nickname});
+
+  /// Qué motor lleva esta instalación. Solo lectura; el daemon lo saca de los
+  /// centinelas del fichero que va a lanzar. Para el detalle de versión de
+  /// Configuración.
+  Future<EngineInfo> engineInfo();
 
   /// Entrega el password del registro propio, para poder HOSPEDAR en él.
   ///

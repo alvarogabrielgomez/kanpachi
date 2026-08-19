@@ -1,0 +1,18 @@
+# The engine this product ships, pinned by tag and by content.
+#
+# `release.yml` downloads these two binaries from the engine repository's
+# release of that tag and REFUSES to package anything whose SHA256 is not the
+# one written here. The hashes come from the SHA256SUMS-engine that the
+# engine's own workflow publishes next to the binaries — the ones that passed
+# its customs (clippy, tests, the no-listener sweep) on BOTH platforms.
+#
+# Moving to a new engine is: tag it there, wait for its release, copy the tag
+# and the two hashes here, one commit. `git log` on this file IS the history
+# of which engine every Kanpachi release carried.
+#
+# A developer machine never reads this file: local builds keep coming from
+# `Resolve-KanpachiEngine` (newest of C:\kt\release and friends), which is
+# what makes iterating on the engine not require a release per attempt.
+tag v0.1.0
+sha256-windows PENDING
+sha256-linux PENDING

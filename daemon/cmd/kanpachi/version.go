@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"runtime"
 	"runtime/debug"
+
+	"github.com/accentiostudios/kanpachi/internal/engineid"
 )
 
 // Version la sella el que compila, con
@@ -27,19 +29,35 @@ var Version = "dev"
 func cmdVersion(_ context.Context, op opciones, _ []string) error {
 	revisión, sucio := revisión()
 
+	// El motor se lee del FICHERO, sin ejecutarlo, por los centinelas que su
+	// compilación le sella dentro. Vacío significa que existe y es anterior al
+	// centinela; ausente o ilegible se calla, porque esta orden describe este
+	// binario y el motor es un dato extra, no una condición.
+	motor := ""
+	if ruta := rutaDelMotor(); ruta != "" {
+		if id, err := engineid.Scan(ruta); err == nil {
+			motor = id.String()
+		}
+	}
+
 	if op.json {
-		fmt.Printf("{\"version\":%q,\"revision\":%q,\"dirty\":%v,\"go\":%q,\"os\":%q}\n",
-			Version, revisión, sucio, runtime.Version(), runtime.GOOS)
+		fmt.Printf("{\"version\":%q,\"revision\":%q,\"dirty\":%v,\"engine\":%q,\"go\":%q,\"os\":%q}\n",
+			Version, revisión, sucio, motor, runtime.Version(), runtime.GOOS)
 		return nil
 	}
 
-	fmt.Printf("kanpachi %s\n", Version)
+	// Una versión para las tres caras, y decirlo es parte de la respuesta: el
+	// daemon, la terminal y la ventana salen del mismo corte y viajan juntos.
+	fmt.Printf("kanpachi %s (daemon, cli, ui)\n", Version)
 	if revisión != "" {
 		marca := ""
 		if sucio {
 			marca = " (with uncommitted changes)"
 		}
 		fmt.Printf("  commit  %s%s\n", revisión, marca)
+	}
+	if motor != "" {
+		fmt.Printf("  engine  %s\n", motor)
 	}
 	fmt.Printf("  go      %s on %s/%s\n", runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	return nil

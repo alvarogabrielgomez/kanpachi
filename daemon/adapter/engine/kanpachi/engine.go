@@ -106,6 +106,9 @@ type Deps struct {
 type Engine struct {
 	deps Deps
 
+	// motorDicho amortiza la línea de identidad del motor: una por proceso.
+	motorDicho sync.Once
+
 	mu   sync.Mutex
 	proc child
 	w    *wire.Writer
@@ -983,6 +986,16 @@ func (e *Engine) Diagnostics(ctx context.Context) (domain.NetCheck, error) {
 		return domain.NetCheck{}, errors.New("el motor dijo que sí y no mandó el diagnóstico")
 	}
 	d := data.Diagnostics
+	// La identidad del PROCESO vivo, una vez por proceso: el fichero en disco
+	// puede haberse reemplazado después de arrancar, y esta es la única voz
+	// que dice qué motor está corriendo de verdad. Al log y no al NetCheck,
+	// porque quien la busca está leyendo kanpachi.log con algo ya roto.
+	if d.EngineBuild != "" {
+		e.motorDicho.Do(func() {
+			e.deps.Log.Info("el motor en marcha se identificó",
+				"build", d.EngineBuild, "lib", d.EngineLib)
+		})
+	}
 	return domain.NetCheck{
 		NATKind:    d.NATKind,
 		UDPBlocked: d.UDPBlocked,

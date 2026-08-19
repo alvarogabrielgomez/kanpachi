@@ -169,6 +169,13 @@ type diagnosticsOut struct {
 	PublicIPs  []string `json:"public_ips"`
 	VirtualIP  string   `json:"virtual_ip"`
 	MTU        uint32   `json:"mtu"`
+	// EngineBuild names the RUNNING process, as opposed to the file on disk,
+	// which can have been replaced since it started. The engine seals it at
+	// compile time; see its src/build_id.rs. An engine older than the field
+	// decodes as empty and logs as unknown.
+	EngineBuild string `json:"engine_build"`
+	// EngineLib is the network stack inside it, same sealing.
+	EngineLib string `json:"engine_lib"`
 }
 
 // event es lo que el motor empuja sin que nadie lo pida.

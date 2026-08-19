@@ -181,6 +181,12 @@ type Host interface {
 	// `SERVICE_CHANGE_CONFIG`, y concedérselo al usuario para tener un
 	// interruptor sería ampliar permisos por comodidad. El daemon ya es SYSTEM.
 	SetAutostart(bool) error
+	// EngineInfo dice qué motor va a lanzar este proceso: el build id y la
+	// librería de red, leídos de los centinelas del FICHERO que tiene al lado.
+	// Vacíos con un motor anterior al centinela, que es un hallazgo normal.
+	// Es del Host y no de la sesión porque describe la INSTALACIÓN, igual que
+	// el autostart, y quien sabe dónde vive el motor es el `main`.
+	EngineInfo() (build, lib string)
 }
 
 // Server atiende una conexión.
@@ -653,6 +659,16 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 
 	case MethodAutostart:
 		return s.autostart(req.Params)
+
+	case MethodEngineInfo:
+		if s.host == nil {
+			return nil, sinHost()
+		}
+		build, lib := s.host.EngineInfo()
+		return result(struct {
+			Build string `json:"build"`
+			Lib   string `json:"lib"`
+		}{build, lib})
 
 	case MethodOwnSeed:
 		return s.ownSeed(ctx, req.Params)

@@ -462,7 +462,7 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 	// El host del proceso: lanzar la interfaz, apagar todo, y el arranque con
 	// Windows. Se construye acá porque el listener del pipe lo necesita, y su
 	// `apagar` se une al final, cuando existe.
-	host := &procesoHost{log: log}
+	host := &procesoHost{log: log, motorRuta: filepath.Join(dirDelBinario(), engineExe)}
 	// El enlace que levantó a este daemon queda puesto ANTES de que la interfaz
 	// exista. Es el arranque en frío del `kanpachi://`: no había daemon, así que
 	// el enlace vino por los argumentos en vez de por el pipe, y la interfaz que

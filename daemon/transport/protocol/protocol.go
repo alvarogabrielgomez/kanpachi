@@ -185,6 +185,12 @@ const (
 	// reenvía su copia pisaría el nombre elegido desde la terminal.
 	MethodNickname Method = "nickname"
 
+	// MethodEngineInfo dice qué motor lleva esta instalación: build id y
+	// librería de red, leídos del fichero que el daemon va a lanzar. Solo
+	// lectura, para la pantalla de Configuración; `kanpachi version` lee lo
+	// mismo directo del disco sin pasar por acá.
+	MethodEngineInfo Method = "engine_info"
+
 	// MethodSeedPassword entrega el password del registro propio, para poder
 	// HOSPEDAR en un seed cerrado.
 	//
@@ -242,6 +248,7 @@ var métodos = map[Method]bool{
 	MethodAutostart:           true,
 	MethodOwnSeed:             true,
 	MethodNickname:            true,
+	MethodEngineInfo:          true,
 	MethodSeedPassword:        true,
 }
 

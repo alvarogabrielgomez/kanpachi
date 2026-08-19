@@ -1,5 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/engine_info.dart';
+import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
+import 'package:kanpachi_ui/ioc/injector.dart';
 import 'package:kanpachi_ui/core/brand.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_card.dart';
@@ -36,6 +41,30 @@ class _UpdateCheckCardState extends State<UpdateCheckCard> {
   /// Si ya se preguntó en esta visita. Cambia el texto de «no se sabe» a «no
   /// hay nada nuevo», que son dos cosas distintas y se veían iguales.
   bool _preguntado = false;
+
+  /// Qué motor lleva esta instalación, contestado por el daemon una vez al
+  /// entrar. Vacío mientras contesta, si el daemon no está, o con un motor
+  /// anterior al centinela: en los tres casos la línea no se pinta, porque
+  /// una versión inventada sería peor que ninguna.
+  EngineInfo _motor = const EngineInfo();
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_leerMotor());
+  }
+
+  Future<void> _leerMotor() async {
+    try {
+      final EngineInfo info = await Injector.instance
+          .get<SessionRepository>()
+          .engineInfo();
+      if (mounted) setState(() => _motor = info);
+    } on Object {
+      // Sin daemon no hay a quién preguntarle, y esta tarjeta sigue diciendo
+      // su versión propia: el detalle del motor es un extra, no una condición.
+    }
+  }
 
   Future<void> _buscar() async {
     setState(() => _buscando = true);
@@ -75,10 +104,27 @@ class _UpdateCheckCardState extends State<UpdateCheckCard> {
                     // La versión que corre, nombrada. «Tienes la 0.2.1» decía
                     // lo mismo con una frase donde alcanza un rótulo, y encima
                     // dejaba la línea de abajo repitiendo el verbo.
+                    // Una versión para las tres caras, y decirlo es parte del
+                    // dato: el daemon, la terminal y esta ventana salen del
+                    // mismo corte y viajan juntos.
                     Text(
-                      'Kanpachi $kAppVersion',
+                      'Kanpachi $kAppVersion (daemon, terminal y ventana)',
                       style: context.type.body.copyWith(color: colors.text),
                     ),
+                    // El motor va aparte porque ES aparte: se versiona por su
+                    // tag y viaja fijado por engine.pin. La línea dice el
+                    // build id sellado en el binario y la librería de red que
+                    // lleva dentro, que es lo que hace contestable «¿qué motor
+                    // es este?» sin abrir una terminal.
+                    if (_motor.known) ...<Widget>[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Motor $_motor',
+                        style: context.type.bodySm.copyWith(
+                          color: colors.textMuted,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 4),
                     Text(
                       switch ((nueva, _preguntado)) {

@@ -145,3 +145,6 @@ func chequeoDelDirectorioDeDatos() chequeo {
 		},
 	}
 }
+
+// rutaDelMotor es la misma ruta que mira el doctor, para `kanpachi version`.
+func rutaDelMotor() string { return motorAlLadoDelDaemon() }

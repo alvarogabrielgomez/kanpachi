@@ -3,6 +3,7 @@ import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/last_room.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/engine_info.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/own_seed.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/saved_room.dart';
@@ -159,6 +160,15 @@ class PipeSessionRepository implements SessionRepository {
     return MachineNickname(
       chosen: r['nickname'] as String? ?? '',
       suggested: r['suggested'] as String? ?? '',
+    );
+  }
+
+  @override
+  Future<EngineInfo> engineInfo() async {
+    final Map<String, Object?> r = await _mapa(DaemonMethods.engineInfo, null);
+    return EngineInfo(
+      build: r['build'] as String? ?? '',
+      lib: r['lib'] as String? ?? '',
     );
   }
 

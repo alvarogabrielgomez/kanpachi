@@ -39,8 +39,8 @@ on:
   workflow_dispatch:
     inputs:
       motor:
-        description: "Ref del repositorio del motor con el que compilar"
-        default: main
+        description: "Tag del motor a empaquetar, saltándose el pin. Vacío usa engine.pin"
+        default: ""
 
 # Empujar el tag Y crear el release sobre ese mismo tag son dos eventos para una
 # sola publicación. Sin esto se compilaría dos veces lo mismo durante veinte
@@ -59,21 +59,53 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # **El motor vive en otro repositorio y se compila acá.**
+      # **El motor vive en otro repositorio, se publica POR TAG, y acá se
+      # DESCARGA.** Hasta el 2026-08-19 se compilaba en este job, y eso tenía
+      # dos defectos que la descarga mata de una vez: el binario que pasaba la
+      # aduana del motor (clippy, tests, el barrido de listeners) no era el que
+      # viajaba —era otra compilación del mismo ref—, y el ref era `main`, un
+      # puntero móvil que no reconstruye nada. Hoy el binario publicado ES el
+      # que pasó la aduana, el pin es contenido (tag + SHA256 en `engine.pin`),
+      # y este job tarda segundos de descarga en vez de doce minutos de Rust.
       #
-      # No se baja de una publicación suya porque todavía no tiene ninguna: hoy
-      # ese repositorio solo compila en cada push. Compilarlo desde el fuente es
-      # lo que hace que este workflow produzca la carga entera sin depender de
-      # que alguien suba un binario a mano.
+      # La espera de 25 minutos cubre la carrera real: taguear el motor y
+      # taguear Kanpachi seguido, con la aduana del motor todavía publicando.
+      # Con tope, porque un motor que nunca va a publicar (aduana roja) tiene
+      # que dejar este release ROJO con nombre y apellido, no colgado.
       #
-      # El ref queda anotado en el cuerpo de la publicación. Es lo que hace
-      # reconstruible este instalador: sin eso, "la versión 0.1.0" no dice con
-      # qué motor se armó.
-      - uses: actions/checkout@v4
-        with:
-          repository: alvarogabrielgomez/kanpachi-engine
-          ref: ${{ inputs.motor || 'main' }}
-          path: motor
+      # `inputs.motor` (solo workflow_dispatch) salta el pin y nombra otro tag:
+      # ahí no hay hash que exigir y se dice a gritos en el log. El binario se
+      # delata igual, porque lleva su build id sellado dentro.
+      - name: El motor, del release de su tag
+        shell: pwsh
+        run: |
+          $pin = @{}
+          Get-Content engine.pin | Where-Object { $_ -match '^\S' -and $_ -notmatch '^#' } | ForEach-Object {
+            $parts = $_ -split '\s+', 2; $pin[$parts[0]] = $parts[1].Trim()
+          }
+          $tag = if ('${{ inputs.motor }}') { '${{ inputs.motor }}' } else { $pin['tag'] }
+          $url = "https://github.com/alvarogabrielgomez/kanpachi-engine/releases/download/$tag/kanpachi-engine.exe"
+          New-Item -ItemType Directory -Force engine | Out-Null
+          $deadline = (Get-Date).AddMinutes(25)
+          while ($true) {
+            try {
+              Invoke-WebRequest -Uri $url -OutFile engine\kanpachi-engine.exe -MaximumRedirection 8
+              break
+            } catch {
+              if ((Get-Date) -gt $deadline) { throw "engine $tag no publico kanpachi-engine.exe en 25 minutos: $_" }
+              Write-Host "engine $tag aun sin assets, reintento en 30s..."
+              Start-Sleep -Seconds 30
+            }
+          }
+          $sha = (Get-FileHash engine\kanpachi-engine.exe -Algorithm SHA256).Hash.ToLower()
+          if ('${{ inputs.motor }}') {
+            Write-Host "::warning::motor $tag por inputs.motor, SIN verificar contra engine.pin. SHA256 $sha"
+          } elseif ($sha -ne $pin['sha256-windows'].ToLower()) {
+            throw "el kanpachi-engine.exe de $tag no es el del pin.`n  pin:      $($pin['sha256-windows'])`n  bajado:   $sha"
+          } else {
+            Write-Host "engine $tag verificado: $sha"
+          }
+          echo "ENGINE_TAG=$tag" >> $env:GITHUB_ENV
 
       # La versión sale del EVENTO, así que se deriva acá y no en un script: es
       # lo único de este job que no es trabajo sino contexto de Actions.
@@ -120,24 +152,8 @@ jobs:
           channel: stable
           cache: true
 
-      # La cadena de Rust del motor la arma su PROPIO script, el mismo que se
-      # usa a mano: localiza vcvars64, protoc, libclang y 7-Zip por su cuenta.
-      # Acá se instala lo único que a la imagen del runner le falta, protoc, en
-      # la ruta de chocolatey que ese script ya conoce.
-      - name: protoc para el motor
-        run: choco install protoc --no-progress -y
-
       - name: Inno Setup
         run: choco install innosetup --no-progress -y
-
-      # `build-engine.ps1` delega en `scripts\build.ps1` del repositorio del
-      # motor: una sola receta, la misma a mano y acá. El target dir se fija
-      # DENTRO del workspace, en la misma ruta que dejaba el `cargo build`
-      # inline de antes, así el paso de empaquetar recibe el binario donde
-      # siempre.
-      - name: Compilar el motor
-        shell: pwsh
-        run: .\scripts\build-engine.ps1 -Repo motor -TargetDir motor\target
 
       # `/third_party/` está en .gitignore por tamaño (~80 MB), así que el
       # checkout llega SIN las DLL del motor y el empaquetado cortaría. El
@@ -166,7 +182,7 @@ jobs:
           .\scripts\build-installer.ps1 `
             -Version "$env:VERSION" `
             -VersionNum "$env:VERSION_NUM" `
-            -Engine "$env:GITHUB_WORKSPACE\motor\target\release\kanpachi-engine.exe" `
+            -Engine "$env:GITHUB_WORKSPACE\engine\kanpachi-engine.exe" `
             -Repo "${{ github.repository }}" `
             -Output "$env:GITHUB_WORKSPACE\dist"
 
@@ -259,7 +275,9 @@ jobs:
             SHA256  ${{ steps.sums.outputs.portable_sha }}
             ```
 
-            Engine built from `alvarogabrielgomez/kanpachi-engine@${{ inputs.motor || 'main' }}`.
+            Engine `${{ env.ENGINE_TAG }}`, downloaded from its own release and
+            verified against `engine.pin` — the binary that passed the engine's
+            customs is the binary inside this installer.
 
             ## Client · Linux, amd64
 
@@ -358,12 +376,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/checkout@v4
-        with:
-          repository: alvarogabrielgomez/kanpachi-engine
-          ref: ${{ inputs.motor || 'main' }}
-          path: motor
-
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -388,28 +400,41 @@ jobs:
           echo "VERSION=${TAG:-0.0.0}" >> "$GITHUB_ENV"
           echo "release_target=$TAG" >> "$GITHUB_OUTPUT"
 
-      # What the engine's Rust chain needs on Linux, each for its own reason.
-      # Same list `scripts/build-linux.sh` states in its header.
-      #
-      # `protobuf-compiler` because EasyTier's protoc autodownloader lives in
-      # `WindowsBuild::check_for_win()`, which is cfg'd to a Windows HOST and
-      # therefore never runs here. `libclang-dev` for kcp-sys's bindgen.
-      # `build-essential` for zstd-sys, and for the dbus that EasyTier declares
-      # as a NON-optional Linux dependency with `features = ["vendored"]`, so it
-      # compiles libdbus from source whether or not magic-dns is on.
-      - name: Lo que pide la cadena de Rust
+      # La mitad Linux de la misma descarga del job de Windows: el binario que
+      # publicó la aduana del motor, verificado contra `engine.pin`. El motivo
+      # entero está en el paso homólogo de arriba. La espera acotada es la
+      # misma: 25 minutos y rojo con nombre, jamás colgado.
+      - name: El motor, del release de su tag
         run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler libclang-dev build-essential pkg-config
-
-      # The engine's OWN script, the same one used by hand: it checks the
-      # toolchain, builds, and states the binary's glibc floor, which is what
-      # decides which Ubuntu the package runs on. Explicit `bash` so this does
-      # not depend on the other checkout's execute bit, and the target dir is
-      # pinned to where the inline `cargo build` used to leave it, so the
-      # packaging step below receives the binary where it always did.
-      - name: Compilar el motor
-        run: CARGO_TARGET_DIR="$PWD/motor/target" bash motor/scripts/build-linux.sh
+          tag="${{ inputs.motor }}"
+          if [ -z "$tag" ]; then
+            tag=$(awk '$1 == "tag" { print $2 }' engine.pin)
+          fi
+          url="https://github.com/alvarogabrielgomez/kanpachi-engine/releases/download/$tag/kanpachi-engine"
+          mkdir -p engine
+          deadline=$(( $(date +%s) + 25*60 ))
+          until curl -fsSL -o engine/kanpachi-engine "$url"; do
+            if [ "$(date +%s)" -gt "$deadline" ]; then
+              echo "engine $tag no publicó kanpachi-engine en 25 minutos" >&2
+              exit 1
+            fi
+            echo "engine $tag aún sin assets, reintento en 30s..."
+            sleep 30
+          done
+          chmod +x engine/kanpachi-engine
+          sha=$(sha256sum engine/kanpachi-engine | awk '{print $1}')
+          if [ -n "${{ inputs.motor }}" ]; then
+            echo "::warning::motor $tag por inputs.motor, SIN verificar contra engine.pin. SHA256 $sha"
+          else
+            want=$(awk '$1 == "sha256-linux" { print $2 }' engine.pin)
+            if [ "$sha" != "$want" ]; then
+              echo "el kanpachi-engine de $tag no es el del pin." >&2
+              echo "  pin:    $want" >&2
+              echo "  bajado: $sha" >&2
+              exit 1
+            fi
+            echo "engine $tag verificado: $sha"
+          fi
 
       # The same tests the Windows job runs before packaging, and for the same
       # reason: what gets published passes the tests that pass today.
@@ -428,7 +453,7 @@ jobs:
           scripts/build-deb.sh \
             --strict \
             --version "$VERSION" \
-            --engine motor/target/release/kanpachi-engine \
+            --engine engine/kanpachi-engine \
             --out dist
 
       - name: Publicar

@@ -421,3 +421,6 @@ func ejecutar(ctx context.Context, nombre string, args ...string) error {
 	}
 	return nil
 }
+
+// rutaDelMotor es la misma ruta que mira el doctor, para `kanpachi version`.
+func rutaDelMotor() string { return engineLinux }

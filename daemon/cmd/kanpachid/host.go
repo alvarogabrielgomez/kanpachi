@@ -7,6 +7,7 @@ import (
 	"github.com/accentiostudios/kanpachi/core/port"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/uihost"
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
+	"github.com/accentiostudios/kanpachi/internal/engineid"
 )
 
 // La comprobación de que esto sigue encajando en el puerto del transporte. Si
@@ -39,6 +40,31 @@ type procesoHost struct {
 	// son alguien que se equivocó y volvió a pulsar: acumularlos daría una cola
 	// de pantallas de confirmación que hay que despachar una por una.
 	invitación string
+
+	// motorRuta es dónde vive el motor que este daemon lanza; la pone el main,
+	// que es quien lo sabe. motorUnaVez amortiza la lectura: los centinelas no
+	// cambian sin reemplazar el fichero, y reemplazarlo pasa por reiniciar.
+	motorRuta   string
+	motorUnaVez sync.Once
+	motorID     engineid.Identity
+}
+
+// EngineInfo lee los centinelas del motor, una vez, y contesta siempre lo
+// mismo: los valores del FICHERO. Un fallo de lectura contesta vacío, porque
+// esto alimenta una línea de la pantalla de Configuración y no una condición.
+func (h *procesoHost) EngineInfo() (string, string) {
+	h.motorUnaVez.Do(func() {
+		if h.motorRuta == "" {
+			return
+		}
+		id, err := engineid.Scan(h.motorRuta)
+		if err != nil {
+			h.log.Warn("no se pudo leer la identidad del motor", "error", err)
+			return
+		}
+		h.motorID = id
+	})
+	return h.motorID.Build, h.motorID.Lib
 }
 
 // ShowUI guarda el enlace, si vino, y enseña la ventana.

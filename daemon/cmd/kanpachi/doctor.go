@@ -45,6 +45,7 @@ import (
 
 	"github.com/accentiostudios/kanpachi/daemon/transport/client"
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
+	"github.com/accentiostudios/kanpachi/internal/engineid"
 )
 
 type estado int
@@ -362,7 +363,18 @@ func chequeoDelMotor(ruta string) chequeo {
 			if info.Mode()&0o111 == 0 {
 				return fallar("%s is not executable (mode %04o)", ruta, info.Mode().Perm())
 			}
-			return ok("%s, %d KiB", ruta, info.Size()/1024)
+			// The build id off the FILE, which answers "which engine is this
+			// machine going to run". An engine from before the sentinel is a
+			// normal find and reads as unknown, not as a failure.
+			id, err := engineid.Scan(ruta)
+			if err != nil {
+				return noSeSabe("could not read %s: %v", ruta, err)
+			}
+			build := id.String()
+			if build == "" {
+				build = "build unknown, older than the sentinel"
+			}
+			return ok("%s, %d KiB, %s", ruta, info.Size()/1024, build)
 		},
 	}
 }
