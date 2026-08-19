@@ -10,7 +10,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Fixed
 
-- Stop `kanpachi upgrade` ending on a paragraph about apt losing its sandbox: the package lands in the state directory, which is root-only on purpose, so the user apt fetches with cannot read it and apt says so every single time. Nothing is being fetched at that point — the file is already on disk with its SHA256 checked against the release manifest — so the run now says as much up front instead of letting apt discover it ([HASH](https://github.com/alvarogabrielgomez/kanpachi/commit/HASH))
+- Stop `kanpachi upgrade` ending on a paragraph about apt losing its sandbox: the package lands in the state directory, which is root-only on purpose, so the user apt fetches with cannot read it and apt says so every single time. Nothing is being fetched at that point — the file is already on disk with its SHA256 checked against the release manifest — so the run now says as much up front instead of letting apt discover it ([a912ffe](https://github.com/alvarogabrielgomez/kanpachi/commit/a912ffe))
 
 ## [0.6.0] - 2026-08-18
 
