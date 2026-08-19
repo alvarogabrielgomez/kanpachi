@@ -203,26 +203,25 @@ kanpachi profile my-server --name "My modded server" --tcp 25565 --udp 19132-191
 kanpachi game my-server
 ```
 
-What it refuses, and each refusal is the same one the daemon applies to a
-profile arriving from anywhere else:
+It refuses the same things the daemon refuses in a profile arriving from
+anywhere else:
 
 - **Eight ranges at most**, counting both lists together.
-- **Twelve ports are never allowed**, and the check is by containment rather
-  than equality: `--tcp 440-450` is rejected for covering 445. They are 22, 135,
-  137, 138, 139, 445, 3389, 3702, 5357, 5358, 5985 and 5986.
+- **Twelve ports never pass**, and a range that merely covers one fails too:
+  `--tcp 440-450` is rejected for 445. They are 22, 135, 137, 138, 139, 445,
+  3389, 3702, 5357, 5358, 5985 and 5986.
 - The id takes lowercase letters, digits and hyphens, and cannot start or end
-  with one. It is what ends up inside a firewall rule's name.
+  with one. It ends up inside a firewall rule's name.
 - An id already used by a game that ships with Kanpachi needs `--replace`, so
   that shadowing one is a decision. A shadowed game stops receiving the
   corrections each release brings.
 
-**Saving the same id again updates it** rather than adding a second profile,
-which is what makes it safe to run on every start of a container.
+**Saving the same id again updates that profile.** Nothing piles up, so a
+container can run this on every start.
 
-**The name stays on this machine.** What the host announces to the room is the
-id, never the profile: anybody without that entry in their own catalogue sees
-the raw id and opens nothing. The name your guests actually read is the room's,
-which `rename` sets.
+**The name stays on this machine.** The host announces the id and never the
+profile, so anybody without that entry in their own catalogue sees the raw id
+and opens nothing. Your guests read the room's name, which `rename` sets.
 
 ## Checking
 

@@ -15,21 +15,21 @@ The invite code and link are printed on **every** start:
 docker compose logs kanpachi
 ```
 
-Two things worth knowing before the first run:
+Before the first run:
 
 - **The volume is the room.** `/var/lib/kanpachi` holds the identity that pinned
-  the invite code. Lose it and the code is gone for good, and the failure is
-  silent: guests keep arriving at a host that will never answer, for three more
-  weeks.
-- **`cap_add` and `devices` are not optional.** An image cannot grant itself
-  either one, so they live in the compose file. Without them the container stops
-  at startup and says so.
+  your invite code. Lose it and the code is gone for good, with nothing on
+  screen to say so: guests keep arriving at a host that will never answer, for
+  three more weeks.
+- **Your compose file has to set `cap_add` and `devices`.** An image cannot
+  grant itself either one. Without them the container stops at startup and names
+  the missing one.
 
 Full guide: [Run a game server with Docker](../docs/public/run-a-game-server-docker.md).
 
-Building the image yourself goes through the script, never `docker build` on its
-own: the `.deb` has to be staged next to the Dockerfile first, and the script is
-what puts it there and takes it away again.
+To build the image yourself, run the script. It stages the `.deb` beside the
+Dockerfile and removes it afterwards, which `docker build` on its own does not
+do.
 
 ```sh
 # from a package you already have

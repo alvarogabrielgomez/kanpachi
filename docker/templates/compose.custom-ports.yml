@@ -1,7 +1,7 @@
 # Kanpachi for a game that is not in the catalogue.
 #
 # Instead of naming a game, you list its ports. Kanpachi builds a profile of its
-# own from them, under the id `custom`, and opens exactly those.
+# own from them, under the id `custom`, and opens those and nothing else.
 #
 # Copy it, change KANPACHI_SEED and the ports, and:
 #
@@ -43,7 +43,7 @@ services:
       # Optional, and it needs the ports above. It names the profile on THIS
       # machine only: the guests are told the id, never the profile, so anybody
       # without this entry in their own catalogue sees `custom` and opens
-      # nothing. The name your guests actually read is KANPACHI_ROOM_NAME.
+      # nothing. The name your guests read is KANPACHI_ROOM_NAME.
       KANPACHI_GAME_NAME: "Minecraft with mods"
 
       # KANPACHI_GAME cannot be set here: either the game comes from the

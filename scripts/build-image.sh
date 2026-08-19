@@ -53,9 +53,9 @@ ok() { printf '  OK  %s\n' "$1"; }
 }
 command -v docker >/dev/null || { echo "docker is missing" >&2; exit 1; }
 
-# The staged copy is removed on the way out whatever happens. Leaving a `.deb`
-# inside `docker/` would make the next build silently reuse it, which is the
-# same mismatch this script exists to avoid.
+# The staged copy goes away on the way out whatever happens. A `.deb` left
+# inside `docker/` would make the next build reuse it with nothing to say so,
+# which is the same mismatch this script exists to avoid.
 staged="$root/docker/kanpachi-amd64.deb"
 cleanup() { rm -f "$staged"; }
 trap cleanup EXIT INT TERM

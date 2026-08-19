@@ -53,7 +53,7 @@ services:
 
       # Off by default. Turning it on here measures the listening ports from
       # INSIDE this namespace, so it sees the containers' sockets and not the
-      # host's, which is probably not what you want.
+      # host's.
       # KANPACHI_QUARANTINE: "false"
 
   zomboid:

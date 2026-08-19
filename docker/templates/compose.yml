@@ -22,7 +22,7 @@ services:
 
     # Required. The room lives in here: the identity that pinned the invite code,
     # the saved room, the game profiles and the log. Lose it and the code is
-    # gone for good, silently, and guests keep arriving for three more weeks.
+    # gone for good with no error, and guests keep arriving for three more weeks.
     volumes:
       - kanpachi-data:/var/lib/kanpachi
 

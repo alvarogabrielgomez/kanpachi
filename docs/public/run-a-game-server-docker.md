@@ -1,24 +1,24 @@
 # Run a game server with Docker
 
 `docker compose up -d`, and a room opens with a code you paste into the group
-chat once. The container can be destroyed and rebuilt and **the same code comes
-back**, because the code lives in a volume rather than in the image.
+chat once. Destroy the container, rebuild it, and **the same code comes back**.
+The code lives in the volume, and rebuilding never touches it.
 
 If the machine is not running Docker, [the plain guide](run-a-game-server.md) is
 shorter and the result is the same.
 
 ## Before anything
 
-Two things have to be granted by the compose file, because a container cannot
-grant them to itself:
+Your compose file has to grant two things, because a container cannot grant them
+to itself:
 
-- **`cap_add: [NET_ADMIN]`** — Kanpachi builds a virtual network adapter and
-  writes nftables rules.
-- **`devices: ["/dev/net/tun:/dev/net/tun"]`** — that adapter is built on the
-  TUN device.
+- **`cap_add: [NET_ADMIN]`**, because Kanpachi builds a virtual network adapter
+  and writes nftables rules.
+- **`devices: ["/dev/net/tun:/dev/net/tun"]`**, because it builds that adapter
+  on the TUN device.
 
-If either is missing the container stops at startup and says which. If the
-device is mapped and it still fails, the host kernel has no `tun` module:
+If either is missing the container stops at startup and says which. If you
+mapped the device and it still fails, the host kernel has no `tun` module. Run
 `modprobe tun` on the machine, not in the container.
 
 Nothing else needs configuring first. Kanpachi's rooms live in `100.64.0.0/10`
@@ -170,21 +170,19 @@ docker compose exec kanpachi kanpachi exposure
 ```
 
 `doctor` checks the TUN device, the kernel, the control channel and the engine,
-and it names a foreign firewall rather than touching it. It does **not** check
-capabilities, which is why the entrypoint does that itself before starting.
+and it names a foreign firewall without touching it. It skips capabilities, so
+the entrypoint checks those itself before starting the daemon.
 
-Two limits worth knowing rather than discovering:
+Two limits:
 
-- **Kanpachi Protection's promise does not transfer.** What makes it a promise
-  is that the containment survives Kanpachi being switched off, and it survives
-  because it lives in a table loaded at boot by a systemd unit. A container
-  whose only process is the daemon has no such state, which is why
-  `KANPACHI_QUARANTINE` is off here and on by choice on a normal install.
-- **If the virtual adapter fails and does not come back within ten minutes**, or
-  the engine dies eight times in a row, the host closes the room for real and
-  the code changes on the next start. Losing the network does not do this; the
-  adapter disappearing does, and in a container that means `/dev/net/tun` going
-  away underneath it.
+- **Kanpachi Protection's promise does not reach a container.** On a normal
+  install the containment stays up while Kanpachi is off, because a systemd unit
+  loads its nftables table at boot. A container whose only process is the daemon
+  has no boot of its own to load it, so `KANPACHI_QUARANTINE` starts off here.
+- **If the virtual adapter fails and stays down for ten minutes**, or the engine
+  dies eight times in a row, the host closes the room and the code changes on
+  the next start. Losing the network does not do this. Losing the adapter does,
+  and inside a container that means `/dev/net/tun` going away underneath it.
 
 ## See also
 
