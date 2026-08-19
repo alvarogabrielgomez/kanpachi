@@ -10,7 +10,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Fixed
 
-- Stop published builds claiming a dirty tree again: 0.6.1 fixed this by ignoring `motor/`, the folder the release cloned the engine into, and 0.6.2 renamed that folder to `engine/` when the engine started arriving as a download instead of a clone. The ignore rule did not come along, so `kanpachi version` went back to answering "with uncommitted changes" on a binary built from a clean tag. Both names are ignored now ([HASH](https://github.com/alvarogabrielgomez/kanpachi/commit/HASH))
+- Stop published builds claiming a dirty tree again: 0.6.1 fixed this by ignoring `motor/`, the folder the release cloned the engine into, and 0.6.2 renamed that folder to `engine/` when the engine started arriving as a download instead of a clone. The ignore rule did not come along, so `kanpachi version` went back to answering "with uncommitted changes" on a binary built from a clean tag. Both names are ignored now ([41f42f1](https://github.com/alvarogabrielgomez/kanpachi/commit/41f42f1))
 
 ## [0.6.2] - 2026-08-19
 
