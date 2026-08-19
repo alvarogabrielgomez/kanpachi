@@ -18,6 +18,12 @@
 # conciencia: se cierra solo, y la alternativa era un único workflow donde
 # veinte minutos de Windows retrasan una carga de Linux que ya estaba lista.
 #
+# Y si uno de los tres FALLA, el hueco deja de ser transitorio: el release
+# queda publicado sin esa pieza hasta que alguien relance el workflow. También
+# se acepta, y por lo mismo: la corrida queda roja y con nombre, que es donde
+# se mira, y encadenar los tres para cubrirlo costaría la independencia que es
+# el motivo entero de tenerlos separados.
+#
 # **El trabajo lo hacen los scripts.** Acá quedan el evento, el checkout, el
 # toolchain, la versión derivada del tag y la publicación. Compilar y probar
 # viven en `scripts/`, así que republicar el seed a mano es una orden y no una
