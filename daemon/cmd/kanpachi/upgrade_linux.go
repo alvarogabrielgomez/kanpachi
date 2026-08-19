@@ -28,13 +28,32 @@ import (
 // La salida va a la terminal en directo, sin capturar: apt tarda, y un comando
 // que se queda mudo medio minuto parece colgado. Además, cuando falla, lo que
 // hay que leer es lo que dice apt.
+// # Y la cuarta opción apaga un sandbox que acá no protege de nada
+//
+// Sin ella, cada `kanpachi upgrade` en Linux termina con este párrafo pegado al
+// final, medido en el droplet el 2026-08-18 sobre la 0.6.0:
+//
+//	N: Download is performed unsandboxed as root as file
+//	'/var/lib/kanpachi/kanpachi-amd64.deb' couldn't be accessed by user '_apt'
+//
+// Es cierto y no es un fallo. El paquete se escribe en el directorio de estado,
+// que es 0700 de root a propósito —en `/tmp` escribe cualquiera, y esto se
+// instala como root un segundo después—, así que el usuario `_apt` con el que
+// apt baja cosas no puede leerlo, y apt renuncia a su sandbox y lo cuenta.
+//
+// Lo que hay que arreglar no es el permiso, es la sorpresa: acá no se BAJA
+// nada. El fichero ya está en disco y su SHA-256 ya se comprobó contra el
+// manifiesto del release, así que el sandbox de descarga no tiene nada que
+// aislar. Decírselo por adelantado es la diferencia entre una decisión escrita
+// y un aviso que aparece cada vez y que alguien va a tener que ir a investigar.
 func aptInstall(ctx context.Context, ruta string) error {
 	entorno := append(os.Environ(),
 		"DEBIAN_FRONTEND=noninteractive",
 		"DPKG_FORCE=confold",
 	)
 	return ejecutarVisible(ctx, entorno, "apt-get", "install", "-y",
-		"-o", "Dpkg::Options::=--force-confold", ruta)
+		"-o", "Dpkg::Options::=--force-confold",
+		"-o", "APT::Sandbox::User=root", ruta)
 }
 
 // ejecutarVisible corre un comando dejando que hable por la terminal.
