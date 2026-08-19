@@ -103,7 +103,7 @@ whom. The equivalent on the command line, on Linux, is `kanpachi exposure`.
 
 ## Next
 
-- [Your first room](tutorial-first-room.md), if you have not opened one yet.
+- [Your first room](tutorial-first-room-windows.md), if you have not opened one yet.
 - [What gets installed, and where](reference-files.md).
 - [Kanpachi Protection](../../kanpachi-protection.md): what stays closed, and
   what the promise does not cover.

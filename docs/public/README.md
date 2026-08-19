@@ -1,7 +1,7 @@
 # Kanpachi documentation
 
-This is the public documentation, in English. Four kinds of document, and the
-split is about what you are doing when you open one, not about the subject.
+This is the public documentation, in English. What splits it up is what you are
+doing when you open one, not what it is about.
 
 Kanpachi's **design** documents are a different thing and live one directory up,
 in [`docs/`](../). They are in Spanish, they are the source of truth for why
@@ -9,17 +9,18 @@ each decision was taken, and they are written for whoever is changing the code.
 
 ---
 
-## Tutorial — learning by doing
+## Start here
 
 One path, from nothing to a game running with a friend. It makes every choice
 for you on purpose.
 
-- **[Your first room](tutorial-first-room.md)**
+- **[Your first room](tutorial-first-room.md)**, which sends you to the one for
+  the machine you host from: [Windows](tutorial-first-room-windows.md) or
+  [Linux](tutorial-first-room-linux.md).
 
-## How-to guides — solving one problem
+## Getting one thing done
 
-Each of these assumes you already know what Kanpachi is and want to get
-something done.
+These assume you already know what Kanpachi is.
 
 | Guide | For when you want to |
 |---|---|
@@ -31,9 +32,9 @@ something done.
 | [Build and test from source](build-from-source.md) | compile the installer, the `.deb`, the seed, or run the checks CI runs |
 | [Fork it](fork-the-branding.md) | publish your own build under your own name |
 
-## Reference — looking something up
+## Looking something up
 
-Dry, complete, organised by the shape of the thing being described.
+Dry and complete, organised by the shape of the thing described.
 
 | Reference | What it lists |
 |---|---|
@@ -42,9 +43,9 @@ Dry, complete, organised by the shape of the thing being described.
 | [The seed's HTTP API](../../registry/API.md) | every endpoint, its rate limit, and what defends it |
 | [Changelog](../../CHANGELOG.md) | what changed in each release |
 
-## Explanation — understanding how it works
+## Why it works the way it does
 
-Read these when the question is *why*, and no task is pending.
+Read these with no task pending.
 
 | Document | What it explains |
 |---|---|
@@ -54,9 +55,9 @@ Read these when the question is *why*, and no task is pending.
 
 Two more live in the repositories they describe:
 
-- [`kanpachi-engine`](https://github.com/alvarogabrielgomez/kanpachi-engine) —
+- [`kanpachi-engine`](https://github.com/alvarogabrielgomez/kanpachi-engine):
   what the engine is, and why it listens on nothing.
-- [`EasyTier/FORK.md`](https://github.com/alvarogabrielgomez/EasyTier/blob/kanpachi/FORK.md) —
+- [`EasyTier/FORK.md`](https://github.com/alvarogabrielgomez/EasyTier/blob/kanpachi/FORK.md):
   what the fork changes against upstream, hunk by hunk, and why a fork was the
   only way to get it.
 
