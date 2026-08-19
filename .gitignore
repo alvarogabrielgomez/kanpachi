@@ -20,14 +20,21 @@
 # `identity.key` de la máquina.
 /testTools/
 
-# El repositorio del MOTOR, que `release.yml` clona acá dentro para compilarlo.
+# Donde `release.yml` deja el MOTOR mientras arma el paquete.
 #
-# Sin esta línea `git status` lo ve sin seguir, y `go build` sella el binario
+# Sin estas líneas `git status` lo ve sin seguir, y `go build` sella el binario
 # mirando justo eso: el resultado es que TODA release publicada hasta el
 # 2026-08-19 dice «with uncommitted changes» en `kanpachi version`. Es una
 # mentira sobre la procedencia del binario, que es la única pregunta que ese
 # comando existe para contestar.
+#
+# Van las dos carpetas y no una. `motor/` era el clon que se compilaba acá, y
+# `engine/` es la descarga que lo reemplazó el 2026-08-19. Renombrar la carpeta
+# sin traerse esta línea revivió el mismo fallo en la 0.6.2, medido en el
+# droplet: un binario del tag diciendo que venía de un árbol sucio. La de
+# `motor/` se queda mientras haya tags viejos que se puedan reconstruir.
 /motor/
+/engine/
 
 # Binarios de EasyTier v2.6.4, descargados del release oficial.
 # No se versionan (~80 MB). El pin y el hash viven en docs/02, decisión 1.
