@@ -9,6 +9,8 @@
 
 services:
   kanpachi:
+    # `latest` follows every release. Pin a number to decide yourself when to move:
+    #   image: ghcr.io/alvarogabrielgomez/kanpachi:0.6.4
     image: ghcr.io/alvarogabrielgomez/kanpachi:latest
     container_name: kanpachi
     restart: always

@@ -133,6 +133,18 @@ being reachable is what the room is for.
 Publishing a port to the host is the thing Kanpachi exists to avoid, so none of
 the templates does it.
 
+## Choosing a version
+
+Every release publishes two tags: the number, and `latest`.
+
+```yaml
+image: ghcr.io/alvarogabrielgomez/kanpachi:latest   # follows every release
+image: ghcr.io/alvarogabrielgomez/kanpachi:0.6.4    # stays put until you change it
+```
+
+Partial tags are not published, so `:0.6` resolves to nothing. Pin the whole
+number or follow `latest`.
+
 ## Upgrading
 
 Rebuild:
@@ -140,6 +152,9 @@ Rebuild:
 ```sh
 docker compose pull && docker compose up -d
 ```
+
+Pulling a version your room was not opened with is fine: the room lives in the
+volume and is reopened by whatever binary starts next.
 
 `kanpachi upgrade` does not work inside a container and reports success anyway:
 it installs the package and then tries to restart a systemd service that is not
