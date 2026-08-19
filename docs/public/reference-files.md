@@ -19,7 +19,7 @@ is that if something can be decided once, it is not asked.
 `ProgramData\Kanpachi` is created **by the installer**, with its own ACL, and the
 daemon refuses to start if it is missing rather than creating it. That ACL is
 half the protection of everything inside, and creating the directory by accident
-would lose it silently.
+would lose it with nothing saying so.
 
 The ACL grants read to the machine's users on purpose, because the window has to
 read files there, `api.token` among them, without elevating. That is why the
@@ -93,15 +93,14 @@ The catalogue in `/usr/share` is the package's; a user's own lives separately in
 **`kanpachid.service`** — the daemon.
 
 `Type=notify`, so `systemctl start` does not return until the control socket is
-listening. Without that, a `kanpachi host` typed immediately afterwards would
-find a closed door and report "no service" while the service was starting
-correctly.
+listening. Without that, a `kanpachi host` typed one second later would find a
+closed door and report "no service" while nothing was wrong with the service.
 
 It runs as `root`, and that is a decision rather than a convenience:
 `CAP_NET_ADMIN` (what it needs for nftables and `/dev/net/tun`) already allows
 reconfiguring the machine's entire network, so a dedicated user would buy little
 isolation while forcing every CLI call through `sudo -u kanpachi`. The hardening
-is what bounds the rest:
+bounds the rest:
 
 | Directive | Why |
 |---|---|
@@ -123,14 +122,14 @@ Without it, turning Kanpachi off would leave the machine as it was before
 installing, and this product promises the opposite: that the protection does not
 depend on a process being alive.
 
-`DefaultDependencies=no` plus `Before=network-pre.target` is what places it
-before the network exists. With default dependencies systemd would start it
+`DefaultDependencies=no` plus `Before=network-pre.target` places it before the
+network exists. With default dependencies systemd would start it
 after `basic.target`, leaving a window with the ports open to the world.
 
 `Type=oneshot` with `RemainAfterExit=yes`, because the state that matters is the
 kernel's and not the process's: `nft -f` finishes and the rules stay.
 
-**There is no `ExecStop`, deliberately.** Stopping this unit cannot lift the
+**There is no `ExecStop`.** Stopping this unit cannot lift the
 quarantine. Its value is that it stays with everything else off, so a
 `systemctl stop` that removed it would turn a routine command into opening the
 game ports to the internet without anybody asking. Removing it belongs to the

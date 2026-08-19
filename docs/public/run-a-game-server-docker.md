@@ -128,7 +128,7 @@ their work.
 `network_mode: "service:kanpachi"`, so the two share one network namespace and
 the game is reachable through the room and nowhere else. A service set up that
 way cannot declare `ports:` or `networks:` of its own, and does not need to:
-being reachable is what the room is for.
+the room exists to make it reachable.
 
 Publishing a port to the host is the thing Kanpachi exists to avoid, so none of
 the templates does it.

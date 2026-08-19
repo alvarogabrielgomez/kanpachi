@@ -15,7 +15,7 @@ That is the whole install. Both services start and are enabled at boot.
 ### Why `apt install /path` and not `apt install kanpachi`
 
 Kanpachi is not in Ubuntu's repositories, and with a plain `.deb` it will not
-be. The path is what makes the difference, and getting it wrong is the one
+be. The path makes the difference, and getting it wrong is the one
 mistake worth naming:
 
 ```sh
@@ -27,7 +27,7 @@ apt install /tmp/kanpachi.deb      # installs it. apt saw a path, not a name
 leaves the package half configured. `apt` pulls `nftables`, `libc6` and
 `systemd` from the official repositories first.
 
-There is no APT repository of ours to add, and that is a deliberate choice: an
+There is no APT repository of ours to add, and that is a choice: an
 APT signing key is the key that pushes code **as root** to every machine that
 trusts it, and holding one is a permanent responsibility rather than an
 afternoon of work.
@@ -53,8 +53,8 @@ systemctl status kanpachid kanpachi-quarantine
 ```
 
 - **`kanpachid.service`** — the daemon. `Type=notify`, so `systemctl start` does
-  not return until the control socket is listening. This is what holds the room
-  and writes the rules.
+  not return until the control socket is listening. It holds the room and
+  writes the rules.
 - **`kanpachi-quarantine.service`** — **the one that matters when Kanpachi is
   off.** It loads before the network comes up and keeps file sharing, remote
   desktop, remote management and device discovery closed from the internet with
@@ -99,7 +99,7 @@ kanpachi exposure    # what Kanpachi has open, and toward whom
 ```
 
 `doctor` is the one that catches the common server problem: `ufw` active and
-not letting the engine's port in, which fails in a way that looks exactly like
+not letting the engine's port in, which fails in a way indistinguishable from
 somebody else's home network being at fault.
 
 ## Uninstalling

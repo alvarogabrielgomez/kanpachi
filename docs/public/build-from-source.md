@@ -3,7 +3,7 @@
 Everything Kanpachi ships is buildable from public source. This page is the
 recipe, and the important rule about it is that **the recipe lives in scripts,
 not in this document and not in the CI YAML**. A runner and a person call the
-same file, which is what keeps the two from drifting.
+same file, which keeps the two from drifting.
 
 ## What you need
 
@@ -29,13 +29,13 @@ One script, one surface per CI job:
 .\scripts\verify.ps1 -Surface release-seed
 ```
 
-Each surface runs exactly what its job runs, no more and no less. A package that
+Each surface runs what its job runs, no more and no less. A package that
 has to enter the gate enters *there*, and nowhere else.
 
 It does not stop at the first failure. A gate that aborts on error one forces a
 full round trip per problem; this records them and prints the list at the end.
 
-Two things it deliberately does not do:
+Two things it refuses to do:
 
 - **`-race` on a development Windows machine.** It needs a C toolchain there,
   and the same code already runs with `-race` in the Linux job. The `all`

@@ -32,9 +32,9 @@ else upstream does.
 The official `easytier-core.exe` also opens an administration portal on
 `0.0.0.0:15888` with **no authentication of any kind**, through which any local
 process can issue credentials, add peers, forward ports and ask for the network
-secret in cleartext. Upstream deliberately declined a request for
-authentication in favour of an IP allowlist whose default already includes
-`127.0.0.0/8`. `kanpachi-engine` listens on nothing.
+secret in cleartext. Upstream turned down a request for authentication in
+favour of an IP allowlist whose default already includes `127.0.0.0/8`.
+`kanpachi-engine` listens on nothing.
 
 The claim that the fork is upstream plus a named list is meant to be checked
 rather than believed:
@@ -87,7 +87,7 @@ Dependencies point inward, and `core/` knows nothing above it:
 | `daemon/transport` | the pipe or socket, and the room's control channel | |
 
 That boundary is not taste. `core` and `daemon/service` are pure Go and run in
-the Linux CI job, which is what gives the startup order tests at all.
+the Linux CI job, which is why the startup order has tests at all.
 
 ## A connection, step by step
 
@@ -128,8 +128,8 @@ When no direct path can be built, usually because of symmetric NAT, packets fall
 back to travelling through it, still encrypted with a key that machine was never
 given, and the app says the room is degraded rather than hiding it.
 
-If the registry is down, the room still works. The invitation card's
-presentation is what degrades.
+If the registry is down, the room still works. Only handing the invitation card
+to somebody new degrades.
 
 Full detail, including what a hostile seed could do differently:
 [the seed](../../kanpachi-seed.md).
@@ -144,7 +144,7 @@ Full detail, including what a hostile seed could do differently:
 | Traffic with the registry | TLS, verified, no environment proxy, no redirect following | anyone on the path |
 | The tunnel between machines | AES-128-GCM inside EasyTier's protocol. **No TLS, no certificates anywhere** | anyone on the path, for the RPC frames |
 
-The last row is the one to read carefully, and it is stated here rather than
+The last row is the one to read twice, and it is stated here rather than
 rounded up.
 
 There was never a certificate decision to take: the engine dials
@@ -200,9 +200,9 @@ who it is open toward.
 **A malicious host cannot push you a profile.** Your machine opens what *your*
 catalogue says; the game's identifier travels on the wire, never its ports.
 
-It is deliberately the same ceiling as inviting a stranger onto your physical
-LAN, with one difference in Kanpachi's favour: here every open port has a name
-and a recipient, and both are readable.
+The ceiling is the same as inviting a stranger onto your physical LAN, by
+design, with one difference in Kanpachi's favour: here every open port has a
+name and a recipient, and both are readable.
 
 ## See also
 

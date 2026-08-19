@@ -33,8 +33,8 @@ curl -fsSL https://raw.githubusercontent.com/alvarogabrielgomez/kanpachi/main/se
 Without `--domain` it asks. Set `KANPSEED_VERSION` to install something other
 than the latest release.
 
-The script is deliberately dumb: it checks the architecture, downloads the
-binary and the invitation page, verifies both against `SHA256SUMS-seed-linux`
+The script is dumb, and that is the point: it checks the architecture,
+downloads the binary and the invitation page, verifies both against `SHA256SUMS-seed-linux`
 **before** granting execute permission, and hands the work to `kanpseed init`,
 which is Go and has tests. The page is verified too, not only the binary: it is
 served to strangers and is just as replaceable in transit.
@@ -55,7 +55,7 @@ install** rather than choosing them afresh, because the machine's reverse proxy
 points at one of them. On a machine that already has a seed, `sudo kanpseed
 upgrade` does the same thing without needing curl or this URL.
 
-## 3. Publish it — the part it does not do for you
+## 3. Publish it, the part it does not do for you
 
 The registry answers on loopback only. Exposing it is your call, and there are
 two halves.

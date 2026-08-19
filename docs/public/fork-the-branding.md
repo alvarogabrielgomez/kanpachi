@@ -5,8 +5,8 @@ Publishing your own build under your own name is two files. Everything that says
 those and nothing else.
 
 The licence makes this a right rather than a favour: Kanpachi is AGPL-3.0, and
-§13 is what obliges anyone running a **modified** meeting server for other people
-to hand them its source.
+§13 obliges anyone running a **modified** meeting server for other people to
+hand them its source.
 
 ## The two files
 
@@ -19,7 +19,7 @@ to hand them its source.
 where a tag's artifacts live, and where a person goes to download. Changing
 that one line moves all three.
 
-`UpdatesEnabled = false` turns the version check off entirely, in both faces.
+`UpdatesEnabled = false` turns the version check off in both faces.
 That switch exists because the alternative, pointing `Repo` at a repository that
 does not publish, does not disable the check. It turns it into a 404 every time
 somebody asks, which is a screen saying something is wrong when nothing is: this

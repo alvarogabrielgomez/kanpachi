@@ -38,7 +38,7 @@ broken.
 
 `kanpachi game` with no id closes them again.
 
-Now start the game server the way you normally would, and tell people to connect
+Now start the game server as you would anyway, and tell people to connect
 to this machine's Kanpachi address, which `kanpachi status` prints.
 
 ## What happens on reboot

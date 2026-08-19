@@ -1,7 +1,7 @@
 # Kanpachi documentation
 
-This is the public documentation, in English. What splits it up is what you are
-doing when you open one, not what it is about.
+This is the public documentation, in English. The sections go by what you are
+doing when you open a page, not by subject.
 
 Kanpachi's **design** documents are a different thing and live one directory up,
 in [`docs/`](../). They are in Spanish, they are the source of truth for why

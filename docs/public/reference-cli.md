@@ -43,7 +43,7 @@ through `--json` when a script needs the same facts.
 ### `watch`
 
 `status`, redrawn until you press Ctrl+C. The daemon's own heartbeat drives the
-redraw, so what changes on screen is what changed.
+redraw, so the screen changes only where something changed.
 
 ### `host [name]`
 
@@ -153,7 +153,7 @@ If the kick half-succeeds the command does not swallow the error: it means the
 person is out of the room and a port of theirs stayed open.
 
 **There is no ban.** Someone kicked who still holds a live code can come back;
-`rotate` is what closes that door.
+`rotate` closes that door.
 
 ## The game
 
@@ -305,12 +305,12 @@ does not touch them.
 
 There is no default seed, and that is why this command exists: since the
 registry started travelling inside every code, creating a room has no code yet
-to read one from, because the code is what the registry mints.
+to read one from, because the registry mints the code.
 
 If the machine has none configured it says so, and **suggests the seed of the
 last room you entered without adopting it**, with the command written out to
-copy. Adopting it silently would mean your next room is hosted on a stranger's
-server because you once accepted an invitation.
+copy. Adopting it without saying so would mean your next room is hosted on a
+stranger's server because you once accepted an invitation.
 
 ### `quarantine [on|off]`
 
@@ -319,8 +319,8 @@ management and printer discovery) **on every network it is connected to**, not
 only on Kanpachi's. With no argument it tells you the state.
 
 **Having trouble sharing a folder from this PC, or reaching it over Remote
-Desktop? This is why.** `kanpachi quarantine off` puts it back and takes effect
-immediately.
+Desktop? This is why.** `kanpachi quarantine off` puts it back, with no restart
+and no wait.
 
 It is your decision and Kanpachi asks it once, at the door of the first `host`
 or `join`, listing the exact ports and with no default answer. `--quarantine
@@ -334,8 +334,8 @@ so every time a room opens, because the notice is the state and not a scolding.
 
 What it does NOT change: reaching OTHER machines. The blocks compare the LOCAL
 port, so mounting a share, opening a remote desktop or `ssh`-ing out are all
-untouched. And something else entirely contains the room, so turning this off
-does not open your room to anybody.
+untouched. And something else contains the room, so turning this off does not
+open your room to anybody.
 
 ### `password`
 
@@ -378,11 +378,11 @@ itself on the way back up.
 | Flag | What it does |
 |---|---|
 | `--check` | reports what is published, installs nothing |
-| `--version <v>` | installs exactly that tag, **even if it is the same or older** |
+| `--version <v>` | installs that tag, **even if it is the same or older** |
 | `--force` | installs the latest even when the number already matches |
 | `--yes` | does not ask |
 
-`--version` is what makes this a way back: without it, a version that is already
+`--version` turns this into a way back: without it, a version that is already
 current short-circuits with `Already up to date`, and naming a tag on purpose
 skips that shortcut.
 
@@ -401,10 +401,23 @@ latest published is *X*.
 
 Which version this is, and what it was built against.
 
-### `help`
+### `help [command]`
 
-The list, grouped by what gets done first rather than alphabetically. `--help`,
-`-help` and `-h` reach it from anywhere.
+With no argument, the list of commands, grouped by what gets done first rather
+than alphabetically. `--help`, `-help` and `-h` reach it from anywhere.
+
+With a command name, that command's own page: what it does, every flag it takes,
+what each flag changes, and an example to paste. `kanpachi <command> --help`
+prints the same page, so both spellings work:
+
+```sh
+kanpachi help profile
+kanpachi profile --help
+```
+
+The list keeps one line per command, so a command's flags live on its page and
+not in the list. `profile` and `upgrade` carry four each, and cramming them into
+the name column pushed their descriptions out of the column the rest line up on.
 
 ## Options, valid in any position
 
@@ -428,8 +441,8 @@ named the one the person had not caused.
 ## Using it in a script
 
 **Without a terminal and without `--yes`, the command refuses rather than
-assumes the answer.** That is deliberate and it is the shape the "nothing
-from outside takes effect without a confirmation inside" rule takes on Linux:
+assumes the answer.** That is the shape the "nothing from outside takes effect
+without a confirmation inside" rule takes on Linux:
 resolving a missing prompt as a yes would delete the confirmation where nobody
 is watching.
 

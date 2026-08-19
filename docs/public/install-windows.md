@@ -15,7 +15,7 @@ service, the `ProgramData` directory with its ACL, and the permission for your
 user to start the service without elevating. Playing never asks again.
 
 Before installing, the wizard shows a licence notice rather than an
-accept/decline gate. That is deliberate: the AGPL and the LGPL grant permissions
+accept/decline gate. That is a choice: the AGPL and the LGPL grant permissions
 and take none away, neither requires accepting anything to *use* the program,
 and a fake acceptance screen teaches people that these screens are paperwork.
 The notice is a real obligation, because shipping the engine ships LGPL code.
@@ -23,7 +23,7 @@ The notice is a real obligation, because shipping the engine ships LGPL code.
 ### What it leaves behind
 
 A Windows service called `kanpachi-daemon`, running as `LocalSystem` with
-delayed automatic start, which is what holds the room and writes the firewall
+delayed automatic start, which holds the room and writes the firewall
 rules. A window program that talks to it over a named pipe. A `kanpachi:` URL
 handler, so an invite link in a browser reaches the daemon.
 
