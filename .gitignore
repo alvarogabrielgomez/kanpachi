@@ -86,3 +86,9 @@ go.work.sum
 # Se queda por si un -Output viejo la trae de vuelta: es producto armado, y
 # dentro lleva `kanpachi-data\` con la `identity.key` de quien lo corrió.
 /Kanpachi/
+
+# El paquete que `scripts/build-image.sh` deja al lado del Dockerfile mientras
+# construye. El script lo borra al salir; esta línea cubre la salida a lo bruto,
+# porque un `.deb` olvidado ahí hace que la construcción siguiente lo reuse sin
+# decir nada.
+/docker/*.deb

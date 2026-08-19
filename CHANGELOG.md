@@ -10,7 +10,12 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Added
 
-- Describe a game the catalogue does not have without leaving the terminal, with `kanpachi profile <id> --name <n> --tcp <ports> --udp <ports>`. Creating a profile existed only in the Windows window, so a headless Linux host had no way to open a port for anything outside the eleven games that ship. Saving the same id again updates it instead of adding a second, which is what lets a container run it on every start ([HASH](https://github.com/alvarogabrielgomez/kanpachi/commit/HASH))
+- Run Kanpachi as a container: `docker/` carries the image and four whole compose files to copy, and the room comes back with the same invite code after the container is destroyed and rebuilt, because the state lives in a volume rather than in the image. The entrypoint prints the code and the link on every start, since `docker logs` is the only place an unattended server can be asked, and it refuses early with a readable message when the compose forgot `NET_ADMIN` or `/dev/net/tun` ([HASH](https://github.com/alvarogabrielgomez/kanpachi/commit/HASH))
+- Describe a game the catalogue does not have without leaving the terminal, with `kanpachi profile <id> --name <n> --tcp <ports> --udp <ports>`. Creating a profile existed only in the Windows window, so a headless Linux host had no way to open a port for anything outside the eleven games that ship. Saving the same id again updates it instead of adding a second, which is what lets a container run it on every start ([d39c1cb](https://github.com/alvarogabrielgomez/kanpachi/commit/d39c1cb))
+
+### Fixed
+
+- Stop `docs/public/run-a-game-server.md` telling people to run `kanpachi game zomboid`, which is not a game id and answers `unknown_game`. It is `project-zomboid`, and the eleven ids are now listed with their ports in the command reference, where before they appeared nowhere a user could read ([HASH](https://github.com/alvarogabrielgomez/kanpachi/commit/HASH))
 
 ## [0.6.3] - 2026-08-19
 

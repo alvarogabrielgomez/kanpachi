@@ -477,3 +477,128 @@ jobs:
           path: |
             dist/kanpachi-amd64.deb
             dist/SHA256SUMS-linux
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # El cuarto publicador, y va SIN `needs:` como los otros tres.
+  #
+  # La independencia es la decisión de siempre, escrita en `release-seed.yml`: si
+  # uno falla, el release queda sin esa pieza hasta que alguien lo relance, y eso
+  # se acepta porque encadenarlos costaría justo lo que hace que existan aparte.
+  #
+  # La consecuencia acá es concreta y define cómo se arma: **no se puede bajar el
+  # `.deb` del release**, porque en el momento en que esto corre puede no estar
+  # todavía. Bajarlo hornearía la versión ANTERIOR dentro de una imagen etiquetada
+  # con la nueva, y pasaría en verde. Así que este job baja el motor y arma su
+  # propio paquete, igual que el de al lado.
+  imagen:
+    name: ghcr.io/kanpachi
+    runs-on: ubuntu-22.04
+    permissions:
+      # A nivel de JOB y no del workflow: los otros tres no publican paquetes y
+      # no tienen por qué poder hacerlo.
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Versión
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          # Las mismas tres puertas de entrada que los otros jobs.
+          TAG=""
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            TAG="$GITHUB_REF_NAME"
+          elif [ "$EVENT_NAME" = "release" ] && [ -n "$RELEASE_TAG" ]; then
+            TAG="$RELEASE_TAG"
+          fi
+          echo "VERSION=${TAG:-0.0.0}" >> "$GITHUB_ENV"
+          echo "release_target=$TAG" >> "$GITHUB_OUTPUT"
+          # Sin la `v` de delante, que es como se escribe una etiqueta de
+          # imagen. El defecto se aplica ANTES de quitarla: sin tag, `${TAG#v}`
+          # da la cadena vacía y `docker build --tag nombre:` no es una etiqueta.
+          bruto="${TAG:-0.0.0}"
+          echo "IMAGE_TAG=${bruto#v}" >> "$GITHUB_ENV"
+
+      # Idéntico al del paquete: el binario que publicó la aduana del motor,
+      # verificado contra `engine.pin`, con 25 minutos de espera acotada.
+      - name: El motor, del release de su tag
+        run: |
+          tag="${{ inputs.motor }}"
+          if [ -z "$tag" ]; then
+            tag=$(awk '$1 == "tag" { print $2 }' engine.pin)
+          fi
+          url="https://github.com/alvarogabrielgomez/kanpachi-engine/releases/download/$tag/kanpachi-engine"
+          mkdir -p engine
+          deadline=$(( $(date +%s) + 25*60 ))
+          until curl -fsSL -o engine/kanpachi-engine "$url"; do
+            if [ "$(date +%s)" -gt "$deadline" ]; then
+              echo "engine $tag no publicó kanpachi-engine en 25 minutos" >&2
+              exit 1
+            fi
+            echo "engine $tag aún sin assets, reintento en 30s..."
+            sleep 30
+          done
+          chmod +x engine/kanpachi-engine
+          sha=$(sha256sum engine/kanpachi-engine | awk '{print $1}')
+          if [ -n "${{ inputs.motor }}" ]; then
+            echo "::warning::motor $tag por inputs.motor, SIN verificar contra engine.pin. SHA256 $sha"
+          else
+            want=$(awk '$1 == "sha256-linux" { print $2 }' engine.pin)
+            if [ "$sha" != "$want" ]; then
+              echo "el kanpachi-engine de $tag no es el del pin." >&2
+              echo "  pin:    $want" >&2
+              echo "  bajado: $sha" >&2
+              exit 1
+            fi
+            echo "engine $tag verificado: $sha"
+          fi
+
+      - name: Los chequeos de esta superficie
+        shell: pwsh
+        run: ./scripts/verify.ps1 -Surface release-linux
+
+      - name: El nombre de la imagen
+        id: imagen
+        run: |
+          # En minúsculas porque un nombre de imagen no admite mayúsculas y el
+          # dueño de un repositorio sí puede tenerlas.
+          repo=$(printf '%s' "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "name=ghcr.io/$repo" >> "$GITHUB_OUTPUT"
+
+      # El script arma el paquete, lo deja al lado del Dockerfile, construye y
+      # comprueba qué versión quedó dentro preguntándole al CLI de la imagen.
+      - name: Armar la imagen
+        run: |
+          tags="--tag ${{ steps.imagen.outputs.name }}:$IMAGE_TAG"
+          if [ -n "${{ steps.version.outputs.release_target }}" ]; then
+            tags="$tags --tag ${{ steps.imagen.outputs.name }}:latest"
+          fi
+          # shellcheck disable=SC2086
+          scripts/build-image.sh \
+            --version "$IMAGE_TAG" \
+            --engine engine/kanpachi-engine \
+            $tags
+
+      # El login va DESPUÉS de construir a propósito: una construcción rota no
+      # tiene por qué haber pedido credenciales.
+      - name: Entrar en ghcr
+        if: steps.version.outputs.release_target != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publicar la imagen
+        if: steps.version.outputs.release_target != ''
+        run: |
+          docker push "${{ steps.imagen.outputs.name }}:$IMAGE_TAG"
+          docker push "${{ steps.imagen.outputs.name }}:latest"

@@ -2224,7 +2224,9 @@ kanpachi-seed         dos servicios de systemd, sin Docker
 
 **El registro es lo que hace que `kanpachi-seed` sea distinto de una instalación plana de EasyTier.** Habla con el motor invocando `easytier-cli`, o sea como proceso hijo y jamás vinculado, igual que hace el cliente. Eso mantiene la licencia de Kanpachi libre de la LGPL-3.0 de EasyTier.
 
-### Por qué no hay Docker, aunque el droplet sea de Docker
+### Por qué el SEED no va en Docker, aunque el droplet sea de Docker
+
+**Esta sección habla del seed y de nada más.** El CLIENTE sí tiene imagen, desde que existe `docker/`, y no la contradice: lo que sigue cuelga entero del portal RPC de `easytier-core`, que es el binario oficial que corre el seed. El motor del cliente es propio, no recibe argumentos, toma su configuración por el tubo, y `rpc_portal` desapareció del TOML en la v2.5.0; hay un guardián que afirma que su paquete no lo nombra de ninguna forma (`internal/arch/motor_test.go`). Sin portal no hay socket que se quede en un espacio de red destruido, que es el fallo entero de abajo.
 
 Se implementó con Docker primero y se descartó por evidencia, no por gusto. Todo el dolor venía de que hubiera contenedores.
 

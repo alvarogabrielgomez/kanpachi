@@ -26,6 +26,7 @@ something done.
 | [Install on Windows](install-windows.md) | put Kanpachi on a gaming PC, or run it without installing |
 | [Install on Linux](install-linux.md) | put Kanpachi on a Linux box, check it, or remove it |
 | [Run a 24/7 game server](run-a-game-server.md) | host a room on a VPS nobody is sitting at |
+| [Run a game server with Docker](run-a-game-server-docker.md) | the same, as a container, with the code surviving a rebuild |
 | [Host your own seed](host-a-seed.md) | run the meeting point yourself, with a domain and an optional password |
 | [Build and test from source](build-from-source.md) | compile the installer, the `.deb`, the seed, or run the checks CI runs |
 | [Fork it](fork-the-branding.md) | publish your own build under your own name |

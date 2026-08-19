@@ -1,0 +1,72 @@
+# Kanpachi with the game server inside the same compose.
+#
+# The game container joins Kanpachi's network namespace, so it is reachable
+# through the room and nowhere else. Nothing is published to the host.
+#
+# Copy it, change KANPACHI_SEED, and:
+#
+#   docker compose up -d
+#   docker compose logs kanpachi
+
+services:
+  kanpachi:
+    image: ghcr.io/alvarogabrielgomez/kanpachi:latest
+    container_name: kanpachi
+    restart: always
+
+    cap_add: [NET_ADMIN]
+    devices: ["/dev/net/tun:/dev/net/tun"]
+
+    volumes:
+      - kanpachi-data:/var/lib/kanpachi
+
+    # The difference from compose.yml: NO network_mode here. Kanpachi gets its
+    # own namespace, and the game container below moves into it.
+
+    init: true
+    stop_grace_period: 60s
+
+    environment:
+      # REQUIRED. A host name: no https://, no trailing slash.
+      KANPACHI_SEED: kanpachi.accentio.dev
+
+      # Optional, all of it.
+      KANPACHI_ROOM_NAME: "Zomboid nights"
+
+      # A game from the catalogue. Excludes the two KANPACHI_PORTS_* below.
+      KANPACHI_GAME: project-zomboid
+
+      # Ports of your own, instead of a catalogue game. Single ports or ranges,
+      # comma separated, eight entries at most across both.
+      # KANPACHI_PORTS_TCP: "25565"
+      # KANPACHI_PORTS_UDP: "16261-16262"
+
+      # A readable name for that profile. Needs the ports above. It stays on
+      # this machine: guests are told the id and see `custom` without it.
+      # KANPACHI_GAME_NAME: "My modpack"
+
+      # Only if that registry asks for a password to host. Pick one.
+      # KANPACHI_SEED_PASSWORD_FILE: /run/secrets/seed_password
+      # KANPACHI_SEED_PASSWORD: "..."
+
+      # Off by default. Turning it on here measures the listening ports from
+      # INSIDE this namespace, so it sees the containers' sockets and not the
+      # host's, which is probably not what you want.
+      # KANPACHI_QUARANTINE: "false"
+
+  zomboid:
+    image: docker.io/afaucogney/project-zomboid-dedicated-server
+    restart: always
+    depends_on: [kanpachi]
+
+    # This is what puts the game inside Kanpachi's network. A service with it
+    # set cannot declare `networks:` or `ports:` of its own, and does not need
+    # to: reaching this server is what the room is for.
+    network_mode: "service:kanpachi"
+
+    volumes:
+      - zomboid-data:/home/steam/Zomboid
+
+volumes:
+  kanpachi-data:
+  zomboid-data:

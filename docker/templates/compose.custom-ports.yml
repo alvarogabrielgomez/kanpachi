@@ -1,0 +1,51 @@
+# Kanpachi for a game that is not in the catalogue.
+#
+# Instead of naming a game, you list its ports. Kanpachi builds a profile of its
+# own from them, under the id `custom`, and opens exactly those.
+#
+# Copy it, change KANPACHI_SEED and the ports, and:
+#
+#   docker compose up -d
+#   docker compose logs kanpachi
+
+services:
+  kanpachi:
+    image: ghcr.io/alvarogabrielgomez/kanpachi:latest
+    container_name: kanpachi
+    restart: always
+
+    cap_add: [NET_ADMIN]
+    devices: ["/dev/net/tun:/dev/net/tun"]
+
+    volumes:
+      - kanpachi-data:/var/lib/kanpachi
+
+    network_mode: host
+
+    init: true
+    stop_grace_period: 60s
+
+    environment:
+      KANPACHI_SEED: kanpachi.accentio.dev
+      KANPACHI_ROOM_NAME: "Modded server"
+
+      # Single ports or ranges, separated by commas. At most eight entries
+      # across both lines.
+      #
+      # A port needed on both protocols goes in both lines and costs two of the
+      # eight. Twelve ports are refused outright, and the check is by
+      # CONTAINMENT: a range of 440-450 is rejected for covering 445.
+      KANPACHI_PORTS_TCP: "25565"
+      KANPACHI_PORTS_UDP: "25565,19132-19133"
+
+      # Optional, and it needs the ports above. It names the profile on THIS
+      # machine only: the guests are told the id, never the profile, so anybody
+      # without this entry in their own catalogue sees `custom` and opens
+      # nothing. The name your guests actually read is KANPACHI_ROOM_NAME.
+      KANPACHI_GAME_NAME: "Minecraft with mods"
+
+      # KANPACHI_GAME cannot be set here: either the game comes from the
+      # catalogue with its ports, or you describe the ports yourself.
+
+volumes:
+  kanpachi-data:

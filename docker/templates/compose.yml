@@ -1,0 +1,63 @@
+# Kanpachi for a game server that already runs on this machine.
+#
+# This is the common case. Copy it, change KANPACHI_SEED, and:
+#
+#   docker compose up -d
+#   docker compose logs kanpachi     # the invite code and link are in here
+#
+# The same code comes back on every restart, for as long as the volume lives.
+
+services:
+  kanpachi:
+    image: ghcr.io/alvarogabrielgomez/kanpachi:latest
+    container_name: kanpachi
+    restart: always
+
+    # Required. A container cannot grant itself either of these, so they have to
+    # be here: the daemon builds a virtual adapter and writes nftables rules.
+    cap_add: [NET_ADMIN]
+    devices: ["/dev/net/tun:/dev/net/tun"]
+
+    # Required. The room lives in here: the identity that pinned the invite code,
+    # the saved room, the game profiles and the log. Lose it and the code is
+    # gone for good, silently, and guests keep arriving for three more weeks.
+    volumes:
+      - kanpachi-data:/var/lib/kanpachi
+
+    # The game server runs on this machine, so Kanpachi shares its network.
+    # For the game inside the compose instead, see compose.sidecar.yml.
+    network_mode: host
+
+    # A tiny init as PID 1, so orphaned processes get reaped and signals are
+    # passed along. The daemon only waits on its own child.
+    init: true
+
+    # docker stop kills at 10s by default. Shutting down needs up to 45, and
+    # being cut short leaves firewall rules applied on the host.
+    stop_grace_period: 60s
+
+    environment:
+      # REQUIRED. The registry this machine opens its room on. A host name:
+      # no https://, no trailing slash.
+      KANPACHI_SEED: kanpachi.accentio.dev
+
+      # Everything below is optional.
+
+      # The room's name. It is the only name the guests get to read.
+      # Defaults to the container's hostname.
+      KANPACHI_ROOM_NAME: "Zomboid nights"
+
+      # A game from the catalogue, which brings its own ports.
+      #   docker compose exec kanpachi kanpachi games
+      # lists them. To describe the ports yourself instead, see
+      # compose.custom-ports.yml.
+      KANPACHI_GAME: project-zomboid
+
+      # true closes this machine's risky server ports on every network, and
+      # keeps them closed. Off by default in a container, because the promise
+      # of that feature is protection while Kanpachi is OFF, and a container
+      # whose only process is the daemon has no such state.
+      # KANPACHI_QUARANTINE: "false"
+
+volumes:
+  kanpachi-data:

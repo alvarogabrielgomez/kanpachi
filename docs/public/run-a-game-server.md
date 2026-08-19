@@ -27,8 +27,8 @@ kanpachi link
 ## Activate the game
 
 ```sh
-kanpachi games          # the catalogue, and which ones this machine has installed
-kanpachi game zomboid   # activate that profile
+kanpachi games                  # the catalogue, and which ones this machine has installed
+kanpachi game project-zomboid   # activate that profile
 ```
 
 Activating a profile opens the ports it names, **on this machine only, and only
@@ -137,6 +137,9 @@ MTU.
 
 ## Next
 
+- [The same thing with Docker](run-a-game-server-docker.md), if the machine
+  already runs its game server that way. One compose file, and the code survives
+  the container being rebuilt.
 - [Every command](reference-cli.md), including the flags this page skipped.
 - [Host your own seed](host-a-seed.md), so the meeting point is yours too.
 - [Kanpachi Protection](../../kanpachi-protection.md): what stays closed on that

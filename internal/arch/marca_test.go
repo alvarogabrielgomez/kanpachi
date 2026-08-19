@@ -39,6 +39,19 @@ var dóndeSePuedeNombrar = map[string]string{
 	// Se descarga por una URL que CONTIENE el repositorio, así que quien lo
 	// bajó ya eligió cuál. No hay forma de que se entere de otro modo.
 	filepath.FromSlash("seed/install.sh"): "se baja por una URL que ya lo lleva dentro",
+
+	// El mismo caso que `install.sh`, y por el mismo motivo: un YAML que
+	// alguien copia no tiene forma de saber de qué repositorio salió, así que
+	// el nombre de la imagen tiene que estar escrito. La diferencia con
+	// `install.sh` es que acá son cinco ficheros, y por eso están enumerados
+	// uno por uno en vez de con un prefijo: un fichero nuevo bajo `docker/`
+	// que nombre el repositorio tiene que aparecer en esta lista a mano, o
+	// sea que agregarlo es una decisión y no un descuido.
+	filepath.FromSlash("docker/Dockerfile"):                          "arma la imagen, y se construye desde un clon que ya eligió cuál",
+	filepath.FromSlash("docker/templates/compose.yml"):               "nombra la imagen publicada, y un YAML no puede deducirla",
+	filepath.FromSlash("docker/templates/compose.sidecar.yml"):       "nombra la imagen publicada, y un YAML no puede deducirla",
+	filepath.FromSlash("docker/templates/compose.custom-ports.yml"):  "nombra la imagen publicada, y un YAML no puede deducirla",
+	filepath.FromSlash("docker/templates/compose.seed-password.yml"): "nombra la imagen publicada, y un YAML no puede deducirla",
 }
 
 // TestElRepositorioEstaEnUnSoloSitioPorLenguaje.

@@ -5,7 +5,13 @@
 //
 // El repositorio del que salen las publicaciones, el interruptor que apaga la
 // comprobación de versiones, y de ahí cuelgan las URL que este proyecto consulta
-// o reparte. **Un fork toca este fichero y ninguno más.**
+// o reparte. **Un fork toca este fichero, y de código no toca ninguno más.**
+//
+// Lo que sí tiene que tocar además son los ficheros que se COPIAN sueltos, que
+// no pueden deducir de dónde salieron: `seed/install.sh` y lo que hay bajo
+// `docker/`. El guardián de `internal/arch/marca_test.go` los lleva enumerados
+// uno por uno, así que la lista de lo que un fork edita se lee ahí y no hay que
+// buscarla.
 //
 // # Qué NO va acá, y hay que decirlo porque es la trampa
 //
