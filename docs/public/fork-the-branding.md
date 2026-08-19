@@ -15,15 +15,15 @@ to hand them its source.
 | Go | [`internal/brand/brand.go`](../../internal/brand/brand.go) | `Repo`, `UpdatesEnabled`, `Docs` |
 | Dart | [`ui/lib/core/brand.dart`](../../ui/lib/core/brand.dart) | the same values, mirrored |
 
-`Repo` is the **update channel**. Three URLs hang off it — what version exists,
-where a tag's artifacts live, and where a person is sent to download — so
-changing that one line moves all three.
+`Repo` is the **update channel**. Three URLs hang off it: what version exists,
+where a tag's artifacts live, and where a person goes to download. Changing
+that one line moves all three.
 
 `UpdatesEnabled = false` turns the version check off entirely, in both faces.
-That switch exists because the alternative — pointing `Repo` at a repository
-that does not publish — does not disable the check. It turns it into a 404 every
-time somebody asks, which is a screen saying something is wrong when the truth is
-that this fork publishes elsewhere.
+That switch exists because the alternative, pointing `Repo` at a repository that
+does not publish, does not disable the check. It turns it into a 404 every time
+somebody asks, which is a screen saying something is wrong when nothing is: this
+fork publishes elsewhere.
 
 `Docs` is the repository and not a domain, on purpose: a domain belongs to
 whoever is paying a DNS bill, and the repository is where the binary came from.
@@ -32,8 +32,9 @@ whoever is paying a DNS bill, and the repository is where the binary came from.
 
 Two tests enforce it. [`internal/arch/marca_test.go`](../../internal/arch/marca_test.go)
 fails the build if the name reappears anywhere in the tree, and a second one
-keeps the Go and Dart values in lockstep — the failure being avoided is a fork
-that edits the Go constant and keeps shipping a window pointing at the original.
+keeps the Go and Dart values in lockstep. The failure that second test prevents
+is a fork that edits the Go constant and keeps shipping a window pointing at the
+original.
 
 The other faces get the value rather than carrying it:
 

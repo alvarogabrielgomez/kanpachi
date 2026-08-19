@@ -5,7 +5,7 @@ reachable between the two machines with nothing else exposed. It takes about ten
 minutes, and most of that is the two downloads.
 
 This tutorial makes every choice for you. Where there is an option worth
-knowing about, it is named at the end and not in the middle.
+knowing about, it appears at the end and not in the middle.
 
 **What you need:** a Windows PC, a friend with another machine, and a way to
 send them a line of text. No account, no router configuration, no port
@@ -29,8 +29,9 @@ When it finishes, Kanpachi opens.
 The first screen asks for a name, up to twelve letters and numbers.
 
 It is not an account. It is not verified, it is not sent to any server, and it
-exists so the other people in the room see something readable instead of your
-Windows computer name — which, on a lot of machines, is somebody's real name.
+exists so the other people in the room see something readable
+instead of your Windows computer name. On a lot of machines that is somebody's
+real name.
 
 Type it and continue. This screen appears once in the life of the install.
 
@@ -62,7 +63,7 @@ A7K2-M9QX@kanpachi.accentio.dev
 Copy it and send it to your friend, however you normally talk. Chat is fine.
 
 The code is not a secret and not a key. It is a lookup ticket: it says which
-registry to ask and which room to ask about. What actually admits somebody is a
+registry to ask and which room to ask about. What admits somebody is a
 credential your machine issues once they knock, and the code has no way to
 carry it.
 
@@ -76,7 +77,7 @@ the field on the home screen and press **Join**.
 
 The field accepts it however it arrives: with or without dashes, upper or lower
 case, or as the full link. They get the same trust dialog, showing the seed
-address that came *inside the code you sent* — which is the thing to compare,
+address that came *inside the code you sent*, which is the thing to compare,
 character by character, against what you sent. They press **Trust and enter**.
 
 They appear in your member list.
@@ -84,12 +85,12 @@ They appear in your member list.
 ## 6. Choose the game
 
 Back on your machine, pick the game from the room screen. Your installed games
-are listed first; the full catalogue is one click below, with a search box.
+come first; the full catalogue is one click below, with a search box.
 
 The moment you activate a profile, **the ports that game asks for open on the
 virtual adapter, on your machine only, and only toward the addresses of the
-people currently in the room**. Nothing else opens. The rules are recalculated
-from scratch every time somebody joins or leaves.
+people currently in the room**. Nothing else opens. Kanpachi recalculates the
+rules from scratch every time somebody joins or leaves.
 
 Start the game, host the session in it as you always would, and have your
 friend connect to your Kanpachi address, shown next to your name in the member
@@ -100,8 +101,8 @@ list.
 Press **Close room** when you are done. The ports close with it.
 
 If you only close the window, the room stays open and the service keeps holding
-it — the window is a remote control, not the program. That is deliberate, and
-it is what lets a room survive a reboot on a server.
+it. The window is a remote control, not the program. That is deliberate, and it
+is what lets a room survive a reboot on a server.
 
 ---
 

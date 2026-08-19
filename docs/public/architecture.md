@@ -16,24 +16,24 @@ its rejected alternatives, are in Spanish in [`docs/`](../).
 | [`kanpachi-engine`](https://github.com/alvarogabrielgomez/kanpachi-engine) | the Rust network binary | nothing. It moves packets |
 | [`EasyTier` (`kanpachi` branch)](https://github.com/alvarogabrielgomez/EasyTier) | the fork the engine builds on | nothing of ours lives there |
 
-**The engine decides nothing, and that sentence is load-bearing.** What may be
-reached is decided and written by the daemon, so a compromise of the engine
-cannot open the machine, and the engine offers no way to be told otherwise. It
-takes commands on stdin and writes answers on stdout: no port, no named pipe, no
+**The engine decides nothing, and that sentence is load-bearing.** The daemon
+decides and writes what may be reached, so a compromise of the engine cannot
+open the machine, and the engine offers no way to be told otherwise. It takes
+commands on stdin and writes answers on stdout: no port, no named pipe, no
 config file, no command-line arguments at all.
 
 ### Why the dependency is a fork
 
 Upstream EasyTier **opens the virtual adapter in the Windows Firewall while
 creating it**, and no configuration turns that off. That is the exact opposite
-of Kanpachi's promise, so the fork removes those two calls. Everything else
-upstream does is kept.
+of Kanpachi's promise, so the fork removes those two calls and keeps everything
+else upstream does.
 
 The official `easytier-core.exe` also opens an administration portal on
 `0.0.0.0:15888` with **no authentication of any kind**, through which any local
 process can issue credentials, add peers, forward ports and ask for the network
-secret in cleartext. Authentication was requested upstream and deliberately
-declined in favour of an IP allowlist whose default already includes
+secret in cleartext. Upstream deliberately declined a request for
+authentication in favour of an IP allowlist whose default already includes
 `127.0.0.0/8`. `kanpachi-engine` listens on nothing.
 
 The claim that the fork is upstream plus a named list is meant to be checked
@@ -43,8 +43,8 @@ rather than believed:
 git diff v2.6.4 kanpachi -- '*.rs' '*.proto'   # every hunk belongs to an entry in FORK.md
 ```
 
-Nothing of Kanpachi's own lives in the fork — no rooms, no invite codes, no
-games — because the value of that repository is that its diff reads in one
+Nothing of Kanpachi's own lives in the fork (no rooms, no invite codes, no
+games), because the value of that repository is that its diff reads in one
 glance.
 
 ## The three processes
@@ -66,12 +66,12 @@ user session
 ```
 
 The window is a remote control. Closing it leaves the room open. On Linux there
-is no window at all and the same daemon is driven by the `kanpachi` command over
-a Unix socket.
+is no window at all and the `kanpachi` command drives the same daemon over a
+Unix socket.
 
 The engine is a child inside a job object on Windows and inside the service's
-cgroup on Linux, which is the strong layer of "the engine dies with the daemon"
-— it holds even when the daemon cannot run a single deferred call.
+cgroup on Linux, which is the strong layer of "the engine dies with the daemon":
+it holds even when the daemon cannot run a single deferred call.
 
 ### Inside the daemon
 
@@ -98,8 +98,8 @@ the Linux CI job, which is what gives the startup order tests at all.
  4. The engine enters the rendezvous network. The host sits at .1 of a fixed
     /24, so there is nothing to search for
  5. The guest sends its nickname and public key, signed. The host verifies
- 6. The host issues a temporary credential — the REAL network's name, subnet and
-    virtual IP — encrypted against the guest's key. The network secret is not in it
+ 6. The host issues a temporary credential (the REAL network's name, subnet and
+    virtual IP), encrypted against the guest's key. The network secret is not in it
  7. The engine leaves the rendezvous and enters the real network with the
     credential. That network's secret never travelled
  8. The seed returns the other members' endpoints
@@ -115,21 +115,21 @@ there is signed against the host's long-term key and encrypted against the
 guest's. An observer of the lobby sees that somebody asked to enter; they get
 neither the credential nor the room's secret.
 
-The invite code is a lookup key, not cryptographic material. What admits
-somebody is the credential.
+The invite code is a lookup key, not cryptographic material. The credential is
+what admits somebody.
 
 ## Where the seed sits, and where it does not
 
 The seed mints invite IDs, holds a card it cannot read, counts heads over a
-loopback-only RPC, and introduces peers. When a direct path is built — the
-normal case — **it is no longer in the path at all**.
+loopback-only RPC, and introduces peers. When a direct path is built, which is
+the normal case, **it is no longer in the path at all**.
 
 When no direct path can be built, usually because of symmetric NAT, packets fall
 back to travelling through it, still encrypted with a key that machine was never
 given, and the app says the room is degraded rather than hiding it.
 
-If the registry is down, the room still works. What degrades is the invitation
-card's presentation.
+If the registry is down, the room still works. The invitation card's
+presentation is what degrades.
 
 Full detail, including what a hostile seed could do differently:
 [the seed](../../kanpachi-seed.md).
@@ -181,25 +181,24 @@ virtual addresses do not appear.
 
 ### The ceiling of a malicious catalogue profile
 
-The catalogue is an editable file and imported profiles are accepted, so this
-has to be answerable without hedging. **What a hostile profile cannot buy is
-exposure to the internet.** The port it opens is bounded to the virtual adapter,
-to the room's `/24`, and to the addresses of the members *present*. There is no
-UPnP, no router port forwarding, no exit node and no subnet routing, and none of
-the three exists as something a profile could ask for. The user's router is
-never touched.
+The catalogue is an editable file and Kanpachi accepts imported profiles, so
+this has to be answerable without hedging. **What a hostile profile cannot buy
+is exposure to the internet.** The port it opens is bounded to the virtual
+adapter, to the room's `/24`, and to the addresses of the members *present*.
+There is no UPnP, no router port forwarding, no exit node and no subnet routing,
+and none of the three exists as something a profile could ask for. The user's
+router is never touched.
 
 What it can buy: one authorised peer of that room reaching one non-forbidden
 port of yours, through the tunnel, while you are inside their room. Getting
-there needs four consents of yours and one lapse — importing their catalogue
+there needs four consents of yours and one lapse: importing their catalogue
 (which asks, cannot overwrite a factory profile, and rejects forbidden ports),
 joining their room (which asks again), having something listening on that port,
 and not looking at the exposure screen, which lists that port by number and by
 who it is open toward.
 
 **A malicious host cannot push you a profile.** Your machine opens what *your*
-catalogue says; what travels on the wire is the game's identifier, never its
-ports.
+catalogue says; the game's identifier travels on the wire, never its ports.
 
 It is deliberately the same ceiling as inviting a stranger onto your physical
 LAN, with one difference in Kanpachi's favour: here every open port has a name

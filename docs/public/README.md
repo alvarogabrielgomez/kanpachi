@@ -65,7 +65,7 @@ Two more live in the repositories they describe:
 
 A document here describes behaviour that exists. When behaviour changes, the
 document changes in the same commit, which is the rule the whole project runs
-on — see [`docs/CLAUDE.md`](../CLAUDE.md).
+on. See [`docs/CLAUDE.md`](../CLAUDE.md).
 
 These files are public and are linked from outside this repository, so paths
 matter. [`kanpachi-protection.md`](../../kanpachi-protection.md) and

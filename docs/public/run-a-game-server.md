@@ -56,12 +56,12 @@ Reopening runs in the background, behind the control socket, because it takes
 about a minute and a `Type=notify` unit that takes a minute to report looks
 hung. During that minute `kanpachi status` says it is connecting.
 
-Three things about the reopened room are worth being precise about:
+Three things about the reopened room:
 
-- **It comes back with no ports open.** The game profile is restored, and the
-  rules are recomputed from the live member table rather than read off the disk.
-  With nobody present there is no address to name, and there is no way to write
-  "anybody".
+- **It comes back with no ports open.** The daemon restores the game profile and
+  recomputes the rules from the live member table rather than reading them off
+  the disk. With nobody present there is no address to name, and there is no way
+  to write "anybody".
 - **The people who were in it are not.** Credentials do not survive the restart.
   The room reopens empty and everyone rejoins with the code they already have.
 - **If reopening fails, the daemon stays up without a room** and `kanpachi
@@ -96,7 +96,7 @@ kanpachi exposure    # what is open, and toward whom
 
 `members` is where a relayed connection shows up. Direct is the normal case;
 somebody behind symmetric NAT falls back to travelling through the seed, still
-encrypted end to end, and it is named rather than hidden.
+encrypted end to end, and `members` names that path rather than hiding it.
 
 ### When somebody has to go
 

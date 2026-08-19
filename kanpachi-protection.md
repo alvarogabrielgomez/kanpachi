@@ -7,8 +7,8 @@ three repositories instead of being a thin wrapper around an existing VPN. This
 document is the shared statement of what the promise means, what each part does
 to keep it, and what it does not cover.
 
-It is written in English because it is linked from the public engine and library
-repositories, and it stays at the repository root for the same reason: two other
+It is written in English because the public engine and library repositories link
+to it, and it stays at the repository root for the same reason: two other
 repositories link to it by URL. Read it when the question is *why*; when there
 is a task pending, the guides are in
 [the public documentation](docs/public/README.md). Kanpachi's design documents
@@ -42,8 +42,8 @@ A room's virtual adapter starts with **no allow rules at all**. Windows blocks
 unsolicited inbound traffic by default, so the absence of a rule already is the
 deny-all. Ports are added only when a game profile asks for them, only on the
 machine hosting, and only toward the addresses of the members currently in the
-room. Leaving the room takes them away; removing somebody from the room takes
-away theirs.
+room. Leaving the room takes them away; removing somebody from the room
+takes away theirs.
 
 ### 2. A quarantine that outlives the daemon
 
@@ -52,14 +52,14 @@ Some ports are never opened by any profile and cannot be expressed in one:
 remote desktop, remote management, device discovery.
 
 Absence of a rule is not enough for these, because a game installer or another
-program may have left a permissive rule behind. So they can be blocked
+program may have left a permissive rule behind. Kanpachi can block them
 **explicitly**, in both directions, **on every network interface of the whole
-machine** — not just the virtual adapter — in a separate rule group. Closing
+machine**, not just the virtual adapter, in a separate rule group. Closing
 ports that wide is a real trade (it is this machine's own file sharing and
 Remote Desktop that stop answering, everywhere), so it is the **user's
 decision**: Kanpachi asks once, recommends yes with the reasons spelled out,
 and the answer is a switch that works in both directions. Once the user says
-yes, every start repairs it, and **no automatic path can remove it** — not a
+yes, every start repairs it, and **no automatic path can remove it**: not a
 sweep, not a restart, not a reset. That is the protection: the quarantine
 stays in place while Kanpachi is stopped, crashed, or half uninstalled, until
 the person who put it there says otherwise, or uninstalls.
@@ -71,11 +71,12 @@ cannot close one that another program's rule opened. That is the gap a permissiv
 remote-desktop rule walks straight through, over the virtual network, to a user
 who never knew the rule existed.
 
-So there is a second layer: a packet filter of Kanpachi's own, scoped to the
-virtual adapter, that blocks everything and permits back only what the first
-layer opened. A block there is hard and beats any allow rule; a permit there is
-soft and **cannot** override a block the user set. That asymmetry is deliberate:
-it closes the hole without taking away the user's veto over their own machine.
+There is a second layer for that: a packet filter of Kanpachi's own, scoped to
+the virtual adapter, that blocks everything and permits back only what the
+first layer opened. A block there is hard and beats any allow rule; a permit
+there is soft and **cannot** override a block the user set. That asymmetry is
+deliberate: it closes the hole without taking away the user's veto over their
+own machine.
 
 It is scoped to the virtual adapter, always. A filter without that scope would
 apply to every interface on the machine, and being a hard block it would cut the
@@ -94,8 +95,8 @@ pipe, not a watched file, not a signal, and it accepts no command-line arguments
 The pipes it uses are anonymous: they have no name, no path and no address, so
 connecting to them is not forbidden, it is an operation that does not exist.
 
-Capabilities the product forbids are left **out of the binary** where possible,
-as absent compile-time features rather than flags that are turned off.
+The build leaves capabilities the product forbids **out of the binary** where
+possible, as absent compile-time features rather than flags that are turned off.
 
 ### 5. A library that does not open what the product closes
 
@@ -118,17 +119,17 @@ Every check above measures what this machine has **configured**. A configuration
 can be impeccable and still not contain anything, and that failure is invisible
 from the inside by definition.
 
-So a member of the room is asked to knock on a port of the host, and the host
-watches what arrives. On Windows a blocked port and a port with nobody behind it
-look identical, so Kanpachi puts a listener behind the door **on purpose**, for a
-few seconds, on a random port. Knowing for certain that somebody is listening is
-what gives the silence a single meaning.
+Kanpachi therefore asks a member of the room to knock on a port of the host,
+and the host watches what arrives. On Windows a blocked port and a port with
+nobody behind it look identical, so Kanpachi puts a listener behind the door
+**on purpose**, for a few seconds, on a random port. Knowing for certain that
+somebody is listening is what gives the silence a single meaning.
 
-When it works, nothing is shown. The first leak raises no alarm: the daemon
-repairs the protection itself and lets the next round judge. Only a second leak
-in a row is reported, which changes what the message means, from *"something
-happened, press this"* to **"something happened, I tried to fix it, and it did
-not hold"**.
+When it works, Kanpachi shows nothing. The first leak raises no alarm: the
+daemon repairs the protection itself and lets the next round judge. It reports
+only a second leak in a row, which changes what the message means, from
+*"something happened, press this"* to **"something happened, I tried to fix it,
+and it did not hold"**.
 
 ## Status
 
@@ -159,7 +160,7 @@ Stating this is part of the promise being worth anything.
   Kanpachi guarantees is that nothing *else* is.
 - **What the members do inside the game.** Kanpachi is a network, not a referee.
 - **A user who turns their own firewall off.** The exposure screen says so
-  plainly rather than pretending otherwise.
+  rather than pretending otherwise.
 
 ## Where each piece lives
 

@@ -16,8 +16,8 @@
 
 A LAN party over the internet. One person opens a room and hands out an invite
 code, everybody else pastes it, and the machines end up on one private network
-with an encrypted peer-to-peer tunnel between them. What a general-purpose
-virtual LAN does not do is the next part: the adapter is born closed, and the
+with an encrypted peer-to-peer tunnel between them. The next part is what a
+general-purpose virtual LAN does not do: the adapter is born closed, and the
 only thing that opens on it is what the chosen game asks for, on the host
 machine, toward the people in the room right now.
 
@@ -74,9 +74,9 @@ not required, and running one is a single line on any Linux box with systemd:
 curl -fsSL https://raw.githubusercontent.com/alvarogabrielgomez/kanpachi/main/seed/install.sh | sudo sh -s -- --domain seed.yourdomain.com
 ```
 
-The domain is not decoration. It is what travels inside every invite code minted
-here — `A7K2-M9QX@seed.yourdomain.com` — so the code says which registry it
-means, and it is what the hosting password is bound to. Point an A record at the
+The domain is not decoration. It travels inside every invite code minted here
+(`A7K2-M9QX@seed.yourdomain.com`), so the code says which registry it means,
+and it is what the hosting password is bound to. Point an A record at the
 machine before installing. The installer picks free ports, places the engine,
 writes two systemd units and leaves the registry answering on loopback.
 
@@ -134,8 +134,8 @@ sequenceDiagram
 The code is a lookup key, never a key that opens anything: what admits somebody
 is a credential the host issues over the control channel, and the room card the
 seed stores is sealed with a key that travels in the URL fragment, the part
-browsers never send to a server. When no direct path can be built — symmetric
-NAT, usually — packets fall back to travelling through the seed, still encrypted
+browsers never send to a server. When no direct path can be built (symmetric
+NAT, usually), packets fall back to travelling through the seed, still encrypted
 end to end with a key that machine was never given, and the app says the room is
 degraded instead of hiding it.
 
@@ -159,20 +159,20 @@ explains why it listens on nothing, and the
 [EasyTier fork](https://github.com/alvarogabrielgomez/EasyTier/blob/kanpachi/FORK.md)
 records what it changes against upstream and why the change had to be a fork.
 
-Kanpachi's design documents — every decision with its alternatives and its
-reason — are in Spanish and live in [`docs/`](docs/). There is no private source
+Kanpachi's design documents (every decision with its alternatives and its
+reason) are in Spanish and live in [`docs/`](docs/). There is no private source
 code in this project: all code and documentation are public.
 
 ## License
 
 Kanpachi is free software: **[AGPL-3.0-or-later](LICENSE)**, with the game
 catalogue in **CC0-1.0**. AGPL and not GPL because one part of Kanpachi is a
-network service — anyone can run a meeting server, and §13 is what obliges a
+network service: anyone can run a meeting server, and §13 is what obliges a
 *modified* one to hand its source to the people using it.
 
 The full map of what is under which licence is in [LICENSES.md](LICENSES.md),
-and what ships alongside Kanpachi without being ours — the network engine under
-LGPL-3.0, and three Windows libraries — is in
+and what ships alongside Kanpachi without being ours (the network engine under
+LGPL-3.0, and three Windows libraries) is in
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), with links to their
 corresponding source.
 

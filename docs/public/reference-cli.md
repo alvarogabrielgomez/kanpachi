@@ -42,8 +42,8 @@ through `--json` when a script needs the same facts.
 
 ### `watch`
 
-`status`, redrawn until you press Ctrl+C. The redraw is driven by the daemon's
-own heartbeat, so what changes on screen is what actually changed.
+`status`, redrawn until you press Ctrl+C. The daemon's own heartbeat drives the
+redraw, so what changes on screen is what changed.
 
 ### `host [name]`
 
@@ -64,12 +64,12 @@ Up to three questions come before that minute, and `--yes` answers all three:
 1. **Displacing what is already open.** Hosting while already hosting closes the
    existing room, so it asks.
 2. **Trusting the registry.** It shows which seed this machine mints codes on.
-   Asked *before* the "this takes a minute" line, on purpose: what is being
-   decided is whether to start the wait.
+   It comes *before* the "this takes a minute" line, on purpose: the question is
+   whether to start the wait.
 3. **Opening a blocking firewall.** Only if the daemon reports something of the
-   machine's own — `ufw`, usually — standing in the way. The sentence names the
+   machine's own, usually `ufw`, standing in the way. The sentence names the
    exact commands, composed by the daemon from the same closed list it executes,
-   and the change is undone when the room closes.
+   and the daemon undoes the change when the room closes.
 
 **The room comes up with no ports open.** Choose a game with `game` to open any.
 
@@ -107,7 +107,7 @@ Kanpachi going back to the last one by itself.
 
 ### `link`
 
-Prints the invite link and nothing else — no banner, no label — so it drops
+Prints the invite link and nothing else (no banner, no label), so it drops
 straight into a `$(...)`:
 
 ```sh
@@ -134,11 +134,11 @@ only: it travels inside the encrypted card, and the seed cannot read it.
 
 Who is in, which path each one arrives by, and with what latency. **Direct is
 the normal case**; somebody behind symmetric NAT falls back to relay through the
-seed and is shown as such rather than hidden.
+seed, and the list says so rather than hiding it.
 
 ### `kick <name|ip>`
 
-Removes somebody from the room. Their credential is revoked and their ports go
+Removes somebody from the room. It revokes their credential, and their ports go
 with them.
 
 Accepts the name shown on screen as well as the virtual IP, and resolves the
@@ -149,8 +149,8 @@ Two guards on that resolution:
   produce an error listing both IPs, because kicking the wrong one has no undo.
 - **Kicking yourself is refused**, with a pointer to `leave`.
 
-If the kick half-succeeds the error is not swallowed: it means the person is out
-of the room and a port of theirs stayed open.
+If the kick half-succeeds the command does not swallow the error: it means the
+person is out of the room and a port of theirs stayed open.
 
 **There is no ban.** Someone kicked who still holds a live code can come back;
 `rotate` is what closes that door.
@@ -188,8 +188,8 @@ to the network, so it takes a few seconds and says so first.
 ### `probe`
 
 Asks another machine in the room to probe this one. It answers the question the
-local machine structurally cannot: what somebody else in the room can actually
-reach here. It needs somebody else in the room.
+local machine structurally cannot: what somebody else in the room can reach
+here. It needs somebody else in the room.
 
 ### `protect`
 
@@ -237,7 +237,7 @@ ask the daemon, which keeps it in `profile.json` beside the rest of its state,
 so changing it in one place changes it everywhere.
 
 If nobody has chosen one, rooms show you by a name derived from the machine's
-own — cleaned up to letters and digits, twelve at most. That derived name is a
+own, cleaned up to letters and digits, twelve at most. That derived name is a
 **suggestion and is never written down**: `host` and `join` use it and say so on
 stderr, and this command prints it with the line to type if you want it kept.
 A suggestion saved to disk stops being distinguishable from a name somebody
@@ -258,14 +258,14 @@ registry started travelling inside every code, creating a room has no code yet
 to read one from, because the code is what the registry mints.
 
 If the machine has none configured it says so, and **suggests the seed of the
-last room you entered without adopting it** — with the command written out to
+last room you entered without adopting it**, with the command written out to
 copy. Adopting it silently would mean your next room is hosted on a stranger's
 server because you once accepted an invitation.
 
 ### `quarantine [on|off]`
 
-Closes this machine's risky server ports — file sharing, remote desktop, remote
-management and printer discovery — **on every network it is connected to**, not
+Closes this machine's risky server ports (file sharing, remote desktop, remote
+management and printer discovery) **on every network it is connected to**, not
 only on Kanpachi's. With no argument it tells you the state.
 
 **Having trouble sharing a folder from this PC, or reaching it over Remote
@@ -279,13 +279,13 @@ they refuse, because the absence of a terminal is not an answer.
 
 Saying yes closes them until you say otherwise, and every start repairs what
 went missing. Saying no removes what a yes had closed. Nothing else ever removes
-it — not a sweep, not a restart, not `--reset` — and a machine without it says
+it (not a sweep, not a restart, not `--reset`), and a machine without it says
 so every time a room opens, because the notice is the state and not a scolding.
 
 What it does NOT change: reaching OTHER machines. The blocks compare the LOCAL
 port, so mounting a share, opening a remote desktop or `ssh`-ing out are all
-untouched. And the room is contained by something else entirely, so turning this
-off does not open your room to anybody.
+untouched. And something else entirely contains the room, so turning this off
+does not open your room to anybody.
 
 ### `password`
 
@@ -295,8 +295,8 @@ The password of a registry that asks for one to host. Joining never needs it.
 can read `/proc/<pid>/cmdline`, and the shell keeps a history: a flag would put
 somebody else's seed password in two places that outlive the command.
 
-It is typed and masked. **When stdin is redirected it is read from there**,
-which is the supported door for a script:
+You type it, masked. **When stdin is redirected the command reads it from
+there**, which is the supported door for a script:
 
 ```sh
 kanpachi password < /etc/kanpachi/seed.pw   # a 0600 file never reaches an argument list
@@ -332,8 +332,8 @@ itself on the way back up.
 | `--yes` | does not ask |
 
 `--version` is what makes this a way back: without it, a version that is already
-current short-circuits with `Already up to date`, and that shortcut is skipped
-when a tag was named on purpose.
+current short-circuits with `Already up to date`, and naming a tag on purpose
+skips that shortcut.
 
 A hand-built binary reports honestly. Calling it up to date or out of date would
 both be false, so `--check` says what it knows: this binary is `dev`, and the
@@ -362,20 +362,20 @@ The list, grouped by what gets done first rather than alphabetically. `--help`,
 to the subcommand, which is why `--yes` works on `host`, `join` and `upgrade`
 and nowhere else.
 
-`--timeout` is parsed before anything connects. It used to be validated after
-the connection was open, so `kanpachi --timeout abc status` with the daemon down
-reported the daemon being down: two wrong things at once, and it named the one
-the person had not caused.
+`kanpachi` parses `--timeout` before anything connects. It used to validate the
+value after the connection was open, so `kanpachi --timeout abc status` with the
+daemon down reported the daemon being down: two wrong things at once, and it
+named the one the person had not caused.
 
 ## Using it in a script
 
-**Without a terminal and without `--yes`, a confirmation is refused rather than
-assumed.** That is deliberate and it is the shape the "nothing from outside
-takes effect without a confirmation inside" rule takes on Linux: resolving a
-missing prompt as a yes would delete the confirmation exactly where nobody is
-watching.
+**Without a terminal and without `--yes`, the command refuses rather than
+assumes the answer.** That is deliberate and it is the shape the "nothing
+from outside takes effect without a confirmation inside" rule takes on Linux:
+resolving a missing prompt as a yes would delete the confirmation where nobody
+is watching.
 
-So a non-interactive `host` or `join` needs `--yes`, and saying so is the point.
+A non-interactive `host` or `join` needs `--yes`, and saying so is the point.
 
 `--json` gives the daemon's answer unrendered, which is the stable surface. The
 human rendering is not.
@@ -442,8 +442,8 @@ unit somebody edited.
 Same rule as the client's, for the same reason: no `--password` flag, and a
 terminal is required.
 
-The password is bound to the configured domain, so `config` has to hold the name
-people actually type. Changing it rotates the signing key, which throws every
+The seed binds the password to the configured domain, so `config` has to hold
+the name people type. Changing it rotates the signing key, which throws every
 signed-in host out at once; they get back in by typing the new one.
 
 ## The command systemd runs
@@ -456,6 +456,6 @@ signed-in host out at once; they get back in by typing the new one.
 
 - [Install on Linux](install-linux.md) — getting `kanpachi` onto a machine.
 - [Run a 24/7 game server](run-a-game-server.md) — these commands in the order
-  a server actually needs them.
+  a server needs them.
 - [What gets installed, and where](reference-files.md).
 - [The seed's HTTP API](../../registry/API.md) — what `kanpseed serve` exposes.

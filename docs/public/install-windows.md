@@ -10,7 +10,7 @@ Download `kanpachi-setup.exe` from the
 or open an invite link and let the invitation page hand you the right file.
 
 Run it. Windows asks for administrator **once**, and that prompt is the only one
-in the life of the product: everything needing elevation happens there — the
+in the life of the product. Everything needing elevation happens there: the
 service, the `ProgramData` directory with its ACL, and the permission for your
 user to start the service without elevating. Playing never asks again.
 
@@ -46,11 +46,10 @@ Get-FileHash .\kanpachi-setup.exe -Algorithm SHA256
 Compare the two by eye, or on a machine with `sha256sum` available run
 `sha256sum -c SHA256SUMS-windows --ignore-missing`.
 
-Worth being precise about what this buys: it catches a truncated or tampered
-**download**, not a bad release, since the sums file lives in the same release
-as the binary. What protects the release itself is that everything here is
-public and reproducible from source — see
-[build and test from source](build-from-source.md).
+This buys one thing: it catches a truncated or tampered **download**, not a bad
+release, since the sums file lives in the same release as the binary. What
+protects the release itself is that everything here is public and reproducible
+from source. See [build and test from source](build-from-source.md).
 
 ## Without installing: the portable build
 
@@ -80,15 +79,15 @@ one of them can hold a room.
 Settings → Apps → Kanpachi → Uninstall, or the entry in Add/Remove Programs.
 
 The order it runs in is the opposite of the intuitive one, and it matters: the
-service is stopped, then the daemon is run once more to clean up **while its
-files are still on disk**, and only then is the service deleted. The other way
-around there would be no binary left to do the cleaning, and the machine would
-keep the base quarantine in place — ports `445` and `3389` blocked, with no
-Kanpachi installed and nothing to blame.
+uninstaller stops the service, then runs the daemon once more to clean up
+**while its files are still on disk**, and only then deletes the service. The
+other way around there would be no binary left to do the cleaning, and the
+machine would keep the base quarantine in place: ports `445` and `3389`
+blocked, with no Kanpachi installed and nothing to blame.
 
 `ProgramData\Kanpachi` goes with it, identity key included. A firewall rule that
 outlives the program that wrote it is the hardest kind of problem to diagnose,
-so nothing is left behind on purpose.
+so Kanpachi leaves nothing behind on purpose.
 
 ## If something is wrong
 

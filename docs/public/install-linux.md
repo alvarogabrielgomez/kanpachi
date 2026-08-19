@@ -19,8 +19,8 @@ be. The path is what makes the difference, and getting it wrong is the one
 mistake worth naming:
 
 ```sh
-apt install kanpachi-amd64.deb     # E: Unable to locate package — apt searched the repos
-apt install /tmp/kanpachi.deb      # installs it — apt saw a path, not a name
+apt install kanpachi-amd64.deb     # E: Unable to locate package. apt searched the repos
+apt install /tmp/kanpachi.deb      # installs it. apt saw a path, not a name
 ```
 
 `apt` and not `dpkg -i`, because `dpkg` stops when a dependency is missing and
@@ -42,8 +42,8 @@ sha256sum -c SHA256SUMS-linux --ignore-missing
 ```
 
 This catches a truncated or tampered **download**, not a bad release: the sums
-file lives in the same release as the package. What protects the release itself
-is that everything here is public and rebuildable — see
+file lives in the same release as the package. Everything here is public and
+rebuildable, and that is what protects the release itself. See
 [build and test from source](build-from-source.md).
 
 ## The two services
@@ -83,11 +83,11 @@ installed a minute ago.
 
 Nothing forces you to answer it: `kanpachi host` on a machine where nobody chose
 a name uses the derived one, says so on stderr, and opens the room. That keeps a
-scripted first run working with no file, no network and no questions. What it
-does not do is write the derived name down, so `kanpachi name <yours>` later is
-still the first time anybody chose one.
+scripted first run working with no file, no network and no questions. It does
+not write the derived name down, so `kanpachi name <yours>` later is still the
+first time anybody chose one.
 
-Everything the assistant does has a direct subcommand as well — `kanpachi host`,
+Everything the assistant does has a direct subcommand as well: `kanpachi host`,
 `kanpachi join <code>`, `kanpachi status`. The whole list is in
 [every command](reference-cli.md).
 

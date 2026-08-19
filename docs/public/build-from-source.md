@@ -54,10 +54,10 @@ Five steps: stamp the version into the Windows resources, assemble the payload
 [`installer/kanpachi.iss`](../../installer/kanpachi.iss), build the portable
 single-file bundle, and write `SHA256SUMS-windows` covering both executables.
 
-The `.syso` resource files are committed on purpose — they carry the icons and
+The `.syso` resource files are committed on purpose: they carry the icons and
 the manifest that tells Windows these binaries do **not** request elevation, and
-a hand-run `go build` without them would change that behaviour. What cannot stay
-committed is the version number inside them, which is why the script regenerates
+a hand-run `go build` without them would change that behaviour. The version
+number inside them cannot stay committed, which is why the script regenerates
 them.
 
 For a development loop, the portable folder is faster and needs no installer:
@@ -101,7 +101,7 @@ stop, which is the difference between a development machine and a publication.
 scripts/build-seed.sh
 ```
 
-`kanpseed` for amd64 **and** arm64, always both — a seed runs on somebody else's
+`kanpseed` for amd64 **and** arm64, always both: a seed runs on somebody else's
 VPS and those come both ways, and `install.sh` picks the file by `uname -m`.
 Plus the invitation page and their manifest, `SHA256SUMS-seed-linux`.
 
@@ -145,8 +145,8 @@ They live in their own repositories, with their own instructions:
   be checked rather than believed:
   `git diff v2.6.4 kanpachi -- '*.rs' '*.proto'`.
 
-The engine follows the fork's moving `kanpachi` branch; what records the exact
-commit is `Cargo.lock`.
+The engine follows the fork's moving `kanpachi` branch; `Cargo.lock` records the
+exact commit.
 
 ## Next
 

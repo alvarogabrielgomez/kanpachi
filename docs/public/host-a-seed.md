@@ -5,7 +5,7 @@ cannot read, counts heads, and introduces two machines so they can punch a hole
 through their routers. Once the tunnel is up it is out of the path.
 
 Running your own is the reason the seed's name travels **inside** the invite
-code — `A7K2-M9QX@seed.example.com`. Two seeds are two unrelated worlds, and a
+code: `A7K2-M9QX@seed.example.com`. Two seeds are two unrelated worlds, and a
 code says which one it means.
 
 What this needs: a Linux box with systemd, amd64 or arm64, a public IP, a domain
@@ -20,8 +20,9 @@ Create an A record for the name your users will type, aimed at the machine.
 
 Do it before installing. The name is not decoration: it is stamped into every
 invite code minted here, and it is bound **inside** the hash a hosting password
-is proved with, so a proof captured on one seed is worth nothing on another. Get
-the name wrong and every host is rejected with a correct password.
+is proved with,
+so a proof captured on one seed is worth nothing on another. Get the name
+wrong and the seed rejects every host that types the correct password.
 
 ## 2. Install
 
@@ -41,7 +42,7 @@ served to strangers and is just as replaceable in transit.
 `kanpseed init` then:
 
 - downloads and places EasyTier `v2.6.4`, pinned and never `latest`;
-- picks the ports — `11010` for the engine unless it is taken, the first free
+- picks the ports: `11010` for the engine unless it is taken, the first free
   one from `8010` for the registry, `15888` for the engine's control RPC, bound
   to loopback;
 - writes `kanpseed-engine.service` and `kanpseed-registry.service`, enables and
@@ -65,8 +66,8 @@ two halves.
 kanpseed nginx
 ```
 
-prints the block to paste, with the port this install actually chose. For nginx
-by hand it is:
+prints the block to paste, with the port this install chose. For nginx by hand
+it is:
 
 ```nginx
 location / {
@@ -83,7 +84,7 @@ Two lines there are load-bearing:
   with Force SSL, or the equivalent in whatever proxy you use.
 - **`X-Forwarded-For` is not optional.** The registry's rate limit counts per
   IP, and it only believes that header when the connection comes from loopback.
-  A proxy that does not set it makes every visitor on earth share one bucket —
+  A proxy that does not set it makes every visitor on earth share one bucket,
   including every login attempt.
 
 ### The engine half: one port, both protocols
@@ -102,7 +103,7 @@ The installer does not do this for you, and says so at the end if ufw is in the
 way. Opening a port to the whole world is the machine owner's decision.
 
 **If you are coming from Docker, read this line.** Publishing a container port
-does not open the firewall — it inserts DNAT rules that are evaluated *before*
+does not open the firewall: it inserts DNAT rules that are evaluated *before*
 ufw, so `ports: 11010:11010` was reachable whether ufw allowed it or not. A
 native process has no such privilege. The symptom of getting this wrong is that
 the engine listens, `doctor` sees it listening, systemd calls it healthy, and no
@@ -140,7 +141,7 @@ sudo kanpseed password --open    # remove it, anyone can host
   put the seed's password into shell history as well.
 - **Changing it throws out every signed-in host at once,** because the signing
   key is rotated. They get back in by typing the new one.
-- **It is bound to the domain,** so it must be the name people actually type.
+- **It is bound to the domain,** so it must be the name people type.
 
 Users set theirs with `kanpachi password` on their own machine, which stores it
 per seed and never on a command line either.
@@ -164,12 +165,12 @@ sudo kanpseed uninstall
 ```
 
 Stops and removes both units, deletes `/usr/local/lib/kanpachi`,
-`/etc/kanpachi` and the state directory. Your reverse proxy and your firewall
-are **not** touched, because we did not write them.
+`/etc/kanpachi` and the state directory. It does **not** touch your reverse
+proxy or your firewall, because we did not write them.
 
-The state directory is on that list for a reason worth stating: the operator
-credential lives there, and it holds the key that mints tokens. Leaving signing
-material on a machine where nothing uses it any more is not tidiness.
+The state directory is on that list for a reason: the operator credential lives
+there, and it holds the key that mints tokens. Leaving signing material on a
+machine where nothing uses it any more is not tidiness.
 
 ## What is where
 

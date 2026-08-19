@@ -22,7 +22,7 @@ half the protection of everything inside, and creating the directory by accident
 would lose it silently.
 
 The ACL grants read to the machine's users on purpose, because the window has to
-read files there — `api.token` among them — without elevating. That is why the
+read files there, `api.token` among them, without elevating. That is why the
 Windows CLI needs no elevation to talk over the channel, unlike the Linux one.
 `identity.key` carries an ACL of its own.
 
@@ -65,7 +65,7 @@ enters a room without somebody inside confirming it.
 
 `kanpachi-portable.exe` keeps everything next to itself, in a `kanpachi-data\`
 folder, and uses the portable pipe. There is no ACL, no service, and no registry
-entry — which is why the CLI accepts `--data`: nothing here can guess where
+entry. That is why the CLI accepts `--data`: nothing here can guess where
 somebody unzipped it.
 
 ---
@@ -98,7 +98,7 @@ find a closed door and report "no service" while the service was starting
 correctly.
 
 It runs as `root`, and that is a decision rather than a convenience:
-`CAP_NET_ADMIN` — what it needs for nftables and `/dev/net/tun` — already allows
+`CAP_NET_ADMIN` (what it needs for nftables and `/dev/net/tun`) already allows
 reconfiguring the machine's entire network, so a dedicated user would buy little
 isolation while forcing every CLI call through `sudo -u kanpachi`. The hardening
 is what bounds the rest:
@@ -131,10 +131,10 @@ after `basic.target`, leaving a window with the ports open to the world.
 kernel's and not the process's: `nft -f` finishes and the rules stay.
 
 **There is no `ExecStop`, deliberately.** Stopping this unit cannot lift the
-quarantine. What makes it worth anything is that it stays with everything else
-off, so a `systemctl stop` that removed it would turn a routine command into
-opening the game ports to the internet without anybody asking. Removing it
-belongs to the uninstaller, and the uninstaller does not go through here.
+quarantine. Its value is that it stays with everything else off, so a
+`systemctl stop` that removed it would turn a routine command into opening the
+game ports to the internet without anybody asking. Removing it belongs to the
+uninstaller, and the uninstaller does not go through here.
 
 ```sh
 systemctl status kanpachid kanpachi-quarantine
@@ -151,7 +151,7 @@ sudo nft list table inet kanpachi-base
 | `/usr/local/lib/kanpachi/` | EasyTier `v2.6.4` and `index.html`, the invitation page |
 | `/etc/kanpachi/seed.json` | chosen ports and domain. The single source of truth |
 | `/var/lib/kanpseed/` | state, including the operator credential |
-| `/var/lib/private/kanpseed/` | where `DynamicUser=yes` actually puts it; the above is a symlink |
+| `/var/lib/private/kanpseed/` | where `DynamicUser=yes` puts it; the above is a symlink |
 | `/etc/systemd/system/kanpseed-engine.service` | EasyTier as a public node, `--no-tun` |
 | `/etc/systemd/system/kanpseed-registry.service` | the registry and the page |
 
