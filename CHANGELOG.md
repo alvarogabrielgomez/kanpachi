@@ -10,7 +10,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Added
 
-- Install the published version even when the number already matches, with `--force` on `kanpachi upgrade` and on `kanpseed upgrade`. Both compared numbers and answered `Already up to date`, which is the wrong answer when a version was republished over a fix: the tag keeps its number and the installed machine has different bytes. On the client `--force` also tells apt to reinstall, because apt compares numbers too and would answer `already the newest version` without touching a file. Found on the droplet, which could not pick up the rebuilt 0.6.2 by any combination of the flags that existed ([HASH](https://github.com/alvarogabrielgomez/kanpachi/commit/HASH))
+- Install the published version even when the number already matches, with `--force` on `kanpachi upgrade` and on `kanpseed upgrade`. Both compared numbers and answered `Already up to date`, which is the wrong answer when a version was republished over a fix: the tag keeps its number and the installed machine has different bytes. On the client `--force` also tells apt to reinstall, because apt compares numbers too and would answer `already the newest version` without touching a file. Found on the droplet, which could not pick up the rebuilt 0.6.2 by any combination of the flags that existed ([701669b](https://github.com/alvarogabrielgomez/kanpachi/commit/701669b))
 
 ## [0.6.2] - 2026-08-19
 
