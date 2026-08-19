@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.6.1] - 2026-08-18
+
 ### Fixed
 
 - Stop `kanpachi upgrade` ending on a paragraph about apt losing its sandbox: the package lands in the state directory, which is root-only on purpose, so the user apt fetches with cannot read it and apt says so every single time. Nothing is being fetched at that point — the file is already on disk with its SHA256 checked against the release manifest — so the run now says as much up front instead of letting apt discover it ([a912ffe](https://github.com/alvarogabrielgomez/kanpachi/commit/a912ffe))
@@ -344,6 +346,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.6.1]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.1
 [0.6.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.0
 [0.5.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.5.0
 [0.4.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.4.0
