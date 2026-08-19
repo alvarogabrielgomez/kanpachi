@@ -14,5 +14,5 @@
 # `Resolve-KanpachiEngine` (newest of C:\kt\release and friends), which is
 # what makes iterating on the engine not require a release per attempt.
 tag v0.1.0
-sha256-windows PENDING
-sha256-linux PENDING
+sha256-windows ae3dede08d7d74dada92b7dc9f4fe6af5321e337d2610f1ca192f6623e0a29f4
+sha256-linux a073f878331e1d479d7d80acb4df18da7219f925318eb03e0568d80cfc07c4b7
