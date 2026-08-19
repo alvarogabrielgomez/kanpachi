@@ -29,11 +29,19 @@ const Name = `\\.\pipe\ProtectedPrefix\Administrators\kanpachi-installed`
 
 // PortableName es el canal del producto portable.
 //
-// No puede compartir [Name]. Instalado y portable son dos productos completos
-// que pueden convivir en la misma máquina, cada uno con su daemon, sus datos y
-// su interfaz. Compartir el pipe hacía que el primero que arrancara secuestrara
-// al lanzador del otro y que una UI leyera el token de su carpeta contra el
-// daemon ajeno.
+// No puede compartir [Name]. Instalado y portable son dos productos completos,
+// cada uno con su daemon, sus datos y su interfaz. Compartir el pipe hacía que
+// el primero que arrancara secuestrara al lanzador del otro y que una UI leyera
+// el token de su carpeta contra el daemon ajeno.
+//
+// **Lo que separa es el canal y los datos, y hasta ahí llega.** Los dos usan el
+// mismo `kanpachi0`, el mismo grupo de firewall y la misma compuerta, que son
+// de la máquina y no de la instalación. Con los dos daemons vivos, el segundo
+// muere al abrir sala: Wintun admite una sola sesión por adaptador y contesta
+// «WintunStartSession failed», sin nombrar la causa. Medido el 2026-08-19 con
+// el instalado y el portable abiertos a la vez. Que reviente ahí es lo mejor
+// que puede pasar: si los adaptadores tuvieran nombres distintos, los dos
+// seguirían adelante pisándose el firewall en silencio.
 const PortableName = `\\.\pipe\ProtectedPrefix\Administrators\kanpachi-portable`
 
 // ConsoleName es el del modo desarrollo, y es OTRO a propósito.
