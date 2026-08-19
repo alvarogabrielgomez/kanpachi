@@ -226,6 +226,34 @@ func ParsePortRange(proto Proto, spec string) (PortRange, error) {
 	return r, nil
 }
 
+// ParsePortRanges reads a comma-separated list for ONE protocol, which is the
+// form a compose file writes: "25565" or "16261-16262,27015".
+//
+// The protocol stays a separate argument on purpose. Folding it into the string
+// would collide with [ParseProto], where "tcp/udp" already means BOTH: a
+// "proto/range" syntax would spell the two-protocol case "tcp/udp/2300-2400".
+//
+// The cost of the split, and it is worth naming: a port needed on both
+// protocols is written in both lists and spends two of the [MaxPortRanges]
+// slots, where a single "both" range would have spent one.
+func ParsePortRanges(proto Proto, list string) ([]PortRange, error) {
+	out := make([]PortRange, 0, 4)
+	for _, spec := range strings.Split(list, ",") {
+		if strings.TrimSpace(spec) == "" {
+			continue
+		}
+		r, err := ParsePortRange(proto, spec)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	if len(out) == 0 {
+		return nil, ErrPortRangeShape
+	}
+	return out, nil
+}
+
 func parsePort(s string) (uint16, error) {
 	s = strings.TrimSpace(s)
 	// ParseUint acepta "+27015" y espacios internos no, pero sí acepta formas

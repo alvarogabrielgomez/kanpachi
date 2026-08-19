@@ -173,6 +173,57 @@ set is empty and nothing opens, which is correct and not a failure.
 **With no id it closes them all.** That is a legal instruction rather than a
 missing argument: `kanpachi game` on its own means "stop having ports open".
 
+The ids that ship with Kanpachi:
+
+| id | Game | Ports it opens on the host |
+|---|---|---|
+| `project-zomboid` | Project Zomboid | 16261-16262/udp |
+| `minecraft-java` | Minecraft (Java) | 25565/tcp |
+| `age-of-empires-2` | Age of Empires II: The Conquerors | 47624/tcp, 2300-2400/both, 6073/udp |
+| `counter-strike-1-6` | Counter-Strike 1.6 | 27015/udp |
+| `valheim` | Valheim | 2456-2458/udp |
+| `terraria` | Terraria | 7777/tcp |
+| `factorio` | Factorio | 34197/udp |
+| `left-4-dead-2` | Left 4 Dead 2 | 27015/udp |
+| `stardew-valley` | Stardew Valley | 24642/both |
+| `7-days-to-die` | 7 Days to Die | 26900/both, 26901-26903/udp |
+| `dont-starve-together` | Don't Starve Together | 10998-10999/udp |
+
+`both` is written once in the profile and becomes two firewall rules. None of
+these opens anything on a guest: every one of them is a star, where only the
+host listens.
+
+### `profile <id> --name <n> [--tcp l] [--udp l] [--replace]`
+
+Describes a game the catalogue does not have, so that `game <id>` can activate
+it. The lists take single ports or ranges, comma separated:
+
+```sh
+kanpachi profile my-server --name "My modded server" --tcp 25565 --udp 19132-19133
+kanpachi game my-server
+```
+
+What it refuses, and each refusal is the same one the daemon applies to a
+profile arriving from anywhere else:
+
+- **Eight ranges at most**, counting both lists together.
+- **Twelve ports are never allowed**, and the check is by containment rather
+  than equality: `--tcp 440-450` is rejected for covering 445. They are 22, 135,
+  137, 138, 139, 445, 3389, 3702, 5357, 5358, 5985 and 5986.
+- The id takes lowercase letters, digits and hyphens, and cannot start or end
+  with one. It is what ends up inside a firewall rule's name.
+- An id already used by a game that ships with Kanpachi needs `--replace`, so
+  that shadowing one is a decision. A shadowed game stops receiving the
+  corrections each release brings.
+
+**Saving the same id again updates it** rather than adding a second profile,
+which is what makes it safe to run on every start of a container.
+
+**The name stays on this machine.** What the host announces to the room is the
+id, never the profile: anybody without that entry in their own catalogue sees
+the raw id and opens nothing. The name your guests actually read is the room's,
+which `rename` sets.
+
 ## Checking
 
 ### `exposure`

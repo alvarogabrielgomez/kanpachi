@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Added
+
+- Describe a game the catalogue does not have without leaving the terminal, with `kanpachi profile <id> --name <n> --tcp <ports> --udp <ports>`. Creating a profile existed only in the Windows window, so a headless Linux host had no way to open a port for anything outside the eleven games that ship. Saving the same id again updates it instead of adding a second, which is what lets a container run it on every start ([HASH](https://github.com/alvarogabrielgomez/kanpachi/commit/HASH))
+
 ## [0.6.3] - 2026-08-19
 
 ### Added

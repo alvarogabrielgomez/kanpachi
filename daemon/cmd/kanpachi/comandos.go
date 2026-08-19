@@ -44,7 +44,7 @@ var grupos = []struct {
 }{
 	{"The room:", []string{"status", "watch", "host", "join", "leave", "link", "rotate", "rename"}},
 	{"Who is in:", []string{"members", "kick"}},
-	{"The game:", []string{"games", "game"}},
+	{"The game:", []string{"games", "game", "profile"}},
 	{"Checking:", []string{"exposure", "diag", "probe", "protect"}},
 	{"What was left from before:", []string{"pending", "resume", "discard", "last"}},
 	{"The system:", []string{"name", "seed", "quarantine", "password", "doctor", "upgrade"}},
@@ -82,6 +82,9 @@ func init() {
 			correr: cmdGames},
 		"game": {args: "[id]", breve: "activate a game profile; with no id, close the ports",
 			correr: cmdGame},
+		"profile": {args: "<id> --name <n> [--tcp|--udp l]",
+			breve:  "describe a game the catalog does not have. Saving it again updates it",
+			correr: cmdProfile},
 		"exposure": {breve: "what Kanpachi has open, and toward whom",
 			correr: cmdExposure},
 		"diag": {breve: "the network as the engine sees it: NAT, UDP and MTU",
