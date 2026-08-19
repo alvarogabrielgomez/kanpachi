@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.6.3] - 2026-08-19
+
 ### Added
 
 - Install the published version even when the number already matches, with `--force` on `kanpachi upgrade` and on `kanpseed upgrade`. Both compared numbers and answered `Already up to date`, which is the wrong answer when a version was republished over a fix: the tag keeps its number and the installed machine has different bytes. On the client `--force` also tells apt to reinstall, because apt compares numbers too and would answer `already the newest version` without touching a file. Found on the droplet, which could not pick up the rebuilt 0.6.2 by any combination of the flags that existed ([701669b](https://github.com/alvarogabrielgomez/kanpachi/commit/701669b))
@@ -365,6 +367,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.6.3]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.3
 [0.6.2]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.2
 [0.6.1]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.1
 [0.6.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.0
