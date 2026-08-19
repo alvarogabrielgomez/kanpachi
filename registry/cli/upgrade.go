@@ -29,6 +29,7 @@ func cmdUpgrade(args []string) error {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	check := fs.Bool("check", false, "only reports whether there is a new version, installs nothing")
 	target := fs.String("version", "", "a specific version to install, for example v0.1.0")
+	force := fs.Bool("force", false, "install the latest even if it is the one already installed")
 	assumeYes := fs.Bool("yes", false, "no preguntar antes de actualizar")
 	noRestart := fs.Bool("no-restart", false, "do not restart the services when done")
 	if err := fs.Parse(args); err != nil {
@@ -50,8 +51,16 @@ func cmdUpgrade(args []string) error {
 	// El atajo silencioso solo vale comparando contra la última. Con --version
 	// se instala lo que se pidió aunque sea la misma o anterior, que es lo que
 	// hace de este comando una forma de volver atrás.
-	if *target == "" && selfupdate.IsVersion(Version) && !selfupdate.Outdated(Version, tag) {
+	//
+	// Y con --force tampoco vale. El atajo compara NÚMEROS, y dos publicaciones
+	// distintas pueden llevar el mismo: una versión republicada sobre un arreglo
+	// deja a esta máquina con el build viejo y a este comando diciendo que no hay
+	// nada que hacer. Acá pesa más que en el cliente, porque el seed son cinco
+	// piezas que tienen que estar de acuerdo y una republicación puede tocar
+	// cualquiera de ellas.
+	if *target == "" && !*force && selfupdate.IsVersion(Version) && !selfupdate.Outdated(Version, tag) {
 		ok("the seed is already up to date (%s)", Version)
+		tenue("  --force installs it anyway, which is how a republished version is picked up")
 		return nil
 	}
 

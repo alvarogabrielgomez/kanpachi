@@ -69,6 +69,7 @@ Commands a person runs:
   init        installs and configures everything. One single run
   upgrade     updates to the latest published version
               --check reports whether there is a new one, installs nothing
+              --force installs it even when the number already matches
   doctor      checks that everything is as it should be, and says what is missing
   config      shows or changes the ports, and rewrites the services
   password    asks for a password to HOST on this seed. Entering a room

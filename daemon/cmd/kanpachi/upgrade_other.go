@@ -14,6 +14,6 @@ import (
 // Se declara igual para que `go build ./...` compile en Windows, que es donde se
 // desarrolla, y devuelve error en vez de fingir: un `upgrade` que dijera que
 // instaló sin instalar es peor que uno que no existe.
-func aptInstall(context.Context, string) error {
+func aptInstall(context.Context, string, bool) error {
 	return errors.New("installing a .deb is a Linux thing")
 }

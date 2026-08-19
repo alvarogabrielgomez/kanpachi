@@ -109,7 +109,7 @@ func init() {
 			correr: cmdPassword},
 		"doctor": {args: "[--fix]", breve: "what this needs to work, and what is broken",
 			correr: cmdDoctor},
-		"upgrade": {args: "[--check] [--version v] [--yes]",
+		"upgrade": {args: "[--check] [--version v] [--force] [--yes]",
 			breve:  "fetch the new version. Restarts the service, so the room drops",
 			correr: cmdUpgrade},
 		"version": {breve: "which version this is",

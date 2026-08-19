@@ -46,14 +46,27 @@ import (
 // manifiesto del release, así que el sandbox de descarga no tiene nada que
 // aislar. Decírselo por adelantado es la diferencia entre una decisión escrita
 // y un aviso que aparece cada vez y que alguien va a tener que ir a investigar.
-func aptInstall(ctx context.Context, ruta string) error {
+//
+// # Y `reinstalar` existe porque apt compara números, no contenido
+//
+// `apt-get install` sobre un paquete cuya versión ya está puesta contesta
+// «kanpachi is already the newest version» y no hace nada, aunque el fichero que
+// se le pasa sean otros bytes. Pasa de verdad: una versión republicada sobre un
+// arreglo lleva el mismo número que la que ya está instalada. `--reinstall` es
+// la forma que tiene apt de decir «ese paquete, otra vez», y solo se le pasa
+// cuando quien escribió el comando pidió `--force`.
+func aptInstall(ctx context.Context, ruta string, reinstalar bool) error {
 	entorno := append(os.Environ(),
 		"DEBIAN_FRONTEND=noninteractive",
 		"DPKG_FORCE=confold",
 	)
-	return ejecutarVisible(ctx, entorno, "apt-get", "install", "-y",
+	args := []string{"install", "-y",
 		"-o", "Dpkg::Options::=--force-confold",
-		"-o", "APT::Sandbox::User=root", ruta)
+		"-o", "APT::Sandbox::User=root"}
+	if reinstalar {
+		args = append(args, "--reinstall")
+	}
+	return ejecutarVisible(ctx, entorno, "apt-get", append(args, ruta)...)
 }
 
 // ejecutarVisible corre un comando dejando que hable por la terminal.

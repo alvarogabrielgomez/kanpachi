@@ -320,7 +320,7 @@ Two properties worth relying on:
 - **After fixing it looks again** rather than trusting the fix. A command that
   returned zero is not evidence that the state changed.
 
-### `upgrade [--check] [--version <v>] [--yes]`
+### `upgrade [--check] [--version <v>] [--force] [--yes]`
 
 Fetches a new version. It restarts the service, so the room drops and reopens
 itself on the way back up.
@@ -329,11 +329,19 @@ itself on the way back up.
 |---|---|
 | `--check` | reports what is published, installs nothing |
 | `--version <v>` | installs exactly that tag, **even if it is the same or older** |
+| `--force` | installs the latest even when the number already matches |
 | `--yes` | does not ask |
 
 `--version` is what makes this a way back: without it, a version that is already
 current short-circuits with `Already up to date`, and naming a tag on purpose
 skips that shortcut.
+
+`--force` answers a different question. The shortcut compares **numbers**, and
+two different builds can carry the same one: a version republished over a fix
+keeps its tag, so an installed machine sees a match and is told there is nothing
+to do. With `--force` the latest is fetched and installed regardless, and apt is
+told to reinstall, because apt compares numbers too and would otherwise answer
+`already the newest version` without touching the files.
 
 A hand-built binary reports honestly. Calling it up to date or out of date would
 both be false, so `--check` says what it knows: this binary is `dev`, and the
@@ -411,7 +419,7 @@ the server, not on the machine that plays.
 | Command | What it does |
 |---|---|
 | `init` | installs and configures everything. One single run |
-| `upgrade [--check]` | updates to the latest published version; `--check` only reports |
+| `upgrade [--check] [--force]` | updates to the latest published version; `--check` only reports, `--force` installs even when the number already matches |
 | `doctor` | checks everything is as it should be, and says what is missing |
 | `config` | shows or changes the ports, and rewrites the services |
 | `password [--open]` | the password to HOST on this seed; `--open` removes it |

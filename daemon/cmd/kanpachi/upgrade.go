@@ -62,6 +62,7 @@ const DebFile = "kanpachi-amd64.deb"
 func cmdUpgrade(ctx context.Context, op opciones, args []string) error {
 	soloMirar := false
 	sinPreguntar := false
+	forzar := false
 	pedida := ""
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -69,6 +70,8 @@ func cmdUpgrade(ctx context.Context, op opciones, args []string) error {
 			soloMirar = true
 		case "--yes", "-yes", "-y":
 			sinPreguntar = true
+		case "--force", "-force":
+			forzar = true
 		case "--version", "-version":
 			if i+1 >= len(args) {
 				return uso("--version is missing the number, for example v0.2.0")
@@ -76,7 +79,7 @@ func cmdUpgrade(ctx context.Context, op opciones, args []string) error {
 			i++
 			pedida = args[i]
 		default:
-			return uso("upgrade does not understand %q. It takes --check, --version <v> and --yes", args[i])
+			return uso("upgrade does not understand %q. It takes --check, --version <v>, --force and --yes", args[i])
 		}
 	}
 
@@ -92,8 +95,16 @@ func cmdUpgrade(ctx context.Context, op opciones, args []string) error {
 	// El atajo silencioso solo vale comparando contra la última. Con --version se
 	// instala lo que se pidió aunque sea la misma o anterior, que es lo que hace
 	// de este comando una forma de volver atrás.
-	if pedida == "" && selfupdate.IsVersion(Version) && !selfupdate.Outdated(Version, tag) {
+	//
+	// Y con --force tampoco vale, porque la pregunta que contesta el atajo no es
+	// la que a veces se hace. El atajo compara NÚMEROS, y dos binarios distintos
+	// pueden llevar el mismo: una versión republicada sobre un arreglo deja a la
+	// máquina desplegada con el build viejo y a `upgrade` diciendo que no hay
+	// nada que hacer. Medido en el droplet con la 0.6.2 el 2026-08-19, que se
+	// tuvo que retaguear y no había forma de recogerla.
+	if pedida == "" && !forzar && selfupdate.IsVersion(Version) && !selfupdate.Outdated(Version, tag) {
 		fmt.Printf("Already up to date (%s).\n", Version)
+		fmt.Println("  `--force` installs it anyway, which is how a republished version is picked up.")
 		return nil
 	}
 
@@ -123,11 +134,23 @@ func cmdUpgrade(ctx context.Context, op opciones, args []string) error {
 		return uso("with no terminal you have to say --yes, and that restarts the service")
 	}
 	if !sinPreguntar {
-		fmt.Printf("Installed %s, available %s.\n", Version, tag)
+		// Con el mismo número a los dos lados, «installed X, available X» no dice
+		// nada y la pregunta parece un error. Lo que va a pasar es reinstalar, y
+		// así se nombra.
+		mismo := Version == tag
+		if mismo {
+			fmt.Printf("Installing %s over itself, which is what --force is for.\n", tag)
+		} else {
+			fmt.Printf("Installed %s, available %s.\n", Version, tag)
+		}
 		// La sala se nombra porque el reinicio del servicio se la lleva por
 		// delante, y quien tenga gente jugando quiere elegir el momento.
 		fmt.Println("Upgrading restarts the service, so the room drops and has to be reopened.")
-		ok, err := confirmar(fmt.Sprintf("Upgrade to %s?", tag))
+		pregunta := fmt.Sprintf("Upgrade to %s?", tag)
+		if mismo {
+			pregunta = fmt.Sprintf("Reinstall %s?", tag)
+		}
+		ok, err := confirmar(pregunta)
 		if err != nil {
 			return err
 		}
@@ -159,7 +182,12 @@ func cmdUpgrade(ctx context.Context, op opciones, args []string) error {
 	}()
 
 	fmt.Println("Installing with apt...")
-	if err := instalarPaquete(ctx, destino); err != nil {
+	// Reinstalar cuando el número no sube. apt compara versiones igual que el
+	// atajo de arriba y contesta «already the newest version» sin tocar nada, así
+	// que saltarse el atajo del CLI y no el de apt deja el comando diciendo que
+	// instaló sin haber instalado.
+	reinstalar := forzar && !selfupdate.Outdated(Version, tag)
+	if err := instalarPaquete(ctx, destino, reinstalar); err != nil {
 		return err
 	}
 
@@ -285,11 +313,11 @@ func sePuedeActualizarAcá(op opciones) error {
 // un paquete a medio configurar. La ruta lleva `./` a propósito, porque sin
 // barra apt lo interpretaría como el NOMBRE de un paquete del repositorio, y ese
 // nombre no existe en ninguno.
-func instalarPaquete(ctx context.Context, ruta string) error {
+func instalarPaquete(ctx context.Context, ruta string, reinstalar bool) error {
 	if !strings.HasPrefix(ruta, "/") && !strings.HasPrefix(ruta, "./") {
 		ruta = "./" + ruta
 	}
-	return aptInstall(ctx, ruta)
+	return aptInstall(ctx, ruta, reinstalar)
 }
 
 // hayTerminal dice si hay alguien mirando.
