@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.6.4] - 2026-08-19
+
 ### Added
 
 - Run Kanpachi as a container: `docker/` carries the image and four whole compose files to copy, and the room comes back with the same invite code after the container is destroyed and rebuilt, because the state lives in a volume rather than in the image. The entrypoint prints the code and the link on every start, since `docker logs` is the only place an unattended server can be asked, and it refuses early with a readable message when the compose forgot `NET_ADMIN` or `/dev/net/tun` ([05d525e](https://github.com/alvarogabrielgomez/kanpachi/commit/05d525e))
@@ -376,6 +378,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.6.4]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.4
 [0.6.3]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.3
 [0.6.2]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.2
 [0.6.1]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.1

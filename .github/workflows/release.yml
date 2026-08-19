@@ -310,6 +310,30 @@ jobs:
             sha256sum -c SHA256SUMS-linux --ignore-missing
             ```
 
+            ## Client · container, amd64
+
+            `ghcr.io/${{ github.repository }}:${{ env.VERSION }}`, and
+            `:latest`. Partial tags are not published, so pin the whole number
+            or follow `latest`.
+
+            For a game server on a machine that already runs Docker. Copy a
+            compose file from
+            [`docker/templates/`](https://github.com/${{ github.repository }}/tree/main/docker/templates),
+            change the registry, and `docker compose up -d`. The invite code and
+            link are printed on every start, so `docker logs` answers "what is
+            the code" without anybody opening a shell.
+
+            Destroy the container and rebuild it and the same code comes back:
+            the room lives in a volume. Losing that volume loses the code for
+            good, and the guide says so in the place you would look.
+
+            The image needs `cap_add: [NET_ADMIN]` and `/dev/net/tun`, which a
+            container cannot grant itself. Kanpachi Protection's promise does
+            not reach in here, because what makes it a promise is a systemd unit
+            loading at boot, and a container has no boot of its own.
+
+            [Run a game server with Docker](https://github.com/${{ github.repository }}/blob/main/docs/public/run-a-game-server-docker.md)
+
             ## Rendezvous node · Linux
 
             `kanpseed-linux-amd64`, `kanpseed-linux-arm64`, `index.html`
