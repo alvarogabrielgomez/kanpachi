@@ -2,8 +2,8 @@
 
 package main
 
-// Las comprobaciones de Linux, que son las que de verdad hacen falta: acá el
-// producto es un servicio en un servidor y nadie mira una ventana.
+// The Linux checks, which are the ones that really matter: here the product is a
+// service on a server and nobody is looking at a window.
 
 import (
 	"compress/gzip"
@@ -19,143 +19,145 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/transport/pipe"
 )
 
-// engineLinux es dónde el paquete pone el motor.
+// engineLinux is where the package puts the engine.
 //
-// Repetido a mano y no importado del cableado del daemon, que es `package main`
-// y no lo importa nadie. Es la misma limitación que llevó a hacer
-// `daemon/paths`, y esta ruta no bajó ahí porque la mira UNO solo: el daemon la
-// construye desde el directorio de su propio binario, así que no hay dos sitios
-// que puedan desincronizarse, hay este y una construcción.
+// Repeated by hand and not imported from the daemon's wiring, which is `package
+// main` and nobody imports. It is the same limitation that led to `daemon/paths`,
+// and this path did not move down there because ONE thing looks at it: the daemon
+// builds it from its own binary's directory, so there are not two places that can
+// drift apart, there is this one and a construction.
 const engineLinux = "/usr/libexec/kanpachi/kanpachi-engine"
 
-func chequeosDelSistema() []chequeo {
-	return []chequeo{
-		chequeoDeTUN(),
-		chequeoDelKernel(),
-		chequeoDeUnidad("kanpachid", "the service"),
-		chequeoDeLaCuarentena(),
-		chequeoDelDirectorioDelCanal(),
-		chequeoDelCanal(),
-		chequeoDelMotor(engineLinux),
-		chequeoDeFirewallsAjenos(),
+func systemChecks() []check {
+	return []check{
+		tunCheck(),
+		kernelCheck(),
+		unitCheck("kanpachid", "the service"),
+		quarantineCheck(),
+		channelDirCheck(),
+		channelCheck(),
+		engineCheck(engineLinux),
+		foreignFirewallCheck(),
 	}
 }
 
-func pistaDeElevación() string { return "Try sudo: the channel and the token belong to root." }
+func elevationHint() string { return "Try sudo: the channel and the token belong to root." }
 
 // ─── /dev/net/tun ────────────────────────────────────────────────────────────
 
-// tunMajor y tunMinor son los números que Linux le asigna al nodo de TUN.
+// tunMajor and tunMinor are the numbers Linux assigns to the TUN node.
 //
-// Se comprueban además de que el fichero exista porque un nodo con los números
-// equivocados existe, se abre, y falla al configurarse, que es mucho más difícil
-// de leer que "no está".
+// They get checked as well as the file existing because a node with the wrong
+// numbers exists, opens, and fails when it gets configured, which is much harder
+// to read than "it is not there".
 const (
 	tunPath  = "/dev/net/tun"
 	tunMajor = 10
 	tunMinor = 200
 )
 
-func chequeoDeTUN() chequeo {
-	return chequeo{
-		nombre: "/dev/net/tun",
-		mirar: func(context.Context, opciones) veredicto {
+func tunCheck() check {
+	return check{
+		name: "/dev/net/tun",
+		look: func(context.Context, options) verdict {
 			info, err := os.Stat(tunPath)
 			if os.IsNotExist(err) {
-				return fallar("it is missing, and without it there is no virtual network").
-					con("modprobe tun\n" +
+				return bad("it is missing, and without it there is no virtual network").
+					withFix("modprobe tun\n" +
 						"mknod /dev/net/tun c 10 200 && chmod 0666 /dev/net/tun")
 			}
 			if err != nil {
-				return noSeSabe("could not look at it: %v", err)
+				return unknown("could not look at it: %v", err)
 			}
 			if info.Mode()&os.ModeCharDevice == 0 {
-				return fallar("it exists and is not a character device").
-					con("rm /dev/net/tun && mknod /dev/net/tun c 10 200")
+				return bad("it exists and is not a character device").
+					withFix("rm /dev/net/tun && mknod /dev/net/tun c 10 200")
 			}
-			st, listo := info.Sys().(*syscall.Stat_t)
-			if !listo {
-				return noSeSabe("its numbers could not be read")
+			st, ready := info.Sys().(*syscall.Stat_t)
+			if !ready {
+				return unknown("its numbers could not be read")
 			}
-			ma, mi := mayorMenor(uint64(st.Rdev))
+			ma, mi := majorMinor(uint64(st.Rdev))
 			if ma != tunMajor || mi != tunMinor {
-				return fallar("it is %d/%d and has to be %d/%d", ma, mi, tunMajor, tunMinor).
-					con("rm /dev/net/tun && mknod /dev/net/tun c 10 200")
+				return bad("it is %d/%d and has to be %d/%d", ma, mi, tunMajor, tunMinor).
+					withFix("rm /dev/net/tun && mknod /dev/net/tun c 10 200")
 			}
-			return ok("%d/%d, as it has to be", ma, mi)
+			return good("%d/%d, as it has to be", ma, mi)
 		},
-		arreglar: func(ctx context.Context, _ opciones) error {
-			// `modprobe` primero: en la mayoría de los casos el nodo no está
-			// porque el módulo no está cargado, y ahí lo crea el propio kernel
-			// con los números correctos. Crearlo a mano antes tapa la causa.
-			_ = ejecutar(ctx, "modprobe", "tun")
+		fix: func(ctx context.Context, _ options) error {
+			// `modprobe` first: in most cases the node is missing because the
+			// module is not loaded, and there the kernel creates it itself with
+			// the right numbers. Creating it by hand first covers up the cause.
+			_ = runCmd(ctx, "modprobe", "tun")
 			if _, err := os.Stat(tunPath); err == nil {
 				return nil
 			}
 			if err := os.MkdirAll("/dev/net", 0o755); err != nil {
 				return err
 			}
-			return ejecutar(ctx, "mknod", tunPath, "c", "10", "200")
+			return runCmd(ctx, "mknod", tunPath, "c", "10", "200")
 		},
 	}
 }
 
-// mayorMenor parte un rdev en sus dos números, con la codificación de Linux.
+// majorMinor splits an rdev into its two numbers, with Linux's encoding.
 //
-// No es un desplazamiento y ya: los bits del menor están en DOS trozos, y una
-// versión ingenua (`rdev>>8`, `rdev&0xff`) acierta en `10/200` por casualidad y
-// falla en cuanto el menor pasa de 255.
-func mayorMenor(rdev uint64) (uint32, uint32) {
-	mayor := uint32((rdev >> 8) & 0xfff)
-	menor := uint32(rdev&0xff) | uint32((rdev>>12)&^uint64(0xff))
-	return mayor, menor
+// It is not just a shift: the minor's bits sit in TWO pieces, and a naive
+// version (`rdev>>8`, `rdev&0xff`) gets `10/200` right by luck and fails as soon
+// as the minor goes past 255.
+func majorMinor(rdev uint64) (uint32, uint32) {
+	major := uint32((rdev >> 8) & 0xfff)
+	minor := uint32(rdev&0xff) | uint32((rdev>>12)&^uint64(0xff))
+	return major, minor
 }
 
-// ─── El kernel ───────────────────────────────────────────────────────────────
+// ─── The kernel ──────────────────────────────────────────────────────────────
 
-// chequeoDelKernel mira que el kernel traiga lo que hace falta.
+// kernelCheck looks at whether the kernel brings what is needed.
 //
-// **No se arregla**, y no por prudencia: cambiar la configuración del kernel es
-// recompilarlo o cambiar de kernel, o sea la máquina del operador y no lo
-// nuestro. Además su ausencia se nota antes por otro lado, así que esto sirve
-// sobre todo para poner nombre a un fallo que si no parece de Kanpachi.
-func chequeoDelKernel() chequeo {
-	return chequeo{
-		nombre: "the kernel",
-		mirar: func(context.Context, opciones) veredicto {
-			cfg, dónde, err := configDelKernel()
+// **It does not get fixed**, and not out of caution: changing the kernel's
+// configuration means recompiling it or changing kernels, which is the
+// operator's machine and not ours. Its absence also shows up somewhere else
+// first, so this mostly serves to put a name on a failure that would otherwise
+// look like Kanpachi's.
+func kernelCheck() check {
+	return check{
+		name: "the kernel",
+		look: func(context.Context, options) verdict {
+			cfg, where, err := kernelConfig()
 			if err != nil {
-				// Que no esté la configuración es normal en muchas distribuciones,
-				// y no es un fallo: se dice que no se sabe, que es la verdad.
-				return noSeSabe("could not read the kernel configuration: %v", err)
+				// The configuration being absent is normal on many distributions,
+				// and it is not a failure: it says it is not known, which is the
+				// truth.
+				return unknown("could not read the kernel configuration: %v", err)
 			}
-			faltan := []string{}
-			for _, opción := range []string{"CONFIG_TUN", "CONFIG_NF_TABLES", "CONFIG_NF_TABLES_INET"} {
-				if !tieneOpción(cfg, opción) {
-					faltan = append(faltan, opción)
+			missing := []string{}
+			for _, option := range []string{"CONFIG_TUN", "CONFIG_NF_TABLES", "CONFIG_NF_TABLES_INET"} {
+				if !hasOption(cfg, option) {
+					missing = append(missing, option)
 				}
 			}
-			if len(faltan) > 0 {
-				return fallar("it is missing %s (according to %s)", strings.Join(faltan, ", "), dónde).
-					con("This is the kernel configuration, so Kanpachi does not touch it.")
+			if len(missing) > 0 {
+				return bad("it is missing %s (according to %s)", strings.Join(missing, ", "), where).
+					withFix("This is the kernel configuration, so Kanpachi does not touch it.")
 			}
-			return ok("TUN and nftables, according to %s", dónde)
+			return good("TUN and nftables, according to %s", where)
 		},
 	}
 }
 
-// configDelKernel devuelve la configuración del kernel que esté a mano.
+// kernelConfig returns whichever kernel configuration is at hand.
 //
-// Los dos sitios habituales, en el orden en que suelen existir: el fichero que
-// deja el paquete del kernel en `/boot`, y el que el propio kernel expone
-// comprimido cuando se compiló con `CONFIG_IKCONFIG_PROC`.
-func configDelKernel() (string, string, error) {
+// The two usual places, in the order they tend to exist: the file the kernel's
+// package leaves in `/boot`, and the one the kernel itself exposes compressed
+// when it was built with `CONFIG_IKCONFIG_PROC`.
+func kernelConfig() (string, string, error) {
 	var uts syscall.Utsname
 	if err := syscall.Uname(&uts); err == nil {
-		release := aCadena(uts.Release[:])
-		ruta := "/boot/config-" + release
-		if b, err := os.ReadFile(ruta); err == nil {
-			return string(b), ruta, nil
+		release := toString(uts.Release[:])
+		path := "/boot/config-" + release
+		if b, err := os.ReadFile(path); err == nil {
+			return string(b), path, nil
 		}
 	}
 
@@ -176,14 +178,14 @@ func configDelKernel() (string, string, error) {
 	return string(b), "/proc/config.gz", nil
 }
 
-// tieneOpción acepta `=y` y `=m`: compilada dentro o como módulo, las dos valen.
-func tieneOpción(cfg, nombre string) bool {
-	return strings.Contains(cfg, "\n"+nombre+"=y") ||
-		strings.Contains(cfg, "\n"+nombre+"=m") ||
-		strings.HasPrefix(cfg, nombre+"=")
+// hasOption accepts `=y` and `=m`: built in or as a module, both count.
+func hasOption(cfg, name string) bool {
+	return strings.Contains(cfg, "\n"+name+"=y") ||
+		strings.Contains(cfg, "\n"+name+"=m") ||
+		strings.HasPrefix(cfg, name+"=")
 }
 
-func aCadena(b []int8) string {
+func toString(b []int8) string {
 	var sb strings.Builder
 	for _, c := range b {
 		if c == 0 {
@@ -194,115 +196,117 @@ func aCadena(b []int8) string {
 	return sb.String()
 }
 
-// ─── Las unidades ────────────────────────────────────────────────────────────
+// ─── The units ───────────────────────────────────────────────────────────────
 
-func chequeoDeUnidad(unidad, nombre string) chequeo {
-	return chequeo{
-		nombre: nombre,
-		mirar: func(ctx context.Context, _ opciones) veredicto {
-			activo := salidaDe(ctx, "systemctl", "is-active", unidad)
-			habilitado := salidaDe(ctx, "systemctl", "is-enabled", unidad)
-			switch activo {
+func unitCheck(unit, name string) check {
+	return check{
+		name: name,
+		look: func(ctx context.Context, _ options) verdict {
+			active := outputOf(ctx, "systemctl", "is-active", unit)
+			enabled := outputOf(ctx, "systemctl", "is-enabled", unit)
+			switch active {
 			case "active":
-				if habilitado != "enabled" {
-					// Corriendo y sin arrancar solo: funciona hoy y no mañana. Es
-					// un aviso y no un fallo, porque puede ser lo que el operador
-					// quiso.
-					return avisar("running, and does NOT start with the machine (%s)", habilitado)
+				if enabled != "enabled" {
+					// Running and not starting on its own: it works today and not
+					// tomorrow. It is a warning and not a failure, because it may
+					// be what the operator wanted.
+					return warn("running, and does NOT start with the machine (%s)", enabled)
 				}
-				return ok("running, and starts with the machine")
+				return good("running, and starts with the machine")
 			case "":
-				return noSeSabe("there is no systemctl to ask")
+				return unknown("there is no systemctl to ask")
 			default:
-				return fallar("%s (%s)", activo, habilitado).
-					con("systemctl enable --now " + unidad)
+				return bad("%s (%s)", active, enabled).
+					withFix("systemctl enable --now " + unit)
 			}
 		},
-		arreglar: func(ctx context.Context, _ opciones) error {
-			return ejecutar(ctx, "systemctl", "enable", "--now", unidad)
+		fix: func(ctx context.Context, _ options) error {
+			return runCmd(ctx, "systemctl", "enable", "--now", unit)
 		},
 	}
 }
 
-// chequeoDeLaCuarentena es LA comprobación importante, y la que menos se ve.
+// quarantineCheck is THE important check, and the least visible one.
 //
-// # Por qué no basta con mirar la unidad
+// # Why looking at the unit is not enough
 //
-// Porque lo que protege la máquina es la TABLA cargada en el kernel, y las dos
-// cosas se separan de verdad: la unidad es `oneshot` con `RemainAfterExit`, así
-// que figura activa desde que `nft -f` terminó una vez, y un `nft flush ruleset`
-// posterior se lleva la tabla sin tocar el estado de la unidad. Ahí `systemctl
-// status` diría que todo va bien con los puertos del juego abiertos a internet, y
-// nada más en el sistema lo diría.
-func chequeoDeLaCuarentena() chequeo {
-	return chequeo{
-		nombre: "the base quarantine",
-		mirar: func(ctx context.Context, _ opciones) veredicto {
+// Because what protects the machine is the TABLE loaded in the kernel, and the
+// two really do come apart: the unit is `oneshot` with `RemainAfterExit`, so it
+// shows as active from the moment `nft -f` finished once, and a later `nft flush
+// ruleset` takes the table away without touching the unit's state. There
+// `systemctl status` would say everything is fine with the game's ports open to
+// the internet, and nothing else on the system would say otherwise.
+func quarantineCheck() check {
+	return check{
+		name: "the base quarantine",
+		look: func(ctx context.Context, _ options) verdict {
 			if _, err := os.Stat(nftpermits.QuarantineFile); os.IsNotExist(err) {
-				// Sin fichero no hay nada roto: la cuarentena es la DECISIÓN del
-				// usuario desde que dejó de aplicarse sola, y el fichero solo
-				// existe con la decisión en sí. Se dice dónde se decide.
-				return avisar("not in place. It is this machine's decision now: " +
+				// With no file nothing is broken: the quarantine is the user's
+				// DECISION now that it stopped applying itself, and the file only
+				// exists together with the decision. It says where that gets
+				// decided.
+				return warn("not in place. It is this machine's decision now: " +
 					"`kanpachi quarantine on` closes file sharing and Remote Desktop " +
 					"INTO this machine on every network (recommended)")
 			}
-			puesta, err := nftpermits.QuarantineLoaded(ctx)
+			loaded, err := nftpermits.QuarantineLoaded(ctx)
 			if err != nil {
-				return noSeSabe("could not read the ruleset: %v", err)
+				return unknown("could not read the ruleset: %v", err)
 			}
-			if !puesta {
-				return fallar("the file is there and the table is NOT loaded: " +
+			if !loaded {
+				return bad("the file is there and the table is NOT loaded: " +
 					"the game ports are open from the internet").
-					con("systemctl restart kanpachi-quarantine")
+					withFix("systemctl restart kanpachi-quarantine")
 			}
-			return ok("table inet %s loaded", nftpermits.QuarantineTable)
+			return good("table inet %s loaded", nftpermits.QuarantineTable)
 		},
-		arreglar: func(ctx context.Context, _ opciones) error {
-			return ejecutar(ctx, "systemctl", "restart", "kanpachi-quarantine")
+		fix: func(ctx context.Context, _ options) error {
+			return runCmd(ctx, "systemctl", "restart", "kanpachi-quarantine")
 		},
 	}
 }
 
-// ─── El canal ────────────────────────────────────────────────────────────────
+// ─── The channel ─────────────────────────────────────────────────────────────
 
-// chequeoDelDirectorioDelCanal mira lo que de verdad protege el socket.
+// channelDirCheck looks at what actually protects the socket.
 //
-// El directorio y no el socket, porque el directorio es el análogo de
-// `ProtectedPrefix` de Windows: sin permiso de entrada nadie llega a mirar el
-// socket esté como esté, y con permiso de entrada el modo del socket es lo único
-// que queda. Se miran los dos, empezando por el que manda.
-func chequeoDelDirectorioDelCanal() chequeo {
+// The directory and not the socket, because the directory is the analogue of
+// Windows's `ProtectedPrefix`: with no permission to enter, nobody gets to look
+// at the socket whatever state it is in, and with permission to enter the
+// socket's mode is all that is left. Both get looked at, starting with the one
+// in charge.
+func channelDirCheck() check {
 	dir := "/run/kanpachi"
-	return chequeo{
-		nombre: "the channel permissions",
-		mirar: func(context.Context, opciones) veredicto {
+	return check{
+		name: "the channel permissions",
+		look: func(context.Context, options) verdict {
 			info, err := os.Lstat(dir)
 			if os.IsNotExist(err) {
-				return avisar("%s does not exist yet: the daemon creates it on start", dir)
+				return warn("%s does not exist yet: the daemon creates it on start", dir)
 			}
 			if err != nil {
-				return noSeSabe("could not look at %s: %v", dir, err)
+				return unknown("could not look at %s: %v", dir, err)
 			}
 			if info.Mode()&os.ModeSymlink != 0 {
-				return fallar("%s is a symlink, so its permissions mean "+
+				return bad("%s is a symlink, so its permissions mean "+
 					"nothing", dir)
 			}
 			if p := info.Mode().Perm(); p&0o077 != 0 {
-				return fallar("%s is %04o and lets the group or others in", dir, p).
-					con("chmod 0700 " + dir)
+				return bad("%s is %04o and lets the group or others in", dir, p).
+					withFix("chmod 0700 " + dir)
 			}
-			// El socket solo se mira si el directorio ya está bien: con el
-			// directorio abierto, un socket en 0600 no protege nada, y nombrar los
-			// dos fallos a la vez esconde cuál es el que manda.
+			// The socket only gets looked at if the directory is already right:
+			// with the directory open, a socket at 0600 protects nothing, and
+			// naming both failures at once hides which one is in charge.
 			if s, err := os.Stat(pipe.Name); err == nil {
 				if p := s.Mode().Perm(); p&0o077 != 0 {
-					return fallar("%s is %04o", pipe.Name, p).
-						con("chmod 0600 " + pipe.Name)
+					return bad("%s is %04o", pipe.Name, p).
+						withFix("chmod 0600 " + pipe.Name)
 				}
 			}
-			return ok("%s at 0700, socket at 0600", dir)
+			return good("%s at 0700, socket at 0600", dir)
 		},
-		arreglar: func(_ context.Context, _ opciones) error {
+		fix: func(_ context.Context, _ options) error {
 			if err := os.Chmod(dir, 0o700); err != nil {
 				return err
 			}
@@ -314,113 +318,115 @@ func chequeoDelDirectorioDelCanal() chequeo {
 	}
 }
 
-// ─── Lo del operador, que se mira y casi nunca se toca ───────────────────────
+// ─── The operator's things, looked at and almost never touched ───────────────
 
-// chequeoDeFirewallsAjenos busca lo que puede estar cerrando por encima nuestro.
+// foreignFirewallCheck looks for what may be closing things above us.
 //
-// # Este chequeo tiene la ÚNICA excepción a "lo ajeno no se arregla"
+// # This check holds the ONLY exception to "what is not ours does not get fixed"
 //
-// Un gestor que va a tragarse la entrada de los adaptadores de la sala es MAL,
-// con arreglo: `--fix` corre exactamente los comandos que el veredicto nombra,
-// por el mismo camino con libro que usa la pregunta de `kanpachi host`, y lo
-// abierto se cierra al terminar la sala o en el próximo arranque. Escribir
-// `--fix` después de leer el veredicto ES el consentimiento, igual de
-// explícito que contestar la pregunta. Ver la decisión 36.
+// A manager that is going to swallow the inbound of the room's adapters is BAD,
+// with a fix: `--fix` runs exactly the commands the verdict names, down the same
+// recorded path the `kanpachi host` question uses, and what gets opened gets
+// closed when the room ends or on the next start. Typing `--fix` after reading
+// the verdict IS the consent, as explicit as answering the question. See
+// decision 36.
 //
-// Lo demás sigue como siempre: un gestor activo que hoy no bloquea, o una
-// cadena de Docker, se nombran y no se tocan. Netfilter sigue sin dejarnos
-// abrir por encima de un `drop` ajeno desde nuestra tabla; abrir es pedírselo
-// al CLI del gestor, jamás pisarlo.
-func chequeoDeFirewallsAjenos() chequeo {
-	return chequeo{
-		nombre: "firewalls that are not ours",
-		mirar: func(ctx context.Context, _ opciones) veredicto {
-			bloqueos, err := nftpermits.InboundBlocks(ctx)
+// The rest carries on as always: an active manager that is not blocking today,
+// or a Docker chain, gets named and left alone. Netfilter still does not let us
+// open above somebody else's `drop` from our own table; opening means asking the
+// manager's CLI for it, never writing over it.
+func foreignFirewallCheck() check {
+	return check{
+		name: "firewalls that are not ours",
+		look: func(ctx context.Context, _ options) verdict {
+			blocks, err := nftpermits.InboundBlocks(ctx)
 			if err != nil {
-				return noSeSabe("could not read their posture: %v", err)
+				return unknown("could not read their posture: %v", err)
 			}
-			if len(bloqueos) > 0 {
-				partes := make([]string, 0, len(bloqueos))
-				var comandos []string
-				for _, b := range bloqueos {
-					partes = append(partes, b.String())
-					comandos = append(comandos, b.Fix...)
+			if len(blocks) > 0 {
+				parts := make([]string, 0, len(blocks))
+				var fixes []string
+				for _, b := range blocks {
+					parts = append(parts, b.String())
+					fixes = append(fixes, b.Fix...)
 				}
-				return fallar("%s. A room would assemble and nobody would get in",
-					strings.Join(partes, "; ")).
-					con("By hand: " + strings.Join(comandos, " && ") + "\n" +
+				return bad("%s. A room would assemble and nobody would get in",
+					strings.Join(parts, "; ")).
+					withFix("By hand: " + strings.Join(fixes, " && ") + "\n" +
 						"`kanpachi doctor --fix` runs exactly that, writes it down, and it is\n" +
 						"undone when the room closes or on the next service start.")
 			}
 
-			encontrados := []string{}
-			if strings.Contains(salidaDe(ctx, "ufw", "status"), "Status: active") {
-				encontrados = append(encontrados, "ufw")
+			found := []string{}
+			if strings.Contains(outputOf(ctx, "ufw", "status"), "Status: active") {
+				found = append(found, "ufw")
 			}
-			if salidaDe(ctx, "systemctl", "is-active", "firewalld") == "active" {
-				encontrados = append(encontrados, "firewalld")
+			if outputOf(ctx, "systemctl", "is-active", "firewalld") == "active" {
+				found = append(found, "firewalld")
 			}
-			if strings.Contains(salidaDe(ctx, "nft", "list", "ruleset"), "DOCKER-USER") ||
-				strings.Contains(salidaDe(ctx, "iptables", "-S"), "DOCKER-USER") {
-				encontrados = append(encontrados, "Docker")
+			if strings.Contains(outputOf(ctx, "nft", "list", "ruleset"), "DOCKER-USER") ||
+				strings.Contains(outputOf(ctx, "iptables", "-S"), "DOCKER-USER") {
+				found = append(found, "Docker")
 			}
-			if len(encontrados) == 0 {
-				return ok("none is active")
+			if len(found) == 0 {
+				return good("none is active")
 			}
-			return avisar("there is %s, not blocking the room today. Its policy can change",
-				strings.Join(encontrados, ", ")).
-				con("Look yourself: ufw status verbose / firewall-cmd --list-all / nft list ruleset\n" +
+			return warn("there is %s, not blocking the room today. Its policy can change",
+				strings.Join(found, ", ")).
+				withFix("Look yourself: ufw status verbose / firewall-cmd --list-all / nft list ruleset\n" +
 					"Kanpachi only ever touches these to let its own two adapters in, with consent.")
 		},
-		arreglar: func(ctx context.Context, _ opciones) error {
-			bloqueos, err := nftpermits.InboundBlocks(ctx)
+		fix: func(ctx context.Context, _ options) error {
+			blocks, err := nftpermits.InboundBlocks(ctx)
 			if err != nil {
 				return err
 			}
-			return nftpermits.AllowBlocked(ctx, bloqueos, logDelDoctor{})
+			return nftpermits.AllowBlocked(ctx, blocks, doctorLog{})
 		},
 	}
 }
 
-// logDelDoctor is the sliver of logger AllowBlocked wants. The doctor's
-// answer is the re-measured verdict, so the daemon-style log lines go nowhere
-// on purpose: printing them twice would say more than what was measured.
-type logDelDoctor struct{}
+// doctorLog is the sliver of logger AllowBlocked wants. The doctor's answer is
+// the re-measured verdict, so the daemon-style log lines go nowhere on purpose:
+// printing them twice would say more than what was measured.
+type doctorLog struct{}
 
-func (logDelDoctor) Info(string, ...any)  {}
-func (logDelDoctor) Warn(string, ...any)  {}
-func (logDelDoctor) Error(string, ...any) {}
+func (doctorLog) Info(string, ...any)  {}
+func (doctorLog) Warn(string, ...any)  {}
+func (doctorLog) Error(string, ...any) {}
 
-// ─── Correr cosas ────────────────────────────────────────────────────────────
+// ─── Running things ──────────────────────────────────────────────────────────
 
-// salidaDe corre un comando y devuelve su salida sin espacios, o vacío.
+// outputOf runs a command and returns its output with the spaces trimmed, or
+// empty.
 //
-// **Se traga el error a propósito**, y es el único sitio del repositorio donde
-// eso es correcto: acá el fallo ES la respuesta. `systemctl is-active` sale con
-// código distinto de cero justo cuando la unidad no está activa, y `ufw status`
-// falla cuando ufw no está instalado, que es la respuesta buena. Quien llama
-// distingue por el texto, no por el código.
-func salidaDe(ctx context.Context, nombre string, args ...string) string {
-	salida, _ := exec.CommandContext(ctx, nombre, args...).Output()
-	return strings.TrimSpace(string(salida))
+// **It swallows the error on purpose**, and it is the one place in the
+// repository where that is right: here the failure IS the answer. `systemctl
+// is-active` exits non-zero exactly when the unit is not active, and `ufw
+// status` fails when ufw is not installed, which is the good answer. The caller
+// tells them apart by the text, not by the code.
+func outputOf(ctx context.Context, name string, args ...string) string {
+	out, _ := exec.CommandContext(ctx, name, args...).Output()
+	return strings.TrimSpace(string(out))
 }
 
-// ejecutar corre un arreglo y devuelve lo que dijo si falló.
+// runCmd runs a fix and returns what it said if it failed.
 //
-// La salida del comando viaja DENTRO del error: `systemctl` explica por qué no
-// pudo, y quedarse solo con "exit status 1" tira justo la parte que sirve.
-func ejecutar(ctx context.Context, nombre string, args ...string) error {
-	cmd := exec.CommandContext(ctx, nombre, args...)
-	salida, err := cmd.CombinedOutput()
+// The command's output travels INSIDE the error: `systemctl` explains why it
+// could not, and keeping only "exit status 1" throws away exactly the part that
+// helps.
+func runCmd(ctx context.Context, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		texto := strings.TrimSpace(string(salida))
-		if texto == "" {
-			return fmt.Errorf("%s: %w", nombre, err)
+		text := strings.TrimSpace(string(out))
+		if text == "" {
+			return fmt.Errorf("%s: %w", name, err)
 		}
-		return fmt.Errorf("%s: %w: %s", nombre, err, texto)
+		return fmt.Errorf("%s: %w: %s", name, err, text)
 	}
 	return nil
 }
 
-// rutaDelMotor es la misma ruta que mira el doctor, para `kanpachi version`.
-func rutaDelMotor() string { return engineLinux }
+// enginePath is the same path the doctor looks at, for `kanpachi version`.
+func enginePath() string { return engineLinux }

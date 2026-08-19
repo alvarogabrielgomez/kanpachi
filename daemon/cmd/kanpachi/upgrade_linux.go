@@ -9,80 +9,82 @@ import (
 	"os/exec"
 )
 
-// aptInstall le entrega el paquete a apt.
+// aptInstall hands the package to apt.
 //
-// # Las tres variables de entorno no son decoración
+// # The three environment variables are not decoration
 //
-// `DEBIAN_FRONTEND=noninteractive` impide que dpkg abra un diálogo de pantalla
-// completa preguntando por un fichero de configuración. Ese diálogo, dentro de
-// `kanpachi upgrade`, deja la terminal ocupada esperando una tecla que quien
-// escribió el comando no espera tener que pulsar, y por `ssh` con la sesión a
-// medias se convierte en un paquete a medio configurar.
+// `DEBIAN_FRONTEND=noninteractive` stops dpkg from opening a full-screen dialog
+// asking about a configuration file. That dialog, inside `kanpachi upgrade`,
+// leaves the terminal waiting for a key whoever typed the command does not
+// expect to have to press, and over `ssh` with the session half gone it turns
+// into a half-configured package.
 //
-// Las dos de dpkg contestan por adelantado la pregunta que sí importa: qué hacer
-// con un fichero de `/etc` que el operador editó. `confold` conserva el suyo, que
-// es lo correcto para `/etc/kanpachi/quarantine.nft`: ese fichero lo escribe el
-// daemon con la cuarentena de ESTA máquina, y dejar que el paquete lo pise
-// significaría cambiar qué puertos están cerrados sin que nadie lo pidiera.
+// The two dpkg ones answer in advance the question that does matter: what to do
+// with a file in `/etc` the operator edited. `confold` keeps theirs, which is
+// right for `/etc/kanpachi/quarantine.nft`: the daemon writes that file with THIS
+// machine's quarantine, and letting the package write over it would mean changing
+// which ports are closed with nobody asking for it.
 //
-// La salida va a la terminal en directo, sin capturar: apt tarda, y un comando
-// que se queda mudo medio minuto parece colgado. Además, cuando falla, lo que
-// hay que leer es lo que dice apt.
-// # Y la cuarta opción apaga un sandbox que acá no protege de nada
+// The output goes to the terminal live, uncaptured: apt takes a while, and a
+// command that goes quiet for half a minute looks hung. Besides, when it fails,
+// what has to be read is what apt says.
 //
-// Sin ella, cada `kanpachi upgrade` en Linux termina con este párrafo pegado al
-// final, medido en el droplet el 2026-08-18 sobre la 0.6.0:
+// # And the fourth option turns off a sandbox that protects nothing here
+//
+// Without it, every `kanpachi upgrade` on Linux ends with this paragraph stuck
+// to the end, measured on the droplet on 2026-08-18 over 0.6.0:
 //
 //	N: Download is performed unsandboxed as root as file
 //	'/var/lib/kanpachi/kanpachi-amd64.deb' couldn't be accessed by user '_apt'
 //
-// Es cierto y no es un fallo. El paquete se escribe en el directorio de estado,
-// que es 0700 de root a propósito —en `/tmp` escribe cualquiera, y esto se
-// instala como root un segundo después—, así que el usuario `_apt` con el que
-// apt baja cosas no puede leerlo, y apt renuncia a su sandbox y lo cuenta.
+// It is true and it is not a failure. The package gets written into the state
+// directory, which is 0700 root on purpose, since anybody writes in `/tmp` and
+// this gets installed as root a second later, so the `_apt` user apt downloads
+// things as cannot read it, and apt gives up its sandbox and says so.
 //
-// Lo que hay que arreglar no es el permiso, es la sorpresa: acá no se BAJA
-// nada. El fichero ya está en disco y su SHA-256 ya se comprobó contra el
-// manifiesto del release, así que el sandbox de descarga no tiene nada que
-// aislar. Decírselo por adelantado es la diferencia entre una decisión escrita
-// y un aviso que aparece cada vez y que alguien va a tener que ir a investigar.
+// What needs fixing is not the permission, it is the surprise: nothing is
+// DOWNLOADED here. The file is already on disk and its SHA-256 has already been
+// checked against the release manifest, so the download sandbox has nothing to
+// isolate. Saying that up front is the difference between a written decision and
+// a warning that shows up every time and that somebody is going to have to go
+// investigate.
 //
-// # Y `reinstalar` existe porque apt compara números, no contenido
+// # And `reinstall` exists because apt compares numbers, not content
 //
-// `apt-get install` sobre un paquete cuya versión ya está puesta contesta
-// «kanpachi is already the newest version» y no hace nada, aunque el fichero que
-// se le pasa sean otros bytes. Pasa de verdad: una versión republicada sobre un
-// arreglo lleva el mismo número que la que ya está instalada. `--reinstall` es
-// la forma que tiene apt de decir «ese paquete, otra vez», y solo se le pasa
-// cuando quien escribió el comando pidió `--force`.
-func aptInstall(ctx context.Context, ruta string, reinstalar bool) error {
-	entorno := append(os.Environ(),
+// `apt-get install` over a package whose version is already in place answers
+// «kanpachi is already the newest version» and does nothing, even when the file
+// it was handed is different bytes. It really happens: a version republished over
+// a fix carries the same number as the one already installed. `--reinstall` is
+// apt's way of saying «that package, again», and it only gets passed when whoever
+// typed the command asked for `--force`.
+func aptInstall(ctx context.Context, path string, reinstall bool) error {
+	env := append(os.Environ(),
 		"DEBIAN_FRONTEND=noninteractive",
 		"DPKG_FORCE=confold",
 	)
 	args := []string{"install", "-y",
 		"-o", "Dpkg::Options::=--force-confold",
 		"-o", "APT::Sandbox::User=root"}
-	if reinstalar {
+	if reinstall {
 		args = append(args, "--reinstall")
 	}
-	return ejecutarVisible(ctx, entorno, "apt-get", append(args, ruta)...)
+	return runVisible(ctx, env, "apt-get", append(args, path)...)
 }
 
-// ejecutarVisible corre un comando dejando que hable por la terminal.
+// runVisible runs a command letting it talk through the terminal.
 //
-// Es lo contrario de [ejecutar], que captura la salida para meterla dentro de un
-// error, y las dos formas se justifican por cuánto tardan: los arreglos de
-// `doctor` son instantáneos y lo que importa de ellos es el mensaje final; una
-// instalación con apt tarda, y verla avanzar es la diferencia entre esperar y
-// pensar que se colgó.
-func ejecutarVisible(ctx context.Context, entorno []string, nombre string, args ...string) error {
-	cmd := exec.CommandContext(ctx, nombre, args...)
-	cmd.Env = entorno
+// It is the opposite of [runCmd], which captures the output to put it inside an
+// error, and both shapes are justified by how long they take: the `doctor` fixes
+// are instant and what matters about them is the final message; an install with
+// apt takes a while, and watching it move is the difference between waiting and
+// thinking it hung.
+func runVisible(ctx context.Context, env []string, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s failed: %w", nombre, err)
+		return fmt.Errorf("%s failed: %w", name, err)
 	}
 	return nil
 }

@@ -9,79 +9,81 @@ import (
 	"github.com/accentiostudios/kanpachi/internal/engineid"
 )
 
-// Version la sella el que compila, con
+// Version gets stamped by whoever builds, with
 // `-ldflags "-X main.Version=$VERSION"`.
 //
-// Es el mismo mecanismo que ya usa el seed (`registry/cli.Version`), y lo que
-// deja en el binario compilado a mano es `dev`, que es la verdad: un binario sin
-// sellar no salió de una release y decir lo contrario haría que un informe de
-// fallo apuntara a una versión publicada que no es la que falló.
+// It is the same mechanism the seed already uses (`registry/cli.Version`), and
+// what it leaves in a hand-built binary is `dev`, which is the truth: an
+// unstamped binary did not come out of a release, and saying otherwise would
+// make a bug report point at a published version that is not the one that
+// failed.
 var Version = "dev"
 
-// cmdVersion dice qué versión es esta, y de qué tanda salió.
+// cmdVersion says which version this is, and which batch it came from.
 //
-// # Por qué también el commit
+// # Why the commit as well
 //
-// Porque el número de versión solo cambia en una release, y buena parte de lo
-// que se prueba está entre dos. `go build` sella el estado del repositorio en el
-// binario, así que sale gratis y contesta la pregunta que de verdad se hace
-// cuando algo va mal: exactamente qué código es este.
-func cmdVersion(_ context.Context, op opciones, _ []string) error {
-	revisión, sucio := revisión()
+// Because the version number only changes on a release, and a good part of what
+// gets tested sits between two. `go build` stamps the repository's state into the
+// binary, so it comes for free and answers the question that actually gets asked
+// when something goes wrong: exactly which code is this.
+func cmdVersion(_ context.Context, op options, _ []string) error {
+	rev, dirty := revision()
 
-	// El motor se lee del FICHERO, sin ejecutarlo, por los centinelas que su
-	// compilación le sella dentro. Vacío significa que existe y es anterior al
-	// centinela; ausente o ilegible se calla, porque esta orden describe este
-	// binario y el motor es un dato extra, no una condición.
-	motor := ""
-	if ruta := rutaDelMotor(); ruta != "" {
-		if id, err := engineid.Scan(ruta); err == nil {
-			motor = id.String()
+	// The engine gets read from the FILE, without running it, thanks to the
+	// sentinels its build stamps inside. Empty means it exists and predates the
+	// sentinel; missing or unreadable stays quiet, because this order describes
+	// this binary and the engine is an extra, not a condition.
+	engine := ""
+	if path := enginePath(); path != "" {
+		if id, err := engineid.Scan(path); err == nil {
+			engine = id.String()
 		}
 	}
 
 	if op.json {
 		fmt.Printf("{\"version\":%q,\"revision\":%q,\"dirty\":%v,\"engine\":%q,\"go\":%q,\"os\":%q}\n",
-			Version, revisión, sucio, motor, runtime.Version(), runtime.GOOS)
+			Version, rev, dirty, engine, runtime.Version(), runtime.GOOS)
 		return nil
 	}
 
-	// Una versión para las tres caras, y decirlo es parte de la respuesta: el
-	// daemon, la terminal y la ventana salen del mismo corte y viajan juntos.
+	// One version for the three faces, and saying so is part of the answer: the
+	// daemon, the terminal and the window come out of the same cut and travel
+	// together.
 	fmt.Printf("kanpachi %s (daemon, cli, ui)\n", Version)
-	if revisión != "" {
-		marca := ""
-		if sucio {
-			marca = " (with uncommitted changes)"
+	if rev != "" {
+		mark := ""
+		if dirty {
+			mark = " (with uncommitted changes)"
 		}
-		fmt.Printf("  commit  %s%s\n", revisión, marca)
+		fmt.Printf("  commit  %s%s\n", rev, mark)
 	}
-	if motor != "" {
-		fmt.Printf("  engine  %s\n", motor)
+	if engine != "" {
+		fmt.Printf("  engine  %s\n", engine)
 	}
 	fmt.Printf("  go      %s on %s/%s\n", runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	return nil
 }
 
-// revisión lee el sellado de git que `go build` deja en el binario.
+// revision reads the git stamp `go build` leaves in the binary.
 //
-// Devuelve vacío cuando se compiló con `-buildvcs=false`, que es lo que hace
-// `scripts/build-deb.sh` cuando el checkout es de otro usuario. Ahí no hay nada
-// que decir y se calla, en vez de inventar un valor.
-func revisión() (string, bool) {
+// It returns empty when the build used `-buildvcs=false`, which is what
+// `scripts/build-deb.sh` does when the checkout belongs to another user. There
+// is nothing to say there, so it says nothing instead of inventing a value.
+func revision() (string, bool) {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return "", false
 	}
 	var rev string
-	var sucio bool
+	var dirty bool
 	for _, s := range info.Settings {
 		switch s.Key {
 		case "vcs.revision":
 			rev = s.Value
 		case "vcs.modified":
-			sucio = s.Value == "true"
+			dirty = s.Value == "true"
 		}
 	}
-	return rev, sucio
+	return rev, dirty
 }

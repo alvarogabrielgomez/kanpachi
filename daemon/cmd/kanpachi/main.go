@@ -1,28 +1,29 @@
-// Command kanpachi es el cliente: abre salas, entra, mira y mide.
+// Command kanpachi is the client: it opens rooms, enters them, watches and
+// measures.
 //
-// Es lo que se instala en `/usr/bin/kanpachi`, y en la variante headless es el
-// ÚNICO cliente que hay. No hace nada por su cuenta: todo lo que ejecuta se lo
-// pide al daemon por el canal local, con la misma lista cerrada de métodos que
-// usa la interfaz de Windows. Un CLI que abriera un puerto por su cuenta sería
-// una segunda puerta a la máquina, y la superficie chica es la mitigación
-// principal de este producto.
+// It is what gets installed at `/usr/bin/kanpachi`, and on the headless variant
+// it is the ONLY client there is. It does nothing on its own: everything it
+// runs, it asks the daemon for over the local channel, with the same closed list
+// of methods the Windows interface uses. A CLI that opened a port of its own
+// would be a second door into the machine, and the small surface is this
+// product's main mitigation.
 //
-// # Con subcomando es guionable; sin nada es un asistente
+// # With a subcommand it is scriptable; with nothing it is a wizard
 //
-//	kanpachi status              qué hay ahora
-//	kanpachi host "Mi sala"      abrir una
-//	kanpachi join VA3B-SF5L      entrar
-//	kanpachi                     el asistente, con flechas
+//	kanpachi status              what there is now
+//	kanpachi host "My room"      open one
+//	kanpachi join VA3B-SF5L      enter
+//	kanpachi                     the wizard, with arrow keys
 //
-// # Por qué pide `sudo` en Linux y no en Windows
+// # Why it asks for `sudo` on Linux and not on Windows
 //
-// Porque el token vive en el directorio de datos y ahí los permisos son
-// distintos a propósito. En Windows `ProgramData\Kanpachi` deja leer a los
-// usuarios de la máquina, porque la interfaz corre sin elevar y necesita hablar.
-// En Linux no hay interfaz que atender, así que el directorio es de root y el
-// socket es 0600: quien administra Kanpachi ya puede ser root en ese servidor, y
-// una vía que no pase por `sudo` solo quitaría el registro de quién hizo qué.
-// Ver `daemon/paths` y `pipe_linux.go`.
+// Because the token lives in the data directory and the permissions there are
+// different on purpose. On Windows `ProgramData\Kanpachi` lets the machine's
+// users read, because the interface runs unelevated and needs to talk. On Linux
+// there is no interface to serve, so the directory belongs to root and the
+// socket is 0600: whoever administers Kanpachi can already be root on that
+// server, and a path that skipped `sudo` would only drop the record of who did
+// what. See `daemon/paths` and `pipe_linux.go`.
 package main
 
 import (
@@ -40,116 +41,147 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
 )
 
-// opciones son los flags globales ya resueltos.
-type opciones struct {
-	datos string
-	canal string
-	nick  string
-	// json pide la respuesta del daemon SIN pintar.
+// options are the global flags already resolved.
+type options struct {
+	data    string
+	channel string
+	nick    string
+	// json asks for the daemon's answer WITHOUT rendering.
 	//
-	// Es lo que hace que esto sirva dentro de un script: lo pintado cambia cuando
-	// alguien mejora una pantalla, y la forma de cable no, porque es un contrato
-	// con la interfaz de Windows que además tiene candados.
+	// It is what makes this usable inside a script: what gets rendered changes
+	// whenever somebody improves a screen, and the wire shape does not, because
+	// it is a contract with the Windows interface and it has guardians of its
+	// own.
 	json bool
-	// plazo es lo que se escribió en `--timeout`, y espera es ya interpretado.
+	// help is `--help` in any position, and it names no command by itself.
 	//
-	// Los dos, y no solo el segundo: el texto crudo se conserva porque el error de
-	// un valor que no vale tiene que poder citarlo tal como lo escribieron. Cero
-	// en `espera` significa que nadie lo pidió y vale [timing.PipeDefaultTimeout].
-	plazo  string
-	espera time.Duration
+	// Which page it prints depends on what else was written: with a subcommand
+	// it is that subcommand's page, with nothing it is the whole list. It is
+	// read here and not turned into the `help` command, which is what used to
+	// happen: `kanpachi game --help` became `kanpachi game help` and went off to
+	// activate a game called "help".
+	help bool
+	// timeoutText is what was written in `--timeout`, and timeout is it parsed.
+	//
+	// Both, and not only the second: the raw text is kept because the error for
+	// a value that does not work has to be able to quote it as they wrote it.
+	// Zero in `timeout` means nobody asked for one, and
+	// [timing.PipeDefaultTimeout] applies.
+	timeoutText string
+	timeout     time.Duration
 }
 
 func main() {
-	// La interrupción se atiende, y hace falta decir qué NO hace: cortar el CLI
-	// no cierra la sala. La sala vive en el daemon, que sigue corriendo; esto
-	// solo suelta la conexión. Es la diferencia con `roomprobe`, que ES la
-	// sesión y por eso tiene que apagarla al salir.
-	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer parar()
+	// Interruption is handled, and it is worth saying what it does NOT do:
+	// cutting the CLI off does not close the room. The room lives in the daemon,
+	// which keeps running; this only drops the connection. That is the
+	// difference with `roomprobe`, which IS the session and therefore has to
+	// shut it down on the way out.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
 
-	code := correr(ctx, os.Args[1:])
+	code := run(ctx, os.Args[1:])
 	os.Exit(code)
 }
 
-func correr(ctx context.Context, args []string) int {
-	op, resto, err := leerFlags(args)
+func run(ctx context.Context, args []string) int {
+	op, rest, err := parseFlags(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "kanpachi:", err)
 		return 2
 	}
 
-	// Sin subcomando, el asistente. Es lo que hace que esto se pueda usar sin
-	// haber leído nada, que en un servidor recién instalado es el caso normal.
-	if len(resto) == 0 {
+	// `--help` answers before anything else, and before opening any connection:
+	// somebody reading a command's flags is not asking the daemon for anything,
+	// and a help page that failed because the service was down would be the
+	// worst possible answer to "how do I write this".
+	if op.help {
+		if len(rest) == 0 {
+			printHelp(os.Stdout)
+			return 0
+		}
+		if _, ok := commands[rest[0]]; !ok {
+			fmt.Fprintf(os.Stderr, "kanpachi: there is no %q command\n\n", rest[0])
+			printHelp(os.Stderr)
+			return 2
+		}
+		printCommandHelp(os.Stdout, rest[0])
+		return 0
+	}
+
+	// With no subcommand, the wizard. It is what makes this usable without
+	// having read anything, which on a freshly installed server is the normal
+	// case.
+	if len(rest) == 0 {
 		if err := assistant(ctx, op); err != nil {
-			return informar(op, err)
+			return report(op, err)
 		}
 		return 0
 	}
 
-	cmd, ok := comandos[resto[0]]
+	cmd, ok := commands[rest[0]]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "kanpachi: there is no %q command\n\n", resto[0])
-		ayuda(os.Stderr)
+		fmt.Fprintf(os.Stderr, "kanpachi: there is no %q command\n\n", rest[0])
+		printHelp(os.Stderr)
 		return 2
 	}
-	if err := cmd.correr(ctx, op, resto[1:]); err != nil {
-		return informar(op, err)
+	if err := cmd.run(ctx, op, rest[1:]); err != nil {
+		return report(op, err)
 	}
 	return 0
 }
 
-// informar cuenta el fallo, en la forma que corresponda, y elige con qué código
-// de salida se termina. Los códigos los reparte [clasificar].
+// report tells the failure, in whichever form fits, and picks the exit code to
+// finish with. The codes are handed out by [classify].
 //
-// Las DOS formas salen por sitios distintos, y eso es el contrato: la prosa por
-// stderr para quien lee, el JSON por stdout para quien parsea. Nunca las dos.
-func informar(op opciones, err error) int {
-	if errors.Is(err, errInterrumpido) || errors.Is(err, context.Canceled) {
-		// Sin mensaje: quien pulsa Ctrl+C ya sabe lo que hizo, y el 130 es lo que
-		// todo el mundo usa para "lo mató una señal".
+// The TWO forms leave by different doors, and that is the contract: the prose
+// on stderr for whoever reads, the JSON on stdout for whoever parses. Never
+// both.
+func report(op options, err error) int {
+	if errors.Is(err, errInterrupted) || errors.Is(err, context.Canceled) {
+		// No message: whoever pressed Ctrl+C already knows what they did, and
+		// 130 is what everybody uses for "a signal killed it".
 		return 130
 	}
-	código, salida := clasificar(err)
+	code, exit := classify(err)
 	if op.json {
-		// **Con `--json`, un fallo sale como CÓDIGO y nada más.**
+		// **With `--json`, a failure comes out as a CODE and nothing else.**
 		//
-		// La prosa se queda fuera, y no por estética. Este es el sitio donde
-		// "nunca texto en claro con el motivo" se puede romper sin que nadie
-		// mire: la salida de un script no la lee una persona, así que un mensaje
-		// de más ahí no molesta a nadie y se queda para siempre. Con el registro
-		// pidiendo password, el mensaje que llegaba hasta acá podía distinguir
-		// un token vencido de uno inválido, que es justo la distinción que la
-		// API se molesta en no hacer.
+		// The prose stays out, and not for looks. This is the place where "never
+		// plain text with the reason" can break without anybody watching: the
+		// output of a script is not read by a person, so one extra message there
+		// bothers nobody and stays forever. With the registry asking for a
+		// password, the message that used to reach this far could tell an
+		// expired token from an invalid one, which is exactly the distinction
+		// the API goes out of its way not to make.
 		//
-		// Va a STDOUT y no a stderr, y con eso `--json` pasa a contestar un solo
-		// documento JSON siempre, pase lo que pase: un script hace un parse y no
-		// dos comprobaciones.
-		fmt.Printf("{\"error\":{\"code\":%q}}\n", código)
-		return salida
+		// It goes to STDOUT and not to stderr, and with that `--json` answers
+		// with one JSON document always, whatever happens: a script does one
+		// parse instead of two checks.
+		fmt.Printf("{\"error\":{\"code\":%q}}\n", code)
+		return exit
 	}
 	fmt.Fprintln(os.Stderr, "kanpachi:", err)
-	if arreglo := arreglaEsto(código); arreglo != "" {
-		fmt.Fprintf(os.Stderr, "  %s\n", arreglo)
+	if fix := fixFor(code); fix != "" {
+		fmt.Fprintf(os.Stderr, "  %s\n", fix)
 	}
-	return salida
+	return exit
 }
 
-// arreglaEsto es el comando que resuelve ese fallo, o vacío.
+// fixFor is the command that resolves that failure, or empty.
 //
-// # Por qué acá y no en cada subcomando
+// # Why here and not in each subcommand
 //
-// Porque los dos fallos que tienen arreglo salen de VARIOS comandos: hospedar,
-// renovar el código y renombrar la sala pasan todos por el registro. Repetir el
-// consejo en cada uno daría tres sitios donde envejece, y el que se olvida es
-// siempre el que menos se usa.
+// Because the two failures that have a fix come out of SEVERAL commands:
+// hosting, renewing the code and renaming the room all go through the registry.
+// Repeating the advice in each one would give three places for it to age, and
+// the one that gets forgotten is always the least used.
 //
-// **No se imprime con `--json`**, por la misma regla que la prosa: ahí sale el
-// código y quien parsea decide qué hacer con él. Por eso vive en la rama de
-// abajo de [informar] y no antes.
-func arreglaEsto(código protocol.Code) string {
-	switch código {
+// **It does not print with `--json`**, by the same rule as the prose: there the
+// code comes out and whoever parses decides what to do with it. That is why it
+// lives in the lower branch of [report] and not before it.
+func fixFor(code protocol.Code) string {
+	switch code {
 	case protocol.CodeNoOwnSeed:
 		return "This machine has no registry yet:  kanpachi seed <host>"
 	case protocol.CodeSeedPassword:
@@ -158,83 +190,88 @@ func arreglaEsto(código protocol.Code) string {
 	return ""
 }
 
-// clasificar dice con qué código sale un fallo, y con qué número.
+// classify says which code a failure leaves with, and with which number.
 //
-// # Por qué hay tres códigos de salida y no uno
+// # Why there are three exit codes and not one
 //
-// Porque un script tiene que poder distinguir "el daemon dijo que no" de "no
-// hay daemon". El primero es una respuesta del producto y el script puede
-// seguir; el segundo significa que nada de lo que venga después va a funcionar.
+// Because a script has to be able to tell "the daemon said no" from "there is no
+// daemon". The first is an answer from the product and the script can carry on;
+// the second means nothing that comes after is going to work.
 //
-// El código de texto es el del PROTOCOLO cuando lo hay, así que un script mira
-// la misma palabra que mira la interfaz. Los dos que no vienen del daemon
-// llevan nombre propio para que tampoco haya que adivinarlos por el número.
-func clasificar(err error) (protocol.Code, int) {
+// The text code is the PROTOCOL's whenever there is one, so a script looks at the
+// same word the interface looks at. The two that do not come from the daemon
+// carry a name of their own so those do not have to be guessed from the number
+// either.
+func classify(err error) (protocol.Code, int) {
 	if c := client.Code(err); c != "" {
 		return c, 1
 	}
-	var mal *errDeUso
-	if errors.As(err, &mal) {
+	var bad *usageError
+	if errors.As(err, &bad) {
 		return "usage", 2
 	}
-	var no *errNegativa
+	var no *refusalError
 	if errors.As(err, &no) {
 		return "refused", 1
 	}
 	return "no_daemon", 3
 }
 
-// errDeUso es un comando mal escrito, que es culpa de quien lo escribió y no del
-// daemon. Tiene tipo propio para que [informar] pueda darle su código.
-type errDeUso struct{ msg string }
+// usageError is a command written wrong, which is the fault of whoever wrote it
+// and not of the daemon. It has a type of its own so [report] can give it its
+// code.
+type usageError struct{ msg string }
 
-func (e *errDeUso) Error() string { return e.msg }
+func (e *usageError) Error() string { return e.msg }
 
-func uso(format string, args ...any) error {
-	return &errDeUso{msg: fmt.Sprintf(format, args...)}
+func badUsage(format string, args ...any) error {
+	return &usageError{msg: fmt.Sprintf(format, args...)}
 }
 
-// errNegativa es el producto diciendo que no, decidido de este lado.
+// refusalError is the product saying no, decided on this side.
 //
-// # Por qué no vale devolver un error a secas
+// # Why a bare error will not do
 //
-// Porque el error pelado cae en el 3, que significa "no se pudo hablar con el
-// daemon", y eso sería mentira: el daemon contestó perfectamente y lo que dijo
-// es que no hay sala. Un script que mire el código para decidir si reintentar
-// reintentaría para siempre. Lo encontró correr `kanpachi link` sin sala, que
-// salía con 3.
-type errNegativa struct{ msg string }
+// Because a bare error falls into 3, which means "could not talk to the daemon",
+// and that would be a lie: the daemon answered perfectly and what it said is
+// that there is no room. A script looking at the code to decide whether to retry
+// would retry forever. Running `kanpachi link` with no room found it, which used
+// to exit 3.
+type refusalError struct{ msg string }
 
-func (e *errNegativa) Error() string { return e.msg }
+func (e *refusalError) Error() string { return e.msg }
 
-func negativa(format string, args ...any) error {
-	return &errNegativa{msg: fmt.Sprintf(format, args...)}
+func refuse(format string, args ...any) error {
+	return &refusalError{msg: fmt.Sprintf(format, args...)}
 }
 
-// errInterrumpido es que alguien pulsó Ctrl+C dentro de una pregunta.
+// errInterrupted is somebody pressing Ctrl+C inside a question.
 //
-// Es una RESPUESTA, no un fallo, y por eso tiene centinela propio. Dentro de una
-// pregunta interactiva la interrupción no llega como señal: survey deja la
-// consola en un modo donde lo único que ocurre es que la pregunta devuelve esto.
-var errInterrumpido = errors.New("interrumpido")
+// It is an ANSWER, not a failure, and that is why it has a sentinel of its own.
+// Inside an interactive question the interruption does not arrive as a signal:
+// survey leaves the console in a mode where the only thing that happens is that
+// the question returns this.
+var errInterrupted = errors.New("interrupted")
 
-// leerFlags parte los argumentos en flags globales y el resto.
+// parseFlags splits the arguments into global flags and the rest.
 //
-// A mano y no con `flag`, y el motivo es el orden: `flag.Parse` deja de leer en
-// el primer argumento que no es un flag, así que `kanpachi host --nick pepe` le
-// pasaría `--nick` al subcomando en vez de a la sesión. Con esto los flags
-// globales valen en cualquier posición, que es como se escriben de verdad.
-func leerFlags(args []string) (opciones, []string, error) {
-	op := opciones{datos: paths.Data(), canal: pipe.Name}
-	var resto []string
+// By hand and not with `flag`, and the reason is ordering: `flag.Parse` stops
+// reading at the first argument that is not a flag, so `kanpachi host --nick
+// pepe` would hand `--nick` to the subcommand instead of to the session. With
+// this the global flags work in any position, which is how they actually get
+// written.
+func parseFlags(args []string) (options, []string, error) {
+	op := options{data: paths.Data(), channel: pipe.Name}
+	var rest []string
 
 	for i := 0; i < len(args); i++ {
 		a := args[i]
-		// Después del primer subcomando, un `--algo` puede ser suyo. Solo se
-		// interceptan los globales, que están en esta lista y en ninguna otra.
-		valor := func(nombre string) (string, error) {
+		// After the first subcommand, a `--something` may belong to it. Only the
+		// global ones get intercepted, and they are in this list and nowhere
+		// else.
+		value := func(name string) (string, error) {
 			if i+1 >= len(args) {
-				return "", uso("%s is missing its value", nombre)
+				return "", badUsage("%s is missing its value", name)
 			}
 			i++
 			return args[i], nil
@@ -242,19 +279,19 @@ func leerFlags(args []string) (opciones, []string, error) {
 		var err error
 		switch a {
 		case "--data", "-data":
-			op.datos, err = valor(a)
+			op.data, err = value(a)
 		case "--pipe", "-pipe", "--socket":
-			op.canal, err = valor(a)
+			op.channel, err = value(a)
 		case "--nick", "-nick", "--nickname":
-			op.nick, err = valor(a)
+			op.nick, err = value(a)
 		case "--timeout", "-timeout":
-			op.plazo, err = valor(a)
+			op.timeoutText, err = value(a)
 		case "--json", "-json":
 			op.json = true
 		case "--help", "-help", "-h":
-			resto = append(resto, "help")
+			op.help = true
 		default:
-			resto = append(resto, a)
+			rest = append(rest, a)
 		}
 		if err != nil {
 			return op, nil, err
@@ -263,43 +300,43 @@ func leerFlags(args []string) (opciones, []string, error) {
 
 	// The deadline is parsed HERE and not where it gets used, and that ordering
 	// is the point: it is a flag value, so a bad one has to be rejected without
-	// talking to anybody. It was validated inside `abrir`, after the connection
+	// talking to anybody. It was validated inside `dial`, after the connection
 	// was already open, so `kanpachi --timeout abc status` with the daemon down
 	// reported the daemon being down. Two wrong things at once, and the one it
 	// named was the one the person had not caused.
-	if op.plazo != "" {
-		d, err := tiempo(op.plazo)
+	if op.timeoutText != "" {
+		d, err := parseDuration(op.timeoutText)
 		if err != nil {
 			return op, nil, err
 		}
-		op.espera = d
+		op.timeout = d
 	}
 
-	// El apodo, por el mismo motivo y en el mismo sitio: es un valor de bandera,
-	// así que uno malo se rechaza sin hablar con nadie. Rechazarlo acá no
-	// protege al daemon —que lo valida igual, porque es la frontera— sino que
-	// hace que el mensaje llegue antes de abrir una conexión.
+	// The nickname, for the same reason and in the same place: it is a flag
+	// value, so a bad one gets rejected without talking to anybody. Rejecting it
+	// here does not protect the daemon, which validates it anyway because it is
+	// the boundary; it makes the message arrive before a connection gets opened.
 	if op.nick != "" {
 		if _, err := domain.ParseNickname(op.nick); err != nil {
-			return op, nil, uso("--nick %q is not valid: %v", op.nick, err)
+			return op, nil, badUsage("--nick %q is not valid: %v", op.nick, err)
 		}
 	}
-	return op, resto, nil
+	return op, rest, nil
 }
 
-// abrir se conecta y saluda.
+// dial connects and says hello.
 //
-// El error lleva pegado qué hacer, y no es adorno: el fallo más frecuente de
-// este binario va a ser que no está corriendo el servicio o que falta `sudo`, y
-// los dos se ven igual desde acá —un socket que no abre— así que el mensaje
-// nombra los dos.
-func abrir(op opciones) (*client.Client, error) {
-	c, err := client.Open(op.canal, op.datos)
+// The error carries what to do about it, and that is not decoration: the most
+// frequent failure of this binary is going to be that the service is not running
+// or that `sudo` is missing, and both look the same from here, a socket that
+// will not open, so the message names both.
+func dial(op options) (*client.Client, error) {
+	c, err := client.Open(op.channel, op.data)
 	if err != nil {
-		return nil, fmt.Errorf("%w\n%s", err, pistaDeConexión(op))
+		return nil, fmt.Errorf("%w\n%s", err, connectionHint(op))
 	}
-	if op.espera > 0 {
-		c.Plazo = op.espera
+	if op.timeout > 0 {
+		c.Plazo = op.timeout
 	}
 	return c, nil
 }

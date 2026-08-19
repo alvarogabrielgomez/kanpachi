@@ -2,17 +2,17 @@
 
 package main
 
-// Fuera de Windows y de Linux no hay nada que diagnosticar, porque no hay
-// producto que diagnosticar: el canal local está escrito para esos dos.
+// Outside Windows and Linux there is nothing to diagnose, because there is no
+// product to diagnose: the local channel is written for those two.
 //
-// Se declara igual para que `go build ./...` siga compilando, que es lo que
-// mantiene el resto del binario compilable en el CI de cualquier sistema.
+// It gets declared anyway so `go build ./...` keeps compiling, which is what
+// keeps the rest of the binary buildable in CI on any system.
 
-func chequeosDelSistema() []chequeo { return []chequeo{chequeoDelCanal()} }
+func systemChecks() []check { return []check{channelCheck()} }
 
-func pistaDeElevación() string {
+func elevationHint() string {
 	return "The local channel is written for Windows and for Linux."
 }
 
-// rutaDelMotor contesta vacío: sin producto no hay motor que nombrar.
-func rutaDelMotor() string { return "" }
+// enginePath answers empty: with no product there is no engine to name.
+func enginePath() string { return "" }

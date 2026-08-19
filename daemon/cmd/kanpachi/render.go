@@ -1,23 +1,24 @@
 package main
 
-// Cómo se pinta lo que contesta el daemon.
+// How what the daemon answers gets painted.
 //
-// # Sin color, y no es pereza
+// # No colour, and that is not laziness
 //
-// La salida de esto va a acabar en un `ssh`, en un `tmux`, en un fichero por
-// `> salida.txt` y pegada en un chat cuando alguien pida ayuda. Los códigos de
-// color sobreviven a los cuatro sitios y solo se ven bien en el primero, así que
-// lo que aportarían de más se lo cobran en el resto. Lo único que se escribe
-// fuera de texto plano es el borrado de pantalla de `watch`, que sin él no es
-// una pantalla.
+// The output of this is going to end up in an `ssh`, in a `tmux`, in a file
+// through `> out.txt` and pasted into a chat when somebody asks for help. Colour
+// codes survive all four places and only look right in the first, so what they
+// would add gets charged back everywhere else. The one thing written outside
+// plain text is the screen clear `watch` needs, without which it is not a
+// screen.
 //
-// # Los enums de cable se traducen ACÁ
+// # The wire enums get translated HERE
 //
-// El protocolo manda nombres estables en inglés a propósito, para que la UI no se
-// rompa cuando alguien encuentre una palabra mejor. Convertirlos a lo que se lee
-// es trabajo de quien pinta, que es esto. Que acá el destino sea también inglés
-// no vuelve inútil la traducción: `unreachable` es un valor del protocolo y "no
-// one answered, so this proves nothing" es una frase para una persona.
+// The protocol sends stable English names on purpose, so the UI does not break
+// when somebody finds a better word. Turning them into something readable is the
+// job of whoever paints, which is this. That the destination here is also
+// English does not make the translation pointless: `unreachable` is a protocol
+// value and "no one answered, so this proves nothing" is a sentence for a
+// person.
 
 import (
 	"fmt"
@@ -29,17 +30,16 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
 )
 
-// limpiarPantalla deja el cursor arriba y borra lo de abajo.
+// clearScreen leaves the cursor at the top and wipes what is below.
 //
-// Se borra hacia abajo (`ESC[J`) en vez de borrar todo y saltar: así el
-// redibujado no parpadea, porque la pantalla nueva se escribe encima de la vieja
-// en vez de sobre un hueco negro.
-func limpiarPantalla(w io.Writer) { fmt.Fprint(w, "\033[H\033[J") }
+// It wipes downwards (`ESC[J`) instead of wiping everything and jumping: that
+// way the redraw does not flicker, because the new screen gets written over the
+// old one rather than over a black gap.
+func clearScreen(w io.Writer) { fmt.Fprint(w, "\033[H\033[J") }
 
-const raya = "  ────────────────────────────────────────────────────────────────"
+const rule = "  ────────────────────────────────────────────────────────────────"
 
-// pintarSala es la pantalla principal.
-// pintarVuelta paints a machine on its way back into a room it was in.
+// printReturning paints a machine on its way back into a room it was in.
 //
 // # It goes where "no room is open" goes, and that is not a contradiction
 //
@@ -51,20 +51,20 @@ const raya = "  ─────────────────────�
 // The registry being silent is called out separately because it is a different
 // cause for the same wait: "nobody is hosting yet" and "the meeting server is
 // not answering" send somebody to look in different places.
-func pintarVuelta(w io.Writer, v *protocol.ReturningView, seedCaido bool) {
-	nombre := v.Name
-	if nombre == "" {
-		nombre = "(unnamed)"
+func printReturning(w io.Writer, v *protocol.ReturningView, seedDown bool) {
+	name := v.Name
+	if name == "" {
+		name = "(unnamed)"
 	}
-	fmt.Fprintf(w, "  Going back to  %s  %s@%s\n", nombre, v.Code, v.Seed)
+	fmt.Fprintf(w, "  Going back to  %s  %s@%s\n", name, v.Code, v.Seed)
 
-	cuando := "now"
+	when := "now"
 	if v.NextInMS > 0 {
-		cuando = "in " + milis(v.NextInMS)
+		when = "in " + millis(v.NextInMS)
 	}
-	fmt.Fprintf(w, "  Attempt %d, next %s.\n", v.Attempts+1, cuando)
+	fmt.Fprintf(w, "  Attempt %d, next %s.\n", v.Attempts+1, when)
 	switch {
-	case seedCaido:
+	case seedDown:
 		fmt.Fprintln(w, "  The meeting server is not answering, so nothing is being decided yet.")
 	case v.Reason != "":
 		fmt.Fprintf(w, "  Last: %s\n", v.Reason)
@@ -109,37 +109,38 @@ func gameAddress(st protocol.RoomView, catalog []protocol.GameView) string {
 	return ""
 }
 
-func pintarSala(w io.Writer, st protocol.RoomView, catalog []protocol.GameView) {
+// printRoom is the main screen.
+func printRoom(w io.Writer, st protocol.RoomView, catalog []protocol.GameView) {
 	if st.Conn == "idle" || st.Conn == "" {
 		fmt.Fprintln(w, "  No room is open.")
 		if st.LastExit != "" {
-			fmt.Fprintf(w, "  The last one ended: %s\n", motivoDeSalida(st.LastExit))
+			fmt.Fprintf(w, "  The last one ended: %s\n", exitReason(st.LastExit))
 		}
 		if st.Returning != nil {
-			pintarVuelta(w, st.Returning, st.SeedDown)
+			printReturning(w, st.Returning, st.SeedDown)
 			return
 		}
 		fmt.Fprintln(w, "\n  `kanpachi host` opens one. `kanpachi join <code>` enters someone else's.")
 		return
 	}
 
-	fmt.Fprintln(w, raya)
-	nombre := st.Name
-	if nombre == "" {
-		nombre = "(unnamed)"
+	fmt.Fprintln(w, rule)
+	name := st.Name
+	if name == "" {
+		name = "(unnamed)"
 	}
-	fmt.Fprintf(w, "  %-34s %s, %s\n", nombre, papel(st.Role), estadoDeConexión(st.Conn))
-	fmt.Fprintln(w, raya)
+	fmt.Fprintf(w, "  %-34s %s, %s\n", name, role(st.Role), connState(st.Conn))
+	fmt.Fprintln(w, rule)
 
-	// Las DOS formas, y con el registro pegado en la corta.
+	// BOTH forms, with the registry stuck to the short one.
 	//
-	// Un invite ID solo significa algo en el registro que lo emitió, así que
-	// enseñarlo pelado ofrece para copiar una cosa que en otro registro es una
-	// sala distinta. En una terminal no hay botón de copiar: lo que hace las
-	// veces es que las dos formas estén ahí para seleccionar, la corta para
-	// dictar y el enlace para pegar en un chat.
+	// An invite ID only means something on the registry that issued it, so
+	// showing it bare offers, for copying, a thing that on another registry is a
+	// different room. A terminal has no copy button: what stands in for it is
+	// having both forms there to select, the short one to dictate and the link
+	// to paste into a chat.
 	if st.Code != "" {
-		fmt.Fprintf(w, "  Code     %s", conGuion(st.Code))
+		fmt.Fprintf(w, "  Code     %s", hyphenated(st.Code))
 		if st.Seed != "" {
 			fmt.Fprintf(w, "@%s", st.Seed)
 		}
@@ -149,9 +150,9 @@ func pintarSala(w io.Writer, st protocol.RoomView, catalog []protocol.GameView) 
 		fmt.Fprintf(w, "  Link     %s\n", st.Link)
 	}
 	if st.CodeLost {
-		// Se dice fuerte porque la sala SIGUE funcionando para los que están
-		// dentro: lo que se rompió es que entre alguien nuevo, y nada más en la
-		// pantalla lo delataría.
+		// Said loudly because the room STILL works for the people inside: what
+		// broke is anybody new getting in, and nothing else on the screen would
+		// give it away.
 		fmt.Fprintln(w, "  WARNING  the registry no longer knows this code: nobody new can join.")
 		fmt.Fprintln(w, "           `kanpachi rotate` fixes it, and voids the links you handed out.")
 	}
@@ -195,7 +196,7 @@ func pintarSala(w io.Writer, st protocol.RoomView, catalog []protocol.GameView) 
 	}
 
 	if st.Role == "guest" && !st.HostPresent {
-		fmt.Fprintf(w, "  Host     gone for %s\n", milis(st.HostGoneForMS))
+		fmt.Fprintf(w, "  Host     gone for %s\n", millis(st.HostGoneForMS))
 	}
 	// Before the tunnel line: this is the one that explains the pause. A room
 	// that goes quiet for ten seconds looks like a hang, and this is the daemon
@@ -204,55 +205,55 @@ func pintarSala(w io.Writer, st protocol.RoomView, catalog []protocol.GameView) 
 		fmt.Fprintln(w, "  Room     asking the host for a credential again")
 	}
 	if st.ReconnectingForMS > 0 {
-		fmt.Fprintf(w, "  Tunnel   reconnecting for %s\n", milis(st.ReconnectingForMS))
+		fmt.Fprintf(w, "  Tunnel   reconnecting for %s\n", millis(st.ReconnectingForMS))
 	}
 
 	fmt.Fprintln(w)
-	pintarMiembros(w, st)
-	pintarCanario(w, st.Canary)
+	printMembers(w, st)
+	printCanary(w, st.Canary)
 
 	if len(st.Alerts) > 0 {
 		fmt.Fprintln(w, "\n  ALERTS")
 		for _, a := range st.Alerts {
-			fmt.Fprintf(w, "    %-20s %s\n", nombreDeAlerta(a.Kind), a.Detail)
+			fmt.Fprintf(w, "    %-20s %s\n", alertName(a.Kind), a.Detail)
 		}
 	}
 }
 
-func pintarMiembros(w io.Writer, st protocol.RoomView) {
+func printMembers(w io.Writer, st protocol.RoomView) {
 	if len(st.Peers) == 0 {
 		fmt.Fprintln(w, "  Nobody is in the room.")
 		return
 	}
 	fmt.Fprintf(w, "  MEMBERS (%d)\n", len(st.Peers))
 	for _, p := range st.Peers {
-		marcas := ""
+		marks := ""
 		if p.Host {
-			marcas += " [host]"
+			marks += " [host]"
 		}
 		if p.Self {
-			marcas += " [you]"
+			marks += " [you]"
 		}
-		latencia := "-"
+		latency := "-"
 		if p.RTTMS > 0 {
-			latencia = fmt.Sprintf("%d ms", p.RTTMS)
+			latency = fmt.Sprintf("%d ms", p.RTTMS)
 		}
 		fmt.Fprintf(w, "    %-14s %-16s %-8s %s%s\n",
-			p.Name, p.IP, camino(p.Path), latencia, marcas)
+			p.Name, p.IP, peerPath(p.Path), latency, marks)
 	}
 }
 
-// pintarCanario enseña la última ronda de la Protección Kanpachi.
+// printCanary shows the last round of Kanpachi Protection.
 //
-// Las dos fuentes se enseñan por separado porque son dos cosas distintas: lo que
-// vio el host con su propio socket no se puede falsificar, y lo que dijeron los
-// miembros son mensajes, y un mensaje se puede mentir. Juntarlas en una frase
-// tiraría justo lo que la hace creíble.
-func pintarCanario(w io.Writer, c protocol.CanaryView) {
+// The two sources show separately because they are two different things: what
+// the host saw with its own socket cannot be faked, and what the members said
+// are messages, and a message can lie. Merging them into one sentence would
+// throw away exactly what makes it believable.
+func printCanary(w io.Writer, c protocol.CanaryView) {
 	if !c.Measured {
 		return
 	}
-	fmt.Fprintf(w, "\n  PROTECTION   %s", veredictoDelCanario(c.Verdict))
+	fmt.Fprintf(w, "\n  PROTECTION   %s", canaryVerdict(c.Verdict))
 	if c.Port != 0 {
 		fmt.Fprintf(w, "  (port %d)", c.Port)
 	}
@@ -261,79 +262,79 @@ func pintarCanario(w io.Writer, c protocol.CanaryView) {
 		fmt.Fprintln(w, "    the host saw traffic come in there, with its own socket")
 	}
 	for _, a := range c.Answers {
-		fmt.Fprintf(w, "    %-14s tcp %s, udp %s\n", a.From, resultado(a.TCP), resultado(a.UDP))
+		fmt.Fprintf(w, "    %-14s tcp %s, udp %s\n", a.From, outcome(a.TCP), outcome(a.UDP))
 	}
 }
 
-func pintarJuegos(w io.Writer, juegos []protocol.GameView) {
-	if len(juegos) == 0 {
+func printGames(w io.Writer, games []protocol.GameView) {
+	if len(games) == 0 {
 		fmt.Fprintln(w, "  The catalog is empty.")
 		return
 	}
-	// Ordenados por nombre: el daemon los devuelve en el orden del catálogo, que
-	// no es el que espera quien busca uno con la vista.
-	sort.Slice(juegos, func(i, j int) bool {
-		return strings.ToLower(juegos[i].Name) < strings.ToLower(juegos[j].Name)
+	// Sorted by name: the daemon returns them in catalog order, which is not the
+	// order somebody scanning the list with their eyes expects.
+	sort.Slice(games, func(i, j int) bool {
+		return strings.ToLower(games[i].Name) < strings.ToLower(games[j].Name)
 	})
 	fmt.Fprintf(w, "  %-24s %-34s %s\n", "ID", "NAME", "")
-	for _, g := range juegos {
-		marcas := []string{}
+	for _, g := range games {
+		marks := []string{}
 		if g.Installed {
-			marcas = append(marcas, "installed")
+			marks = append(marks, "installed")
 		}
 		if g.Verified {
-			marcas = append(marcas, "verified")
+			marks = append(marks, "verified")
 		}
-		fmt.Fprintf(w, "  %-24s %-34s %s\n", g.ID, g.Name, strings.Join(marcas, ", "))
+		fmt.Fprintf(w, "  %-24s %-34s %s\n", g.ID, g.Name, strings.Join(marks, ", "))
 	}
 	fmt.Fprintln(w, "\n  `kanpachi game <id>` activates one.")
 }
 
-// pintarExposicion enseña qué está abierto.
+// printExposure shows what is open.
 //
-// # Por qué lo primero es si se pudo mirar
+// # Why the first thing is whether anybody could look
 //
-// Porque una lista vacía significa dos cosas muy distintas —no hay nada abierto,
-// o Kanpachi no pudo leer lo que tiene puesto— y confundirlas es enseñar
-// tranquilidad donde hay ceguera. El protocolo trae un booleano explícito para
-// eso y acá se respeta.
-func pintarExposicion(w io.Writer, v protocol.ExposureView) {
+// Because an empty list means two very different things, that nothing is open or
+// that Kanpachi could not read what it has in place, and confusing them shows
+// reassurance where there is blindness. The protocol carries an explicit boolean
+// for that and it gets respected here.
+func printExposure(w io.Writer, v protocol.ExposureView) {
 	if !v.Measured {
 		fmt.Fprintln(w, "  Kanpachi could NOT read what it has in the firewall.")
 		fmt.Fprintln(w, "  This does not say nothing is open: it says nobody knows.")
 		return
 	}
-	fmt.Fprintf(w, "  Gate: %s\n", estadoDeCompuerta(v.Gate))
+	fmt.Fprintf(w, "  Gate: %s\n", gateState(v.Gate))
 	if len(v.Ports) == 0 {
 		fmt.Fprintln(w, "  Kanpachi has no port open.")
 	}
 	for _, p := range v.Ports {
-		rango := fmt.Sprintf("%d", p.From)
+		ports := fmt.Sprintf("%d", p.From)
 		if p.To != p.From {
-			rango = fmt.Sprintf("%d-%d", p.From, p.To)
+			ports = fmt.Sprintf("%d-%d", p.From, p.To)
 		}
-		qué := "game"
+		what := "game"
 		if p.Control {
-			qué = "room channel"
+			what = "room channel"
 		}
-		hacia := strings.Join(append(append([]string{}, p.Members...), p.Nets...), ", ")
-		if hacia == "" {
-			// Vacío JAMÁS significa "para cualquiera": el dominio no puede
-			// expresar eso. Se dice así para que nadie lo lea al revés.
-			hacia = "nobody"
+		toward := strings.Join(append(append([]string{}, p.Members...), p.Nets...), ", ")
+		if toward == "" {
+			// Empty NEVER means "to anybody": the domain cannot express that. It
+			// is said this way so nobody reads it backwards.
+			toward = "nobody"
 		}
-		estado := "applied"
+		state := "applied"
 		if !p.Applied {
-			estado = "ASKED FOR AND NOT APPLIED"
+			state = "ASKED FOR AND NOT APPLIED"
 		}
-		fmt.Fprintf(w, "    %-4s %-12s %-14s toward %s [%s]\n", p.Proto, rango, qué, hacia, estado)
+		fmt.Fprintf(w, "    %-4s %-12s %-14s toward %s [%s]\n", p.Proto, ports, what, toward, state)
 	}
 	for _, u := range v.Unexpected {
 		fmt.Fprintf(w, "    RULE NOBODY ASKED FOR: %s\n", u)
 	}
 }
 
-func pintarRed(w io.Writer, v protocol.NetView) {
+func printNetwork(w io.Writer, v protocol.NetView) {
 	if v.NATKind != "" {
 		fmt.Fprintf(w, "  NAT      %s\n", v.NATKind)
 	}
@@ -353,23 +354,23 @@ func pintarRed(w io.Writer, v protocol.NetView) {
 	}
 }
 
-// pintarSondeo enseña la única medición del producto que atraviesa la red de
-// verdad, y por eso la que más cuidado pide al leerla.
-func pintarSondeo(w io.Writer, v protocol.ProbeView) {
+// printProbe shows the one measurement in this product that crosses the network
+// for real, and therefore the one that asks for most care when reading it.
+func printProbe(w io.Writer, v protocol.ProbeView) {
 	if !v.Measured {
 		fmt.Fprintln(w, "  Nothing was measured.")
 		return
 	}
-	fmt.Fprintf(w, "  Probed from %s (%s): %s\n", v.Name, v.Target, veredictoDelSondeo(v.Verdict))
+	fmt.Fprintf(w, "  Probed from %s (%s): %s\n", v.Name, v.Target, probeVerdict(v.Verdict))
 	for _, r := range v.Results {
 		fmt.Fprintf(w, "    %-6d %-11s %-24s %s\n",
-			r.Port, claseDeSondeo(r.Kind), r.Label, resultado(r.Outcome))
+			r.Port, probeKind(r.Kind), r.Label, outcome(r.Outcome))
 	}
 }
 
-// ─── Los enums de cable, para leerlos ────────────────────────────────────────
+// ─── The wire enums, for reading ─────────────────────────────────────────────
 
-func estadoDeConexión(s string) string {
+func connState(s string) string {
 	switch s {
 	case "idle":
 		return "no room"
@@ -384,14 +385,14 @@ func estadoDeConexión(s string) string {
 	case "reconnecting":
 		return "reconnecting"
 	default:
-		// Lo que no se reconoce se enseña TAL CUAL en vez de traducirse a algo
-		// tranquilizador. Un cliente viejo hablando con un daemon nuevo tiene que
-		// enseñar la palabra que no entiende, no inventarse otra.
+		// What is not recognised shows AS IT CAME instead of being translated
+		// into something reassuring. An old client talking to a new daemon has to
+		// show the word it does not understand, not invent another one.
 		return s
 	}
 }
 
-func papel(s string) string {
+func role(s string) string {
 	switch s {
 	case "host":
 		return "you are the host"
@@ -402,7 +403,7 @@ func papel(s string) string {
 	}
 }
 
-func camino(s string) string {
+func peerPath(s string) string {
 	switch s {
 	case "direct":
 		return "direct"
@@ -417,7 +418,7 @@ func camino(s string) string {
 	}
 }
 
-func resultado(s string) string {
+func outcome(s string) string {
 	switch s {
 	case "answered":
 		return "answered"
@@ -432,7 +433,7 @@ func resultado(s string) string {
 	}
 }
 
-func estadoDeCompuerta(s string) string {
+func gateState(s string) string {
 	switch s {
 	case "present":
 		return "up"
@@ -443,14 +444,14 @@ func estadoDeCompuerta(s string) string {
 	}
 }
 
-func veredictoDelSondeo(s string) string {
+func probeVerdict(s string) string {
 	switch s {
 	case "leaky":
-		// Prueba POSITIVA de exposición: algo que nadie pidió contestó.
+		// POSITIVE proof of exposure: something nobody asked for answered.
 		return "LEAK: something nobody opened answered from outside"
 	case "unreachable":
-		// No prueba nada, y decirlo importa: se ve igual con la máquina blindada
-		// que con la máquina apagada.
+		// It proves nothing, and saying so matters: it looks the same on a
+		// hardened machine as on one that is switched off.
 		return "nobody answered, not even the room channel, so this proves nothing"
 	case "sealed":
 		return "sealed: the channel answers and nothing forbidden does"
@@ -459,7 +460,7 @@ func veredictoDelSondeo(s string) string {
 	}
 }
 
-func veredictoDelCanario(s string) string {
+func canaryVerdict(s string) string {
 	switch s {
 	case "leaking":
 		return "LEAKING"
@@ -474,7 +475,7 @@ func veredictoDelCanario(s string) string {
 	}
 }
 
-func claseDeSondeo(s string) string {
+func probeKind(s string) string {
 	switch s {
 	case "reference":
 		return "reference"
@@ -487,7 +488,7 @@ func claseDeSondeo(s string) string {
 	}
 }
 
-func motivoDeSalida(s string) string {
+func exitReason(s string) string {
 	switch s {
 	case "user":
 		return "you closed it"
@@ -506,14 +507,14 @@ func motivoDeSalida(s string) string {
 	}
 }
 
-// pintarCuarentena is the symptom→cause bridge: the person who reads this
+// printQuarantine is the symptom→cause bridge: the person who reads this
 // arrives with "I cannot share a folder" or "I cannot reach my PC over Remote
 // Desktop", never with the word quarantine. The state names the symptom in
 // both directions, says what it does NOT mean, and hands the exact command.
-func pintarCuarentena(w io.Writer, q protocol.QuarantineView) {
-	puertos := make([]string, len(q.Ports))
+func printQuarantine(w io.Writer, q protocol.QuarantineView) {
+	ports := make([]string, len(q.Ports))
 	for i, p := range q.Ports {
-		puertos[i] = strconv.Itoa(int(p))
+		ports[i] = strconv.Itoa(int(p))
 	}
 
 	fmt.Fprintln(w)
@@ -521,7 +522,7 @@ func pintarCuarentena(w io.Writer, q protocol.QuarantineView) {
 	case "applied":
 		fmt.Fprintln(w, "  QUARANTINE   on: Kanpachi is blocking file sharing and Remote Desktop")
 		fmt.Fprintln(w, "               INTO this PC, on all its networks.")
-		fmt.Fprintf(w, "  Ports        %s\n", strings.Join(puertos, ", "))
+		fmt.Fprintf(w, "  Ports        %s\n", strings.Join(ports, ", "))
 		fmt.Fprintln(w, "\n  Having trouble sharing a folder FROM this PC, or entering it over")
 		fmt.Fprintln(w, "  Remote Desktop? This is why. `kanpachi quarantine off` turns it off")
 		fmt.Fprintln(w, "  and they work again right away. Reaching OTHER machines' shares and")
@@ -534,7 +535,7 @@ func pintarCuarentena(w io.Writer, q protocol.QuarantineView) {
 	case "absent":
 		fmt.Fprintln(w, "  QUARANTINE   off: this PC answers file sharing and Remote Desktop on")
 		fmt.Fprintln(w, "               every network it joins.")
-		fmt.Fprintf(w, "  Would close  %s\n", strings.Join(puertos, ", "))
+		fmt.Fprintf(w, "  Would close  %s\n", strings.Join(ports, ", "))
 		fmt.Fprintln(w, "\n  What that means: on a bar's or a hotel's wifi, people on that network")
 		fmt.Fprintln(w, "  can ask this PC for its shared folders or its desktop. What it does")
 		fmt.Fprintln(w, "  NOT mean: Kanpachi did not open any of it and never does, your room's")
@@ -558,7 +559,7 @@ func pintarCuarentena(w io.Writer, q protocol.QuarantineView) {
 	}
 }
 
-func nombreDeAlerta(s string) string {
+func alertName(s string) string {
 	switch s {
 	case "firewall_off":
 		return "firewall off"
@@ -585,18 +586,18 @@ func nombreDeAlerta(s string) string {
 	}
 }
 
-// ─── Formatos ────────────────────────────────────────────────────────────────
+// ─── Formats ─────────────────────────────────────────────────────────────────
 
-// conGuion parte el código en dos mitades, que es como se lee en voz alta y como
-// lo enseña la página de invitación.
-func conGuion(code string) string {
+// hyphenated splits the code into two halves, which is how it gets read out loud
+// and how the invitation page shows it.
+func hyphenated(code string) string {
 	if len(code) != 8 {
 		return code
 	}
 	return code[:4] + "-" + code[4:]
 }
 
-func milis(ms int64) string {
+func millis(ms int64) string {
 	switch {
 	case ms < 1000:
 		return fmt.Sprintf("%d ms", ms)

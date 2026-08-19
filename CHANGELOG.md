@@ -8,7 +8,18 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
-## [0.6.4] - 2026-08-19
+### Added
+
+- Ask any command how it is written, with `kanpachi <command> --help` or `kanpachi help <command>`: what it does, every flag it takes, what each flag changes, and an example to paste. Only the one-line list existed, so the flags of `profile`, `upgrade`, `host` and `join` were readable nowhere. `kanpachi --help` and `kanpachi help` stay the same page as before
+
+### Fixed
+
+- Stop `kanpachi game --help` trying to activate a game called `help`. `--help` was rewritten into the `help` subcommand wherever it appeared, so any command followed by it ran with `help` as its argument
+- Line the command list back up. `profile` and `upgrade` carried their flags in the name column, which is 26 characters wide and which they overflowed by 13 and 23, pushing their descriptions off the column every other row lines up on
+
+### Changed
+
+- The client's source is in English: comments, identifiers and file names, `daemon/cmd/kanpachi` in full. Nothing it prints changed
 
 ### Added
 

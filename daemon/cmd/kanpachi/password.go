@@ -24,46 +24,46 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
 )
 
-func cmdPassword(ctx context.Context, op opciones, args []string) error {
+func cmdPassword(ctx context.Context, op options, args []string) error {
 	if len(args) > 0 {
-		return uso("password takes no arguments. It is typed, never passed: " +
+		return badUsage("password takes no arguments. It is typed, never passed: " +
 			"the argv of a process is world readable")
 	}
 
-	pw, err := leerPassword(op)
+	pw, err := readPassword(op)
 	if err != nil {
 		return err
 	}
 
-	c, err := abrir(op)
+	c, err := dial(op)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = c.Close() }()
 
-	// La respuesta está vacía a propósito, así que no hay nada que imprimir
-	// salvo que salió bien. Ver [protocol.MethodSeedPassword].
-	_, hecho, err := pedir[struct{}](c, op, protocol.MethodSeedPassword, struct {
+	// The answer is empty on purpose, so there is nothing to print beyond the
+	// fact that it worked. See [protocol.MethodSeedPassword].
+	_, done, err := request[struct{}](c, op, protocol.MethodSeedPassword, struct {
 		Password string `json:"password"`
 	}{pw})
-	if hecho || err != nil {
+	if done || err != nil {
 		return err
 	}
 	fmt.Println("The registry accepted it. This machine can host on it now.")
 	return nil
 }
 
-// leerPassword lo toma de la terminal, o de la entrada si la redirigieron.
+// readPassword takes it from the terminal, or from input if that was redirected.
 //
-// # Sin terminal se lee de stdin y no se rechaza
+// # With no terminal it reads stdin instead of refusing
 //
-// Es lo contrario de lo que hace la confirmación de confianza, y por un motivo
-// concreto: allá la ausencia de terminal significa que NADIE confirmó, y dar por
-// dado un sí sería quitar la decisión. Acá la entrada redirigida trae el dato en
-// sí, así que no hay nada que dar por supuesto. Un fichero 0600 por la tubería
-// es justamente la forma correcta de automatizar esto.
-func leerPassword(op opciones) (string, error) {
-	if !hayTerminal() {
+// It is the opposite of what confirming trust does, and for a concrete reason:
+// there the absence of a terminal means NOBODY confirmed, and assuming a yes
+// would be taking the decision away. Here redirected input carries the value
+// itself, so there is nothing to assume. A 0600 file through the pipe is exactly
+// the right way to automate this.
+func readPassword(op options) (string, error) {
+	if !hasTerminal() {
 		raw, err := io.ReadAll(io.LimitReader(os.Stdin, 4096))
 		if err != nil {
 			return "", fmt.Errorf("could not read the password from standard input: %w", err)
@@ -76,22 +76,23 @@ func leerPassword(op opciones) (string, error) {
 		return pw, domain.ValidateSeedPassword(pw)
 	}
 	if op.json {
-		// Con `--json` la salida es de una máquina, y una máquina no teclea. Se
-		// dice acá en vez de dejar que un prompt se pinte encima del JSON.
+		// With `--json` the output belongs to a machine, and a machine does not
+		// type. It gets said here instead of letting a prompt paint itself over
+		// the JSON.
 		return "", errors.New("with --json the password comes from standard input")
 	}
 
 	var pw string
-	pregunta := &survey.Password{
+	question := &survey.Password{
 		Message: fmt.Sprintf("Password of the registry (%d-%d characters):",
 			domain.MinSeedPasswordLen, domain.MaxSeedPasswordLen),
 	}
-	if err := survey.AskOne(pregunta, &pw); err != nil {
+	if err := survey.AskOne(question, &pw); err != nil {
 		return "", err
 	}
-	// La regla se comprueba ACÁ además de en el daemon, y no es redundante: sin
-	// esto, un password demasiado corto viaja por el pipe antes de que nadie lo
-	// mire, y volver a pedirlo cuesta un viaje y un mensaje que llega en el
-	// idioma del daemon.
+	// The rule gets checked HERE as well as in the daemon, and that is not
+	// redundant: without this, a password that is too short travels over the pipe
+	// before anybody looks at it, and asking for it again costs a round trip and
+	// a message that arrives in the daemon's own words.
 	return pw, domain.ValidateSeedPassword(pw)
 }

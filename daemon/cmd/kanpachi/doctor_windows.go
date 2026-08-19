@@ -2,28 +2,28 @@
 
 package main
 
-// Las comprobaciones de Windows, que son MENOS que las de Linux a propósito.
+// The Windows checks, which are FEWER than the Linux ones on purpose.
 //
-// # Por qué menos, y por qué eso no es un pendiente
+// # Why fewer, and why that is not a to-do
 //
-// Porque en Windows el cliente normal es la ventana, y la ventana ya enseña casi
-// todo esto en sus propias pantallas: el estado del servicio, la exposición, la
-// Protección Kanpachi. Doctor existe acá para el caso en que alguien esté en una
-// terminal, y lo que hace falta ahí es lo mismo que en Linux: saber si el canal
-// contesta y si las piezas están donde tienen que estar.
+// Because on Windows the normal client is the window, and the window already
+// shows most of this on its own screens: the state of the service, the exposure,
+// Kanpachi Protection. Doctor exists here for the case where somebody is in a
+// terminal, and what is needed there is the same as on Linux: knowing whether the
+// channel answers and whether the pieces are where they have to be.
 //
-// Lo que NO se replica es la configuración del sistema operativo, porque en
-// Windows no son ficheros que se puedan mirar ni tienen un arreglo que se
-// escriba en una línea. Inventar comprobaciones que contesten "no se sabe"
-// llenaría la pantalla de ruido y escondería las que sí contestan.
+// What does NOT get replicated is the operating system's configuration, because
+// on Windows those are not files anybody can look at and they have no fix that
+// fits on one line. Inventing checks that answer "cannot tell" would fill the
+// screen with noise and hide the ones that do answer.
 //
-// # Lo que ese razonamiento decía de más, y quedó desmentido
+// # What that reasoning claimed too much of, and got proved wrong
 //
-// Decía que en Windows NO hay nivel de sistema que mirar, y por eso acá no había
-// nada equivalente a `/dev/net/tun`. Lo hay: el driver de red virtual, que se
-// instala en el almacén de drivers y puede negarse a hacerlo. Medido el
-// 2026-08-11 en la máquina de un invitado, con todos los ficheros en su sitio y
-// sin adaptador posible. Ver `chequeoDelAdaptadorVirtual`.
+// It said that on Windows there is NO system level to look at, which is why
+// there was nothing here equivalent to `/dev/net/tun`. There is: the virtual
+// network driver, which gets installed into the driver store and can refuse to
+// go in. Measured on 2026-08-11 on a guest's machine, with every file in place
+// and no possible adapter. See `virtualAdapterCheck`.
 
 import (
 	"context"
@@ -36,83 +36,86 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/preflight"
 )
 
-func chequeosDelSistema() []chequeo {
-	return []chequeo{
-		chequeoDelServicio(),
-		chequeoDelDirectorioDeDatos(),
-		chequeoDelCanal(),
-		chequeoDeLaCuarentenaMedida(),
-		chequeoDelMotor(motorAlLadoDelDaemon()),
-		chequeoDelAdaptadorVirtual(),
+func systemChecks() []check {
+	return []check{
+		serviceCheck(),
+		dataDirCheck(),
+		channelCheck(),
+		measuredQuarantineCheck(),
+		engineCheck(engineNextToDaemon()),
+		virtualAdapterCheck(),
 	}
 }
 
-// chequeoDelServicio asks the same question roomprobe asks before running, from
-// the same code, so the two can never disagree about what "running" means.
-func chequeoDelServicio() chequeo {
-	return chequeo{
-		nombre: "the service",
-		mirar: func(context.Context, opciones) veredicto {
-			corriendo, err := preflight.DaemonServiceRunning()
+// serviceCheck asks the same question roomprobe asks before running, from the
+// same code, so the two can never disagree about what "running" means.
+func serviceCheck() check {
+	return check{
+		name: "the service",
+		look: func(context.Context, options) verdict {
+			running, err := preflight.DaemonServiceRunning()
 			if err != nil {
-				return noSeSabe("could not ask the service manager: %v", err)
+				return unknown("could not ask the service manager: %v", err)
 			}
-			if !corriendo {
-				return fallar("%s is not running", preflight.DaemonService).
-					con("Start-Service " + preflight.DaemonService)
+			if !running {
+				return bad("%s is not running", preflight.DaemonService).
+					withFix("Start-Service " + preflight.DaemonService)
 			}
-			return ok("%s is running", preflight.DaemonService)
+			return good("%s is running", preflight.DaemonService)
 		},
 	}
 }
 
-// chequeoDelAdaptadorVirtual es el análogo de `/dev/net/tun` en Windows.
+// virtualAdapterCheck is the Windows analogue of `/dev/net/tun`.
 //
-// Corre el MISMO sondeo que el daemon corre antes de levantar el motor, y eso es
-// lo que lo hace valer: una comprobación escrita aparte contestaría sobre otra
-// cosa parecida, y la que importa es la que el producto va a hacer de verdad.
+// It runs the SAME probe the daemon runs before bringing the engine up, and that
+// is what makes it worth having: a check written separately would answer about
+// some other, similar thing, and the one that matters is the one the product is
+// really going to do.
 //
-// # Por qué se rinde sin elevación en vez de fallar
+// # Why it gives up without elevation instead of failing
 //
-// Porque crear un adaptador es una operación privilegiada, y sin permisos el
-// sondeo devuelve acceso denegado. Eso NO significa que la máquina esté rota,
-// significa que esta corrida no puede saberlo. Doctor se lee cuando algo va mal,
-// y un rojo que solo dice que lo corriste como tú mismo mandaría a la gente a
-// buscar un problema que no existe. Es la única comprobación de este binario que
-// pide elevación, y por eso lo dice en vez de suponerlo.
+// Because creating an adapter is a privileged operation, and without permission
+// the probe returns access denied. That does NOT mean the machine is broken, it
+// means this run cannot know. Doctor gets read when something is wrong, and a
+// red line that only says you ran it as yourself would send people looking for a
+// problem that does not exist. It is the one check in this binary that asks for
+// elevation, which is why it says so instead of assuming it.
 //
-// **No tiene arreglo**, y es la misma regla de siempre: el almacén de drivers de
-// Windows es del sistema y no nuestro. Se nombra, se dice qué mirar, y se para.
-func chequeoDelAdaptadorVirtual() chequeo {
-	return chequeo{
-		nombre: "the virtual adapter",
-		mirar: func(context.Context, opciones) veredicto {
+// **It has no fix**, and that is the usual rule: Windows's driver store belongs
+// to the system and not to us. It gets named, what to look at gets said, and it
+// stops there.
+func virtualAdapterCheck() check {
+	return check{
+		name: "the virtual adapter",
+		look: func(context.Context, options) verdict {
 			if !windows.GetCurrentProcessToken().IsElevated() {
-				return noSeSabe("creating an adapter needs elevation, so this one " +
+				return unknown("creating an adapter needs elevation, so this one " +
 					"cannot be answered from here").
-					con("Run this in an elevated terminal to have it checked.")
+					withFix("Run this in an elevated terminal to have it checked.")
 			}
-			dir := filepath.Dir(motorAlLadoDelDaemon())
+			dir := filepath.Dir(engineNextToDaemon())
 			if err := kanpachiengine.Preflight(dir); err != nil {
-				return fallar("this machine cannot build one").con(err.Error())
+				return bad("this machine cannot build one").withFix(err.Error())
 			}
-			return ok("built one and took it down again")
+			return good("built one and took it down again")
 		},
 	}
 }
 
-func pistaDeElevación() string {
+func elevationHint() string {
 	return "On Windows any user of the machine can read the token,\n" +
 		"so this should not need elevation. If it does, the ACL on\n" +
 		"ProgramData\\Kanpachi is not the one the installer put there."
 }
 
-// motorAlLadoDelDaemon es donde vive el motor en una instalación de Windows.
+// engineNextToDaemon is where the engine lives in a Windows install.
 //
-// Se busca junto a ESTE binario porque el paquete los pone juntos, que es lo
-// mismo que hace el daemon para lanzarlo. En el portable eso sigue siendo cierto
-// y en el instalado también, así que no hace falta leer el registro.
-func motorAlLadoDelDaemon() string {
+// It gets looked for next to THIS binary because the package puts them together,
+// which is the same thing the daemon does to launch it. On the portable build
+// that is still true and on the installed one too, so there is no need to read
+// the registry.
+func engineNextToDaemon() string {
 	exe, err := os.Executable()
 	if err != nil {
 		return "kanpachi-engine.exe"
@@ -120,31 +123,31 @@ func motorAlLadoDelDaemon() string {
 	return filepath.Join(filepath.Dir(exe), "kanpachi-engine.exe")
 }
 
-// chequeoDelDirectorioDeDatos mira que esté, y NO lo crea.
+// dataDirCheck looks that it is there, and does NOT create it.
 //
-// Crearlo sería el arreglo equivocado: lo crea el instalador con una ACL propia,
-// y esa ACL es la mitad de la protección de todo lo que hay dentro. Un
-// directorio hecho acá saldría con la ACL heredada y la perdería en silencio, que
-// es peor que no tenerlo. Por eso este chequeo no lleva `arreglar`.
-func chequeoDelDirectorioDeDatos() chequeo {
-	return chequeo{
-		nombre: "the data directory",
-		mirar: func(_ context.Context, op opciones) veredicto {
-			info, err := os.Stat(op.datos)
+// Creating it would be the wrong fix: the installer creates it with an ACL of
+// its own, and that ACL is half the protection of everything inside. A directory
+// made here would come out with the inherited ACL and lose that in silence,
+// which is worse than not having it. That is why this check carries no `fix`.
+func dataDirCheck() check {
+	return check{
+		name: "the data directory",
+		look: func(_ context.Context, op options) verdict {
+			info, err := os.Stat(op.data)
 			if os.IsNotExist(err) {
-				return fallar("%s is not there", op.datos).
-					con("The installer creates it, with an ACL of its own. Reinstalling puts it back.")
+				return bad("%s is not there", op.data).
+					withFix("The installer creates it, with an ACL of its own. Reinstalling puts it back.")
 			}
 			if err != nil {
-				return noSeSabe("could not look at %s: %v", op.datos, err)
+				return unknown("could not look at %s: %v", op.data, err)
 			}
 			if !info.IsDir() {
-				return fallar("%s exists and is not a directory", op.datos)
+				return bad("%s exists and is not a directory", op.data)
 			}
-			return ok("%s", op.datos)
+			return good("%s", op.data)
 		},
 	}
 }
 
-// rutaDelMotor es la misma ruta que mira el doctor, para `kanpachi version`.
-func rutaDelMotor() string { return motorAlLadoDelDaemon() }
+// enginePath is the same path the doctor looks at, for `kanpachi version`.
+func enginePath() string { return engineNextToDaemon() }

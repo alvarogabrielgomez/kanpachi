@@ -160,7 +160,7 @@ func esNombreDeSecreto(nombre string) bool {
 	return false
 }
 
-// TestConJSONElFalloSaleSinProsa vigila el orden de [informar].
+// TestConJSONElFalloSaleSinProsa vigila el orden de [report].
 //
 // # Qué regresión atrapa
 //
@@ -181,9 +181,9 @@ func TestConJSONElFalloSaleSinProsa(t *testing.T) {
 		t.Fatalf("no se pudo leer %s: %v", ruta, err)
 	}
 
-	cuerpo := cuerpoDeLaFuncion(archivo, "informar")
+	cuerpo := cuerpoDeLaFuncion(archivo, "report")
 	if cuerpo == nil {
-		t.Fatal("no se encontró func informar: el candado dejó de vigilar nada")
+		t.Fatal("no se encontró func report: el candado dejó de vigilar nada")
 	}
 
 	corte := -1
@@ -199,7 +199,7 @@ func TestConJSONElFalloSaleSinProsa(t *testing.T) {
 		break
 	}
 	if corte < 0 {
-		t.Fatal("informar ya no tiene una rama `if op.json { … return }`: con --json " +
+		t.Fatal("report ya no tiene una rama `if op.json { … return }`: con --json " +
 			"el fallo vuelve a salir como prosa, que es lo que 3C prohíbe")
 	}
 

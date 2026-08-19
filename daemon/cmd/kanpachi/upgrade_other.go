@@ -7,13 +7,14 @@ import (
 	"errors"
 )
 
-// aptInstall no existe fuera de Linux, y no lo alcanza nadie: quien se niega
-// antes es [sePuedeActualizarAcá], que mira `runtime.GOOS` y explica que en
-// Windows la actualización va por el instalador.
+// aptInstall does not exist outside Linux, and nobody reaches it: what refuses
+// first is [canUpgradeHere], which looks at `runtime.GOOS` and explains that on
+// Windows the update goes through the installer.
 //
-// Se declara igual para que `go build ./...` compile en Windows, que es donde se
-// desarrolla, y devuelve error en vez de fingir: un `upgrade` que dijera que
-// instaló sin instalar es peor que uno que no existe.
+// It gets declared anyway so `go build ./...` compiles on Windows, which is where
+// development happens, and it returns an error instead of pretending: an
+// `upgrade` that said it installed without installing is worse than one that does
+// not exist.
 func aptInstall(context.Context, string, bool) error {
 	return errors.New("installing a .deb is a Linux thing")
 }

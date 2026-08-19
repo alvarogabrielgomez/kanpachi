@@ -9,7 +9,7 @@ import (
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
 )
 
-// conSalaConsintiendo runs a host/join and drives the two consents the daemon
+// withRoomConsenting runs a host/join and drives the two consents the daemon
 // may refuse it over: the base-quarantine question, and a foreign firewall
 // blocking the room's inbound. Each refusal is shown, answered, and retried.
 //
@@ -17,7 +17,7 @@ import (
 //
 // Displacement rides in the status every face already reads. These two are
 // the daemon's to refuse at the moment of entry, and each refusal already
-// carries its whole sentence — the exact ports, the exact commands — so a
+// carries its whole sentence, the exact ports and the exact commands, so a
 // second pre-flight method would be a copy of that answer, free to drift.
 //
 // # The outcomes, per consent
@@ -31,37 +31,37 @@ import (
 // answer it ON PURPOSE: `--yes` already means "trust the registry" and "open
 // the foreign firewall", and hanging a third, different security decision off
 // the same word is how a consent loses its meaning. Without `--quarantine`,
-// the CLI always asks to be refused while the question is owed — in the
-// terminal the choice is mandatory — and with no terminal it refuses naming
+// the CLI always asks to be refused while the question is owed, in the
+// terminal the choice is mandatory, and with no terminal it refuses naming
 // the flag. There is no default answer: both answers are legitimate here, and
 // pressing Enter must not pick one.
-func conSalaConsintiendo(
-	op opciones, m protocol.Method, sinPreguntar bool, cuarentena string,
+func withRoomConsenting(
+	op options, m protocol.Method, noQuestions bool, quarantine string,
 	params func(allowFirewall bool, quarantine string) any,
 ) error {
-	allow := sinPreguntar
-	q := cuarentena
+	allow := noQuestions
+	q := quarantine
 	if q == "" {
 		q = "ask"
 	}
 	for {
-		err := conSala(op, m, params(allow, q))
+		err := withRoom(op, m, params(allow, q))
 		var pe *protocol.Error
 		if !errors.As(err, &pe) {
 			return err
 		}
 		switch pe.Code {
 		case protocol.CodeQuarantineUndecided:
-			elegido, cErr := decidirCuarentena(pe.Message)
+			chosen, cErr := decideQuarantine(pe.Message)
 			if cErr != nil {
 				return cErr
 			}
-			q = elegido
+			q = chosen
 		case protocol.CodeFirewallBlocks:
 			if allow {
 				return err
 			}
-			if cErr := consentirFirewall(pe.Message); cErr != nil {
+			if cErr := consentFirewall(pe.Message); cErr != nil {
 				return cErr
 			}
 			allow = true
@@ -71,77 +71,77 @@ func conSalaConsintiendo(
 	}
 }
 
-// decidirCuarentena shows the daemon's question and demands an answer.
-func decidirCuarentena(pregunta string) (string, error) {
-	if !hayTerminal() {
-		return "", negativa("%s\n"+
+// decideQuarantine shows the daemon's question and demands an answer.
+func decideQuarantine(question string) (string, error) {
+	if !hasTerminal() {
+		return "", refuse("%s\n"+
 			"  There is no terminal to answer in, and this is answered once per machine.\n"+
-			"  Choose on purpose:  --quarantine on   or   --quarantine off", pregunta)
+			"  Choose on purpose:  --quarantine on   or   --quarantine off", question)
 	}
 	fmt.Println()
-	fmt.Println("  " + pregunta)
+	fmt.Println("  " + question)
 	fmt.Println()
 	const (
-		cerrar = "Close them (recommended)"
-		dejar  = "Leave them open (this PC shares folders, or gets entered over Remote Desktop)"
+		close_ = "Close them (recommended)"
+		leave  = "Leave them open (this PC shares folders, or gets entered over Remote Desktop)"
 	)
-	elegido, err := elegir("Close those ports?", []string{cerrar, dejar})
+	chosen, err := choose("Close those ports?", []string{close_, leave})
 	if err != nil {
 		return "", err
 	}
-	if elegido == cerrar {
+	if chosen == close_ {
 		return "on", nil
 	}
 	return "off", nil
 }
 
-// sacarCuarentena splits `--quarantine on|off` out of the arguments.
-func sacarCuarentena(args []string) ([]string, string, error) {
-	resto := make([]string, 0, len(args))
-	valor := ""
+// takeQuarantine splits `--quarantine on|off` out of the arguments.
+func takeQuarantine(args []string) ([]string, string, error) {
+	rest := make([]string, 0, len(args))
+	value := ""
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
 		case a == "--quarantine":
 			if i+1 >= len(args) {
-				return nil, "", uso("--quarantine needs a value: on or off")
+				return nil, "", badUsage("--quarantine needs a value: on or off")
 			}
 			i++
-			valor = args[i]
+			value = args[i]
 		case strings.HasPrefix(a, "--quarantine="):
-			valor = strings.TrimPrefix(a, "--quarantine=")
+			value = strings.TrimPrefix(a, "--quarantine=")
 		default:
-			resto = append(resto, a)
+			rest = append(rest, a)
 			continue
 		}
-		if valor != "on" && valor != "off" {
-			return nil, "", uso("--quarantine only takes on or off")
+		if value != "on" && value != "off" {
+			return nil, "", badUsage("--quarantine only takes on or off")
 		}
 	}
-	return resto, valor, nil
+	return rest, value, nil
 }
 
-// consentirFirewall shows who blocks and asks. The person consents to the
+// consentFirewall shows who blocks and asks. The person consents to the
 // exact commands in the sentence, which the daemon composed from the same
 // closed list it executes: what is shown and what runs cannot disagree.
-func consentirFirewall(bloqueo string) error {
-	if !hayTerminal() {
-		return negativa("%s\n"+
+func consentFirewall(block string) error {
+	if !hasTerminal() {
+		return refuse("%s\n"+
 			"  There is no terminal to confirm opening it in.\n"+
-			"  If that is what you want, say so on purpose:  --yes", bloqueo)
+			"  If that is what you want, say so on purpose:  --yes", block)
 	}
 	fmt.Println()
-	fmt.Println("  " + bloqueo)
+	fmt.Println("  " + block)
 	fmt.Println()
-	var sí bool
-	if err := preguntar(&survey.Confirm{
+	var yes bool
+	if err := ask(&survey.Confirm{
 		Message: "Open the firewall for the room? (undone when the room closes)",
 		Default: false,
-	}, &sí); err != nil {
+	}, &yes); err != nil {
 		return err
 	}
-	if !sí {
-		return negativa("nothing was done.")
+	if !yes {
+		return refuse("nothing was done.")
 	}
 	return nil
 }
