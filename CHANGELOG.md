@@ -8,13 +8,15 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.6.2] - 2026-08-19
+
 ### Added
 
 - Answer "which engine is this" everywhere it gets asked: `kanpachi version` now says `engine 0.1.0+g<commit> (easytier@v2.6.4-kanpachi.1)` read straight off the binary's sealed sentinels, `doctor` adds it to the engine verdict, the settings screen shows it under the product version, and the daemon logs the running engine's own answer once per process. An engine older than the sentinels reads as unknown instead of guessed ([b867f85](https://github.com/alvarogabrielgomez/kanpachi/commit/b867f85))
 
 ### Changed
 
-- Ship the exact engine binary that passed its own checks: releases stop recompiling the engine from a moving branch and download the tagged, hash-pinned binaries its repository published — `engine.pin` records the tag and both SHA256s, the release refuses anything that does not match, and waits up to 25 minutes for an engine still publishing before going red with a name. Release bodies name the resolved tag instead of `@main` ([b867f85](https://github.com/alvarogabrielgomez/kanpachi/commit/b867f85))
+- Ship the exact engine binary that passed its own checks: releases stop recompiling the engine from a moving branch and download the tagged, hash-pinned binaries its repository published. `engine.pin` records the tag and both SHA256s, the release refuses anything that does not match, and waits up to 25 minutes for an engine still publishing before going red with a name. Release bodies name the resolved tag instead of `@main` ([b867f85](https://github.com/alvarogabrielgomez/kanpachi/commit/b867f85))
 
 ## [0.6.1] - 2026-08-18
 
@@ -355,6 +357,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.6.2]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.2
 [0.6.1]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.1
 [0.6.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.0
 [0.5.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.5.0
