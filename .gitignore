@@ -20,6 +20,15 @@
 # `identity.key` de la máquina.
 /testTools/
 
+# El repositorio del MOTOR, que `release.yml` clona acá dentro para compilarlo.
+#
+# Sin esta línea `git status` lo ve sin seguir, y `go build` sella el binario
+# mirando justo eso: el resultado es que TODA release publicada hasta el
+# 2026-08-19 dice «with uncommitted changes» en `kanpachi version`. Es una
+# mentira sobre la procedencia del binario, que es la única pregunta que ese
+# comando existe para contestar.
+/motor/
+
 # Binarios de EasyTier v2.6.4, descargados del release oficial.
 # No se versionan (~80 MB). El pin y el hash viven en docs/02, decisión 1.
 # OJO: no llamar a esta carpeta "vendor", Go la reserva para el vendoring.

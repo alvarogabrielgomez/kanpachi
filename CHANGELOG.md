@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Fixed
+
+- Stop every published build claiming it was made from a dirty tree: `kanpachi version` said "with uncommitted changes" on binaries that came straight off a tag, because the release clones the engine's repository INTO the checkout and Go stamps the binary from what git sees there. The one question that command exists to answer was the one it got wrong ([HASH](https://github.com/alvarogabrielgomez/kanpachi/commit/HASH))
+
 ## [0.6.1] - 2026-08-18
 
 ### Fixed
