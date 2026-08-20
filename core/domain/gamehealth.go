@@ -149,6 +149,11 @@ func GameReachOf(ports []PortRange, listeners []Listener, roomIP netip.Addr) Gam
 // contenedor esto no se emite, y lo que queda es la pantalla diciendo dónde
 // escucha. Ver [GameHealthElsewhere].
 //
+// La bandera que lo enciende la pone el entrypoint de la IMAGEN, así que la
+// reciben también las plantillas que corren con `network_mode: host`, donde
+// Kanpachi comparte la pila de la máquina de verdad. Se acepta a propósito y
+// no se condiciona: el porqué está en la decisión 40 de los docs.
+//
 // # Lo que acota
 //
 // Solo los puertos que DECLARA el perfil activo, los mismos que ya abre la capa
@@ -167,9 +172,21 @@ type RedirectSpec struct {
 
 // Understood dice si el desvío está completo. Un campo a medias no se emite:
 // media regla de nat es una regla que manda tráfico a cualquier parte.
+//
+// **El loopback no vale de destino, y no es por prudencia.** El núcleo tira
+// como marciano un paquete que llega por un adaptador y va dirigido a
+// `127.0.0.0/8`, salvo que alguien haya puesto `route_localnet` en esa
+// interfaz. O sea que la regla se arma, [Session.redirectedTo] se publica, el
+// punto se pinta vivo y el tooltip dice que no hay nada que hacer, mientras al
+// juego no le llega un solo datagrama. Un verde que miente es peor que el ámbar
+// que había antes, porque el ámbar al menos nombra el arreglo.
+//
+// El caso llega solo: un servidor atado a `127.0.0.1` sale [GameHealthElsewhere]
+// con esa dirección en [GameReach.Where], que para la pantalla es correcto y
+// para el desvío no sirve.
 func (r RedirectSpec) Understood() bool {
 	return r.Adapter != "" && r.RoomIP.IsValid() && r.To.IsValid() &&
-		r.To != r.RoomIP && len(r.Ports) > 0
+		r.To != r.RoomIP && !r.To.IsLoopback() && len(r.Ports) > 0
 }
 
 // matchesAny dice si un oyente cae dentro de alguno de los rangos del perfil.

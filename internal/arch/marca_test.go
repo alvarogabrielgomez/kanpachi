@@ -72,8 +72,12 @@ func TestElRepositorioEstaEnUnSoloSitioPorLenguaje(t *testing.T) {
 			// `dist` es artefacto y está en .gitignore; `target` y `build` son
 			// de Rust y Flutter. Lo que hay dentro es el RESULTADO de compilar
 			// estos ficheros, así que revisarlo sería marcar dos veces lo mismo.
+			// `scratch` es lo desechable, también en .gitignore y tampoco se
+			// publica: sin esto, un compose de prueba nombrando el repo dejaba
+			// rojo el `go test ./...` de quien lo tenga en el disco. El otro
+			// recorrido de este mismo fichero ya lo saltaba.
 			switch d.Name() {
-			case ".git", "dist", "target", "build", "node_modules", ".dart_tool":
+			case ".git", "dist", "target", "build", "node_modules", ".dart_tool", "scratch":
 				return filepath.SkipDir
 			}
 			return nil

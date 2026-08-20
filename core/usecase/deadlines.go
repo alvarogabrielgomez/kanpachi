@@ -101,10 +101,17 @@ func (s *Session) enforceDeadlinesLocked(ctx context.Context) bool {
 	// así que solo se paga cuando la respuesta CAMBIÓ. Sin el aviso por flanco,
 	// levantar el servidor del juego tardaría hasta [timing.AnnounceInterval] en
 	// verse del otro lado, que son dos minutos mirando un punto que miente.
+	//
+	// **Se comparan DOS cosas, y la segunda es el desvío.** La salud puede
+	// quedarse en [domain.GameHealthElsewhere] mientras el desvío aparece o se
+	// cae, y eso no es un matiz: con desvío puesto la sala SÍ alcanza el juego y
+	// el invitado puede entrar, y sin él no. Comparando solo la salud, poner o
+	// quitar el desvío no anunciaba nada, y el otro lado seguía leyendo la
+	// respuesta anterior hasta el anuncio periódico.
 	if s.state.IsHost() && s.state.Conn.InRoom() {
-		previa := s.gameReach
+		previa, desviabaA := s.gameReach, s.redirectedTo
 		s.measureGameHealthLocked(ctx)
-		if s.gameReach != previa {
+		if s.gameReach != previa || s.redirectedTo != desviabaA {
 			s.announceLocked(ctx)
 		}
 	}

@@ -176,18 +176,38 @@ func printRoom(w io.Writer, st protocol.RoomView, catalog []protocol.GameView) {
 	} else if st.Game != "" {
 		fmt.Fprintf(w, "  Game     %s%s\n", st.Game, healthSuffix(st.GameHealth))
 	}
-	// Where the game is listening, when that is not where the room can reach it.
-	// It names the fix instead of leaving a warning that only says something is
-	// off: bind the server to 0.0.0.0 and the room reaches it.
-	if st.GameWhere != "" {
-		fmt.Fprintf(w, "  Bound to %s, not the room's address. Bind the server to 0.0.0.0\n",
+	// Where the game is listening when the room does not reach it there, and
+	// what to do about that. Three shapes rather than one, because a single
+	// sentence was wrong for two of them: a guest cannot bind somebody else's
+	// server and read "bind the server to 0.0.0.0" as a job it had no way of
+	// doing, and a host that is already redirecting had that instruction sitting
+	// directly above the line saying the traffic already arrives. The window
+	// answers this per role for the same reason, and these are its words.
+	switch {
+	case st.GameRedirectedTo != "":
+		// Said out loud on both faces, always. A redirect nobody can see is the
+		// opposite of what this program is for.
+		if st.Role == "host" {
+			fmt.Fprintf(w, "  Sent on  %s, because that is where the game listens. Nothing to do.\n",
+				st.GameRedirectedTo)
+		} else {
+			fmt.Fprintf(w, "  Sent on  %s, where the host's game listens. The room reaches it.\n",
+				st.GameRedirectedTo)
+		}
+	case st.GameWhere != "" && st.Role == "host":
+		// The room's own address first and 0.0.0.0 behind it: binding to
+		// Kanpachi's address is what the product recommends, and the wider bind
+		// is the fallback for a game that will not let you choose.
+		fmt.Fprintf(w, "  Bound to %s, which the room does not reach.\n", st.GameWhere)
+		if st.LocalIP != "" {
+			fmt.Fprintf(w, "           Bind the server to %s, or to 0.0.0.0.\n", st.LocalIP)
+		} else {
+			fmt.Fprintln(w, "           Bind the server to 0.0.0.0.")
+		}
+	case st.GameWhere != "":
+		fmt.Fprintf(w, "  Bound to %s on the host's machine, which the room does not reach.\n",
 			st.GameWhere)
-	}
-	// And say it out loud when this machine is translating the destination. A
-	// redirect nobody can see is the opposite of what this program is for.
-	if st.GameRedirectedTo != "" {
-		fmt.Fprintf(w, "  Sent on  %s, because that is where the game listens\n",
-			st.GameRedirectedTo)
+		fmt.Fprintln(w, "           Only the host can fix it.")
 	}
 	// The address a player pastes inside the game. The window has painted it
 	// since it existed and this face never did, so somebody on a headless host
