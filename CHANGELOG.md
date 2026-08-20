@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Changed
+
+- Fold the Docker sidecar template back into two services. Fixing the game's save volume needs root, and the game runs as uid 10000, so 0.6.7 shipped a third service that existed only to `chown` and exit. It now borrows root in the game's own container and gives it away before the server starts, with `setpriv`, which execs instead of forking so the game is still PID 1 and still receives the SIGTERM its entrypoint traps to save the world. Same guarantee as the extra service, one less thing to explain
+
 ## [0.6.7] - 2026-08-20
 
 ### Fixed
