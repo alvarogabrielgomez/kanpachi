@@ -422,6 +422,19 @@ class Room {
     selfIsHost: selfIsHost,
     seed: seed,
     game: clearGame ? null : (game ?? this.game),
+    // Los tres de la salud se ARRASTRAN, y su ausencia era el fallo. Entraron
+    // en 0.6.5 y 0.6.6 y nadie los añadió aquí, así que caían al valor por
+    // defecto del constructor: `unknown` y sin dirección. Como
+    // `currentRoom()` devuelve SIEMPRE por `_conReglasAjenas`, que copia la
+    // sala para pegarle las reglas ajenas, cada sala que llegaba a la pantalla
+    // había perdido la salud por el camino. El daemon la medía, el cable la
+    // traía, el parseo la leía, y este copiado la borraba justo antes de
+    // dibujarla: el punto no se pintó nunca, ni como host ni como invitado.
+    // Medido el 2026-08-20 contra un daemon que contestaba
+    // `"game_health": "elsewhere"` con la pantalla en blanco.
+    gameHealth: gameHealth,
+    gameListenAddr: gameListenAddr,
+    gameRedirectedTo: gameRedirectedTo,
     missingGameId: missingGameId,
     localIp: localIp,
     subnet: subnet,

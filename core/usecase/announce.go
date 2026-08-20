@@ -64,10 +64,11 @@ func (s *Session) announceToLocked(ctx context.Context, to netip.Addr) {
 	s.measureGameHealthLocked(ctx)
 
 	err := s.deps.Control.Announce(ctx, to, domain.RoomAnnounce{
-		RoomName:   s.state.Name,
-		GameID:     s.state.Game.ID,
-		GameHealth: s.gameReach.Health,
-		GameWhere:  s.gameReach.Where,
+		RoomName:         s.state.Name,
+		GameID:           s.state.Game.ID,
+		GameHealth:       s.gameReach.Health,
+		GameWhere:        s.gameReach.Where,
+		GameRedirectedTo: s.redirectedTo,
 	})
 	if err != nil {
 		s.deps.Log.Warn("no se pudo anunciar el estado de la sala", "error", err, "a", to.String())
@@ -117,6 +118,7 @@ func (s *Session) OnRoomAnnounce(ctx context.Context, raw domain.RoomAnnounce) (
 	// tal cual: es lo único de este anuncio que un invitado no puede
 	// contestarse solo. No decide nada, solo se pinta.
 	s.gameReach = domain.GameReach{Health: a.GameHealth, Where: a.GameWhere}
+	s.announcedRedirect = a.GameRedirectedTo
 
 	previo := s.state.Game
 	switch {
@@ -179,11 +181,18 @@ func (s *Session) MissingGame() string {
 func (s *Session) ReapplyAnnouncedGame(ctx context.Context) {
 	s.mu.Lock()
 	pendiente := s.announcedGame != "" && s.state.Game.ID != s.announcedGame && !s.state.IsHost()
+	// El desvío va acá también, y su ausencia era un ámbar falso. Esto
+	// reconstruye un anuncio que ya llegó para volver a aplicarlo, y
+	// [Session.OnRoomAnnounce] escribe lo que reciba: sin este campo, importar
+	// el perfil que faltaba dejaba a cero un desvío que el host sí tenía, justo
+	// en el instante en que la tarjeta del juego aparece. Se corregía solo dos
+	// minutos después, en el anuncio periódico.
 	ann := domain.RoomAnnounce{
-		RoomName:   s.state.Name,
-		GameID:     s.announcedGame,
-		GameHealth: s.gameReach.Health,
-		GameWhere:  s.gameReach.Where,
+		RoomName:         s.state.Name,
+		GameID:           s.announcedGame,
+		GameHealth:       s.gameReach.Health,
+		GameWhere:        s.gameReach.Where,
+		GameRedirectedTo: s.announcedRedirect,
 	}
 	s.mu.Unlock()
 

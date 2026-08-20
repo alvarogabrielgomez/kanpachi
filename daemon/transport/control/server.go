@@ -481,6 +481,9 @@ func (c *Channel) Announce(_ context.Context, to netip.Addr, a domain.RoomAnnoun
 	if a.GameWhere.IsValid() {
 		msg.GameWhere = a.GameWhere.String()
 	}
+	if a.GameRedirectedTo.IsValid() {
+		msg.GameRedirectedTo = a.GameRedirectedTo.String()
+	}
 	sobre, err := wrap(KindAnnounce, msg)
 	if err != nil {
 		return err

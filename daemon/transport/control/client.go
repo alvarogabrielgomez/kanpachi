@@ -366,10 +366,11 @@ func (c *client) reparte(e envelope) bool {
 		// Sanitize acota lo que llegó de otra máquina ANTES de que toque nada:
 		// el nombre por runas, el id contra el alfabeto que exige un perfil.
 		anuncio := domain.RoomAnnounce{
-			RoomName:   msg.RoomName,
-			GameID:     msg.GameID,
-			GameHealth: healthFromWire(msg.GameHealth),
-			GameWhere:  addrFromWire(msg.GameWhere),
+			RoomName:         msg.RoomName,
+			GameID:           msg.GameID,
+			GameHealth:       healthFromWire(msg.GameHealth),
+			GameWhere:        addrFromWire(msg.GameWhere),
+			GameRedirectedTo: addrFromWire(msg.GameRedirectedTo),
 		}.Sanitize()
 		emitir(c.ch, c.ch.announces, anuncio, "anuncio")
 
@@ -562,7 +563,18 @@ func healthFromWire(s string) domain.GameHealth {
 		return domain.GameHealthListening
 	case domain.GameHealthSilent.String():
 		return domain.GameHealthSilent
+	case domain.GameHealthElsewhere.String():
+		// Faltaba, y era el único valor que este caso produce: un juego atado a
+		// otra dirección de la máquina del host. El host lo serializa desde que
+		// existe, y acá caía en el `default`, o sea que llegaba como "no se
+		// sabe". El invitado no pintaba el punto ni la frase que nombra el
+		// arreglo, con el anuncio llegando entero. Medido el 2026-08-20 con
+		// Zomboid escuchando en la dirección del contenedor.
+		return domain.GameHealthElsewhere
 	default:
+		// Lo que no se entiende se lee como "no se sabe" y no corta nada: una
+		// versión más nueva del otro lado puede mandar un valor que esta no
+		// conoce.
 		return domain.GameHealthUnknown
 	}
 }

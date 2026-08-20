@@ -172,9 +172,26 @@ func (r RedirectSpec) Understood() bool {
 		r.To != r.RoomIP && len(r.Ports) > 0
 }
 
+// matchesAny dice si un oyente cae dentro de alguno de los rangos del perfil.
+//
+// **[ProtoBoth] casa con los dos, y esa rama es el arreglo.** Un oyente es tcp
+// o udp y NUNCA both, así que comparar por igualdad dejaba un rango `both` sin
+// casar con nada: la salud salía [GameHealthSilent] con el juego escuchando de
+// verdad, y en contenedor el desvío tampoco se ponía, porque cuelga de esta
+// misma medición. Medido el 2026-08-20 con Project Zomboid escuchando en
+// 16261 y 16262 mientras la sala decía "nothing listening". Afectaba también a
+// los tres perfiles del catálogo que ya declaraban `both`: Age of Empires II,
+// Stardew Valley y 7 Days to Die.
+//
+// Es coherente con lo que `both` significa en el resto del dominio: azúcar de
+// escritura que [BuildRuleSet] expande a una regla por protocolo. Si el rango
+// describe las dos reglas, describe también a los oyentes de las dos.
 func matchesAny(l Listener, ports []PortRange) bool {
 	for _, r := range ports {
-		if l.Proto == r.Proto && l.Port >= r.From && l.Port <= r.To {
+		if l.Port < r.From || l.Port > r.To {
+			continue
+		}
+		if r.Proto == ProtoBoth || l.Proto == r.Proto {
 			return true
 		}
 	}

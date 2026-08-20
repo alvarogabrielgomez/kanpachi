@@ -33,8 +33,18 @@ type RoomAnnounce struct {
 
 	// GameWhere es en qué dirección de SU máquina escucha el juego, cuando no
 	// es la de la sala. Viaja para que la pantalla del invitado pueda nombrar
-	// el arreglo —«átalo a 0.0.0.0»— en vez de decir que algo va mal.
+	// el arreglo en vez de decir que algo va mal.
 	GameWhere netip.Addr
+
+	// GameRedirectedTo es hacia dónde manda el host el tráfico de la sala,
+	// cuando lo está desviando.
+	//
+	// Sin este campo, [GameHealthElsewhere] significaba dos cosas opuestas para
+	// quien lo recibe: el juego está atado donde nadie lo alcanza, o el juego
+	// está atado en otro sitio y el host ya lo resolvió. Medido el 2026-08-20:
+	// un invitado veía el ámbar de "no se alcanza" mientras jugaba en esa misma
+	// sala. El host sabía que desviaba y no tenía cómo decirlo.
+	GameRedirectedTo netip.Addr
 }
 
 // Sanitize acota lo que llegó de otra máquina antes de que toque nada.
@@ -55,6 +65,9 @@ func (a RoomAnnounce) Sanitize() RoomAnnounce {
 		// de la máquina del otro, no de esta, y acá solo se pinta.
 		if a.GameWhere.IsValid() {
 			out.GameWhere = a.GameWhere
+		}
+		if a.GameRedirectedTo.IsValid() {
+			out.GameRedirectedTo = a.GameRedirectedTo
 		}
 	}
 	if validProfileID(a.GameID) {

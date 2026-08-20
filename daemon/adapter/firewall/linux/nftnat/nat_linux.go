@@ -79,7 +79,11 @@ func (r *Redirect) Apply(ctx context.Context, spec domain.RedirectSpec) error {
 		Policy: &política,
 	})
 
-	for _, p := range spec.Ports {
+	// `both` se expande a una regla por protocolo, igual que hace la compuerta
+	// con las suyas: una regla de nat lleva UN protocolo, así que el azúcar del
+	// perfil se deshace acá y no en el dominio. Sin esto, un perfil con un rango
+	// `both` no conseguía desvío ninguno, porque [l4proto] lo rechazaba entero.
+	for _, p := range expandProto(spec.Ports) {
 		regla, err := rule(tabla, cadena, idx, spec, p)
 		if err != nil {
 			return err
@@ -205,6 +209,26 @@ func rule(
 	)
 
 	return &nftables.Rule{Table: t, Chain: c, Exprs: exprs}, nil
+}
+
+// expandProto deshace [domain.ProtoBoth] en los dos protocolos que describe.
+//
+// Vive acá y no en el dominio porque es una limitación de ESTA capa: una regla
+// de nat, como una de firewall, lleva un protocolo y solo uno. El perfil
+// declara el rango una vez a propósito.
+func expandProto(ports []domain.PortRange) []domain.PortRange {
+	out := make([]domain.PortRange, 0, len(ports)+1)
+	for _, p := range ports {
+		if p.Proto != domain.ProtoBoth {
+			out = append(out, p)
+			continue
+		}
+		tcp, udp := p, p
+		tcp.Proto = domain.ProtoTCP
+		udp.Proto = domain.ProtoUDP
+		out = append(out, tcp, udp)
+	}
+	return out
 }
 
 func l4proto(p domain.Proto) (byte, error) {

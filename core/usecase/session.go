@@ -343,6 +343,14 @@ type Session struct {
 	// poder quitarla sin volver a medir. Ver [Session.applyRedirectLocked].
 	redirectedTo netip.Addr
 
+	// announcedRedirect es el desvío que dijo el HOST, en un invitado.
+	//
+	// Va aparte de [Session.redirectedTo] porque son dos hechos distintos: aquel
+	// es lo que esta máquina escribió en su propio nftables, y esto es lo que
+	// otra máquina cuenta de la suya. Mezclarlos haría que un invitado creyera
+	// tener puesta una regla que no tiene.
+	announcedRedirect netip.Addr
+
 	// lastAnnounce es cuándo el host anunció por última vez.
 	//
 	// El anuncio periódico es lo que hace medible el silencio del otro lado: un
@@ -718,7 +726,11 @@ func (s *Session) snapshot() domain.RoomState {
 	if out.Game.ID != "" {
 		out.GameHealth = s.gameReach.Health
 		out.GameWhere = s.gameReach.Where
-		out.GameRedirectedTo = s.redirectedTo
+		if s.state.IsHost() {
+			out.GameRedirectedTo = s.redirectedTo
+		} else {
+			out.GameRedirectedTo = s.announcedRedirect
+		}
 	}
 	s.published.Store(&out)
 	// El enlace se publica ACÁ, que es el único sitio donde el estado y la

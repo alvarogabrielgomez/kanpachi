@@ -168,6 +168,10 @@ type announceMsg struct {
 	// la sala. Solo tiene sentido con `game_health` en "elsewhere", y viaja
 	// para que la otra punta pueda decir el arreglo con su dirección.
 	GameWhere string `json:"game_where,omitempty"`
+
+	// GameRedirectedTo es hacia dónde desvía el host, si desvía. Su ausencia es
+	// que no hay desvío, que es el caso normal fuera de un contenedor.
+	GameRedirectedTo string `json:"game_redirected_to,omitempty"`
 }
 
 // noticeMsg es un aviso del host, con su número de secuencia para el acuse.

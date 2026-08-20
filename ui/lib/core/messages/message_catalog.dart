@@ -626,15 +626,17 @@ abstract final class AppMessages {
     final String cuando = nextIn > Duration.zero
         ? 'Se reintenta en ${_enPocasPalabras(nextIn)}.'
         : 'Reintentando ahora mismo.';
+    // Solo el motivo que CAMBIA algo. «Se entra sola en cuanto el host vuelva»
+    // decía lo mismo que el título y ocupaba una línea entera del aviso; que el
+    // registro no conteste sí manda a mirar otro sitio, así que ese se queda.
     final String motivo = seedDown
-        ? 'El servidor de encuentro no contesta, así que todavía no se sabe '
-              'nada de la sala.'
-        : 'Se entra sola en cuanto el host vuelva a estar disponible.';
+        ? 'El servidor de encuentro no contesta. '
+        : '';
     return AppMessage(
       severity: MessageSeverity.neutral,
       title: 'Volviendo a ${room.isEmpty ? code : room}',
-      body: '$motivo $cuando',
-      hint: attempts > 1 ? 'Van $attempts intentos.' : null,
+      body: '$motivo$cuando',
+      hint: attempts > 1 ? ' Van $attempts intentos.' : null,
     );
   }
 

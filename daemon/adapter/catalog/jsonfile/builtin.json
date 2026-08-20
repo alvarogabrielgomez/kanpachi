@@ -9,7 +9,7 @@
         "steam_appid": 108600,
         "executables": ["ProjectZomboid64.exe", "ProjectZomboid32.exe"]
       },
-      "host_ports": [{ "proto": "udp", "range": "16261-16262" }],
+      "host_ports":   [{ "proto": "both", "range": "16261-16262" }, { "proto": "both", "range": "8766-8767" }],
       "client_ports": [],
       "lan_discovery": false,
       "system_tweaks": {

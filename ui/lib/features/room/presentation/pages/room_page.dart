@@ -137,7 +137,11 @@ class _RoomScreenState extends State<RoomScreen> {
           if (!AppMessages.connection(room.network).isEmpty) ...<Widget>[
             AppMessageNotice(
               message: AppMessages.connection(room.network),
-              pulse: true,
+              // Late solo reconectando, que es lo unico que ocurre mientras se
+              // lee. Llegar por el relay es un hecho estable de la sala, y un
+              // punto latiendo sobre un hecho pide atencion que no lleva a
+              // ninguna parte.
+              pulse: room.network == ConnState.reconnecting,
             ),
             SizedBox(height: d.gap),
           ],
@@ -538,6 +542,7 @@ class _GameCard extends StatelessWidget {
                                   health: room.gameHealth,
                                   where: room.gameListenAddr,
                                   redirectedTo: room.gameRedirectedTo,
+                                  host: host,
                                 ),
                               ],
                             ],
@@ -550,26 +555,6 @@ class _GameCard extends StatelessWidget {
                               color: colors.textMuted,
                             ),
                           ),
-                          // El caso que costó una tarde encontrar, dicho con
-                          // su dirección: un servidor atado a otra interfaz
-                          // deja la sala muerta con todo lo demás perfecto, y
-                          // un ámbar sin frase no dice qué hacer.
-                          if (room.gameHealth == GameHealth.elsewhere) ...<Widget>[
-                            const SizedBox(height: AppSpacing.xs),
-                            Text(
-                              room.gameRedirectedTo != null
-                                  ? 'Escucha en ${room.gameRedirectedTo}, y la '
-                                        'sala se manda hacia ahí.'
-                                  : 'Escucha en '
-                                        '${room.gameListenAddr ?? 'otra dirección'}, '
-                                        'no en la de la sala: átalo a 0.0.0.0.',
-                              style: context.type.bodySm.copyWith(
-                                color: room.gameRedirectedTo != null
-                                    ? colors.textMuted
-                                    : colors.warn,
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ),
@@ -736,6 +721,7 @@ class _ExposureCard extends StatelessWidget {
         children: <Widget>[
           _ExposureTitle(
             color: colors.ok,
+            icon: Icons.shield_outlined,
             text: 'Abierto solo dentro de Kanpachi',
           ),
           const SizedBox(height: 9),
@@ -744,11 +730,11 @@ class _ExposureCard extends StatelessWidget {
               children: <InlineSpan>[
                 TextSpan(
                   text:
-                      '${r.game!.portsLabel}, visible para '
-                      '${r.members.length} personas.\n',
+                      '${r.game!.portsLabel}, para las '
+                      '${r.members.length} personas de la sala.\n',
                 ),
                 TextSpan(
-                  text: 'Tu router sigue cerrado. Internet no ve nada.',
+                  text: 'Tu router sigue cerrado. Nadie llega desde internet.',
                   style: TextStyle(
                     color: colors.text,
                     fontWeight: FontWeight.w600,
@@ -763,10 +749,10 @@ class _ExposureCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.xl),
           Text(
             r.selfIsHost
-                ? 'El juego corre en tu PC. Los demás solo alcanzan estos '
-                      'puertos, nada más de tu máquina.'
-                : 'Solo te conectas con el host. Los demás jugadores no '
-                      'alcanzan tu PC.',
+                ? 'El juego corre en tu PC. Los de la sala alcanzan esos '
+                      'puertos y nada más.'
+                : 'Solo hablas con el host. Nadie más de la sala alcanza tu '
+                      'PC.',
             style: context.type.bodySm.copyWith(color: colors.textMuted),
           ),
           const _VerLoMedido(),
@@ -809,16 +795,26 @@ class _VerLoMedido extends StatelessWidget {
 }
 
 class _ExposureTitle extends StatelessWidget {
-  const _ExposureTitle({required this.color, required this.text});
+  const _ExposureTitle({required this.color, required this.text, this.icon});
 
   final Color color;
   final String text;
+
+  /// Un icono en el sitio del punto, cuando la marca DICE algo.
+  ///
+  /// El punto de esta tarjeta no decia nada: no hay dos estados que distinguir,
+  /// la tarjeta entera ya es el estado, y un verde ahi solo repetia el titulo.
+  /// Un escudo nombra de que va la caja de un vistazo.
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: <Widget>[
-        AppStatusDot(color: color),
+        if (icon != null)
+          Icon(icon, size: 16, color: color)
+        else
+          AppStatusDot(color: color),
         const SizedBox(width: 9),
         Flexible(
           child: Text(
@@ -1055,45 +1051,79 @@ class _MemberRow extends StatelessWidget {
 /// con los otros dos estados: un punto gris «no medido» al lado del nombre del
 /// juego es ruido que hay que aprender a ignorar, y lo que se aprende a
 /// ignorar tapa al que sí dice algo.
+/// El punto de estado del juego, con su explicación en el tooltip.
+///
+/// # Por qué la frase vive ACÁ y no debajo del nombre
+///
+/// Porque era la misma para los dos papeles y estaba escrita para uno solo:
+/// «átalo a 0.0.0.0» es algo que solo el host puede hacer, y un invitado la leía
+/// como una tarea suya que no tiene forma de cumplir. En el tooltip cabe una
+/// versión por papel sin gastar sitio en la tarjeta, y el color ya dice lo
+/// único que hace falta de un vistazo.
+///
+/// El invitado nunca recibe instrucciones: se le dice si puede entrar o si toca
+/// esperar, que es lo único que decide algo para él.
 class _GameHealthDot extends StatelessWidget {
   const _GameHealthDot({
     required this.health,
     required this.where,
     required this.redirectedTo,
+    required this.host,
   });
 
   final GameHealth health;
 
-  /// Dónde escucha, cuando no escucha donde la sala lo alcanza. Es lo que
-  /// convierte un ámbar mudo en una frase que dice qué hacer.
+  /// Dónde escucha, cuando no escucha donde la sala lo alcanza.
   final String? where;
 
   /// Hacia dónde desvía el host, si lo está haciendo.
   final String? redirectedTo;
 
+  /// Quién lee. Cambia el texto entero, no una palabra.
+  final bool host;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    // Con desvío puesto la sala SÍ alcanza el juego, así que cuenta como vivo.
     final bool viva = health == GameHealth.listening || redirectedTo != null;
     return Tooltip(
-      message: switch (health) {
-        GameHealth.listening =>
-          'El servidor del juego está levantado en la máquina del host',
-        // Con desvío puesto la sala SÍ lo alcanza, así que el punto va en verde
-        // y lo que cuenta es por dónde. Sin desvío, la frase nombra el arreglo:
-        // atar el servidor a 0.0.0.0.
-        GameHealth.elsewhere when redirectedTo != null =>
-          'El juego escucha en $redirectedTo, y el host manda la sala hacia '
-              'esa dirección',
-        GameHealth.elsewhere =>
-          'El servidor está levantado, pero escucha en '
-              '${where ?? 'otra dirección'} y no en la de la sala. Átalo a '
-              '0.0.0.0 para que la sala lo alcance',
-        _ =>
-          'El juego está elegido y nada escucha en sus puertos en la máquina '
-              'del host',
-      },
-      child: AppStatusDot(color: viva ? colors.ok : colors.warn),
+      message: host ? _paraElHost : _paraElInvitado,
+      // Late solo el verde, y eso es accesibilidad y no adorno: alguien que no
+      // distingue ámbar de verde tiene el movimiento como segundo canal, que no
+      // depende del color. El latido además dice lo que hay que decir, que el
+      // servidor está vivo; el ámbar quieto se lee como parado, que es lo que
+      // es.
+      child: AppStatusDot(color: viva ? colors.ok : colors.warn, pulse: viva),
     );
   }
+
+  /// El host es quien puede arreglarlo, así que a él se le nombra el arreglo.
+  ///
+  /// Atar a la dirección de Kanpachi va PRIMERO porque es lo que el producto
+  /// recomienda: ver [GameReachOf], que la cuenta como sana por eso mismo, y el
+  /// `bind_hint` del catálogo, que dice para qué sirve. `0.0.0.0` funciona y
+  /// abre el juego en todas las tarjetas de la máquina, así que va detrás.
+  String get _paraElHost => switch (health) {
+    GameHealth.listening => 'Tu servidor está levantado y la sala lo alcanza.',
+    GameHealth.elsewhere when redirectedTo != null =>
+      'Tu servidor escucha en $redirectedTo y la sala se desvía hacia ahí. No '
+          'hay nada que hacer.',
+    GameHealth.elsewhere =>
+      'Tu servidor escucha en ${where ?? 'otra dirección'} y la sala no llega '
+          'ahí. Átalo a la IP de Kanpachi, o a 0.0.0.0 si el juego no deja '
+          'elegir.',
+    _ => 'Nada escucha en los puertos del juego, en tu máquina.',
+  };
+
+  String get _paraElInvitado => switch (health) {
+    GameHealth.listening => 'El servidor está levantado. Puedes entrar.',
+    GameHealth.elsewhere when redirectedTo != null =>
+      'El servidor está levantado y el host manda la sala hacia él. Puedes '
+          'entrar.',
+    GameHealth.elsewhere =>
+      'El servidor está levantado, pero no donde la sala lo alcanza. Lo tiene '
+          'que arreglar el host.',
+    _ => 'El servidor no está levantado todavía. Espera al host.',
+  };
 }
