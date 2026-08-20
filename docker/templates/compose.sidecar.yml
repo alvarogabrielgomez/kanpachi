@@ -13,15 +13,6 @@
 
 services:
   kanpachi:
-    # 0.6.7 or newer, and that is a floor rather than a preference. Before it
-    # the host only recalculated its firewall rules when the engine announced
-    # a member, the engine did not announce one, and the game's ports were
-    # never opened to the guest: a room that looks perfect and drops every
-    # packet.
-    #
-    # `latest` follows every release. Pin a number to decide yourself when to
-    # move:
-    #   image: ghcr.io/alvarogabrielgomez/kanpachi:0.6.7
     image: ghcr.io/alvarogabrielgomez/kanpachi:latest
     container_name: kanpachi
     restart: always
@@ -77,10 +68,6 @@ services:
       # KANPACHI_QUARANTINE: "false"
 
   zomboid:
-    # Not `afaucogney/project-zomboid-dedicated-server`, which this file named
-    # until 0.6.7 and which does not exist: Docker Hub answers 404 for it. This
-    # is the image the rest of this service is written against: no ENTRYPOINT,
-    # CMD /home/steam/entrypoint.sh, and LAUNCH_ARGS built inside that script.
     image: docker.io/sknnr/zomboid-dedicated-server
     restart: always
     depends_on: [kanpachi]
@@ -99,61 +86,15 @@ services:
     command:
       - |
         set -euo pipefail
-
-        # A named volume is created owned by root unless the image already
-        # ships the directory it mounts over. /home/steam/zomboid does exist
-        # there, so its volume inherits the game user; /home/steam/zomboid_data
-        # does not, so its volume arrives root-owned and the server starts,
-        # fails every write and stops with "failed to create user database,
-        # server shut down". The game cannot fix this itself: by the time its
-        # entrypoint runs it is already uid 10000, and chown needs root.
         chown -R 10000:10000 /home/steam/zomboid_data
-
-        # -nosteam has to be injected rather than passed. The image's
-        # entrypoint builds LAUNCH_ARGS itself and forwards nothing from argv,
-        # and its CMD is that entrypoint, so overriding `command:` alone
-        # replaces it instead of extending the game's flags. The script is
-        # edited on the way past, in /tmp, so the image and the volumes stay
-        # untouched. If a future image changes that array the sed stops
-        # matching, which is what the grep is for: fail loudly rather than boot
-        # a Steam-enabled server that the people in your room cannot join.
         cp /home/steam/entrypoint.sh /tmp/entrypoint.sh
         sed -i 's|^  -cachedir=|  -nosteam\n  -cachedir=|' /tmp/entrypoint.sh
         grep -q -- -nosteam /tmp/entrypoint.sh || {
           echo "ERROR: -nosteam was not injected; the image's entrypoint changed shape" >&2
           exit 1
         }
-
-        # setpriv execs instead of forking, so the game becomes PID 1 and
-        # receives SIGTERM directly. Its entrypoint installs `trap 'shutdown'
-        # TERM` and needs that signal to save the world on the way out. `su`
-        # would sit in the middle and the save would be lost.
         exec setpriv --reuid=10000 --regid=10000 --init-groups /tmp/entrypoint.sh
 
-    # **A game server has to listen on 0.0.0.0, and this is the trap of the
-    # whole file.** Sharing the namespace is not enough: Kanpachi delivers real
-    # packets to its own address on `kanpachi0`, so a server bound to the
-    # container's own IP never sees them and the kernel answers "port
-    # unreachable" to everyone in the room. Measured on 2026-08-19 against a
-    # Kubernetes deployment that fed the server `status.podIP`: the tunnel was
-    # perfect, the ports were open, and no packet ever reached the game.
-    #
-    # **And this image will not do it.** Its entrypoint says so and then
-    # overrides you:
-    #
-    #   # PZ will not bind to 0.0.0.0, so we need to use the container's IP
-    #   if [ "${SERVER_IP}" == "0.0.0.0" ] || [ -z "${SERVER_IP}" ]; then
-    #     SERVER_IP=$(hostname -i)
-    #
-    # So SERVER_IP is left out on purpose: setting it would change nothing.
-    # What makes this work is Kanpachi 0.6.6 and newer, which inside a
-    # container sends the room's traffic to wherever the game actually listens,
-    # in the ports the profile declares and nowhere else, and names that
-    # address in the room and in `kanpachi status`.
-    #
-    # Other servers spell the setting `bind`, `server-ip` or `-b`. Where an
-    # image honours it, set it. Where it does not, this is why the room still
-    # works.
     environment:
       # Required by this image. Its entrypoint exits 1 without it.
       MAX_MEMORY: 8g
