@@ -93,6 +93,11 @@ services:
           echo "ERROR: -nosteam was not injected; the image's entrypoint changed shape" >&2
           exit 1
         }
+        # HOME too: setpriv changes the uid and NOT the environment, and this
+        # container starts as root, so HOME would stay /root. steamcmd builds
+        # its paths from it and fails with "Failed to install app '380870'
+        # (Missing configuration)" while logging into a /root it cannot use.
+        export HOME=/home/steam
         exec setpriv --reuid=10000 --regid=10000 --init-groups /tmp/entrypoint.sh
 
     environment:
