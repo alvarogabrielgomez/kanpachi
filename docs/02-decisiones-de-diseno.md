@@ -1851,4 +1851,6 @@ El retardo creciente es global y no por cuenta, porque no hay cuentas: bloquear 
 
 **No es invisible y no sobrevive.** La sala y el `kanpachi status` dicen hacia dónde se está desviando; la tabla se borra al salir de la sala, al quitar el juego y en cuanto la medición dice que ya no hace falta, y no sobrevive a un reinicio, igual que la compuerta. Como no persiste, no necesita libro.
 
+**Medido de punta a punta el 2026-08-20**, en un contenedor privilegiado con la topología del fallo: un `veth` haciendo de adaptador de la sala (`100.93.137.1`), un miembro al otro lado (`100.93.137.7`) y el servidor atado a propósito a `10.42.0.15`, que es el equivalente de la IP del pod. Sin desvío el datagrama no llega; con el desvío llega, **y llega con el origen intacto** (`100.93.137.7`), que es lo que hace que el juego siga viendo a cada miembro por su dirección y que las reglas por miembro sigan valiendo; al quitarlo, deja de llegar. La misma corrida encontró un fallo real: borrar nuestra tabla en el mismo lote que la crea contesta ENOENT cuando todavía no está, y eso tumbaba TODA primera aplicación.
+
 **Lo que sigue estando escrito en los docs:** que el servidor se ate a `0.0.0.0`. El desvío es la red de seguridad para quien copió un compose, no una excusa para dejar de decirlo.
