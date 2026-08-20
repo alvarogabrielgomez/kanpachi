@@ -603,6 +603,7 @@ enum FailedAction {
   renameRoom,
   resumeRoom,
   discardSavedRoom,
+  forgetLastRoom,
   reapplyProtection,
   probeHost,
   loadCatalog,

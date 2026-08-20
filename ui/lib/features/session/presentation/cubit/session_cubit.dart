@@ -726,6 +726,20 @@ class SessionCubit extends Cubit<SessionState> {
     });
   }
 
+  /// Olvida la última sala ajena: el camino de vuelta deja de ofrecerse.
+  ///
+  /// Se limpia del estado ANTES de llamar, por lo mismo que descartar la sala
+  /// propia: la fila se va en el acto y el latido no la trae de vuelta, porque
+  /// olvidar borra el archivo del que salía. Si la llamada falla, el siguiente
+  /// latido la vuelve a ofrecer, que es lo correcto: no se olvidó nada.
+  Future<void> forgetLastRoom() async {
+    if (state.lastRoom == null) return;
+    emit(state.copyWith(clearLastRoom: true));
+    await _try(FailedAction.forgetLastRoom, () async {
+      await _repository.forgetLastRoom();
+    });
+  }
+
   /// Resuelve una regla ajena: la desactiva mientras juegas, o la deja.
   ///
   /// Lleva bandera de trabajo, y no es cosmético. Escribir en el almacén de

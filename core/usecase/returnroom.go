@@ -62,6 +62,25 @@ func (s *Session) forgetLastRoomLocked(why string) {
 	s.deps.Log.Info("se olvida la última sala", "código", code, "motivo", why)
 }
 
+// ForgetLastRoom drops the way back because somebody asked for it.
+//
+// It is the one caller of [Session.forgetLastRoomLocked] that is not "the room
+// stopped existing", and it is what the cross next to the way back presses. That
+// cross has to survive a restart: hiding the offer only on screen would bring it
+// back on the next start, pointing at the same room and asking the same question
+// again.
+//
+// **Idempotent.** Forgetting what is not there is the intention already met, and
+// the window clears its own copy before calling. An error here would paint a
+// failure over something that ended exactly as it was asked to.
+func (s *Session) ForgetLastRoom(_ context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.forgetLastRoomLocked("lo pidió el usuario")
+	return nil
+}
+
 // stopReturningLocked is the formal request to stop going back.
 //
 // It rewrites the saved room with `AutoReturn` off and cuts whatever attempt is

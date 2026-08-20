@@ -19,6 +19,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Changed
 
+- Offer the way back to your last room as a row under the code field, `×  Volver a <sala>  [Volver]`, in one line that ellipsises when the name is long. It was a notice with a title, three lines of prose and a full-width primary button, and it pushed the join and create fields down the page to explain what the button already says. The cross is new and it forgets the room on disk, so dismissing it survives a restart rather than coming back on the next start
 - The client's source is in English: comments, identifiers and file names, `daemon/cmd/kanpachi` in full. Nothing it prints changed
 
 ### Added

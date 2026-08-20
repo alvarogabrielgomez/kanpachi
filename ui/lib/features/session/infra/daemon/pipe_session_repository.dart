@@ -410,6 +410,11 @@ class PipeSessionRepository implements SessionRepository {
   }
 
   @override
+  Future<void> forgetLastRoom() async {
+    await _mapa(DaemonMethods.forgetLastRoom);
+  }
+
+  @override
   Future<Room> resumeSavedRoom() async =>
       _conReglasAjenas(await _sala(await _mapa(DaemonMethods.resumeRoom)));
 

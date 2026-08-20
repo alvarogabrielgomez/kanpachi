@@ -118,6 +118,7 @@ type API interface {
 	ResumeRoom(ctx context.Context) (domain.RoomState, error)
 	DiscardSavedRoom(ctx context.Context) error
 	LastRoom() (domain.LastRoom, bool)
+	ForgetLastRoom(ctx context.Context) error
 
 	// Progress son los pasos de la operación larga que esté en curso, o los de
 	// la última si ya terminó.
@@ -707,6 +708,12 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 			Name: last.Name, Nick: last.Nick.String(), SavedAt: stamp(last.SavedAt),
 			AutoReturn: last.AutoReturn,
 		}})
+
+	case MethodForgetLastRoom:
+		if err := s.api.ForgetLastRoom(ctx); err != nil {
+			return nil, errorFor(err)
+		}
+		return result(struct{}{})
 
 	case MethodProgress:
 		return result(progressView(s.api.Progress()))

@@ -130,6 +130,13 @@ abstract interface class SessionRepository {
   /// hasta entrar a otra sala o descartarlo.
   Future<LastRoom?> lastRoom();
 
+  /// Olvida esa última sala: borra el archivo del daemon, así que el camino de
+  /// vuelta no se vuelve a ofrecer en el arranque siguiente.
+  ///
+  /// Es idempotente: olvidar cuando no hay nada guardado es la intención ya
+  /// cumplida, y no un error.
+  Future<void> forgetLastRoom();
+
   /// Reabre esa sala: la misma red, el mismo código y el mismo enlace.
   ///
   /// Puede tardar, porque levanta el motor de verdad. No es un "restaurar

@@ -96,6 +96,14 @@ const (
 	MethodDiscardSavedRoom Method = "discard_pending_room"
 	MethodLastRoom         Method = "last_room"
 
+	// MethodForgetLastRoom borra esa última sala, a pedido.
+	//
+	// Es la cruz de la portada, y no un "esconder el aviso": el archivo sigue
+	// en disco, así que una vuelta que solo se ocultara en pantalla volvería a
+	// ofrecerse en el arranque siguiente. Idempotente: olvidar lo que no hay es
+	// la intención ya cumplida.
+	MethodForgetLastRoom Method = "forget_last_room"
+
 	// MethodProgress son los pasos de la operación larga en curso.
 	//
 	// **Se pide por una conexión APARTE de la que está esperando.** El bucle de
@@ -239,6 +247,7 @@ var métodos = map[Method]bool{
 	MethodResumeRoom:          true,
 	MethodDiscardSavedRoom:    true,
 	MethodLastRoom:            true,
+	MethodForgetLastRoom:      true,
 	MethodProgress:            true,
 	MethodCancel:              true,
 	MethodShowUI:              true,

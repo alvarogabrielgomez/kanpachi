@@ -59,6 +59,11 @@ abstract final class DaemonMethods {
   static const String discardSavedRoom = 'discard_pending_room';
   static const String lastRoom = 'last_room';
 
+  /// Forgets that last room, on disk. Not "hide the notice": the file outlives
+  /// the window, so a dismissal that only cleared the screen would be back on
+  /// the next start.
+  static const String forgetLastRoom = 'forget_last_room';
+
   /// Steps of the long operation in flight.
   ///
   /// Asked down a SECOND connection: one connection's loop is sequential, so

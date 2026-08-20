@@ -1261,7 +1261,7 @@ La única operación que devuelve **estado y error a la vez** es expulsar, y es 
 | `ObserveGame(proceso, árbol)` | `observe_game` | La foto de sockets del creador de perfiles. Es la ÚNICA función del programa que mira un proceso |
 | `RejectedGames()` | `rejected_games` | Los perfiles que el catálogo rechazó, con su motivo, para que un archivo mal escrito sea arreglable en vez de invisible |
 | `SavedRoom()` / `ResumeRoom()` / `DiscardSavedRoom()` | `pending_room` / `resume_room` / `discard_pending_room` | La sala que esta máquina hospeda, tal como quedó en disco. **Se reabre sola en cada arranque**, ver decisión 2: estas tres son la salida de emergencia de cuando eso falla. Los dos nombres de cable con `pending` dentro están congelados |
-| `LastRoom()` | `last_room` | Los datos de "volver a la última sala". Entrar es el `join_room` de siempre con el código guardado |
+| `LastRoom()` / `ForgetLastRoom()` | `last_room` / `forget_last_room` | Los datos de "volver a la última sala". Entrar es el `join_room` de siempre con el código guardado, y olvidar borra el archivo: es la cruz de la portada, que tiene que sobrevivir al arranque siguiente. Olvidar es idempotente |
 
 Tres operaciones **no** vienen del named pipe, y las tres las llama el supervisor o el adaptador del canal de control:
 

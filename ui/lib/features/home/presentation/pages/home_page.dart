@@ -15,12 +15,13 @@ import 'package:kanpachi_ui/core/messages/message_catalog.dart';
 import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/home/presentation/widgets/saved_room_notice.dart';
-import 'package:kanpachi_ui/features/home/presentation/widgets/last_room_notice.dart';
+import 'package:kanpachi_ui/features/home/presentation/widgets/last_room_strip.dart';
 import 'package:kanpachi_ui/features/home/presentation/widgets/returning_notice.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
 import 'package:kanpachi_ui/features/games/domain/steam_art.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/last_room.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/presentation/widgets/quarantine_off_notice.dart';
 import 'package:kanpachi_ui/features/session/domain/invite_code.dart';
@@ -260,20 +261,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: AppSpacing.x5l),
             ],
-            // La vuelta manual, solo con la automática apagada y sin nada
-            // más ofreciéndose: mientras el daemon vuelve solo lo cuenta
-            // ReturningNotice, y la sala propia guardada tiene su aviso.
-            if (session.lastRoom != null &&
-                !session.lastRoom!.autoReturn &&
-                session.health.returning == null &&
-                session.savedRoom == null &&
-                !session.hasRoom) ...<Widget>[
-              LastRoomNotice(
-                last: session.lastRoom!,
-                onReturn: () => _joinWith(session.lastRoom!.invite),
-              ),
-              const SizedBox(height: AppSpacing.x5l),
-            ],
             if (session.health.returning != null) ...<Widget>[
               ReturningNotice(
                 progress: session.progress,
@@ -288,6 +275,19 @@ class _HomeScreenState extends State<HomeScreen> {
               roomName: _roomName,
               nameHint: _nameHint,
               canJoin: canJoin,
+              // La vuelta manual, solo con la automática apagada y sin nada
+              // más ofreciéndose: mientras el daemon vuelve solo lo cuenta
+              // ReturningNotice, y la sala propia guardada tiene su aviso.
+              lastRoom:
+                  session.lastRoom != null &&
+                      !session.lastRoom!.autoReturn &&
+                      session.health.returning == null &&
+                      session.savedRoom == null &&
+                      !session.hasRoom
+                  ? session.lastRoom
+                  : null,
+              onReturnLast: () => _joinWith(session.lastRoom!.invite),
+              onForgetLast: () => context.read<SessionCubit>().forgetLastRoom(),
               resolvingInvite: _resolvingInvite,
               missingSeed: _faltaServidor,
               daemonDown: session.daemonDown,
@@ -317,6 +317,9 @@ class _JoinAndCreate extends StatelessWidget {
     required this.roomName,
     required this.nameHint,
     required this.canJoin,
+    required this.lastRoom,
+    required this.onReturnLast,
+    required this.onForgetLast,
     required this.resolvingInvite,
     required this.missingSeed,
     required this.daemonDown,
@@ -332,6 +335,13 @@ class _JoinAndCreate extends StatelessWidget {
   final TextEditingController roomName;
   final String nameHint;
   final bool canJoin;
+
+  /// La última sala ajena a la que se puede volver, o nulo cuando no hay
+  /// ninguna que ofrecer. Va PEGADA debajo del campo de código porque es lo
+  /// mismo que ese campo hace: entrar con un código que ya se tiene.
+  final LastRoom? lastRoom;
+  final VoidCallback onReturnLast;
+  final VoidCallback onForgetLast;
 
   /// La vista previa del código está en vuelo: el botón va en ocupado para que
   /// el click tenga respuesta en el mismo instante, porque lo que sigue es una
@@ -398,6 +408,16 @@ class _JoinAndCreate extends StatelessWidget {
           maxLength: InviteCode.maxInput,
           onChanged: onCodeChanged,
           onSubmitted: (_) => onJoin(),
+          // La vuelta a la última sala va en el PIE del campo, pegada a él:
+          // volver es entrar con un código que ya se tiene. Ver
+          // [AppField.footer].
+          footer: lastRoom == null
+              ? null
+              : LastRoomStrip(
+                  last: lastRoom!,
+                  onReturn: onReturnLast,
+                  onForget: onForgetLast,
+                ),
           trailing: AppButton(
             label: 'Unirse',
             height: 42,

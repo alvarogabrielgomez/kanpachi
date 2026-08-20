@@ -37,6 +37,7 @@ class AppField extends StatefulWidget {
     this.hint,
     this.shape = AppFieldShape.rounded,
     this.trailing,
+    this.footer,
     this.height,
     this.radius,
     this.maxLength,
@@ -58,6 +59,20 @@ class AppField extends StatefulWidget {
 
   /// Lo que va pegado a la derecha DENTRO del campo: casi siempre un botón.
   final Widget? trailing;
+
+  /// Lo que va pegado DEBAJO, dentro de la misma caja: hoy, la vuelta a la
+  /// última sala bajo el campo de código.
+  ///
+  /// Es un hueco del campo y no un widget suelto de la pantalla porque lo que
+  /// dice es "esto es del campo": el pie nace del borde inferior de la
+  /// píldora, sin aire que los separe, sobre el fondo de chip que lo hunde un
+  /// escalón. Puesto como widget aparte, cualquier separación entre los dos lo
+  /// convertía en otra cosa más de la portada.
+  ///
+  /// El pie lleva las esquinas de ARRIBA rectas, y por eso la píldora se sigue
+  /// leyendo entera: su curva inferior queda recortada contra el chip, que es
+  /// justo el dibujo de una cosa metida debajo de la otra.
+  final Widget? footer;
 
   /// Alto fijo, para las filas donde el campo comparte renglón con un botón y
   /// un conmutador. Sin él cada pieza mide lo que le sale de su contenido y la
@@ -182,13 +197,25 @@ class _AppFieldState extends State<AppField> {
           AppFieldShape.hero => type.labelLg.copyWith(fontSize: 18, height: 1),
         };
 
-    return AnimatedContainer(
+    // Con pie, las esquinas de ABAJO se aplanan. Es lo que hace que las dos
+    // piezas se lean como una caja sola y no como un campo con algo debajo: el
+    // borde inferior de la píldora deja de existir justo donde empieza el pie.
+    // Sin pie no cambia nada y el campo sigue siendo la píldora entera.
+    final BorderRadius radioCampo = widget.footer == null
+        ? radius
+        : BorderRadius.vertical(
+            top: widget.shape == AppFieldShape.pill
+                ? AppRadius.fieldCap
+                : radius.topLeft,
+          );
+
+    final Widget campo = AnimatedContainer(
       duration: AppMotion.hover,
       height: widget.height,
       padding: padding,
       decoration: BoxDecoration(
         color: colors.surfaceSunken,
-        borderRadius: radius,
+        borderRadius: radioCampo,
         border: Border.all(
           color: _focused
               ? colors.accent
@@ -232,6 +259,26 @@ class _AppFieldState extends State<AppField> {
           if (widget.trailing != null) widget.trailing!,
         ],
       ),
+    );
+
+    if (widget.footer == null) return campo;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        campo,
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.chip,
+            borderRadius: const BorderRadius.vertical(bottom: AppRadius.lg),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.sm),
+            child: widget.footer,
+          ),
+        ),
+      ],
     );
   }
 }

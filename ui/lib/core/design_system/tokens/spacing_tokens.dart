@@ -113,6 +113,17 @@ abstract final class AppRadius {
   /// Para las píldoras. 999 en CSS; acá basta con un número mayor que
   /// cualquier media altura que vayamos a usar.
   static const BorderRadius pill = BorderRadius.all(Radius.circular(999));
+
+  /// La media altura de una píldora de campo: 54 px de alto, 27 de radio.
+  ///
+  /// Es el número que [AppRadius.pill] vale en un campo, dicho explícito, y
+  /// hace falta porque un campo con pie aplana sus esquinas de abajo. El 999
+  /// no sirve ahí: al recortarlo contra un lado de 54, Flutter escala los
+  /// cuatro radios a la vez y la curva de arriba deja de ser la de la píldora.
+  ///
+  /// 54 sale de la caja: 42 del botón pegado dentro y 6 de aire arriba y
+  /// abajo. Un campo con pie que midiera otra cosa pediría otro tope.
+  static const Radius fieldCap = Radius.circular(27);
 }
 
 /// Grosores de borde.

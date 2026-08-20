@@ -775,6 +775,7 @@ abstract final class AppMessages {
     FailedAction.renameRoom => 'No se pudo cambiar el nombre',
     FailedAction.resumeRoom => 'No se pudo reabrir la sala anterior',
     FailedAction.discardSavedRoom => 'No se pudo descartar la sala anterior',
+    FailedAction.forgetLastRoom => 'No se pudo olvidar la última sala',
     FailedAction.reapplyProtection => 'No se pudo reponer la protección',
     FailedAction.probeHost => 'No se pudo comprobar los puertos del host',
     FailedAction.loadCatalog => 'No se pudo leer el catálogo de juegos',
