@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.6.6] - 2026-08-20
+
 ### Added
 
 - Reach the game even when its server is bound to another address of the host's machine. In a container, the room's traffic is sent to wherever the game actually listens, in the ports the profile declares and nowhere else, and both the room and `kanpachi status` say where it is going. Everywhere else Kanpachi names the fix instead: "listening on 10.42.0.15, not on the room's address, bind it to 0.0.0.0". A server bound to the container's own IP answered "port unreachable" to a whole room while the tunnel, the ports and every screen looked perfect ([ea5eb1a](https://github.com/alvarogabrielgomez/kanpachi/commit/ea5eb1a))
@@ -392,6 +394,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.6.6]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.6
 [0.6.5]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.5
 [0.6.4]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.4
 [0.6.3]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.3
