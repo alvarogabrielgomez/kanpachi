@@ -172,9 +172,9 @@ func printRoom(w io.Writer, st protocol.RoomView, catalog []protocol.GameView) {
 		fmt.Fprintln(w)
 	}
 	if st.GameName != "" {
-		fmt.Fprintf(w, "  Game     %s\n", st.GameName)
+		fmt.Fprintf(w, "  Game     %s%s\n", st.GameName, healthSuffix(st.GameHealth))
 	} else if st.Game != "" {
-		fmt.Fprintf(w, "  Game     %s\n", st.Game)
+		fmt.Fprintf(w, "  Game     %s%s\n", st.Game, healthSuffix(st.GameHealth))
 	}
 	// The address a player pastes inside the game. The window has painted it
 	// since it existed and this face never did, so somebody on a headless host
@@ -605,5 +605,22 @@ func millis(ms int64) string {
 		return fmt.Sprintf("%d s", ms/1000)
 	default:
 		return fmt.Sprintf("%d min", ms/60_000)
+	}
+}
+
+// healthSuffix says whether the game's server is up, next to its name.
+//
+// The host measured it on its own machine and it travels with the room's
+// announcement, so a guest reads the same answer without probing anything,
+// which for a UDP game it could not do at all. Nothing is printed when nobody
+// knows: an empty suffix is the honest shape of "not measured".
+func healthSuffix(health string) string {
+	switch health {
+	case "listening":
+		return "  (healthy)"
+	case "silent":
+		return "  (nothing listening)"
+	default:
+		return ""
 	}
 }

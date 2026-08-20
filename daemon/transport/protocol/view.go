@@ -70,6 +70,12 @@ type RoomView struct {
 	GameName    string `json:"game_name,omitempty"`
 	MissingGame string `json:"missing_game,omitempty"`
 
+	// GameHealth es "listening" o "silent" si el host midió su propia máquina,
+	// y falta cuando no se sabe. Lo mide el host y viaja por el anuncio, porque
+	// desde fuera un puerto UDP callado no se distingue de uno sin nadie
+	// detrás. Ver [domain.GameHealth].
+	GameHealth string `json:"game_health,omitempty"`
+
 	LocalIP string `json:"local_ip,omitempty"`
 	Subnet  string `json:"subnet,omitempty"`
 
@@ -279,6 +285,7 @@ func roomView(st domain.RoomState, missing string, now time.Time) RoomView {
 		Rejoining:   st.Rejoining,
 		Game:        st.Game.ID,
 		GameName:    st.Game.Name,
+		GameHealth:  healthName(st.GameHealth),
 		MissingGame: missing,
 		Net: NetView{
 			NATKind:      st.Net.NATKind,
@@ -980,4 +987,13 @@ func progressView(p domain.Progress) ProgressView {
 		Steps:     steps,
 		Dropped:   p.Dropped,
 	}
+}
+
+// healthName deja fuera el "unknown": lo que no se sabe no viaja, y su ausencia
+// dice lo mismo sin que nadie tenga que interpretar una palabra.
+func healthName(h domain.GameHealth) string {
+	if h == domain.GameHealthUnknown {
+		return ""
+	}
+	return h.String()
 }

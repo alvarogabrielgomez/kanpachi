@@ -157,6 +157,12 @@ type credentialMsg struct {
 type announceMsg struct {
 	RoomName string `json:"room_name"`
 	GameID   string `json:"game_id"`
+
+	// GameHealth es "listening" o "silent", y la AUSENCIA es que el host no lo
+	// sabe. Va como texto y no como booleano porque son tres estados, y el que
+	// falta es el que un booleano no puede decir: un `false` de un host viejo
+	// se leería como "no hay nadie escuchando" en vez de como silencio.
+	GameHealth string `json:"game_health,omitempty"`
 }
 
 // noticeMsg es un aviso del host, con su número de secuencia para el acuse.

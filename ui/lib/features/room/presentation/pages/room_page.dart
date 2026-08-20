@@ -8,6 +8,7 @@ import 'package:kanpachi_ui/core/design_system/atoms/app_icon_button.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_kicker.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_spinner.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_status_dot.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_editable_name.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_list.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_notice.dart';
@@ -519,11 +520,23 @@ class _GameCard extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          Text(
-                            room.game!.name,
-                            style: context.type.gameName.copyWith(
-                              color: colors.text,
-                            ),
+                          Row(
+                            children: <Widget>[
+                              Flexible(
+                                child: Text(
+                                  room.game!.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: context.type.gameName.copyWith(
+                                    color: colors.text,
+                                  ),
+                                ),
+                              ),
+                              if (room.gameHealth != GameHealth.unknown) ...[
+                                const SizedBox(width: AppSpacing.md),
+                                _GameHealthDot(health: room.gameHealth),
+                              ],
+                            ],
                           ),
                           Text(
                             host
@@ -1003,6 +1016,36 @@ class _MemberRow extends StatelessWidget {
             onPressed: () => context.read<ShellCubit>().askKick(member),
           ),
       ],
+    );
+  }
+}
+
+/// El punto de si el servidor del juego está levantado.
+///
+/// **Lo midió el host sobre su propia máquina** y viajó en el anuncio de la
+/// sala: nadie lo sondea desde acá, y no por comodidad. Un puerto UDP callado
+/// no se distingue desde fuera de uno con el servidor detrás, así que un
+/// sondeo pintaría rojo una partida en marcha.
+///
+/// Cuando no se sabe no se pinta nada, y por eso este widget solo se construye
+/// con los otros dos estados: un punto gris «no medido» al lado del nombre del
+/// juego es ruido que hay que aprender a ignorar, y lo que se aprende a
+/// ignorar tapa al que sí dice algo.
+class _GameHealthDot extends StatelessWidget {
+  const _GameHealthDot({required this.health});
+
+  final GameHealth health;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final bool viva = health == GameHealth.listening;
+    return Tooltip(
+      message: viva
+          ? 'El servidor del juego está levantado en la máquina del host'
+          : 'El juego está elegido y nada escucha en sus puertos en la '
+                'máquina del host',
+      child: AppStatusDot(color: viva ? colors.ok : colors.warn),
     );
   }
 }

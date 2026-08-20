@@ -155,6 +155,7 @@ class Room {
     this.link = '',
     this.seed,
     this.game,
+    this.gameHealth = GameHealth.unknown,
     this.missingGameId,
     this.localIp,
     this.subnet,
@@ -201,6 +202,7 @@ class Room {
       ],
       selfIsHost: RoomRole.fromWire(json['role'] as String?) == RoomRole.host,
       game: game,
+      gameHealth: GameHealth.fromWire(json['game_health'] as String?),
       missingGameId: json['missing_game'] as String?,
       localIp: json['local_ip'] as String?,
       subnet: json['subnet'] as String?,
@@ -292,6 +294,12 @@ class Room {
   /// `null` es una sala sin juego, que es un estado normal y no un error: la
   /// sala se crea vacía y el juego se elige adentro.
   final Game? game;
+
+  /// Si hay algo escuchando en los puertos de ese juego, EN LA MÁQUINA DEL
+  /// HOST. Lo mide el host sobre sus propios sockets y lo manda con el anuncio
+  /// de la sala, porque desde fuera no se puede: un puerto UDP sin nadie detrás
+  /// calla igual que uno con el servidor levantado. Ver `domain.GameHealth`.
+  final GameHealth gameHealth;
 
   /// El host cerró su lado. La sala sigue en pie, pero si el juego corría en
   /// su PC no hay a qué conectarse.

@@ -118,10 +118,14 @@ type Deps struct {
 	Control     port.ControlChannel
 	Audit       port.ExposureAudit
 	Inspector   port.SocketInspector
-	Prober      port.Prober
-	Canary      port.CanaryPort
-	Clock       port.Clock
-	Log         port.Logger
+	// Listeners es la mitad barata de la anterior: qué puertos tiene atados
+	// esta máquina, sin dueños. La usa el host para decir si el servidor del
+	// juego activo está levantado. Ver [port.PortListeners].
+	Listeners port.PortListeners
+	Prober    port.Prober
+	Canary    port.CanaryPort
+	Clock     port.Clock
+	Log       port.Logger
 
 	// Rand es de dónde salen el invite ID de respaldo, la identidad de la red
 	// real, la subred y la clave de la tarjeta. Entra por parámetro y no se
@@ -198,6 +202,7 @@ func (d Deps) validate() error {
 	nombrar("Control", d.Control != nil)
 	nombrar("Audit", d.Audit != nil)
 	nombrar("Inspector", d.Inspector != nil)
+	nombrar("Listeners", d.Listeners != nil)
 	nombrar("Canary", d.Canary != nil)
 	nombrar("Prober", d.Prober != nil)
 	nombrar("Clock", d.Clock != nil)
@@ -317,6 +322,13 @@ type Session struct {
 	// perfil" en vez de dejar la pantalla en blanco, y es lo que se reintenta
 	// cuando importa el perfil que le faltaba.
 	announcedGame string
+
+	// gameHealth es si hay algo escuchando en los puertos del juego activo.
+	//
+	// En el host sale de mirar la tabla de sockets de esta máquina; en un
+	// invitado, de lo que el host anunció. Es presentación pura: no entra en
+	// ninguna decisión de firewall. Ver [domain.GameHealth].
+	gameHealth domain.GameHealth
 
 	// lastAnnounce es cuándo el host anunció por última vez.
 	//
@@ -688,6 +700,11 @@ func (s *Session) snapshot() domain.RoomState {
 	// the live state. See [domain.RoomState.Returning].
 	out.Returning = s.returningLocked()
 	out.Displaces = s.displacementLocked()
+	// La salud del juego se DERIVA acá también, y así no hay que acordarse de
+	// limpiarla al salir: sin juego activo no hay nada que estar escuchando.
+	if out.Game.ID != "" {
+		out.GameHealth = s.gameHealth
+	}
 	s.published.Store(&out)
 	// El enlace se publica ACÁ, que es el único sitio donde el estado y la
 	// clave de la tarjeta se leen juntos con el candado tomado.

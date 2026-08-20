@@ -474,7 +474,11 @@ func (c *Channel) Announce(_ context.Context, a domain.RoomAnnounce) error {
 	if err != nil {
 		return err
 	}
-	sobre, err := wrap(KindAnnounce, announceMsg{RoomName: a.RoomName, GameID: a.GameID})
+	msg := announceMsg{RoomName: a.RoomName, GameID: a.GameID}
+	if a.GameHealth != domain.GameHealthUnknown {
+		msg.GameHealth = a.GameHealth.String()
+	}
+	sobre, err := wrap(KindAnnounce, msg)
 	if err != nil {
 		return err
 	}

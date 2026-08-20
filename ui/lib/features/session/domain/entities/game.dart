@@ -307,3 +307,25 @@ String slugForProfile(String name) {
   }
   return s.length > 64 ? s.substring(0, 64).replaceAll(RegExp(r'-+$'), '') : s;
 }
+
+/// Si el servidor del juego activo está levantado, tal como lo midió el HOST.
+///
+/// Son tres estados y no un booleano porque el que falta es el que importa: un
+/// host más viejo que esta versión no manda nada, y leer esa ausencia como «no
+/// hay nadie escuchando» pintaría en rojo una sala perfectamente sana.
+enum GameHealth {
+  /// No se midió, no hay juego, o el host no lo cuenta. No se pinta nada.
+  unknown,
+
+  /// Algo está atado a los puertos del juego en la máquina del host.
+  listening,
+
+  /// Se miró y no había nadie: el juego está elegido y su servidor no corre.
+  silent;
+
+  static GameHealth fromWire(String? raw) => switch (raw) {
+    'listening' => GameHealth.listening,
+    'silent' => GameHealth.silent,
+    _ => GameHealth.unknown,
+  };
+}

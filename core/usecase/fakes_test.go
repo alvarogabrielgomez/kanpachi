@@ -890,6 +890,10 @@ func (i inspectorFalso) Snapshot(context.Context, domain.ProcessRef) ([]domain.L
 	return i.sockets, i.err
 }
 
+func (i inspectorFalso) Listening(context.Context) ([]domain.Listener, error) {
+	return i.sockets, i.err
+}
+
 // mockSonda contesta lo que le digan por puerto, y silencio a lo que no esté.
 //
 // El silencio por defecto es deliberado: es lo que contesta una máquina
@@ -1392,6 +1396,7 @@ func bancoSinSesión() *bank {
 		Control:     b.control,
 		Audit:       b.audit,
 		Inspector:   inspectorFalso{},
+		Listeners:   inspectorFalso{},
 		Prober:      b.sonda,
 		Canary:      b.canary,
 		Clock:       b.clock,

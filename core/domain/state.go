@@ -175,6 +175,12 @@ type RoomState struct {
 	// sala recién creada: red cifrada, cero puertos abiertos.
 	Game GameProfile
 
+	// GameHealth es si hay algo escuchando en los puertos de ese juego, medido
+	// por el HOST sobre su propia máquina. El cero es que no se sabe, que es lo
+	// que vale sin juego, sin sala, y en un invitado cuyo host todavía no lo
+	// anunció. Ver [GameHealth].
+	GameHealth GameHealth
+
 	// LocalIP es la IP de kanpachi0 en esta máquina.
 	LocalIP netip.Addr
 	Subnet  netip.Prefix

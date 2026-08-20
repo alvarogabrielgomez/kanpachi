@@ -47,16 +47,22 @@ type Watchers struct {
 	Events    port.SystemEvents
 	Library   port.GameLibrary
 	Inspector port.SocketInspector
+	// Listeners lo sirve el MISMO objeto que Inspector: son dos preguntas a la
+	// misma tabla del sistema, y quien las separa es el contrato, no el
+	// adaptador. Ver [port.PortListeners].
+	Listeners port.PortListeners
 	Router    port.ExposureAudit
 }
 
 // NewWatchers builds the real ones. None of them writes anything, so building
 // and discarding them leaves no trace.
 func NewWatchers(log port.Logger) Watchers {
+	sockets := inspector.New()
 	return Watchers{
 		Events:    sysevents.New(log),
 		Library:   steam.New(log),
-		Inspector: inspector.New(),
+		Inspector: sockets,
+		Listeners: sockets,
 		Router:    igd.New(log),
 	}
 }
@@ -252,6 +258,7 @@ func BuildSession(ctx context.Context, p SessionParams) (Built, error) {
 		Control:     out.Control,
 		Audit:       audit,
 		Inspector:   p.Watchers.Inspector,
+		Listeners:   p.Watchers.Listeners,
 		Prober:      probe.New(),
 		Canary:      opener.New(log),
 		Clock:       RealClock{},

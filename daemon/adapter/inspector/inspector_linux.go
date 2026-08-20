@@ -30,6 +30,29 @@ import (
 // lector compartido porque esto corre UNA vez, cuando el usuario pulsa observar
 // con el juego ya abierto, mientras que la cuarentena pregunta lo mismo en cada
 // arranque y no necesita el dueño.
+// Listening lee las mismas cuatro tablas y NO busca dueños.
+//
+// Es la diferencia que hace barata la pregunta que se repite: atribuir un
+// socket a un proceso obliga a recorrer los descriptores de todos los procesos,
+// porque `/proc/net/tcp` trae el inodo y no el PID. El host pregunta esto cada
+// tanto mientras hay sala, así que pagar ese recorrido sería pagarlo siempre
+// para tirar el resultado. Ver [port.PortListeners].
+func (s *Sockets) Listening(_ context.Context) ([]domain.Listener, error) {
+	filas, err := procnet.Read(procnet.Tables)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.Listener, 0, len(filas))
+	for _, f := range filas {
+		proto := domain.ProtoTCP
+		if f.UDP {
+			proto = domain.ProtoUDP
+		}
+		out = append(out, domain.Listener{Proto: proto, Port: f.Port, Address: f.Addr.String()})
+	}
+	return out, nil
+}
+
 func (s *Sockets) Snapshot(_ context.Context, _ domain.ProcessRef) ([]domain.Listener, error) {
 	filas, err := procnet.Read(procnet.Tables)
 	if err != nil {

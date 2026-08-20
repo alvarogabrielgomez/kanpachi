@@ -529,6 +529,23 @@ type SocketInspector interface {
 	Snapshot(ctx context.Context, root domain.ProcessRef) ([]domain.Listener, error)
 }
 
+// PortListeners dice qué puertos tiene atados ESTA máquina, sin mirar de quién
+// son.
+//
+// Va aparte de [SocketInspector] porque su cadencia es la contraria: aquello
+// corre una vez, cuando el usuario pulsa observar, y esto corre solo, cada
+// tanto, mientras hay una sala con juego. Lo que hace que eso sea aceptable es
+// justo lo que las separa: acá no se pregunta por procesos. Se leen puertos y
+// direcciones, jamás el dueño, así que el producto sigue sin vigilar lo que
+// nadie ejecuta.
+//
+// Lo usa el host para decir si el servidor del juego está levantado. Que falle
+// no rompe nada: sin medición el estado es [domain.GameHealthUnknown] y la
+// pantalla no pinta ningún punto, que es lo correcto para lo que no se sabe.
+type PortListeners interface {
+	Listening(ctx context.Context) ([]domain.Listener, error)
+}
+
 // ExposureAudit alimenta el módulo de alertas de la decisión 19.
 //
 // Cada método responde una pregunta que Kanpachi no controla y que anula su

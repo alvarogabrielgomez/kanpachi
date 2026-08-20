@@ -99,6 +99,15 @@ type mibUDP6TableOwnerPID struct {
 //
 // El `root` NO se usa para filtrar. Ver la cabecera del paquete: quién decide
 // qué entrada cuenta es el dominio.
+// Listening es la misma foto, y en Windows es literalmente la misma llamada.
+//
+// `GetExtendedTcpTable` trae el dueño de cada fila quiera uno o no, así que
+// pedir "sin dueños" no ahorraría nada. En Linux sí, y por eso allá son dos
+// caminos. Quien llama no usa el PID: ver [port.PortListeners].
+func (s *Sockets) Listening(ctx context.Context) ([]domain.Listener, error) {
+	return s.Snapshot(ctx, domain.ProcessRef{})
+}
+
 func (s *Sockets) Snapshot(ctx context.Context, _ domain.ProcessRef) ([]domain.Listener, error) {
 	// Cuatro llamadas síncronas de milisegundos. No hay nada que interrumpir a
 	// la mitad, así que el contexto se honra en la puerta y no se finge

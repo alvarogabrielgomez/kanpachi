@@ -28,9 +28,12 @@ func (s *Session) announceLocked(ctx context.Context) {
 	// evento es lo correcto: el canal está roto y machacarlo no lo arregla.
 	s.lastAnnounce = s.deps.Clock.Now()
 
+	s.measureGameHealthLocked(ctx)
+
 	err := s.deps.Control.Announce(ctx, domain.RoomAnnounce{
-		RoomName: s.state.Name,
-		GameID:   s.state.Game.ID,
+		RoomName:   s.state.Name,
+		GameID:     s.state.Game.ID,
+		GameHealth: s.gameHealth,
 	})
 	if err != nil {
 		s.deps.Log.Warn("no se pudo anunciar el estado de la sala", "error", err)
@@ -76,6 +79,10 @@ func (s *Session) OnRoomAnnounce(ctx context.Context, raw domain.RoomAnnounce) (
 		s.state.Name = a.RoomName
 	}
 	s.announcedGame = a.GameID
+	// La salud la MIDIÓ el host sobre su propia máquina, así que acá se toma
+	// tal cual: es lo único de este anuncio que un invitado no puede
+	// contestarse solo. No decide nada, solo se pinta.
+	s.gameHealth = a.GameHealth
 
 	previo := s.state.Game
 	switch {
@@ -138,7 +145,11 @@ func (s *Session) MissingGame() string {
 func (s *Session) ReapplyAnnouncedGame(ctx context.Context) {
 	s.mu.Lock()
 	pendiente := s.announcedGame != "" && s.state.Game.ID != s.announcedGame && !s.state.IsHost()
-	ann := domain.RoomAnnounce{RoomName: s.state.Name, GameID: s.announcedGame}
+	ann := domain.RoomAnnounce{
+		RoomName:   s.state.Name,
+		GameID:     s.announcedGame,
+		GameHealth: s.gameHealth,
+	}
 	s.mu.Unlock()
 
 	if !pendiente {
@@ -147,4 +158,30 @@ func (s *Session) ReapplyAnnouncedGame(ctx context.Context) {
 	if _, err := s.OnRoomAnnounce(ctx, ann); err != nil {
 		s.deps.Log.Warn("no se pudo aplicar el juego que faltaba", "error", err)
 	}
+}
+
+// measureGameHealthLocked mira si algo escucha en los puertos del juego activo.
+//
+// Corre en el HOST y solo ahí: es su tabla de sockets la que contesta si el
+// servidor de la partida está levantado. Va pegado al anuncio, que es cuando
+// hace falta y lo que le pone cadencia: cada cambio que importa y cada
+// [timing.AnnounceInterval], nunca un bucle propio.
+//
+// Que falle no es un error de nada. Se registra fino y el estado queda en
+// [domain.GameHealthUnknown], que es lo que hace que la pantalla no pinte
+// ningún punto en vez de pintar uno equivocado.
+//
+// Asume el candado tomado.
+func (s *Session) measureGameHealthLocked(ctx context.Context) {
+	if len(s.state.Game.HostPorts) == 0 {
+		s.gameHealth = domain.GameHealthUnknown
+		return
+	}
+	listeners, err := s.deps.Listeners.Listening(ctx)
+	if err != nil {
+		s.deps.Log.Warn("no se pudo mirar qué escucha en esta máquina", "error", err)
+		s.gameHealth = domain.GameHealthUnknown
+		return
+	}
+	s.gameHealth = domain.GameHealthOf(s.state.Game.HostPorts, listeners)
 }

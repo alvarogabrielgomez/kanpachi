@@ -1268,7 +1268,7 @@ Tres operaciones **no** vienen del named pipe, y las tres las llama el superviso
 | Operación | Quién la llama | Qué hace |
 |---|---|---|
 | `IssueCredentialFor(pedido)` | El canal de control, cuando alguien toca la puerta | Ver abajo |
-| `OnRoomAnnounce(anuncio)` | El canal de control de un invitado | Aplica el nombre y el juego que dijo el host, resolviendo el id contra el catálogo PROPIO |
+| `OnRoomAnnounce(anuncio)` | El canal de control de un invitado | Aplica el nombre y el juego que dijo el host, resolviendo el id contra el catálogo PROPIO, y toma tal cual si el servidor de ese juego está levantado, que es lo único del anuncio que un invitado no puede contestarse solo |
 | `OnRoomNotice(aviso)` | El canal de control de un invitado | Expulsión o cierre de sala. Las dos terminan en salir, y se distinguen en lo que dirá la pantalla de inicio |
 | `OnCodeRotated(sala)` | El canal de control de un invitado | Toma el código nuevo que repartió el host y reescribe el guardado |
 | `OnEngineEvent(evento)` | El supervisor, drenando el motor | La tabla de arriba |
@@ -2090,6 +2090,16 @@ Es el mismo `RoomAnnounce` que ya se manda al cambiar de juego, de nombre y de m
 Con la repetición, el invitado puede medir el silencio: seis minutos sin oír nada dan al host por ausente, lo que arranca el contador de veinte minutos de la decisión 20. Vencer el silencio no saca a nadie de la sala, y un falso positivo se corrige con el siguiente anuncio.
 
 **La ausencia se fecha hacia atrás**, en la última prueba de vida y no en el instante en que se detectó el silencio. Sin eso, los seis minutos se sumarían a los veinte.
+
+#### El anuncio lleva si el servidor del juego está levantado
+
+El host mira SU tabla de sockets y dice si algo está atado a los puertos del juego activo. Viaja como `game_health`, con dos valores —`listening` y `silent`— y una ausencia, que es "no se sabe": un host más viejo que esta versión no manda el campo, y leer eso como silencio pintaría en rojo una sala sana.
+
+**Lo mide el host porque desde fuera no se puede.** El sondeo de puertos toca TCP y espera el handshake; en UDP un puerto sin nadie detrás y uno con el servidor del juego contestan lo mismo, que es nada, y el ICMP de puerto inalcanzable que los distinguiría lo tapa la compuerta de la máquina sondeada. Un semáforo sondeado desde fuera pintaría rojo con la partida en marcha, que es la forma de que nadie vuelva a mirarlo.
+
+Se remide en cada latido del supervisor, quince segundos, y **se anuncia por flanco**: cuando la respuesta cambia se manda en el acto, y si no, viaja con la repetición de los dos minutos. Las dos cadencias son distintas porque cuestan distinto: mirar la tabla propia son dos llamadas al sistema, y avisar es un mensaje por miembro.
+
+Es PRESENTACIÓN pura, con la misma regla que el id del juego: un host que lo mienta consigue que a los demás les aparezca un punto de otro color, jamás que se abra o se cierre un puerto en la máquina de nadie. Basta con que UNO de los rangos del perfil tenga a alguien escuchando, porque un perfil declara lo que el juego puede usar y un servidor sano no tiene por qué usarlo todo.
 
 #### El código nuevo se reparte a los presentes
 

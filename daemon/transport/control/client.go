@@ -365,7 +365,11 @@ func (c *client) reparte(e envelope) bool {
 		}
 		// Sanitize acota lo que llegó de otra máquina ANTES de que toque nada:
 		// el nombre por runas, el id contra el alfabeto que exige un perfil.
-		anuncio := domain.RoomAnnounce{RoomName: msg.RoomName, GameID: msg.GameID}.Sanitize()
+		anuncio := domain.RoomAnnounce{
+			RoomName:   msg.RoomName,
+			GameID:     msg.GameID,
+			GameHealth: healthFromWire(msg.GameHealth),
+		}.Sanitize()
 		emitir(c.ch, c.ch.announces, anuncio, "anuncio")
 
 	case KindNotice:
@@ -545,4 +549,19 @@ func verifySignature(keys keyPair, resp credentialResponseMsg, req domain.Creden
 			"o no es la respuesta a este pedido")
 	}
 	return nil
+}
+
+// healthFromWire lee el estado del juego que mandó el host.
+//
+// Lo que no es una de las dos palabras conocidas es "no se sabe", y eso incluye
+// el campo ausente de un host más viejo que esta versión. Ver [announceMsg].
+func healthFromWire(s string) domain.GameHealth {
+	switch s {
+	case domain.GameHealthListening.String():
+		return domain.GameHealthListening
+	case domain.GameHealthSilent.String():
+		return domain.GameHealthSilent
+	default:
+		return domain.GameHealthUnknown
+	}
 }

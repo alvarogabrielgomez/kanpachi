@@ -227,6 +227,10 @@ func (Inspector) Snapshot(context.Context, domain.ProcessRef) ([]domain.Listener
 	return nil, falla("mirar los puertos de un proceso")
 }
 
+func (Inspector) Listening(context.Context) ([]domain.Listener, error) {
+	return nil, falla("leer los puertos atados de esta máquina")
+}
+
 // Audit no comprueba nada.
 //
 // Falla en los tres, y el resultado se ve: levanta [domain.AlertAuditFailed], o

@@ -22,6 +22,12 @@ package domain
 type RoomAnnounce struct {
 	RoomName string
 	GameID   string
+
+	// GameHealth es si hay algo escuchando en los puertos de ese juego, en la
+	// máquina del host. Viaja porque el invitado no puede medirlo: ver
+	// [GameHealth]. Es presentación y jamás entra en una decisión de firewall,
+	// igual que el nombre de la sala.
+	GameHealth GameHealth
 }
 
 // Sanitize acota lo que llegó de otra máquina antes de que toque nada.
@@ -31,6 +37,11 @@ type RoomAnnounce struct {
 // ningún catálogo, así que se descarta acá en vez de buscarlo.
 func (a RoomAnnounce) Sanitize() RoomAnnounce {
 	out := RoomAnnounce{RoomName: ClampRoomName(a.RoomName)}
+	// Un valor que no es de los tres se lee como "no se sabe": lo que no se
+	// entiende no se pinta, que es lo mismo que hace el cero.
+	if a.GameHealth == GameHealthListening || a.GameHealth == GameHealthSilent {
+		out.GameHealth = a.GameHealth
+	}
 	if validProfileID(a.GameID) {
 		out.GameID = a.GameID
 	}

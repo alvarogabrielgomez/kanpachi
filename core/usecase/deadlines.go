@@ -94,6 +94,21 @@ func (s *Session) enforceDeadlinesLocked(ctx context.Context) bool {
 		return true
 	}
 
+	// La salud del juego se remide en CADA latido, y un cambio se anuncia en el
+	// acto. Los dos plazos son distintos a propósito: mirar la tabla de sockets
+	// de esta máquina cuesta dos llamadas al sistema, así que se puede hacer
+	// cada quince segundos, y avisarle a la sala cuesta un mensaje por miembro,
+	// así que solo se paga cuando la respuesta CAMBIÓ. Sin el aviso por flanco,
+	// levantar el servidor del juego tardaría hasta [timing.AnnounceInterval] en
+	// verse del otro lado, que son dos minutos mirando un punto que miente.
+	if s.state.IsHost() && s.state.Conn.InRoom() {
+		previa := s.gameHealth
+		s.measureGameHealthLocked(ctx)
+		if s.gameHealth != previa {
+			s.announceLocked(ctx)
+		}
+	}
+
 	// El anuncio periódico del host es lo que le da al otro lado algo que medir.
 	// Va al final: si algo de arriba sacó de la sala, no hay a quién anunciarle.
 	if s.state.IsHost() && now.Sub(s.lastAnnounce) >= timing.AnnounceInterval {

@@ -10,6 +10,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Added
 
+- Say whether the game's server is actually up, with a dot next to the game in the room and `(healthy)` next to its name in `kanpachi status`. The host reads its own socket table and the answer travels with the room announcement, remeasured every 15 seconds and sent the moment it changes, because a guest cannot find this out on its own: a UDP port with nobody behind it is as silent as one with the server running
+
 - Ask any command how it is written, with `kanpachi <command> --help` or `kanpachi help <command>`: what it does, every flag it takes, what each flag changes, and an example to paste. Only the one-line list existed, so the flags of `profile`, `upgrade`, `host` and `join` were readable nowhere. `kanpachi --help` and `kanpachi help` stay the same page as before
 
 ### Fixed
