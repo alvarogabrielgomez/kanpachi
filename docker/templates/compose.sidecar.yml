@@ -23,14 +23,8 @@ services:
     volumes:
       - kanpachi-data:/var/lib/kanpachi
 
-    # The name you appear under in the room, next to the guests. There is no
-    # environment variable for it: it is derived from the machine's name, and a
-    # container's is a random hex id unless it is set here. Twelve characters
-    # at most, ASCII letters and digits, everything before the first dot.
-    #
-    # It is read when the room is CREATED. Changing it later renames nothing:
-    # the name lives inside the saved room, so an existing room keeps the one
-    # it opened with.
+    # The name you appear under in the room. Without it you are a random hex
+    # id. Read when the room is CREATED, so changing it later renames nothing.
     hostname: Zomboid
 
     # The difference from compose.yml: NO network_mode here. Kanpachi gets its
@@ -101,6 +95,10 @@ services:
         exec setpriv --reuid=10000 --regid=10000 --init-groups /tmp/entrypoint.sh
 
     environment:
+      # No SERVER_IP here on purpose: this image overwrites it with the
+      # container's own address. Kanpachi sends the room's traffic there and
+      # says so in `kanpachi status`.
+
       # Required by this image. Its entrypoint exits 1 without it.
       MAX_MEMORY: 8g
 

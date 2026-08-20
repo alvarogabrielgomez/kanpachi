@@ -9,6 +9,10 @@ Four templates in `templates/`. Copy one, change `KANPACHI_SEED`, `docker compos
 | The game is not in the catalogue and you know its ports | `compose.custom-ports.yml` |
 | The registry asks for a password to host on it | `compose.seed-password.yml` |
 
+All but the sidecar run with `network_mode: host`, so the game has to be on the
+same machine. On Docker Desktop that machine is the Linux VM and not your
+desktop, so a game on Windows or macOS reads as silent there. Use the sidecar.
+
 The invite code and link are printed on **every** start:
 
 ```sh
@@ -23,21 +27,18 @@ Before the first run:
   three more weeks.
 - **Bind the game to `0.0.0.0` where the image lets you.** Sharing the network
   namespace is not enough: Kanpachi delivers packets to its own address, so a
-  server bound to the container's own IP never sees them and answers "port
+  server bound to one address of the machine never sees them and answers "port
   unreachable" to the whole room. Zomboid calls it `SERVER_IP`, others `bind` or
-  `server-ip`. Measured against a Kubernetes deployment feeding the server
-  `status.podIP`: perfect tunnel, open ports, and not one packet reaching the
-  game.
-- **Some images refuse that value, and for those the redirect is the only way
-  in.** `sknnr/zomboid-dedicated-server` rewrites it on purpose, in its own
-  entrypoint: `# PZ will not bind to 0.0.0.0, so we need to use the container's
-  IP`, followed by `SERVER_IP=$(hostname -i)`. Setting the variable there
-  changes nothing. **In a container Kanpachi covers for it**: when the game is
-  bound elsewhere, the room's traffic is sent to wherever it actually listens,
-  and both the room and `kanpachi status` name the address. Measured working on
-  2026-08-20 against that image, with a guest reaching the server over the
-  relay. So read the advice above as "where you can", not as a requirement you
-  can always meet.
+  `server-ip`. The room's own address works too, and `kanpachi status` prints it
+  as `Your IP` once the room is open. `127.0.0.1` never does: the guest's packet
+  carries the room's address, and a redirected copy dies as martian in the
+  kernel.
+- **Some images rewrite that value, and there the redirect is the only way in.**
+  `sknnr/zomboid-dedicated-server` sets `SERVER_IP=$(hostname -i)` in its own
+  entrypoint, so the compose changes nothing. In a container Kanpachi covers for
+  it: the room's traffic goes to wherever the game listens, and both the room and
+  `kanpachi status` name the address. Measured on 2026-08-20 against that image,
+  with a guest reaching the server over the relay.
 - **Your compose file has to set `cap_add` and `devices`.** An image cannot
   grant itself either one. Without them the container stops at startup and names
   the missing one.

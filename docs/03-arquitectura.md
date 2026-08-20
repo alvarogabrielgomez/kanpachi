@@ -2099,7 +2099,7 @@ El host mira SU tabla de sockets y dice si algo está atado a los puertos del ju
 
 **Lo mide el host porque desde fuera no se puede.** El sondeo de puertos toca TCP y espera el handshake; en UDP un puerto sin nadie detrás y uno con el servidor del juego contestan lo mismo, que es nada, y el ICMP de puerto inalcanzable que los distinguiría lo tapa la compuerta de la máquina sondeada. Un semáforo sondeado desde fuera pintaría rojo con la partida en marcha, que es la forma de que nadie vuelva a mirarlo.
 
-Con el servidor levantado y atado a OTRA dirección de esa máquina, el valor es `elsewhere` y viaja además la dirección en `game_where`. Es un estado aparte porque el arreglo es otro: no hay que arrancar nada, hay que atar el servidor a `0.0.0.0`. Ver la decisión 40, y ahí también por qué en contenedor eso se desvía en vez de solo decirse.
+Con el servidor levantado y atado a OTRA dirección de esa máquina, el valor es `elsewhere` y viaja además la dirección en `game_where`. Es un estado aparte porque el arreglo es otro: no hay que arrancar nada, hay que atar el servidor a la dirección de la sala, o a `0.0.0.0` si el juego no deja elegir. A `127.0.0.1` nunca, que es el único bind sin salida. Ver la decisión 40, y ahí también por qué en contenedor eso se desvía en vez de solo decirse.
 
 Se remide en cada latido del supervisor, quince segundos, y **se anuncia por flanco**: cuando la respuesta cambia se manda en el acto, y si no, viaja con la repetición de los dos minutos. Las dos cadencias son distintas porque cuestan distinto: mirar la tabla propia son dos llamadas al sistema, y avisar es un mensaje por miembro.
 

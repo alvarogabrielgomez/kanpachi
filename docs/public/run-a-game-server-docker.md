@@ -60,6 +60,10 @@ copy one, change `KANPACHI_SEED`, run it.
 | The game is not in the catalogue and you know its ports | `compose.custom-ports.yml` |
 | The registry asks for a password to host on it | `compose.seed-password.yml` |
 
+The first, third and fourth run with `network_mode: host`, so they need the game on the
+same machine as the container. On Docker Desktop that machine is the Linux VM: see
+[Two ways to place the network](#two-ways-to-place-the-network).
+
 ## Settings
 
 Only `KANPACHI_SEED` is required.
@@ -124,6 +128,11 @@ docker compose exec kanpachi tail -f /var/lib/kanpachi/logs/kanpachi.log
 the machine. Kanpachi shares the host's network, which is where its rules do
 their work.
 
+On Docker Desktop that machine is the Linux VM, not your Windows or macOS
+desktop. The container sees the VM's interfaces and the VM's sockets, so a game
+running on your desktop stays invisible: the room opens and the game reads as
+silent. Use the sidecar there.
+
 **Sidecar** puts the game in a container of its own with
 `network_mode: "service:kanpachi"`, so the two share one network namespace and
 the game is reachable through the room and nowhere else. A service set up that
@@ -132,6 +141,24 @@ the room exists to make it reachable.
 
 Publishing a port to the host is the thing Kanpachi exists to avoid, so none of
 the templates does it.
+
+## Point the game at the room
+
+Set the game's bind address to one of these:
+
+| Value | When |
+|---|---|
+| `0.0.0.0` | the usual choice. It covers every address on the machine, and you can set it before the room exists |
+| the room's own address | tighter. `kanpachi status` prints it as `Your IP`, and it survives restarts because the room keeps its range in the volume |
+
+Do not use `127.0.0.1`. The guest's packet carries the room's address, so a
+socket on loopback never receives it, and Kanpachi refuses to redirect there.
+
+Zomboid calls the setting `SERVER_IP`, others `bind` or `server-ip`. Some images
+overwrite it: `sknnr/zomboid-dedicated-server` sets `SERVER_IP=$(hostname -i)` in
+its own entrypoint. In a container Kanpachi covers for that and sends the room's
+traffic to wherever the game listens, naming the address in the room and in
+`kanpachi status`.
 
 ## Choosing a version
 

@@ -27,7 +27,8 @@ services:
       - kanpachi-data:/var/lib/kanpachi
 
     # The game server runs on this machine, so Kanpachi shares its network.
-    # For the game inside the compose instead, see compose.sidecar.yml.
+    # On Docker Desktop that machine is the Linux VM and not your desktop, so a
+    # game on Windows or macOS is invisible from here: use compose.sidecar.yml.
     network_mode: host
 
     # A tiny init as PID 1, so orphaned processes get reaped and signals are
