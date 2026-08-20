@@ -589,9 +589,12 @@ type mockControl struct {
 	// que el host suma a la tabla del motor. Ver [Session.withAdmittedLocked].
 	conectados []netip.Addr
 	// fallarDesde hace fallar Dial a partir de la n-ésima llamada, 1-indexada.
-	fallarDesde     int
-	presencia       chan bool
-	anuncios        []domain.RoomAnnounce
+	fallarDesde int
+	presencia   chan bool
+	anuncios    []domain.RoomAnnounce
+	// anunciadosA es a QUIEN fue cada anuncio, en el mismo orden que `anuncios`.
+	// Una direccion en cero es a todos.
+	anunciadosA     []netip.Addr
 	entrantes       chan domain.RoomAnnounce
 	avisos          []avisoFalso
 	avisados        []netip.Addr
@@ -662,10 +665,11 @@ func (c *mockControl) Dial(_ context.Context, host netip.Addr) error {
 
 func (c *mockControl) HostPresence() <-chan bool { return c.presencia }
 
-func (c *mockControl) Announce(_ context.Context, a domain.RoomAnnounce) error {
+func (c *mockControl) Announce(_ context.Context, to netip.Addr, a domain.RoomAnnounce) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.anuncios = append(c.anuncios, a)
+	c.anunciadosA = append(c.anunciadosA, to)
 	return nil
 }
 

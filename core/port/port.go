@@ -947,8 +947,13 @@ type ControlChannel interface {
 	HostPresence() <-chan bool
 
 	// Announce lo llama SOLO el host, por la dirección de la sala, para
-	// contarles a los presentes cómo se llama y qué juego está activo.
-	Announce(ctx context.Context, a domain.RoomAnnounce) error
+	// contarles a los presentes cómo se llama y qué juego está activo. Una
+	// dirección en cero es a todos, igual que en [ControlChannel.Notify].
+	//
+	// Poder dirigirlo a UNO existe por el que acaba de entrar: el anuncio es
+	// estado, no un suceso, así que repetírselo a los demás no rompe nada, pero
+	// tampoco les dice nada que no supieran. Ver [Session.announceToLocked].
+	Announce(ctx context.Context, to netip.Addr, a domain.RoomAnnounce) error
 	// Announcements es el lado del invitado. El adaptador solo emite lo que
 	// llegó por la conexión al host: un miembro no puede anunciar nada.
 	Announcements() <-chan domain.RoomAnnounce
