@@ -8,6 +8,12 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Fixed
+
+- Stop the daemon eating tens of megabytes on every room it opens and closes. Each read of the Windows firewall store left its enumerator behind, and with it a snapshot of every rule on the machine: six cycles of opening a room and switching games took the process from 80 MB to 426 MB, where it stayed, because that memory belongs to COM and nothing in Go can reclaim it. A machine at rest leaked it too, twice a minute, for as long as the daemon ran
+- Stop the window's memory creeping up while a room is open. Every rebuild of a beating status dot subscribed another listener to its own animation and not one of them ever went away, at thirty a minute per dot for as long as the room stayed up
+- Decode a game's cover at the size it is drawn instead of at Steam's. The 600×900 portrait was held in memory whole to be painted 34 pixels wide, three hundred times the pixels it needs, and the image cache fills to 100 MB before it evicts anything
+
 ## [0.6.8] - 2026-08-20
 
 ### Fixed

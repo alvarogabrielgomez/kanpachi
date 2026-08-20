@@ -107,6 +107,40 @@ class AppCover extends StatelessWidget {
   /// La etiqueta que se superpone arriba a la izquierda: INSTALADO.
   final Widget? badge;
 
+  /// A cuántos píxeles de verdad se decodifica la imagen, o null.
+  ///
+  /// # Lo que costaba no decirlo
+  ///
+  /// `Image.network` decodifica al tamaño del ORIGEN, y la portada vertical de
+  /// Steam mide 600×900, o sea 540.000 píxeles y 2,1 MB en memoria ya
+  /// descomprimidos. Los tres huecos de tamaño fijo la dibujan a 34×46, 44×60 y
+  /// 52×70: el más chico necesita 1.564 píxeles y guardaba 540.000, un factor de
+  /// 345. La caché de imágenes viene con techo de 100 MiB, así que crece hasta
+  /// llenarlo antes de desalojar nada.
+  ///
+  /// La doc de `Image` lo dice con estas palabras: *"a 4K image that will be
+  /// rendered at only 100 by 100 pixels ... a 100-fold reduction in memory
+  /// usage"*.
+  ///
+  /// # Por qué solo el ancho, y solo en los huecos de tamaño fijo
+  ///
+  /// Solo el ancho porque `ResizeImage` con las DOS medidas puestas deforma la
+  /// imagen, *"regardless of whether it matches the source image's intrinsic
+  /// aspect ratio ... similar to BoxFit.fill"*, y con una sola conserva la
+  /// forma. Con `BoxFit.cover`, las tres portadas verticales son más anchas de
+  /// relación que su hueco, así que la escala la manda el ancho y el alto sale
+  /// solo.
+  ///
+  /// Solo en los de tamaño fijo porque los otros dos crecen con la ventana: su
+  /// ancho lo pone quien los contiene, este widget no lo sabe, y un número fijo
+  /// los dejaría borrosos en una ventana grande. Ahí la imagen es la cabecera
+  /// apaisada de 460×215, que se dibuja a un tamaño parecido al suyo y no tiene
+  /// casi nada que ahorrar.
+  int? _decodeWidth(BuildContext context) {
+    if (ratio != null || !width.isFinite) return null;
+    return (width * MediaQuery.devicePixelRatioOf(context)).ceil();
+  }
+
   @override
   Widget build(BuildContext context) {
     final String? url = imageUrl;
@@ -118,6 +152,7 @@ class AppCover extends StatelessWidget {
             child: Image.network(
               url,
               fit: BoxFit.cover,
+              cacheWidth: _decodeWidth(context),
               // Sin medidas cuando manda la relación: el hueco ya llega con
               // restricciones ajustadas y la imagen las llena. Repetirlas
               // sería fijar otra vez el alto que este widget existe para no

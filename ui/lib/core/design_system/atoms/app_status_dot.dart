@@ -48,6 +48,25 @@ class _AppStatusDotState extends State<AppStatusDot>
   /// cualquier pantalla.
   AnimationController? _controller;
 
+  /// La animación con curva, construida UNA vez y liberada en [dispose].
+  ///
+  /// # Por qué no vive en `build`, que es donde estaba
+  ///
+  /// Porque `CurvedAnimation` se suscribe al estado del controlador en su
+  /// constructor, `parent.addStatusListener(_updateCurveDirection)` en
+  /// `animation/animations.dart`, y lo único que deshace esa suscripción es su
+  /// propio `dispose`, cuya documentación dice literalmente *"Cleans up any
+  /// listeners added by this CurvedAnimation"*.
+  ///
+  /// Construida en cada `build`, cada reconstrucción dejaba un oyente más
+  /// colgado del mismo controlador y ninguno se iba. El padre de un punto que
+  /// late reconstruye cada dos segundos con el latido de la sesión: treinta
+  /// oyentes por minuto y por punto, mientras la sala esté abierta. La lista no
+  /// tiene techo, y `notifyStatusListeners` la recorre entera en cada vuelta
+  /// del `reverse`.
+  CurvedAnimation? _curva;
+  Animation<double>? _opacidad;
+
   @override
   void initState() {
     super.initState();
@@ -58,10 +77,18 @@ class _AppStatusDotState extends State<AppStatusDot>
     // La mitad de la duración, porque con `reverse: true` un ciclo son DOS
     // pasadas del controlador. Los tokens son de ciclo completo, así que sin
     // dividir late a la mitad de velocidad.
-    (_controller ??= AnimationController(
+    final AnimationController c = _controller ??= AnimationController(
       vsync: this,
       duration: widget.pulseDuration ~/ 2,
-    )).repeat(reverse: true);
+    );
+    // Con curva: un latido lineal se lee como un parpadeo de aviso, y esto dice
+    // "vivo", no "atención".
+    final CurvedAnimation curva = _curva ??= CurvedAnimation(
+      parent: c,
+      curve: Curves.easeInOut,
+    );
+    _opacidad ??= Tween<double>(begin: 1, end: 0.3).animate(curva);
+    c.repeat(reverse: true);
   }
 
   @override
@@ -78,6 +105,9 @@ class _AppStatusDotState extends State<AppStatusDot>
 
   @override
   void dispose() {
+    // La curva PRIMERO: lo que hace es quitarse de la lista de oyentes del
+    // controlador, y hacerlo después de liberarlo sería tocar algo ya muerto.
+    _curva?.dispose();
     _controller?.dispose();
     super.dispose();
   }
@@ -89,17 +119,9 @@ class _AppStatusDotState extends State<AppStatusDot>
       size: widget.size,
       square: widget.square,
     );
-    final AnimationController? c = _controller;
-    if (!widget.pulse || c == null) return dot;
-    return FadeTransition(
-      // Con curva: un latido lineal se lee como un parpadeo de aviso, y esto
-      // dice "vivo", no "atención".
-      opacity: Tween<double>(
-        begin: 1,
-        end: 0.3,
-      ).animate(CurvedAnimation(parent: c, curve: Curves.easeInOut)),
-      child: dot,
-    );
+    final Animation<double>? opacidad = _opacidad;
+    if (!widget.pulse || opacidad == null) return dot;
+    return FadeTransition(opacity: opacidad, child: dot);
   }
 }
 
