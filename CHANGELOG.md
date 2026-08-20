@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.6.7] - 2026-08-20
+
 ### Fixed
 
 - Open the game's ports to a guest whose arrival the engine never announced. The host recalculated its rules only on the engine's `peers_changed` event, and measured on 2026-08-20 that event never came: the guest had a credential, an open control channel and `MEMBERS (2)` on their own screen, while the host showed `MEMBERS (1)` and had no rule for the game at all, so every packet died at the host's own gate. The safety net for exactly this undercount lived inside the reread that was not happening. The control channel opening now triggers the reread, which is first-hand evidence that somebody is there and the same evidence that already decides who may talk to the control channel ([45b6a99](https://github.com/alvarogabrielgomez/kanpachi/commit/45b6a99))
@@ -400,6 +402,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.6.7]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.7
 [0.6.6]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.6
 [0.6.5]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.5
 [0.6.4]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.4
