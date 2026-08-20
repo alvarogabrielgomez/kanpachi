@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.6.8] - 2026-08-20
+
 ### Fixed
 
 - Paint the game's status dot, which had never once appeared in the window. `Room.copyWith` rebuilt the room without carrying the health, the address the game listens on, or the redirect, so all three fell back to "not known"; and every room goes through that copy before reaching the screen, because that is where the foreign-rule findings get attached. The daemon measured it correctly and `kanpachi status` said so, and it was erased in the last metre. Neither a host nor a guest has seen it since it shipped ([16c463b](https://github.com/alvarogabrielgomez/kanpachi/commit/16c463b))
@@ -424,6 +426,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.6.8]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.8
 [0.6.7]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.7
 [0.6.6]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.6
 [0.6.5]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.5
