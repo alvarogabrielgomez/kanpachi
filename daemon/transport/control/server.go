@@ -478,6 +478,9 @@ func (c *Channel) Announce(_ context.Context, a domain.RoomAnnounce) error {
 	if a.GameHealth != domain.GameHealthUnknown {
 		msg.GameHealth = a.GameHealth.String()
 	}
+	if a.GameWhere.IsValid() {
+		msg.GameWhere = a.GameWhere.String()
+	}
 	sobre, err := wrap(KindAnnounce, msg)
 	if err != nil {
 		return err

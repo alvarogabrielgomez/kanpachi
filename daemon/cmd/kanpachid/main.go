@@ -547,8 +547,14 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 		Protect:           protegerFichero,
 		OnEngineFatal:     fatalDeMáquina(ui, host, log),
 		CheckMachine:      true,
-		Watchers:          watch,
-		Log:               log,
+		// Explícito por variable de entorno, y no adivinado por `/.dockerenv`
+		// ni por cgroups: de esta bandera cuelga que Kanpachi reescriba
+		// destinos, así que tiene que poder leerse en un diff. La pone el
+		// entrypoint de la imagen, que es quien sabe para qué existe ese
+		// contenedor. Ver [domain.RedirectSpec].
+		Container: os.Getenv("KANPACHI_CONTAINER") == "1",
+		Watchers:  watch,
+		Log:       log,
 	})
 	cierres = append(cierres, built.Closers...)
 	if err != nil {

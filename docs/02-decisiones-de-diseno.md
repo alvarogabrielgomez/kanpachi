@@ -1834,3 +1834,21 @@ El retardo creciente es global y no por cuenta, porque no hay cuentas: bloquear 
 **Qué gana el que taguea:** un cambio del motor es tag → su aduana publica (~13 min) → una línea en `engine.pin` → release de Kanpachi sin un minuto de Rust. Un cambio solo de Kanpachi ya no paga el motor jamás.
 
 **Lo que NO cambia.** `third_party/easytier` sigue siendo otra cosa: son las DLL descargadas del release oficial, con su manifiesto y su guardián de siempre. Y el fork de EasyTier quedó taggeado (`v2.6.4-kanpachi.1` sobre el commit del lock) con `--locked` en cada build, así que el commit del fork dentro del binario siempre es uno que alguien escribió.
+
+## 40. En un contenedor, el tráfico de la sala se desvía a donde el juego escuche
+
+**El fallo, medido el 2026-08-19.** Una sala con Zomboid: túnel en pie, tres miembros, los puertos abiertos del lado del host, y el juego sin conectar. La captura de descartes del invitado lo dijo en una línea, `ICMP 100.93.137.1 udp port 16261 unreachable`, y esa respuesta solo sale después de RECIBIR el paquete. O sea que Kanpachi entregó y el juego no estaba ahí: el manifiesto le pasaba al servidor `SERVER_IP` desde `status.podIP`, así que escuchaba en la IP del pod y no en la de `kanpachi0`. Por Tailscale funcionaba porque su sidecar en modo userspace TERMINA el tráfico y lo reenvía a la IP del pod; Kanpachi entrega L3 de verdad, sin proxy.
+
+**No es de un juego.** Cualquier servidor que se ate a una dirección concreta cae igual, y en contenedor esa es la línea que la gente copia: `SERVER_IP`, `bind`, `server-ip`, `-b`.
+
+**Elección: se desvía, y SOLO en contenedor.** Una tabla `nat` propia, `kanpachi-nat`, con una cadena de `prerouting` que reescribe el destino de lo que entra por el adaptador de la sala, hacia la dirección donde el juego sí escucha, en los puertos que DECLARA el perfil activo y en ninguno más.
+
+**Por qué esa frontera es toda la decisión.** En un contenedor la intención no es ambigua: ese contenedor declaró un juego, comparte el espacio de red de Kanpachi y existe para servir esa sala; no hay red de casa que proteger y nadie ató nada para esconderlo. En una máquina normal es al revés: atar un servicio a una dirección es lo que hace alguien para que NO lo alcancen desde otro sitio, y reescribir eso por su cuenta rompería una decisión ajena. Fuera de contenedor el adaptador ni se construye, y lo que queda es la pantalla nombrando el arreglo con su dirección. La bandera es explícita —`KANPACHI_CONTAINER=1`, puesta por el entrypoint de la imagen— y no adivinada por `/.dockerenv` ni por cgroups: de ella cuelga que Kanpachi reescriba destinos, así que tiene que leerse en un diff.
+
+**Lo que lo acota, y las tres condiciones para emitirlo.** Hay juego activo; ningún socket escucha en la dirección de la sala ni en todas las interfaces para ese puerto; y existe EXACTAMENTE UNA dirección local con alguien detrás. Con varias no se desvía: elegir sería adivinar hacia dónde mandar el tráfico del cuarto. El puerto nunca se traduce, solo la dirección.
+
+**Las dos capas tienen que estar de acuerdo.** El desvío reescribe el destino en `prerouting`, antes de que la compuerta mire el paquete, así que los permisos se emiten TAMBIÉN para la dirección traducida (`RuleSet.MirrorLocal`). Sin eso, la compuerta tiraría justo lo que el desvío acaba de encaminar bien, y las dos capas se pelearían en silencio, que es el peor fallo posible de este producto.
+
+**No es invisible y no sobrevive.** La sala y el `kanpachi status` dicen hacia dónde se está desviando; la tabla se borra al salir de la sala, al quitar el juego y en cuanto la medición dice que ya no hace falta, y no sobrevive a un reinicio, igual que la compuerta. Como no persiste, no necesita libro.
+
+**Lo que sigue estando escrito en los docs:** que el servidor se ate a `0.0.0.0`. El desvío es la red de seguridad para quien copió un compose, no una excusa para dejar de decirlo.

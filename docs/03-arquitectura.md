@@ -1261,6 +1261,8 @@ La única operación que devuelve **estado y error a la vez** es expulsar, y es 
 | `ObserveGame(proceso, árbol)` | `observe_game` | La foto de sockets del creador de perfiles. Es la ÚNICA función del programa que mira un proceso |
 | `RejectedGames()` | `rejected_games` | Los perfiles que el catálogo rechazó, con su motivo, para que un archivo mal escrito sea arreglable en vez de invisible |
 | `SavedRoom()` / `ResumeRoom()` / `DiscardSavedRoom()` | `pending_room` / `resume_room` / `discard_pending_room` | La sala que esta máquina hospeda, tal como quedó en disco. **Se reabre sola en cada arranque**, ver decisión 2: estas tres son la salida de emergencia de cuando eso falla. Los dos nombres de cable con `pending` dentro están congelados |
+| `Listening()` (puerto `PortListeners`) | — | Qué puertos tiene atados esta máquina, y en qué dirección, SIN mirar dueños. Alimenta el punto de salud del juego y el desvío de la decisión 40 |
+| `Apply(spec)` / `Clear()` (puerto `TrafficRedirect`) | — | El desvío en contenedor: tabla `kanpachi-nat` propia, `prerouting`, solo los puertos del perfil activo. Fuera de contenedor no se cablea |
 | `LastRoom()` / `ForgetLastRoom()` | `last_room` / `forget_last_room` | Los datos de "volver a la última sala". Entrar es el `join_room` de siempre con el código guardado, y olvidar borra el archivo: es la cruz de la portada, que tiene que sobrevivir al arranque siguiente. Olvidar es idempotente |
 
 Tres operaciones **no** vienen del named pipe, y las tres las llama el supervisor o el adaptador del canal de control:
@@ -2096,6 +2098,8 @@ Con la repetición, el invitado puede medir el silencio: seis minutos sin oír n
 El host mira SU tabla de sockets y dice si algo está atado a los puertos del juego activo. Viaja como `game_health`, con dos valores —`listening` y `silent`— y una ausencia, que es "no se sabe": un host más viejo que esta versión no manda el campo, y leer eso como silencio pintaría en rojo una sala sana.
 
 **Lo mide el host porque desde fuera no se puede.** El sondeo de puertos toca TCP y espera el handshake; en UDP un puerto sin nadie detrás y uno con el servidor del juego contestan lo mismo, que es nada, y el ICMP de puerto inalcanzable que los distinguiría lo tapa la compuerta de la máquina sondeada. Un semáforo sondeado desde fuera pintaría rojo con la partida en marcha, que es la forma de que nadie vuelva a mirarlo.
+
+Con el servidor levantado y atado a OTRA dirección de esa máquina, el valor es `elsewhere` y viaja además la dirección en `game_where`. Es un estado aparte porque el arreglo es otro: no hay que arrancar nada, hay que atar el servidor a `0.0.0.0`. Ver la decisión 40, y ahí también por qué en contenedor eso se desvía en vez de solo decirse.
 
 Se remide en cada latido del supervisor, quince segundos, y **se anuncia por flanco**: cuando la respuesta cambia se manda en el acto, y si no, viaja con la repetición de los dos minutos. Las dos cadencias son distintas porque cuestan distinto: mirar la tabla propia son dos llamadas al sistema, y avisar es un mensaje por miembro.
 

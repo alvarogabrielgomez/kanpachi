@@ -176,6 +176,19 @@ func printRoom(w io.Writer, st protocol.RoomView, catalog []protocol.GameView) {
 	} else if st.Game != "" {
 		fmt.Fprintf(w, "  Game     %s%s\n", st.Game, healthSuffix(st.GameHealth))
 	}
+	// Where the game is listening, when that is not where the room can reach it.
+	// It names the fix instead of leaving a warning that only says something is
+	// off: bind the server to 0.0.0.0 and the room reaches it.
+	if st.GameWhere != "" {
+		fmt.Fprintf(w, "  Bound to %s, not the room's address. Bind the server to 0.0.0.0\n",
+			st.GameWhere)
+	}
+	// And say it out loud when this machine is translating the destination. A
+	// redirect nobody can see is the opposite of what this program is for.
+	if st.GameRedirectedTo != "" {
+		fmt.Fprintf(w, "  Sent on  %s, because that is where the game listens\n",
+			st.GameRedirectedTo)
+	}
 	// The address a player pastes inside the game. The window has painted it
 	// since it existed and this face never did, so somebody on a headless host
 	// had to read the members table and the profile's ports and put the two
@@ -620,6 +633,8 @@ func healthSuffix(health string) string {
 		return "  (healthy)"
 	case "silent":
 		return "  (nothing listening)"
+	case "elsewhere":
+		return "  (listening elsewhere)"
 	default:
 		return ""
 	}

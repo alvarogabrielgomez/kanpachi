@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Added
+
+- Reach the game even when its server is bound to another address of the host's machine. In a container, the room's traffic is sent to wherever the game actually listens, in the ports the profile declares and nowhere else, and both the room and `kanpachi status` say where it is going. Everywhere else Kanpachi names the fix instead: "listening on 10.42.0.15, not on the room's address, bind it to 0.0.0.0". A server bound to the container's own IP answered "port unreachable" to a whole room while the tunnel, the ports and every screen looked perfect
+
 ## [0.6.5] - 2026-08-19
 
 ### Added

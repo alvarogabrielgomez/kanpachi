@@ -78,6 +78,11 @@ services:
     # `server-ip` or `-b`. Leaving it empty is usually the same as 0.0.0.0 and
     # is the safe default. Do not paste an address here: the room's address is
     # picked when the room opens.
+    #
+    # Inside a container Kanpachi also covers for this on its own: if the game
+    # ends up bound elsewhere, the room's traffic is sent where it actually
+    # listens, and the room screen says so. That is a safety net for a compose
+    # somebody copied, not a reason to leave this wrong.
     environment:
       SERVER_IP: "0.0.0.0"
 

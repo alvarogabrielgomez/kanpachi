@@ -321,11 +321,18 @@ enum GameHealth {
   listening,
 
   /// Se miró y no había nadie: el juego está elegido y su servidor no corre.
-  silent;
+  silent,
+
+  /// El servidor corre, y atado a OTRA dirección de la máquina del host, así
+  /// que lo que llega por la sala golpea un puerto sin nadie detrás. Es un
+  /// estado aparte porque el arreglo es otro: no hay que arrancar nada, hay que
+  /// atarlo a `0.0.0.0`.
+  elsewhere;
 
   static GameHealth fromWire(String? raw) => switch (raw) {
     'listening' => GameHealth.listening,
     'silent' => GameHealth.silent,
+    'elsewhere' => GameHealth.elsewhere,
     _ => GameHealth.unknown,
   };
 }

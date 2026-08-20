@@ -102,9 +102,9 @@ func (s *Session) enforceDeadlinesLocked(ctx context.Context) bool {
 	// levantar el servidor del juego tardaría hasta [timing.AnnounceInterval] en
 	// verse del otro lado, que son dos minutos mirando un punto que miente.
 	if s.state.IsHost() && s.state.Conn.InRoom() {
-		previa := s.gameHealth
+		previa := s.gameReach
 		s.measureGameHealthLocked(ctx)
-		if s.gameHealth != previa {
+		if s.gameReach != previa {
 			s.announceLocked(ctx)
 		}
 	}

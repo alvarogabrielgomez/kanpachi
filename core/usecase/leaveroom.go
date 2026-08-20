@@ -267,6 +267,13 @@ func (s *Session) leaveLocked(
 	s.rejoinStreak = 0
 	s.lastRejoinSuccess = time.Time{}
 	s.announcedGame = ""
+	// El desvío hacia donde escuchaba el juego se va con la sala, igual que la
+	// compuerta: describe una traducción hacia un servidor que ya no sirve a
+	// nadie, y dejarla puesta mandaría a esa dirección lo que entre por el
+	// adaptador de la sala siguiente. Se quita ANTES de perder el estado, que
+	// es cuando todavía se sabe que había una. Ver [Session.applyRedirectLocked].
+	s.gameReach = domain.GameReach{}
+	s.applyRedirectLocked(ctx)
 	s.lastAnnounce = time.Time{}
 	s.lastPublish = time.Time{}
 	s.cardPublishFailing = false

@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"net/netip"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 )
@@ -33,7 +34,8 @@ func (s *Session) announceLocked(ctx context.Context) {
 	err := s.deps.Control.Announce(ctx, domain.RoomAnnounce{
 		RoomName:   s.state.Name,
 		GameID:     s.state.Game.ID,
-		GameHealth: s.gameHealth,
+		GameHealth: s.gameReach.Health,
+		GameWhere:  s.gameReach.Where,
 	})
 	if err != nil {
 		s.deps.Log.Warn("no se pudo anunciar el estado de la sala", "error", err)
@@ -82,7 +84,7 @@ func (s *Session) OnRoomAnnounce(ctx context.Context, raw domain.RoomAnnounce) (
 	// La salud la MIDIÓ el host sobre su propia máquina, así que acá se toma
 	// tal cual: es lo único de este anuncio que un invitado no puede
 	// contestarse solo. No decide nada, solo se pinta.
-	s.gameHealth = a.GameHealth
+	s.gameReach = domain.GameReach{Health: a.GameHealth, Where: a.GameWhere}
 
 	previo := s.state.Game
 	switch {
@@ -148,7 +150,8 @@ func (s *Session) ReapplyAnnouncedGame(ctx context.Context) {
 	ann := domain.RoomAnnounce{
 		RoomName:   s.state.Name,
 		GameID:     s.announcedGame,
-		GameHealth: s.gameHealth,
+		GameHealth: s.gameReach.Health,
+		GameWhere:  s.gameReach.Where,
 	}
 	s.mu.Unlock()
 
@@ -171,17 +174,100 @@ func (s *Session) ReapplyAnnouncedGame(ctx context.Context) {
 // [domain.GameHealthUnknown], que es lo que hace que la pantalla no pinte
 // ningún punto en vez de pintar uno equivocado.
 //
+// Mide también DÓNDE escucha, no solo si escucha, y de ahí cuelgan las dos
+// cosas que arreglan el caso: la pantalla puede nombrar la dirección, y el modo
+// contenedor sabe hacia dónde desviar. Ver [domain.GameReach].
+//
 // Asume el candado tomado.
 func (s *Session) measureGameHealthLocked(ctx context.Context) {
 	if len(s.state.Game.HostPorts) == 0 {
-		s.gameHealth = domain.GameHealthUnknown
+		s.gameReach = domain.GameReach{}
+		s.applyRedirectLocked(ctx)
 		return
 	}
 	listeners, err := s.deps.Listeners.Listening(ctx)
 	if err != nil {
 		s.deps.Log.Warn("no se pudo mirar qué escucha en esta máquina", "error", err)
-		s.gameHealth = domain.GameHealthUnknown
+		s.gameReach = domain.GameReach{}
+		s.applyRedirectLocked(ctx)
 		return
 	}
-	s.gameHealth = domain.GameHealthOf(s.state.Game.HostPorts, listeners)
+	s.gameReach = domain.GameReachOf(s.state.Game.HostPorts, listeners, s.state.LocalIP)
+	s.applyRedirectLocked(ctx)
+}
+
+// applyRedirectLocked pone o quita el desvío hacia donde el juego escucha.
+//
+// **Solo en modo contenedor**, y el porqué de esa frontera vive en
+// [domain.RedirectSpec]: ahí la intención del operador es inequívoca y no hay
+// red de casa que proteger. En una máquina normal esto no llega a llamarse,
+// porque el adaptador que lo haría no se cablea.
+//
+// Se llama en cada medición, con desvío y sin él, y ese es el punto: la
+// condición se recalcula entera cada vez, así que un servidor que se ata bien
+// después de haberse atado mal quita el desvío solo, sin que nadie tenga que
+// acordarse.
+//
+// Que falle no saca a nadie de la sala. Se anota y el estado publicado no
+// afirma que haya desvío, que es lo correcto: lo que se enseña es lo que se
+// consiguió, no lo que se intentó.
+//
+// Asume el candado tomado.
+func (s *Session) applyRedirectLocked(ctx context.Context) {
+	if s.deps.Redirect == nil {
+		return
+	}
+
+	spec := domain.RedirectSpec{
+		Adapter: domain.AdapterName,
+		RoomIP:  s.state.LocalIP,
+		To:      s.gameReach.Where,
+		Ports:   s.state.Game.HostPorts,
+	}
+	quiere := s.state.IsHost() && s.state.Conn.InRoom() &&
+		s.gameReach.Health == domain.GameHealthElsewhere && spec.Understood()
+
+	if !quiere {
+		if !s.redirectedTo.IsValid() {
+			return
+		}
+		if err := s.deps.Redirect.Clear(ctx); err != nil {
+			s.deps.Log.Warn("no se pudo quitar el desvío hacia el juego", "error", err)
+			return
+		}
+		s.deps.Log.Info("se quita el desvío hacia el juego", "era", s.redirectedTo.String())
+		s.redirectedTo = netip.Addr{}
+		s.reapplyForRedirectLocked(ctx)
+		return
+	}
+
+	if s.redirectedTo == spec.To {
+		return
+	}
+	if err := s.deps.Redirect.Apply(ctx, spec); err != nil {
+		s.deps.Log.Warn("no se pudo desviar hacia donde escucha el juego",
+			"hacia", spec.To.String(), "error", err)
+		s.redirectedTo = netip.Addr{}
+		return
+	}
+	s.redirectedTo = spec.To
+	s.deps.Log.Info("el juego escucha en otra dirección y se desvía hacia ella",
+		"juego", s.state.Game.ID, "sala", spec.RoomIP.String(), "hacia", spec.To.String())
+	s.reapplyForRedirectLocked(ctx)
+}
+
+// reapplyForRedirectLocked vuelve a escribir los permisos después de que el
+// desvío se ponga o se quite.
+//
+// Hace falta porque el conjunto deseado CAMBIA con el desvío: con él, las mismas
+// reglas cubren además la dirección traducida. Y hay que olvidar la firma antes,
+// porque el atajo de alta frecuencia compara conjuntos y este cambio no viene de
+// los miembros ni del perfil. Ver [Session.applyPolicyIfChanged].
+//
+// Asume el candado tomado.
+func (s *Session) reapplyForRedirectLocked(ctx context.Context) {
+	s.appliedRules = ""
+	if err := s.applyPolicy(ctx); err != nil {
+		s.deps.Log.Warn("no se pudieron reescribir los permisos tras cambiar el desvío", "error", err)
+	}
 }

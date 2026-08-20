@@ -534,7 +534,11 @@ class _GameCard extends StatelessWidget {
                               ),
                               if (room.gameHealth != GameHealth.unknown) ...[
                                 const SizedBox(width: AppSpacing.md),
-                                _GameHealthDot(health: room.gameHealth),
+                                _GameHealthDot(
+                                  health: room.gameHealth,
+                                  where: room.gameListenAddr,
+                                  redirectedTo: room.gameRedirectedTo,
+                                ),
                               ],
                             ],
                           ),
@@ -546,6 +550,26 @@ class _GameCard extends StatelessWidget {
                               color: colors.textMuted,
                             ),
                           ),
+                          // El caso que costó una tarde encontrar, dicho con
+                          // su dirección: un servidor atado a otra interfaz
+                          // deja la sala muerta con todo lo demás perfecto, y
+                          // un ámbar sin frase no dice qué hacer.
+                          if (room.gameHealth == GameHealth.elsewhere) ...<Widget>[
+                            const SizedBox(height: AppSpacing.xs),
+                            Text(
+                              room.gameRedirectedTo != null
+                                  ? 'Escucha en ${room.gameRedirectedTo}, y la '
+                                        'sala se manda hacia ahí.'
+                                  : 'Escucha en '
+                                        '${room.gameListenAddr ?? 'otra dirección'}, '
+                                        'no en la de la sala: átalo a 0.0.0.0.',
+                              style: context.type.bodySm.copyWith(
+                                color: room.gameRedirectedTo != null
+                                    ? colors.textMuted
+                                    : colors.warn,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -1032,19 +1056,43 @@ class _MemberRow extends StatelessWidget {
 /// juego es ruido que hay que aprender a ignorar, y lo que se aprende a
 /// ignorar tapa al que sí dice algo.
 class _GameHealthDot extends StatelessWidget {
-  const _GameHealthDot({required this.health});
+  const _GameHealthDot({
+    required this.health,
+    required this.where,
+    required this.redirectedTo,
+  });
 
   final GameHealth health;
+
+  /// Dónde escucha, cuando no escucha donde la sala lo alcanza. Es lo que
+  /// convierte un ámbar mudo en una frase que dice qué hacer.
+  final String? where;
+
+  /// Hacia dónde desvía el host, si lo está haciendo.
+  final String? redirectedTo;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final bool viva = health == GameHealth.listening;
+    final bool viva = health == GameHealth.listening || redirectedTo != null;
     return Tooltip(
-      message: viva
-          ? 'El servidor del juego está levantado en la máquina del host'
-          : 'El juego está elegido y nada escucha en sus puertos en la '
-                'máquina del host',
+      message: switch (health) {
+        GameHealth.listening =>
+          'El servidor del juego está levantado en la máquina del host',
+        // Con desvío puesto la sala SÍ lo alcanza, así que el punto va en verde
+        // y lo que cuenta es por dónde. Sin desvío, la frase nombra el arreglo:
+        // atar el servidor a 0.0.0.0.
+        GameHealth.elsewhere when redirectedTo != null =>
+          'El juego escucha en $redirectedTo, y el host manda la sala hacia '
+              'esa dirección',
+        GameHealth.elsewhere =>
+          'El servidor está levantado, pero escucha en '
+              '${where ?? 'otra dirección'} y no en la de la sala. Átalo a '
+              '0.0.0.0 para que la sala lo alcance',
+        _ =>
+          'El juego está elegido y nada escucha en sus puertos en la máquina '
+              'del host',
+      },
       child: AppStatusDot(color: viva ? colors.ok : colors.warn),
     );
   }

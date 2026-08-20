@@ -156,6 +156,8 @@ class Room {
     this.seed,
     this.game,
     this.gameHealth = GameHealth.unknown,
+    this.gameListenAddr,
+    this.gameRedirectedTo,
     this.missingGameId,
     this.localIp,
     this.subnet,
@@ -203,6 +205,8 @@ class Room {
       selfIsHost: RoomRole.fromWire(json['role'] as String?) == RoomRole.host,
       game: game,
       gameHealth: GameHealth.fromWire(json['game_health'] as String?),
+      gameListenAddr: json['game_where'] as String?,
+      gameRedirectedTo: json['game_redirected_to'] as String?,
       missingGameId: json['missing_game'] as String?,
       localIp: json['local_ip'] as String?,
       subnet: json['subnet'] as String?,
@@ -300,6 +304,16 @@ class Room {
   /// de la sala, porque desde fuera no se puede: un puerto UDP sin nadie detrás
   /// calla igual que uno con el servidor levantado. Ver `domain.GameHealth`.
   final GameHealth gameHealth;
+
+  /// La dirección donde el juego SÍ escucha, cuando no es la de la sala. Nula
+  /// cuando escucha donde toca, cuando no se midió, o cuando hay varias y el
+  /// host no se atreve a elegir una.
+  final String? gameListenAddr;
+
+  /// Hacia dónde está desviando el host el tráfico de la sala AHORA. Solo lo
+  /// llena el modo contenedor, y se enseña porque un desvío que no se ve sería
+  /// lo contrario de lo que esta app promete.
+  final String? gameRedirectedTo;
 
   /// El host cerró su lado. La sala sigue en pie, pero si el juego corría en
   /// su PC no hay a qué conectarse.

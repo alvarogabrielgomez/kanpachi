@@ -1,5 +1,7 @@
 package domain
 
+import "net/netip"
+
 // RoomAnnounce es lo que el host les cuenta a los miembros sobre la sala.
 //
 // Existe porque hay dos cosas que solo el host sabe y que el invitado necesita:
@@ -28,6 +30,11 @@ type RoomAnnounce struct {
 	// [GameHealth]. Es presentación y jamás entra en una decisión de firewall,
 	// igual que el nombre de la sala.
 	GameHealth GameHealth
+
+	// GameWhere es en qué dirección de SU máquina escucha el juego, cuando no
+	// es la de la sala. Viaja para que la pantalla del invitado pueda nombrar
+	// el arreglo —«átalo a 0.0.0.0»— en vez de decir que algo va mal.
+	GameWhere netip.Addr
 }
 
 // Sanitize acota lo que llegó de otra máquina antes de que toque nada.
@@ -39,8 +46,16 @@ func (a RoomAnnounce) Sanitize() RoomAnnounce {
 	out := RoomAnnounce{RoomName: ClampRoomName(a.RoomName)}
 	// Un valor que no es de los tres se lee como "no se sabe": lo que no se
 	// entiende no se pinta, que es lo mismo que hace el cero.
-	if a.GameHealth == GameHealthListening || a.GameHealth == GameHealthSilent {
+	switch a.GameHealth {
+	case GameHealthListening, GameHealthSilent:
 		out.GameHealth = a.GameHealth
+	case GameHealthElsewhere:
+		out.GameHealth = a.GameHealth
+		// La dirección se toma solo si es una dirección. No se juzga CUÁL: es
+		// de la máquina del otro, no de esta, y acá solo se pinta.
+		if a.GameWhere.IsValid() {
+			out.GameWhere = a.GameWhere
+		}
 	}
 	if validProfileID(a.GameID) {
 		out.GameID = a.GameID

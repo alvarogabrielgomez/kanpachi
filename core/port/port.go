@@ -546,6 +546,24 @@ type PortListeners interface {
 	Listening(ctx context.Context) ([]domain.Listener, error)
 }
 
+// TrafficRedirect manda lo que llega por la sala a donde el juego SÍ escucha.
+//
+// **Solo lo usa el modo contenedor**, y el porqué de esa frontera está escrito
+// en [domain.RedirectSpec]. Fuera de ahí nadie lo llama y la implementación de
+// cada sistema puede negarse: la pantalla ya dice el arreglo con su dirección.
+//
+// Vive y muere con la sala, igual que la compuerta: se pone al activar el juego
+// y [TrafficRedirect.Clear] lo borra al salir, al quitar el juego y al arrancar.
+// No hay estado que sobreviva a un reinicio, así que tampoco hay libro que
+// llevar.
+//
+// Clear es idempotente y se llama aunque nunca se haya desviado nada: es lo que
+// hace que una salida sucia no deje media traducción puesta.
+type TrafficRedirect interface {
+	Apply(ctx context.Context, spec domain.RedirectSpec) error
+	Clear(ctx context.Context) error
+}
+
 // ExposureAudit alimenta el módulo de alertas de la decisión 19.
 //
 // Cada método responde una pregunta que Kanpachi no controla y que anula su

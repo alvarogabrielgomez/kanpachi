@@ -120,7 +120,13 @@ forward_term() {
 }
 trap forward_term TERM INT
 
-NOTIFY_SOCKET=/nonexistent "$DAEMON" &
+# KANPACHI_CONTAINER is what lets the daemon send the room's traffic to wherever
+# the game actually listens. A server bound to the container's own address never
+# sees what arrives on Kanpachi's, and the room dies with everything looking
+# perfect; here the intent is unambiguous, because this container declared a game
+# and shares Kanpachi's network. On a normal machine that same rewrite would undo
+# somebody's decision to bind narrowly, so it is off everywhere else.
+NOTIFY_SOCKET=/nonexistent KANPACHI_CONTAINER=1 "$DAEMON" &
 daemon_pid=$!
 
 waited=0

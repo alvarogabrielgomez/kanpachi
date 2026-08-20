@@ -163,6 +163,11 @@ type announceMsg struct {
 	// falta es el que un booleano no puede decir: un `false` de un host viejo
 	// se leería como "no hay nadie escuchando" en vez de como silencio.
 	GameHealth string `json:"game_health,omitempty"`
+
+	// GameWhere es la dirección donde el juego SÍ escucha, cuando no es la de
+	// la sala. Solo tiene sentido con `game_health` en "elsewhere", y viaja
+	// para que la otra punta pueda decir el arreglo con su dirección.
+	GameWhere string `json:"game_where,omitempty"`
 }
 
 // noticeMsg es un aviso del host, con su número de secuencia para el acuse.

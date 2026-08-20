@@ -118,6 +118,11 @@ type Deps struct {
 	Control     port.ControlChannel
 	Audit       port.ExposureAudit
 	Inspector   port.SocketInspector
+	// Redirect manda lo que llega por la sala a donde el juego escucha de
+	// verdad. **Nulo fuera del modo contenedor**, y nulo es la señal: sin
+	// adaptador no se desvía nada y la pantalla se limita a decir dónde
+	// escucha. Ver [domain.RedirectSpec].
+	Redirect port.TrafficRedirect
 	// Listeners es la mitad barata de la anterior: qué puertos tiene atados
 	// esta máquina, sin dueños. La usa el host para decir si el servidor del
 	// juego activo está levantado. Ver [port.PortListeners].
@@ -323,12 +328,20 @@ type Session struct {
 	// cuando importa el perfil que le faltaba.
 	announcedGame string
 
-	// gameHealth es si hay algo escuchando en los puertos del juego activo.
+	// gameReach es si algo escucha en los puertos del juego activo, y dónde.
 	//
 	// En el host sale de mirar la tabla de sockets de esta máquina; en un
-	// invitado, de lo que el host anunció. Es presentación pura: no entra en
-	// ninguna decisión de firewall. Ver [domain.GameHealth].
-	gameHealth domain.GameHealth
+	// invitado, de lo que el host anunció. Para la pantalla es presentación
+	// pura y no entra en ninguna decisión de firewall; lo único que decide es
+	// el desvío del modo contenedor. Ver [domain.GameReach].
+	gameReach domain.GameReach
+
+	// redirectedTo es hacia dónde está desviado el tráfico de la sala AHORA, o
+	// el cero si no lo está.
+	//
+	// Se guarda para no reescribir la misma traducción en cada latido y para
+	// poder quitarla sin volver a medir. Ver [Session.applyRedirectLocked].
+	redirectedTo netip.Addr
 
 	// lastAnnounce es cuándo el host anunció por última vez.
 	//
@@ -703,7 +716,9 @@ func (s *Session) snapshot() domain.RoomState {
 	// La salud del juego se DERIVA acá también, y así no hay que acordarse de
 	// limpiarla al salir: sin juego activo no hay nada que estar escuchando.
 	if out.Game.ID != "" {
-		out.GameHealth = s.gameHealth
+		out.GameHealth = s.gameReach.Health
+		out.GameWhere = s.gameReach.Where
+		out.GameRedirectedTo = s.redirectedTo
 	}
 	s.published.Store(&out)
 	// El enlace se publica ACÁ, que es el único sitio donde el estado y la
@@ -986,6 +1001,13 @@ func (s *Session) desiredRuleSetLocked() (domain.RuleSet, error) {
 	if err != nil {
 		return domain.RuleSet{}, err
 	}
+
+	// Con desvío puesto, las mismas reglas tienen que cubrir TAMBIÉN la
+	// dirección hacia la que se traduce: el desvío reescribe el destino en
+	// `prerouting`, antes de que la compuerta mire, así que sin el espejo la
+	// compuerta tiraría lo que el desvío acaba de encaminar bien. Ver
+	// [domain.RuleSet.MirrorLocal].
+	desired = desired.MirrorLocal(s.redirectedTo)
 
 	// El canal de control va en el MISMO conjunto y no en una llamada aparte.
 	// El firewall calcula la diferencia contra lo que está vivo, así que dos

@@ -181,6 +181,19 @@ type RoomState struct {
 	// anunció. Ver [GameHealth].
 	GameHealth GameHealth
 
+	// GameWhere es en qué dirección escucha, cuando escucha en una que no es la
+	// de la sala. Es lo que deja que la pantalla diga el arreglo con su
+	// dirección en vez de decir que algo va mal.
+	GameWhere netip.Addr
+
+	// GameRedirectedTo es hacia dónde está desviado el tráfico de la sala
+	// AHORA, y el cero es que no lo está. Solo lo llena el modo contenedor.
+	//
+	// Se publica porque un desvío invisible es lo contrario de este producto:
+	// la pantalla que promete decir qué hace tu máquina no puede callarse que
+	// está traduciendo destinos. Ver [RedirectSpec].
+	GameRedirectedTo netip.Addr
+
 	// LocalIP es la IP de kanpachi0 en esta máquina.
 	LocalIP netip.Addr
 	Subnet  netip.Prefix

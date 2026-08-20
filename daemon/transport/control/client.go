@@ -369,6 +369,7 @@ func (c *client) reparte(e envelope) bool {
 			RoomName:   msg.RoomName,
 			GameID:     msg.GameID,
 			GameHealth: healthFromWire(msg.GameHealth),
+			GameWhere:  addrFromWire(msg.GameWhere),
 		}.Sanitize()
 		emitir(c.ch, c.ch.announces, anuncio, "anuncio")
 
@@ -564,4 +565,17 @@ func healthFromWire(s string) domain.GameHealth {
 	default:
 		return domain.GameHealthUnknown
 	}
+}
+
+// addrFromWire lee la dirección donde el host dice que escucha su juego.
+//
+// Lo que no parsea es el cero, que ya significa "no se sabe". No se juzga qué
+// dirección es: es de la máquina del otro y acá solo se pinta. Ver
+// [domain.RoomAnnounce.GameWhere].
+func addrFromWire(s string) netip.Addr {
+	dir, err := netip.ParseAddr(s)
+	if err != nil {
+		return netip.Addr{}
+	}
+	return dir
 }

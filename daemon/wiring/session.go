@@ -14,6 +14,7 @@ import (
 	catalogstore "github.com/accentiostudios/kanpachi/daemon/adapter/catalog/jsonfile"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/directory"
 	kanpachiengine "github.com/accentiostudios/kanpachi/daemon/adapter/engine/kanpachi"
+	"github.com/accentiostudios/kanpachi/daemon/adapter/firewall/linux/nftnat"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/identity"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/inspector"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/library/steam"
@@ -81,6 +82,12 @@ func (w Watchers) Stubbed() []string {
 type SessionParams struct {
 	// DataDir is where identity.key, the sealed state and the catalog live.
 	DataDir string
+
+	// Container says this daemon runs inside a container that exists to serve
+	// one room. It is what turns the redirect on, and nothing else: see
+	// [domain.RedirectSpec] for why that frontier is the whole of it. The zero
+	// value is a normal machine, which is what every other binary is.
+	Container bool
 	// LogDir is where the ENGINE writes its own log, next to the caller's.
 	LogDir string
 	// EngineExe is the full path to the engine binary. Callers resolve it next
@@ -259,13 +266,17 @@ func BuildSession(ctx context.Context, p SessionParams) (Built, error) {
 		Audit:       audit,
 		Inspector:   p.Watchers.Inspector,
 		Listeners:   p.Watchers.Listeners,
-		Prober:      probe.New(),
-		Canary:      opener.New(log),
-		Clock:       RealClock{},
-		Rand:        rand.Reader,
-		Log:         log,
-		Progress:    out.Journal,
-		Hostname:    thisHostname(),
+		// Nil off a container, and nil is the signal: the session reads it as
+		// "do not redirect anything" and the screen limits itself to saying
+		// where the game listens.
+		Redirect: redirectFor(p.Container),
+		Prober:   probe.New(),
+		Canary:   opener.New(log),
+		Clock:    RealClock{},
+		Rand:     rand.Reader,
+		Log:      log,
+		Progress: out.Journal,
+		Hostname: thisHostname(),
 	})
 	if err != nil {
 		return out, err
@@ -298,4 +309,18 @@ func BuildSession(ctx context.Context, p SessionParams) (Built, error) {
 	go vigía.Correr(ctx)
 
 	return out, nil
+}
+
+// redirectFor builds the redirect ONLY for a container.
+//
+// A normal machine gets nil on purpose. Binding a service to one address is what
+// somebody does so that it is NOT reached from elsewhere, and rewriting that on
+// their behalf would undo the decision; inside a container that declared a game
+// and shares Kanpachi's network there is no such decision to undo. See
+// [domain.RedirectSpec].
+func redirectFor(container bool) port.TrafficRedirect {
+	if !container {
+		return nil
+	}
+	return nftnat.New()
 }

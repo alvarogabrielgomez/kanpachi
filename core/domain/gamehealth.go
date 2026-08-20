@@ -1,5 +1,10 @@
 package domain
 
+import (
+	"net/netip"
+	"strings"
+)
+
 // GameHealth dice si hay algo escuchando en los puertos del juego activo.
 //
 // # Por qué lo mide el HOST y no lo sondea el invitado
@@ -28,6 +33,16 @@ const (
 	// GameHealthSilent es que se miró y no hay nadie: el juego está elegido y
 	// su servidor no está levantado.
 	GameHealthSilent
+	// GameHealthElsewhere es el caso que costó una tarde encontrar: el servidor
+	// del juego ESTÁ levantado, y atado a otra dirección de esta misma máquina,
+	// así que lo que llega por la sala golpea un puerto sin nadie detrás.
+	//
+	// Es un estado aparte y no un silencio porque el arreglo es otro: acá no
+	// hay que arrancar nada, hay que atarlo a `0.0.0.0`. Medido el 2026-08-19
+	// contra un despliegue de Kubernetes que le pasaba al servidor la IP del
+	// pod: túnel perfecto, puertos abiertos, y el host contestando "udp port
+	// 16261 unreachable" a toda la sala.
+	GameHealthElsewhere
 )
 
 func (h GameHealth) String() string {
@@ -36,38 +51,141 @@ func (h GameHealth) String() string {
 		return "listening"
 	case GameHealthSilent:
 		return "silent"
+	case GameHealthElsewhere:
+		return "elsewhere"
 	default:
 		return "unknown"
 	}
 }
 
-// GameHealthOf compara los puertos que el perfil abre con lo que la máquina
-// tiene atado.
+// GameReach es dónde se puede alcanzar el juego activo, y no solo si se puede.
+//
+// La dirección importa por dos motivos distintos: es lo que hace que la pantalla
+// pueda NOMBRAR el arreglo en vez de pintar un ámbar mudo, y es hacia dónde
+// redirige el modo contenedor. Ver [RedirectSpec].
+type GameReach struct {
+	Health GameHealth
+
+	// Where es la dirección local donde el juego SÍ escucha. Solo se llena con
+	// [GameHealthElsewhere], y solo cuando hay UNA.
+	//
+	// Con varias queda inválida a propósito: elegir una sería adivinar hacia
+	// dónde mandar el tráfico de la sala, y de esa adivinanza cuelga un redirect
+	// que puede acabar en un servicio que no es el juego. Sin dirección, la
+	// pantalla dice lo que sabe y no se redirige nada.
+	Where netip.Addr
+}
+
+// GameReachOf compara los puertos que el perfil abre con lo que la máquina
+// tiene atado, y dice DÓNDE.
 //
 // **Basta UNO.** Un perfil abre lo que el juego PUEDE usar, y un servidor sano
 // no tiene por qué usarlo todo: Zomboid declara 16261-16262 y las versiones
 // desde la 41.65 se apañan con el primero. Exigir los dos pintaría rojo un
 // servidor que funciona, que es la forma de que nadie vuelva a mirar el punto.
 //
-// Solo cuenta lo que escucha en TODAS las interfaces, con el mismo criterio que
-// [ObservedRanges]: un socket atado a 127.0.0.1 no lo alcanza nadie de la sala,
-// así que para esta pregunta es lo mismo que no existir.
+// Alcanzable es escuchar en TODAS las interfaces o en la dirección de la sala.
+// Lo primero con el mismo criterio que [ObservedRanges]; lo segundo porque atar
+// el juego a la IP de Kanpachi es lo que este producto recomienda, y sería
+// absurdo llamar enfermo a quien hizo caso.
+//
+// Lo atado a CUALQUIER OTRA dirección de la máquina es [GameHealthElsewhere]:
+// el servidor corre y no lo alcanza nadie de la sala. `127.0.0.1` cuenta como
+// otra dirección, que es lo que es.
 //
 // Sin puertos que mirar la respuesta es [GameHealthUnknown] y no "silencio":
 // una sala sin juego no tiene nada roto.
-func GameHealthOf(ports []PortRange, listeners []Listener) GameHealth {
+func GameReachOf(ports []PortRange, listeners []Listener, roomIP netip.Addr) GameReach {
 	if len(ports) == 0 {
-		return GameHealthUnknown
+		return GameReach{}
 	}
+
+	otras := make([]netip.Addr, 0, 2)
 	for _, l := range listeners {
-		if l.Port == 0 || !listensEverywhere(l.Address) {
+		if l.Port == 0 || !matchesAny(l, ports) {
 			continue
 		}
-		for _, r := range ports {
-			if l.Proto == r.Proto && l.Port >= r.From && l.Port <= r.To {
-				return GameHealthListening
-			}
+		if listensEverywhere(l.Address) {
+			return GameReach{Health: GameHealthListening}
+		}
+		dir, err := netip.ParseAddr(strings.TrimSpace(l.Address))
+		if err != nil {
+			continue
+		}
+		if roomIP.IsValid() && dir == roomIP {
+			return GameReach{Health: GameHealthListening}
+		}
+		if !contiene(otras, dir) {
+			otras = append(otras, dir)
 		}
 	}
-	return GameHealthSilent
+
+	switch len(otras) {
+	case 0:
+		return GameReach{Health: GameHealthSilent}
+	case 1:
+		return GameReach{Health: GameHealthElsewhere, Where: otras[0]}
+	default:
+		// Varias direcciones y ninguna es la de la sala. Se dice que escucha en
+		// otro sitio y no CUÁL: ver [GameReach.Where].
+		return GameReach{Health: GameHealthElsewhere}
+	}
+}
+
+// RedirectSpec es el desvío de lo que llega por la sala hacia donde el juego
+// escucha de verdad.
+//
+// # Por qué existe, y por qué NO es para cualquier máquina
+//
+// En el sidecar de un contenedor la intención no es ambigua: ese contenedor
+// declaró un juego, comparte el espacio de red de Kanpachi y existe para servir
+// esa sala. No hay red de casa que proteger. Ahí, un servidor atado a la IP del
+// contenedor deja la sala muerta sin que nadie pueda notarlo, y desviar es
+// hacer lo que el operador pidió.
+//
+// En un escritorio la misma automatización sería lo contrario: atar un servicio
+// a una dirección concreta es lo que hace alguien para que NO lo alcancen desde
+// otro sitio, y desviarlo por su cuenta rompería esa decisión. Fuera de
+// contenedor esto no se emite, y lo que queda es la pantalla diciendo dónde
+// escucha. Ver [GameHealthElsewhere].
+//
+// # Lo que acota
+//
+// Solo los puertos que DECLARA el perfil activo, los mismos que ya abre la capa
+// de permisos: desviar no puede alcanzar un puerto que la sala no alcanzaba.
+type RedirectSpec struct {
+	// Adapter es el adaptador de la sala. Lo que entra por otro no se toca.
+	Adapter string
+	// RoomIP es la dirección de esta máquina EN la sala, o sea el destino que
+	// los miembros escriben y que hoy no tiene a nadie escuchando.
+	RoomIP netip.Addr
+	// To es dónde escucha el juego, tal como se midió en la tabla de sockets.
+	To netip.Addr
+	// Ports son los del perfil activo.
+	Ports []PortRange
+}
+
+// Understood dice si el desvío está completo. Un campo a medias no se emite:
+// media regla de nat es una regla que manda tráfico a cualquier parte.
+func (r RedirectSpec) Understood() bool {
+	return r.Adapter != "" && r.RoomIP.IsValid() && r.To.IsValid() &&
+		r.To != r.RoomIP && len(r.Ports) > 0
+}
+
+func matchesAny(l Listener, ports []PortRange) bool {
+	for _, r := range ports {
+		if l.Proto == r.Proto && l.Port >= r.From && l.Port <= r.To {
+			return true
+		}
+	}
+	return false
+}
+
+func contiene(list []netip.Addr, a netip.Addr) bool {
+	for _, x := range list {
+		if x == a {
+			return true
+		}
+	}
+	return false
 }

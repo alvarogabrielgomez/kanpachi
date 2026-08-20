@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"net/netip"
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
@@ -75,6 +76,13 @@ type RoomView struct {
 	// desde fuera un puerto UDP callado no se distingue de uno sin nadie
 	// detrás. Ver [domain.GameHealth].
 	GameHealth string `json:"game_health,omitempty"`
+
+	// GameWhere es la dirección donde el juego escucha cuando no es la de la
+	// sala, y GameRedirectedTo hacia dónde se está desviando el tráfico. La
+	// segunda solo la llena el modo contenedor, y va porque un desvío que no se
+	// enseña sería lo contrario de lo que esta app promete.
+	GameWhere        string `json:"game_where,omitempty"`
+	GameRedirectedTo string `json:"game_redirected_to,omitempty"`
 
 	LocalIP string `json:"local_ip,omitempty"`
 	Subnet  string `json:"subnet,omitempty"`
@@ -277,16 +285,18 @@ type AlertView struct {
 // lee el reloj: quien serializa no decide qué hora es.
 func roomView(st domain.RoomState, missing string, now time.Time) RoomView {
 	v := RoomView{
-		Conn:        connName(st.Conn),
-		Role:        roleName(st.Role),
-		Name:        st.Name,
-		Peers:       make([]PeerView, 0, len(st.Peers)),
-		HostPresent: st.HostPresent,
-		Rejoining:   st.Rejoining,
-		Game:        st.Game.ID,
-		GameName:    st.Game.Name,
-		GameHealth:  healthName(st.GameHealth),
-		MissingGame: missing,
+		Conn:             connName(st.Conn),
+		Role:             roleName(st.Role),
+		Name:             st.Name,
+		Peers:            make([]PeerView, 0, len(st.Peers)),
+		HostPresent:      st.HostPresent,
+		Rejoining:        st.Rejoining,
+		Game:             st.Game.ID,
+		GameName:         st.Game.Name,
+		GameHealth:       healthName(st.GameHealth),
+		GameWhere:        addrName(st.GameWhere),
+		GameRedirectedTo: addrName(st.GameRedirectedTo),
+		MissingGame:      missing,
 		Net: NetView{
 			NATKind:      st.Net.NATKind,
 			UDPBlocked:   st.Net.UDPBlocked,
@@ -996,4 +1006,13 @@ func healthName(h domain.GameHealth) string {
 		return ""
 	}
 	return h.String()
+}
+
+// addrName deja fuera el cero, con el mismo criterio que healthName: lo que no
+// se sabe no viaja.
+func addrName(a netip.Addr) string {
+	if !a.IsValid() {
+		return ""
+	}
+	return a.String()
 }

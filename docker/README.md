@@ -26,7 +26,10 @@ Before the first run:
   container's own IP never sees them and answers "port unreachable" to the whole
   room. Zomboid calls it `SERVER_IP`, others `bind` or `server-ip`. Measured
   against a Kubernetes deployment feeding the server `status.podIP`: perfect
-  tunnel, open ports, and not one packet reaching the game.
+  tunnel, open ports, and not one packet reaching the game. **In a container
+  Kanpachi covers for it**: when the game is bound elsewhere, the room's traffic
+  is sent to wherever it actually listens, and the room says so. Bind it right
+  anyway — the net is for the compose somebody copied.
 - **Your compose file has to set `cap_add` and `devices`.** An image cannot
   grant itself either one. Without them the container stops at startup and names
   the missing one.

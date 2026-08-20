@@ -327,6 +327,44 @@ func (p Proto) expand() []Proto {
 // ruleName lleva el grupo por delante para que se lea en la consola del
 // firewall de Windows, y el rol dentro porque el mismo juego abre rangos
 // distintos según se hospede o se entre.
+// MirrorLocal duplica las reglas apuntando a OTRA dirección local de la misma
+// máquina, y devuelve el conjunto con las dos.
+//
+// Existe por el desvío del modo contenedor y sería inútil sin él. El desvío
+// reescribe el destino en `prerouting`, o sea ANTES de que la compuerta mire el
+// paquete, así que lo que llega al filtro ya no va dirigido a la dirección de la
+// sala sino a la del juego. Sin el espejo, la compuerta tiraría justo lo que el
+// desvío acaba de encaminar bien, y las dos capas se estarían peleando en
+// silencio. Ver [RedirectSpec].
+//
+// Es aditivo y conserva las originales: el desvío puede desaparecer entre dos
+// mediciones, y mientras tanto lo que llega a la dirección de la sala tiene que
+// seguir entrando.
+//
+// Con una dirección inválida o igual a la que ya tienen las reglas no hace
+// nada, que es lo que corresponde: no hay dos destinos que cubrir.
+func (s RuleSet) MirrorLocal(addr netip.Addr) RuleSet {
+	if !addr.IsValid() || len(s.Rules) == 0 {
+		return s
+	}
+	out := make([]FirewallRule, 0, len(s.Rules)*2)
+	for _, r := range s.Rules {
+		out = append(out, r)
+		if r.Local == addr {
+			continue
+		}
+		espejo := r
+		espejo.Local = addr
+		// El nombre lleva la dirección para que dos espejos de destinos
+		// distintos no colisionen, y para que se lea en el firewall qué es esto
+		// sin tener que adivinarlo.
+		espejo.Name = r.Name + " -> " + addr.String()
+		out = append(out, espejo)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return RuleSet{Rules: out}
+}
+
 func ruleName(profileID string, role Role, proto Proto, r PortRange) string {
 	return fmt.Sprintf("%s: %s %s %s %s", FirewallGroup, profileID, role, proto, r.Spec())
 }
