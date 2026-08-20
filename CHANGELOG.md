@@ -8,29 +8,25 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
-### Added
-
-- Say whether the game's server is actually up, with a dot next to the game in the room and `(healthy)` next to its name in `kanpachi status`. The host reads its own socket table and the answer travels with the room announcement, remeasured every 15 seconds and sent the moment it changes, because a guest cannot find this out on its own: a UDP port with nobody behind it is as silent as one with the server running
-
-- Ask any command how it is written, with `kanpachi <command> --help` or `kanpachi help <command>`: what it does, every flag it takes, what each flag changes, and an example to paste. Only the one-line list existed, so the flags of `profile`, `upgrade`, `host` and `join` were readable nowhere. `kanpachi --help` and `kanpachi help` stay the same page as before
-
-### Fixed
-
-- Stop `kanpachi game --help` trying to activate a game called `help`. `--help` was rewritten into the `help` subcommand wherever it appeared, so any command followed by it ran with `help` as its argument
-- Line the command list back up. `profile` and `upgrade` carried their flags in the name column, which is 26 characters wide and which they overflowed by 13 and 23, pushing their descriptions off the column every other row lines up on
-
-### Changed
-
-- Offer the way back to your last room as a row under the code field, `×  Volver a <sala>  [Volver]`, in one line that ellipsises when the name is long. It was a notice with a title, three lines of prose and a full-width primary button, and it pushed the join and create fields down the page to explain what the button already says. The cross is new and it forgets the room on disk, so dismissing it survives a restart rather than coming back on the next start
-- The client's source is in English: comments, identifiers and file names, `daemon/cmd/kanpachi` in full. Nothing it prints changed
+## [0.6.5] - 2026-08-19
 
 ### Added
 
+- Say whether the game's server is actually up, with a dot next to the game in the room and `(healthy)` next to its name in `kanpachi status`. The host reads its own socket table and the answer travels with the room announcement, remeasured every 15 seconds and sent the moment it changes, because a guest cannot find this out on its own: a UDP port with nobody behind it is as silent as one with the server running ([c3b8b7e](https://github.com/alvarogabrielgomez/kanpachi/commit/c3b8b7e))
+- Ask any command how it is written, with `kanpachi <command> --help` or `kanpachi help <command>`: what it does, every flag it takes, what each flag changes, and an example to paste. Only the one-line list existed, so the flags of `profile`, `upgrade`, `host` and `join` were readable nowhere. `kanpachi --help` and `kanpachi help` stay the same page as before ([bae8c89](https://github.com/alvarogabrielgomez/kanpachi/commit/bae8c89))
 - Run Kanpachi as a container: `docker/` carries the image and four whole compose files to copy, and the room comes back with the same invite code after the container is destroyed and rebuilt, because the state lives in a volume rather than in the image. The entrypoint prints the code and the link on every start, since `docker logs` is the only place an unattended server can be asked, and it refuses early with a readable message when the compose forgot `NET_ADMIN` or `/dev/net/tun` ([05d525e](https://github.com/alvarogabrielgomez/kanpachi/commit/05d525e))
 - Describe a game the catalogue does not have without leaving the terminal, with `kanpachi profile <id> --name <n> --tcp <ports> --udp <ports>`. Creating a profile existed only in the Windows window, so a headless Linux host had no way to open a port for anything outside the eleven games that ship. Saving the same id again updates it instead of adding a second, which is what lets a container run it on every start ([d39c1cb](https://github.com/alvarogabrielgomez/kanpachi/commit/d39c1cb))
 
+### Changed
+
+- Offer the way back to your last room as a row under the code field, `×  Volver a <sala>  [Volver]`, in one line that ellipsises when the name is long. It was a notice with a title, three lines of prose and a full-width primary button, and it pushed the join and create fields down the page to explain what the button already says. The cross is new and it forgets the room on disk, so dismissing it survives a restart rather than coming back on the next start ([152fc3c](https://github.com/alvarogabrielgomez/kanpachi/commit/152fc3c))
+- The client's source is in English: comments, identifiers and file names, `daemon/cmd/kanpachi` in full. Nothing it prints changed ([bae8c89](https://github.com/alvarogabrielgomez/kanpachi/commit/bae8c89))
+
 ### Fixed
 
+- Say in the sidecar template and in `docker/README.md` that the game server has to listen on `0.0.0.0`. Sharing a network namespace is not enough: Kanpachi delivers packets to its own address, so a server bound to the container's own IP answers "port unreachable" to the whole room while the tunnel and the ports look perfect
+- Stop `kanpachi game --help` trying to activate a game called `help`. `--help` was rewritten into the `help` subcommand wherever it appeared, so any command followed by it ran with `help` as its argument ([bae8c89](https://github.com/alvarogabrielgomez/kanpachi/commit/bae8c89))
+- Line the command list back up. `profile` and `upgrade` carried their flags in the name column, which is 26 characters wide and which they overflowed by 13 and 23, pushing their descriptions off the column every other row lines up on ([bae8c89](https://github.com/alvarogabrielgomez/kanpachi/commit/bae8c89))
 - Stop `docs/public/run-a-game-server.md` telling people to run `kanpachi game zomboid`, which is not a game id and answers `unknown_game`. It is `project-zomboid`, and the eleven ids are now listed with their ports in the command reference, where before they appeared nowhere a user could read ([05d525e](https://github.com/alvarogabrielgomez/kanpachi/commit/05d525e))
 
 ## [0.6.3] - 2026-08-19
@@ -392,6 +388,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.6.5]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.5
 [0.6.4]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.4
 [0.6.3]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.3
 [0.6.2]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.2

@@ -66,6 +66,21 @@ services:
     # to: reaching this server is what the room is for.
     network_mode: "service:kanpachi"
 
+    # **The game must listen on 0.0.0.0, and this is the trap of the whole
+    # file.** Sharing the namespace is not enough: Kanpachi delivers real
+    # packets to its own address on `kanpachi0`, so a server bound to the
+    # container's own IP never sees them and the kernel answers "port
+    # unreachable" to everyone in the room. Measured on 2026-08-19 against a
+    # Kubernetes deployment that fed the server `status.podIP`: the tunnel was
+    # perfect, the ports were open, and no packet ever reached the game.
+    #
+    # Project Zomboid takes it as `SERVER_IP`; other servers spell it `bind`,
+    # `server-ip` or `-b`. Leaving it empty is usually the same as 0.0.0.0 and
+    # is the safe default. Do not paste an address here: the room's address is
+    # picked when the room opens.
+    environment:
+      SERVER_IP: "0.0.0.0"
+
     volumes:
       - zomboid-data:/home/steam/Zomboid
 

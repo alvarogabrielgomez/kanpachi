@@ -21,6 +21,12 @@ Before the first run:
   your invite code. Lose it and the code is gone for good, with nothing on
   screen to say so: guests keep arriving at a host that will never answer, for
   three more weeks.
+- **The game has to listen on `0.0.0.0`.** Sharing the network namespace is not
+  enough: Kanpachi delivers packets to its own address, so a server bound to the
+  container's own IP never sees them and answers "port unreachable" to the whole
+  room. Zomboid calls it `SERVER_IP`, others `bind` or `server-ip`. Measured
+  against a Kubernetes deployment feeding the server `status.podIP`: perfect
+  tunnel, open ports, and not one packet reaching the game.
 - **Your compose file has to set `cap_add` and `devices`.** An image cannot
   grant itself either one. Without them the container stops at startup and names
   the missing one.
