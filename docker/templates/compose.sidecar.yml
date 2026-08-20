@@ -7,11 +7,14 @@
 #
 #   docker compose up -d
 #   docker compose logs kanpachi
+#
+# The Zomboid half was run end to end on 2026-08-20, which is where the
+# awkward parts below come from. They are the image's, not Kanpachi's.
 
 services:
   kanpachi:
     # `latest` follows every release. Pin a number to decide yourself when to move:
-    #   image: ghcr.io/alvarogabrielgomez/kanpachi:0.6.4
+    #   image: ghcr.io/alvarogabrielgomez/kanpachi:0.6.6
     image: ghcr.io/alvarogabrielgomez/kanpachi:latest
     container_name: kanpachi
     restart: always
@@ -21,6 +24,16 @@ services:
 
     volumes:
       - kanpachi-data:/var/lib/kanpachi
+
+    # The name you appear under in the room, next to the guests. There is no
+    # environment variable for it: it is derived from the machine's name, and a
+    # container's is a random hex id unless it is set here. Twelve characters at
+    # most, ASCII letters and digits, everything before the first dot.
+    #
+    # It is read when the room is CREATED. Changing it later renames nothing:
+    # the name is kept inside the saved room, so an existing room keeps the one
+    # it opened with.
+    hostname: Merwebo
 
     # The difference from compose.yml: NO network_mode here. Kanpachi gets its
     # own namespace, and the game container below moves into it.
@@ -56,39 +69,83 @@ services:
       # host's.
       # KANPACHI_QUARANTINE: "false"
 
+  # A named volume is born owned by root unless the image already carries the
+  # directory it mounts over. This game runs as uid 10000, and its save
+  # directory does not exist in the image, so without this the server starts,
+  # fails every write and stops with "failed to create user database, server
+  # shut down". Runs as root, fixes the owner, exits.
+  zomboid-init:
+    image: docker.io/sknnr/zomboid-dedicated-server
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["chown -R 10000:10000 /home/steam/zomboid_data"]
+    restart: "no"
+    volumes:
+      - zomboid-data:/home/steam/zomboid_data
+
   zomboid:
-    image: docker.io/afaucogney/project-zomboid-dedicated-server
+    image: docker.io/sknnr/zomboid-dedicated-server
     restart: always
-    depends_on: [kanpachi]
+    depends_on:
+      kanpachi:
+        condition: service_started
+      zomboid-init:
+        condition: service_completed_successfully
 
     # This is what puts the game inside Kanpachi's network. A service with it
     # set cannot declare `networks:` or `ports:` of its own, and does not need
     # to: reaching this server is what the room is for.
     network_mode: "service:kanpachi"
 
-    # **The game must listen on 0.0.0.0, and this is the trap of the whole
-    # file.** Sharing the namespace is not enough: Kanpachi delivers real
+    # **A game server has to listen on 0.0.0.0, and this is the trap of the
+    # whole file.** Sharing the namespace is not enough: Kanpachi delivers real
     # packets to its own address on `kanpachi0`, so a server bound to the
     # container's own IP never sees them and the kernel answers "port
     # unreachable" to everyone in the room. Measured on 2026-08-19 against a
     # Kubernetes deployment that fed the server `status.podIP`: the tunnel was
     # perfect, the ports were open, and no packet ever reached the game.
     #
-    # Project Zomboid takes it as `SERVER_IP`; other servers spell it `bind`,
-    # `server-ip` or `-b`. Leaving it empty is usually the same as 0.0.0.0 and
-    # is the safe default. Do not paste an address here: the room's address is
-    # picked when the room opens.
+    # **And this image will not do it.** Its entrypoint says so and then
+    # overrides you:
     #
-    # Inside a container Kanpachi also covers for this on its own: if the game
-    # ends up bound elsewhere, the room's traffic is sent where it actually
-    # listens, and the room screen says so. That is a safety net for a compose
-    # somebody copied, not a reason to leave this wrong.
+    #   # PZ will not bind to 0.0.0.0, so we need to use the container's IP
+    #   if [ "${SERVER_IP}" == "0.0.0.0" ] || [ -z "${SERVER_IP}" ]; then
+    #     SERVER_IP=$(hostname -i)
+    #
+    # So SERVER_IP is left out on purpose: setting it would change nothing.
+    # What makes this work is Kanpachi 0.6.6 and newer, which inside a
+    # container sends the room's traffic to wherever the game actually listens,
+    # in the ports the profile declares and nowhere else, and says where it is
+    # going in the room and in `kanpachi status`. Measured on 2026-08-20: a
+    # guest reached this server over the relay with the game bound to the
+    # container's bridge address.
+    #
+    # Other servers spell the setting `bind`, `server-ip` or `-b`. Where an
+    # image honours it, set it. Where it does not, this is why the room still
+    # works.
     environment:
-      SERVER_IP: "0.0.0.0"
+      # Required by this image. Its entrypoint exits 1 without it.
+      MAX_MEMORY: 8g
+
+      # Names the server, and with it the config files under
+      # /home/steam/zomboid_data/Server. Renaming it later starts a fresh
+      # config instead of editing the old one.
+      SERVER_NAME: "Zomboid nights"
+
+      # Defaults to AdminPleaseChangeMe, which is published in the image.
+      # Change it before the first start: after that it lives in the .ini.
+      ADMIN_PASSWORD: "change-me"
+
+    stop_grace_period: 60s
 
     volumes:
-      - zomboid-data:/home/steam/Zomboid
+      # The saves, the server config and the sandbox settings.
+      - zomboid-data:/home/steam/zomboid_data
+      # The install steamcmd validates on every start. Persisting it turns that
+      # into a check instead of a 7 GB download each time.
+      - zomboid-install:/home/steam/zomboid
 
 volumes:
   kanpachi-data:
   zomboid-data:
+  zomboid-install:

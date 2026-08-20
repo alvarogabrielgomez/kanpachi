@@ -469,7 +469,7 @@ func (s *server) deliverAck(seq uint64) {
 // Announce les cuenta a los presentes cómo se llama la sala y qué juego está
 // activo. Sin acuse: perderlo cuesta que una pantalla tarde dos minutos en
 // ponerse al día, y el siguiente anuncio lo arregla.
-func (c *Channel) Announce(_ context.Context, a domain.RoomAnnounce) error {
+func (c *Channel) Announce(_ context.Context, to netip.Addr, a domain.RoomAnnounce) error {
 	s, err := c.host()
 	if err != nil {
 		return err
@@ -485,7 +485,18 @@ func (c *Channel) Announce(_ context.Context, a domain.RoomAnnounce) error {
 	if err != nil {
 		return err
 	}
-	for _, pc := range s.peers() {
+	// El mismo reparto que [Channel.Notify], y por el mismo motivo: cada
+	// miembro tiene su propia conexión, así que dirigirlo a uno no es una
+	// capacidad nueva, es no recorrer los demás.
+	destinos := s.peers()
+	if to.IsValid() {
+		pc, ok := s.peer(to)
+		if !ok {
+			return fmt.Errorf("no hay canal abierto con %s", to)
+		}
+		destinos = []*peerConn{pc}
+	}
+	for _, pc := range destinos {
 		if err := pc.write(sobre); err != nil {
 			c.log().Warn("no se pudo anunciar a un miembro", "ip", pc.addr.String(), "error", err)
 		}

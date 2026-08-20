@@ -21,15 +21,23 @@ Before the first run:
   your invite code. Lose it and the code is gone for good, with nothing on
   screen to say so: guests keep arriving at a host that will never answer, for
   three more weeks.
-- **The game has to listen on `0.0.0.0`.** Sharing the network namespace is not
-  enough: Kanpachi delivers packets to its own address, so a server bound to the
-  container's own IP never sees them and answers "port unreachable" to the whole
-  room. Zomboid calls it `SERVER_IP`, others `bind` or `server-ip`. Measured
-  against a Kubernetes deployment feeding the server `status.podIP`: perfect
-  tunnel, open ports, and not one packet reaching the game. **In a container
-  Kanpachi covers for it**: when the game is bound elsewhere, the room's traffic
-  is sent to wherever it actually listens, and the room says so. Bind it right
-  anyway — the net is for the compose somebody copied.
+- **Bind the game to `0.0.0.0` where the image lets you.** Sharing the network
+  namespace is not enough: Kanpachi delivers packets to its own address, so a
+  server bound to the container's own IP never sees them and answers "port
+  unreachable" to the whole room. Zomboid calls it `SERVER_IP`, others `bind` or
+  `server-ip`. Measured against a Kubernetes deployment feeding the server
+  `status.podIP`: perfect tunnel, open ports, and not one packet reaching the
+  game.
+- **Some images refuse that value, and for those the redirect is the only way
+  in.** `sknnr/zomboid-dedicated-server` rewrites it on purpose, in its own
+  entrypoint: `# PZ will not bind to 0.0.0.0, so we need to use the container's
+  IP`, followed by `SERVER_IP=$(hostname -i)`. Setting the variable there
+  changes nothing. **In a container Kanpachi covers for it**: when the game is
+  bound elsewhere, the room's traffic is sent to wherever it actually listens,
+  and both the room and `kanpachi status` name the address. Measured working on
+  2026-08-20 against that image, with a guest reaching the server over the
+  relay. So read the advice above as "where you can", not as a requirement you
+  can always meet.
 - **Your compose file has to set `cap_add` and `devices`.** An image cannot
   grant itself either one. Without them the container stops at startup and names
   the missing one.

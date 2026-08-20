@@ -8,6 +8,12 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Fixed
+
+- Open the game's ports to a guest whose arrival the engine never announced. The host recalculated its rules only on the engine's `peers_changed` event, and measured on 2026-08-20 that event never came: the guest had a credential, an open control channel and `MEMBERS (2)` on their own screen, while the host showed `MEMBERS (1)` and had no rule for the game at all, so every packet died at the host's own gate. The safety net for exactly this undercount lived inside the reread that was not happening. The control channel opening now triggers the reread, which is first-hand evidence that somebody is there and the same evidence that already decides who may talk to the control channel ([45b6a99](https://github.com/alvarogabrielgomez/kanpachi/commit/45b6a99))
+- Tell a guest which game is active the moment they walk in, instead of up to two minutes later. Entering a room triggered no announcement, so a new arrival waited for the next periodic one and read "X has not picked a game yet" in the meantime, which is a claim about the host and not an admission of not knowing. The announcement is addressed to that one member, the way a kick notice already was, and the periodic clock is left alone so several arrivals in a row cannot starve the room of its general announcement ([45b6a99](https://github.com/alvarogabrielgomez/kanpachi/commit/45b6a99))
+- Ship a sidecar template that runs. `docker/templates/compose.sidecar.yml` named an image that does not exist, which fails the pull, and once past that the game needed `MAX_MEMORY` to start at all, wrote its saves to a path the file did not mount, and died on a volume owned by root while the server runs as uid 10000. It also told you to bind the server to `0.0.0.0`, which that image rewrites to the container's address in its own entrypoint, on purpose. `docker/README.md` said the same thing and now says where it holds and where the redirect is the only way in ([8edaef1](https://github.com/alvarogabrielgomez/kanpachi/commit/8edaef1))
+
 ## [0.6.6] - 2026-08-20
 
 ### Added

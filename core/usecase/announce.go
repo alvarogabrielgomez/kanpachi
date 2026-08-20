@@ -21,24 +21,56 @@ import (
 //
 // Asume el candado tomado.
 func (s *Session) announceLocked(ctx context.Context) {
+	s.announceToLocked(ctx, netip.Addr{})
+}
+
+// announceToLocked es lo mismo dirigido a UN miembro, y con la dirección en
+// cero es [Session.announceLocked].
+//
+// # Por qué el que entra necesita uno para él
+//
+// Porque el anuncio es lo único que le dice qué juego está activo, y entrar no
+// lo dispara. Sin esto, quien acaba de llegar espera al periódico, que es
+// [timing.AnnounceInterval]: hasta dos minutos leyendo «todavía no eligió
+// juego», que no es «no lo sé», es una afirmación sobre el host que además es
+// falsa. Medido el 2026-08-20 con una sala en Docker.
+//
+// # Por qué al resto no se le repite
+//
+// Porque ya lo sabían. El anuncio es ESTADO, así que mandárselo otra vez no
+// rompe nada, y por eso el reparto a todos sigue siendo lo normal en los demás
+// casos; lo que no hace es servir de algo. Un miembro que entra no cambia el
+// nombre de la sala ni el juego, que es todo lo que el anuncio lleva.
+//
+// # El reloj no se sella acá
+//
+// Porque este anuncio no es el periódico ni lo reemplaza: le habla a uno solo.
+// Sellarlo correría el plazo de los demás por algo que no recibieron, y tres
+// invitados entrando seguidos dejarían a la sala sin anuncio general durante
+// seis minutos.
+//
+// Asume el candado tomado.
+func (s *Session) announceToLocked(ctx context.Context, to netip.Addr) {
 	if !s.state.IsHost() || !s.state.Conn.InRoom() {
 		return
 	}
-	// El reloj se sella pase lo que pase, y no solo cuando sale bien. Si el
-	// anuncio falla, reintentarlo en el siguiente latido en vez de en cada
-	// evento es lo correcto: el canal está roto y machacarlo no lo arregla.
-	s.lastAnnounce = s.deps.Clock.Now()
+	if !to.IsValid() {
+		// El reloj se sella pase lo que pase, y no solo cuando sale bien. Si el
+		// anuncio falla, reintentarlo en el siguiente latido en vez de en cada
+		// evento es lo correcto: el canal está roto y machacarlo no lo arregla.
+		s.lastAnnounce = s.deps.Clock.Now()
+	}
 
 	s.measureGameHealthLocked(ctx)
 
-	err := s.deps.Control.Announce(ctx, domain.RoomAnnounce{
+	err := s.deps.Control.Announce(ctx, to, domain.RoomAnnounce{
 		RoomName:   s.state.Name,
 		GameID:     s.state.Game.ID,
 		GameHealth: s.gameReach.Health,
 		GameWhere:  s.gameReach.Where,
 	})
 	if err != nil {
-		s.deps.Log.Warn("no se pudo anunciar el estado de la sala", "error", err)
+		s.deps.Log.Warn("no se pudo anunciar el estado de la sala", "error", err, "a", to.String())
 	}
 }
 

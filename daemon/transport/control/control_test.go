@@ -201,7 +201,7 @@ func TestUnaIPQueNoEsMiembroSeRechazaAntesDeLeerNada(t *testing.T) {
 	}
 	// Marcar "funciona" porque el pipe se establece. Lo que no ocurre es que el
 	// host lo trate como miembro: la conexión se cierra y nada suyo se lee.
-	if err := b.host.Announce(ctx(), domain.RoomAnnounce{RoomName: "Los panas"}); err != nil {
+	if err := b.host.Announce(ctx(), netip.Addr{}, domain.RoomAnnounce{RoomName: "Los panas"}); err != nil {
 		t.Fatal(err)
 	}
 	nadaEn(t, intruso.Announcements(), "un anuncio para quien no es miembro")
@@ -229,7 +229,7 @@ func TestRecortarElAlcanceCierraLaConexiónDelExpulsado(t *testing.T) {
 	esperaBool(t, uno.HostPresence(), false)
 
 	// Y el que se quedó sigue recibiendo.
-	if err := b.host.Announce(ctx(), domain.RoomAnnounce{RoomName: "Los panas", GameID: "project-zomboid"}); err != nil {
+	if err := b.host.Announce(ctx(), netip.Addr{}, domain.RoomAnnounce{RoomName: "Los panas", GameID: "project-zomboid"}); err != nil {
 		t.Fatal(err)
 	}
 	a := espera(t, dos.Announcements(), "el anuncio para quien se quedó")
@@ -275,7 +275,7 @@ func TestUnMensajeQuePasaDelTopeCortaSoloEsaConexión(t *testing.T) {
 	// del tope, y lo que se prueba acá es qué hace el que RECIBE.
 	_, _ = conn.Write([]byte(`{"kind":"ack","payload":{"seq":1,"basura":"` + strings.Repeat("x", MaxMessage) + `"}}` + "\n"))
 
-	if err := b.host.Announce(ctx(), domain.RoomAnnounce{RoomName: "Los panas"}); err != nil {
+	if err := b.host.Announce(ctx(), netip.Addr{}, domain.RoomAnnounce{RoomName: "Los panas"}); err != nil {
 		t.Fatal(err)
 	}
 	espera(t, dos.Announcements(), "el anuncio del que sigue conectado")
@@ -296,7 +296,7 @@ func TestLaSegundaConexiónDeUnMiembroDesplazaALaPrimera(t *testing.T) {
 	}
 	b.esperaReemplazo(t, ipUno, vieja)
 
-	if err := b.host.Announce(ctx(), domain.RoomAnnounce{RoomName: "Los panas"}); err != nil {
+	if err := b.host.Announce(ctx(), netip.Addr{}, domain.RoomAnnounce{RoomName: "Los panas"}); err != nil {
 		t.Fatal(err)
 	}
 	espera(t, segunda.Announcements(), "el anuncio por la conexión nueva")
@@ -496,7 +496,7 @@ func TestCerrarNoEsperaALectores(t *testing.T) {
 
 	// Se llena el búfer de salida sin que nadie lea.
 	for i := 0; i < outBuffer*3; i++ {
-		_ = b.host.Announce(ctx(), domain.RoomAnnounce{RoomName: "Los panas"})
+		_ = b.host.Announce(ctx(), netip.Addr{}, domain.RoomAnnounce{RoomName: "Los panas"})
 	}
 
 	listo := make(chan struct{})
@@ -531,7 +531,7 @@ func TestLosCanalesSobrevivenAUnCierre(t *testing.T) {
 	}
 	b.vuelveAMarcar(t, uno, ipUno)
 
-	if err := b.host.Announce(ctx(), domain.RoomAnnounce{RoomName: "Los panas", GameID: "project-zomboid"}); err != nil {
+	if err := b.host.Announce(ctx(), netip.Addr{}, domain.RoomAnnounce{RoomName: "Los panas", GameID: "project-zomboid"}); err != nil {
 		t.Fatal(err)
 	}
 	a := espera(t, uno.Announcements(), "el anuncio tras volver a marcar")
@@ -547,7 +547,7 @@ func TestLoQueLlegaDeOtraMáquinaSeAcota(t *testing.T) {
 	b := nuevoBanco(t, ipUno)
 	uno := b.enSala(t, ipUno)
 
-	if err := b.host.Announce(ctx(), domain.RoomAnnounce{
+	if err := b.host.Announce(ctx(), netip.Addr{}, domain.RoomAnnounce{
 		RoomName: strings.Repeat("ñ", 500), GameID: "../../etc/passwd",
 	}); err != nil {
 		t.Fatal(err)

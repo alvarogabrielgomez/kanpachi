@@ -373,6 +373,11 @@ func (s *Session) onPeersChangedLocked(ctx context.Context) (domain.RoomState, e
 //
 // Se le borra el plazo para que el aviso salga AHORA y no cuando venza el
 // reintento: ese plazo se puso porque no había canal, y acaba de haberlo.
+//
+// Y se le anuncia la sala, a él solo. Este es el instante correcto y no el de
+// emitirle la credencial: el invitado pide la credencial por el vestíbulo y
+// recién después marca la dirección de la sala, así que cuando se le emite
+// todavía no hay conexión a la que escribirle. Ver [Session.announceToLocked].
 func (s *Session) OnMemberChannelUp(ctx context.Context, ip netip.Addr) domain.RoomState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -381,7 +386,35 @@ func (s *Session) OnMemberChannelUp(ctx context.Context, ip netip.Addr) domain.R
 		return s.snapshot()
 	}
 	delete(s.staleProxAviso, ip)
-	s.tellStaleMembersLocked(ctx)
+
+	// Releer la malla ACÁ es lo que hace que el invitado pueda jugar, y no un
+	// refinamiento.
+	//
+	// # Lo medido, el 2026-08-20
+	//
+	// Un invitado entró por relay a una sala en Docker: credencial emitida,
+	// canal de control abierto, `MEMBERS (2)` en su pantalla. En el host,
+	// `MEMBERS (1)` y NINGUNA regla para los puertos del juego, así que sus
+	// paquetes al 16261 morían en la compuerta del propio host. Cuatro minutos
+	// así, sin una línea más en el log.
+	//
+	// La causa es que [Session.onPeersChangedLocked] solo lo llamaba el evento
+	// `peers_changed` del motor, y el motor NO lo emitió: cero apariciones en
+	// su log, mientras el observador de malla sí veía al miembro. Y
+	// [Session.withAdmittedLocked], que existe justamente para el caso en que
+	// el motor cuenta de menos, vive DENTRO de [Session.refreshPeersLocked], o
+	// sea que la red de seguridad no tenía quién la disparara.
+	//
+	// El canal abriéndose es la evidencia de primera mano de que hay alguien, y
+	// es la misma que ya decide a quién se le abre el canal de control. Si el
+	// motor sí emite su evento, esto no cuesta nada: `applyPolicyIfChanged` no
+	// aplica dos veces el mismo conjunto.
+	if _, err := s.onPeersChangedLocked(ctx); err != nil {
+		s.deps.Log.Warn("no se pudo releer la malla al abrirse el canal de un miembro",
+			"error", err, "ip", ip.String())
+		s.tellStaleMembersLocked(ctx)
+	}
+	s.announceToLocked(ctx, ip)
 	return s.snapshot()
 }
 
