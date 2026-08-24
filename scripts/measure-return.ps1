@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Measures a guest going back to a room, across two real machines, with the
     clocks cut short.
@@ -208,8 +208,32 @@ function Peer-Json([string]$verb) {
 # check ever looks at, and the scenario then waits 120s for a room the daemon
 # was never told about. Found 2026-08-16: the manual join worked while the
 # harness join silently did not.
+#
+# # Why `--quarantine off` travels with every host and join
+#
+# Because `--yes` does NOT answer that question, on purpose: it already means
+# "trust the registry" and "open the foreign firewall", and the quarantine is a
+# third decision with its own flag (`daemon/cmd/kanpachi/firewall.go`). With no
+# saved answer the daemon asks, and the CLI, seeing a real terminal in the
+# elevated console, PRINTS A MENU AND WAITS FOR A KEY. Nothing times out: the
+# run sat on it for twelve minutes on 2026-08-24 while the log showed a scenario
+# header and no checks.
+#
+# It went unnoticed for as long as it did because the guest's data directory
+# carried a `quarantine-decision.json` from an earlier run, so scenarios 1 to 11
+# never met the question. A harness that only works on a machine it has already
+# run on is a harness that lies about being reproducible.
+#
+# `off` and not `on`: this runs on somebody's daily machine, the quarantine
+# reaches THE WHOLE MACHINE and not just the adapter, and none of the fourteen
+# scenarios measures it. Leaving the firewall as it was found is the answer that
+# does not change what is being measured.
 function Peer-Join([string]$code) {
-    $j = Peer-Json "join $code --yes"
+    # Se anuncia antes porque `join` BLOQUEA hasta que la sala está: sin esta
+    # línea, los minutos que tarda son minutos sin nada escrito, y no se
+    # distinguen de un cuelgue.
+    Note "the guest is joining $code"
+    $j = Peer-Json "join $code --yes --quarantine off"
     if ($null -eq $j) { return }
     if ($j.conn -ne 'connected') {
         Info "join answered ($($script:lastCode)): $($j | ConvertTo-Json -Compress -Depth 4)"
@@ -414,7 +438,7 @@ $scenarios = @(
             # no da tty. Del lado del invitado el peligro es el contrario, que si
             # haya terminal y el comando se quede colgado esperando una respuesta
             # que ningun script va a dar.
-            $h = Host-Json 'host Medicion --yes'
+            $h = Host-Json 'host Medicion --yes --quarantine off'
             $script:code = $h.code + '@' + $h.seed
             Check 'the host opened a room' ($null -ne $h -and $h.code)
             Info "code $script:code"
@@ -529,7 +553,7 @@ $scenarios = @(
             Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
             Start-Sleep -Seconds 8
             $h = Host-Json 'status'
-            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes' }
+            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes --quarantine off' }
             $script:code = $h.code + '@' + $h.seed
             if (-not (Peer-Running)) { Peer-Start }
             if (-not (Peer-InRoom)) { Peer-Join $script:code }
@@ -645,7 +669,7 @@ $scenarios = @(
             Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
             Start-Sleep -Seconds 8
             $h = Host-Json 'status'
-            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes' }
+            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes --quarantine off' }
             $script:code = $h.code + '@' + $h.seed
             Peer-Join $script:code
             Check 'the guest is in' (Wait-Until { Peer-InRoom } 120 'the guest to be in')
@@ -674,7 +698,7 @@ $scenarios = @(
             Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
             Start-Sleep -Seconds 8
             $h = Host-Json 'status'
-            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes' }
+            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes --quarantine off' }
             $script:code = $h.code + '@' + $h.seed
             Peer-Join $script:code
             Check 'the guest is in' (Wait-Until { Peer-InRoom } 120 'the guest to be in')
@@ -716,7 +740,7 @@ $scenarios = @(
             Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
             Start-Sleep -Seconds 8
             $h = Host-Json 'status'
-            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes' }
+            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes --quarantine off' }
             Peer-Join ($h.code + '@' + $h.seed)
             Check 'the guest is in somebody elses room' (
                 Wait-Until { Peer-InRoom } 120 'the guest to be in')
@@ -733,7 +757,7 @@ $scenarios = @(
             # back by hand with the daemon down, which is the state a laptop
             # reaches when a reopen failed and it later joined somebody else.
             $copiaLast = Get-Content -Raw -Encoding Byte $last
-            Peer-Json 'host Propia --yes' | Out-Null
+            Peer-Json 'host Propia --yes --quarantine off' | Out-Null
             Check 'the guest hosts its own room now' (
                 Wait-Until { (Peer-Json 'status').role -eq 'host' } 150 'the room to open')
             Peer-Kill
@@ -766,12 +790,12 @@ $scenarios = @(
             Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
             Start-Sleep -Seconds 8
             $h = Host-Json 'status'
-            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes' }
+            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes --quarantine off' }
             $ajena = $h.code + '@' + $h.seed
 
             # The guest opens a room of its OWN first, so there is something to
             # close, and its code is asked to the registry before and after.
-            $propia = Peer-Json 'host Propia --yes'
+            $propia = Peer-Json 'host Propia --yes --quarantine off'
             Check 'the guest hosts a room of its own' ($null -ne $propia.code)
             Check 'and its file is on disk' (Test-Path $hosted)
             $suId = $propia.code
@@ -841,6 +865,48 @@ if (-not (Peer-Running)) {
     Peer-Start
 }
 Ok 'the guest daemon answers'
+
+# Hospedar pide dos cosas que entrar no pide, y 13 y 14 son los primeros
+# escenarios que le piden al INVITADO abrir una sala.
+#
+#  1. **Un registro elegido.** Entrar a la sala de otro no lo elige, y eso está
+#     escrito en la ayuda de `seed` como decisión y no como olvido: la siguiente
+#     sala que abriera esta máquina se serviría desde el servidor de un
+#     desconocido sin que nadie lo hubiera decidido.
+#  2. **La credencial de ese registro, si está cerrado.** El de producción lo
+#     está, y sin ella `host` contesta `seed_password`.
+#
+# Las dos se comprueban acá y no dentro de un escenario. Un `host` que falla a
+# mitad del 13 deja cuatro checks en rojo que no tienen nada que ver con lo que
+# el 13 mide, y el motivo real no aparece por ningún lado: el escenario tira la
+# respuesta del `host` y lo único que queda es el plazo agotado de la espera de
+# después. Medido el 2026-08-24, así, con siete rojos y ninguna pista.
+#
+# Solo se exige cuando va a correr un escenario que hospeda desde el invitado.
+# El 12 no lo necesita, y corrió entero en verde sin credencial ninguna.
+$vanAHospedar = (-not $Only) -or ($Only -contains 13) -or ($Only -contains 14)
+
+if ($vanAHospedar -and (Peer-Json 'seed').seed -ne $Seed) {
+    Note "the guest had no registry of its own; pointing it at $Seed"
+    Peer-Json "seed $Seed" | Out-Null
+}
+if ($vanAHospedar) {
+    if ((Peer-Json 'seed').seed -ne $Seed) {
+        throw "the guest would not take $Seed as its registry, so it cannot open a room of its own."
+    }
+    Ok "the guest opens its rooms on $Seed"
+}
+
+$seedToken = Join-Path $peerData 'seed-token.json'
+if ($vanAHospedar -and -not (Test-Path $seedToken)) {
+    throw ("the guest has no credential for $Seed, so scenarios 13 and 14 cannot open a room there.`n" +
+        "  The password is never an argument and there is no flag for it: see ``kanpachi help password``.`n" +
+        "  Answer it once, in this elevated console, and it stays in $seedToken :`n" +
+        "    & '$cli' --pipe '$peerPipe' --data '$peerData' password`n" +
+        "  Or from a file, which is the door written for a script:`n" +
+        "    Get-Content <file> | & '$cli' --pipe '$peerPipe' --data '$peerData' password")
+}
+if ($vanAHospedar) { Ok "the guest has a credential for $Seed, so it can host" }
 Ok "host on $Droplet, registry at $Seed"
 
 # Host-Count must be able to read the daemon's log, or every delta check in 8,
