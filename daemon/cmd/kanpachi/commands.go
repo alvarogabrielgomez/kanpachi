@@ -420,11 +420,15 @@ func init() {
   Installing restarts the service, which drops the open room, so it asks
   first and names that.
 
-    --check          say what is published and stop
+    --check          say what is published and stop. Answers from what this
+                     machine already found, here or in the window, because a
+                     published version does not get unpublished
     --version <v>    install that version instead of the latest, which is
                      how you go back
-    --force          install even when the numbers match, which is how a
-                     republished version gets picked up
+    --force          do it even when the shortcut says there is nothing to
+                     do: install a version whose number already matches,
+                     which is how a republished one gets picked up, and ask
+                     the channel again instead of answering from before
     --yes            do not ask. Required when there is no terminal
 
     kanpachi upgrade --check
