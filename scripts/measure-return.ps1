@@ -327,7 +327,18 @@ if ($Deploy) {
             Native { & gh release download --pattern 'kanpachi-amd64.deb' --output $deb --clobber } | Out-Null
         }
         Native { & scp -q $deb "${Droplet}:/tmp/kanpachi-released.deb" } | Out-Null
-        Host-Run 'sudo -n dpkg -i /tmp/kanpachi-released.deb' | Out-Null
+        # Este es el UNICO sitio del script que necesita un sudo de verdad, y no
+        # se puede evitar: instalar el paquete entero pone unidades de systemd y
+        # el catalogo, y eso no cabe en los cuatro `install -m755` que el
+        # sudoers enumera. Pasa una sola vez, en un droplet donde Kanpachi nunca
+        # se instalo. Lo demas, deploy y restore incluidos, va por esos cuatro.
+        $out = Host-Try 'sudo -n dpkg -i /tmp/kanpachi-released.deb'
+        if ($script:lastCode -ne 0) {
+            throw ("installing the published package needs a real sudo, and `sudo -n` was refused.`n" +
+                "  Do it once by hand and run this again:`n" +
+                "    ssh $Droplet 'sudo dpkg -i /tmp/kanpachi-released.deb'`n" +
+                $out.Trim())
+        }
         Ok 'published package installed'
     }
     else { Ok 'published package already installed' }
@@ -391,11 +402,32 @@ if ($Restore) {
     Host-Try 'sudo -n systemctl stop kanpseed-registry' | Out-Null
     Native { & scp -q $deb "${Droplet}:/tmp/kanpachi-released.deb" } | Out-Null
     Native { & scp -q (Join-Path $buildDir 'kanpseed-released') "${Droplet}:/tmp/kanpseed" } | Out-Null
-    Host-Run ('sudo -n dpkg -i /tmp/kanpachi-released.deb' +
-        ' && sudo -n install -m755 /tmp/kanpseed /usr/local/bin/kanpseed' +
-        ' && sudo -n systemctl start kanpseed-registry') | Out-Null
-    Ok 'released kanpseed and package back in place'
-    Info (Host-Run 'sudo -n systemctl is-active kanpseed-registry').Trim()
+
+    # Se desempaqueta sin privilegio y se instalan los binarios uno a uno.
+    #
+    # `sudo -n dpkg -i` no existe para este usuario: el sudoers del droplet da
+    # cuatro `install -m755` con la ruta de origen Y la de destino escritas
+    # enteras, y nada más. Un `dpkg` pide contraseña, `sudo -n` se rinde, y esta
+    # rama fallaba entera. Descubierto el 2026-08-24, restaurando a mano.
+    #
+    # Desempaquetar en `/tmp` y copiar a los nombres exactos que el sudoers
+    # nombra es lo que queda, y es más honesto que ampliar el permiso: cada
+    # cosa que este script puede escribir como root sigue estando enumerada.
+    Host-Run ('rm -rf /tmp/rel && mkdir -p /tmp/rel' +
+        ' && dpkg-deb -x /tmp/kanpachi-released.deb /tmp/rel' +
+        ' && cp /tmp/rel/usr/libexec/kanpachi/kanpachid /tmp/kanpachid' +
+        ' && cp /tmp/rel/usr/bin/kanpachi /tmp/kanpachi' +
+        ' && cp /tmp/rel/usr/libexec/kanpachi/kanpachi-engine /tmp/kanpachi-engine') | Out-Null
+    Host-Run 'sudo -n install -m755 /tmp/kanpachid /usr/libexec/kanpachi/kanpachid' | Out-Null
+    Host-Run 'sudo -n install -m755 /tmp/kanpachi /usr/bin/kanpachi' | Out-Null
+    Host-Run 'sudo -n install -m755 /tmp/kanpachi-engine /usr/libexec/kanpachi/kanpachi-engine' | Out-Null
+    Host-Run 'sudo -n install -m755 /tmp/kanpseed /usr/local/bin/kanpseed' | Out-Null
+    Host-Run 'sudo -n systemctl start kanpseed-registry' | Out-Null
+    Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
+    Ok 'released kanpseed, daemon, client and engine back in place'
+    Info ('kanpseed-registry: ' + (Host-Run 'sudo -n systemctl is-active kanpseed-registry').Trim())
+    Info ('kanpachid: ' + (Host-Try 'sudo -n systemctl is-active kanpachid').Trim())
+    Info (Host-Run 'kanpachi version | head -2').Trim()
     return
 }
 
