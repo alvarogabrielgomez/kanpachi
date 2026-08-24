@@ -498,6 +498,16 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 	var ui *uihost.Host
 	if !consola && hostsUI {
 		var err error
+		// La hoja donde la interfaz deja su log, preparada ANTES de lanzarla.
+		//
+		// Un fallo acá no tumba el arranque: lo que se pierde es el registro de la
+		// ventana, y lo que costaría negarse es la ventana entera, con el icono de
+		// la bandeja y la única forma de cerrar una sala. Se dice y se sigue.
+		carpetaLogUI := carpetaDelLogDeLaVentana(carpetaLog, esPortable())
+		if err := prepararCarpetaDeLogDeLaUI(carpetaLogUI); err != nil {
+			log.Warn("la interfaz se va a quedar sin log", "error", err)
+		}
+
 		ui, err = uihost.New(uihost.Deps{
 			// Junto a este binario, y de `os.Executable()`. **Nunca del estado,
 			// de la configuración ni del pipe**: esto corre como SYSTEM, y una
@@ -510,11 +520,13 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 			Resuming: func() bool {
 				return salaReabriendo != nil && salaReabriendo()
 			},
-			// La misma carpeta donde este daemon deja SU log, para que los dos
-			// se lean juntos. La interfaz se cae sola y hasta ahora no dejaba
-			// nada; ver [uihost.Deps.LogDir] para por qué se le dice en vez de
-			// dejar que la deduzca.
-			LogDir: carpetaLog,
+			// Su propia hoja dentro de la carpeta de logs, o la carpeta a
+			// secas en una copia portable. La interfaz se cae sola y hasta
+			// hace poco no dejaba nada; ver [carpetaDelLogDeLaVentana] para
+			// por qué son dos carpetas instalado y una en portable, y
+			// [uihost.Deps.LogDir] para por qué se le dice en vez de dejar
+			// que la deduzca.
+			LogDir: carpetaLogUI,
 			// Y dónde están los datos de verdad, que es de donde sale el
 			// token. Ver [uihost.Deps.DataDir]: en el bundle portable la
 			// interfaz lo deducía del temporal donde vive su ejecutable, y

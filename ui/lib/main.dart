@@ -97,7 +97,7 @@ void main(List<String> args) {
       // datos.** El registro ya la usa de respaldo tres líneas más abajo.
       PipeNames.useDataDir(_valorDe(args, kDataFlag) ?? '');
 
-      AppLog.open(dir: _valorDe(args, kLogFlag), fallback: PipeNames.dataDir);
+      AppLog.open(dir: _valorDe(args, kLogFlag));
 
       // **El arranque también se anota, no solo los errores.** Un registro que
       // solo tiene fallos no distingue "se cerró sola" de "no llegó a

@@ -233,3 +233,24 @@ func (l *logArchivo) Close() error {
 	l.f = nil
 	return err
 }
+
+// carpetaDelLogDeLaVentana dice dónde deja la interfaz SU log.
+//
+// # Por qué no es la misma que la del daemon
+//
+// Porque la interfaz corre sin elevar y el directorio de datos deja a los
+// usuarios en solo lectura, así que hace falta UNA hoja donde sí pueda escribir.
+// Que sea una hoja y no la carpeta de logs entera es lo que impide que cualquier
+// usuario de la máquina meta líneas dentro del registro que deja el daemon, que
+// es el que se pega en un reporte de fallo.
+//
+// # Y por qué en portable sí es la misma
+//
+// Porque ahí no hay ACL que estorbe y la promesa de una copia portable es que lo
+// que deja está donde la abriste: los tres logs juntos, al lado del ejecutable.
+func carpetaDelLogDeLaVentana(carpetaLog string, portable bool) string {
+	if portable {
+		return carpetaLog
+	}
+	return filepath.Join(carpetaLog, "ui")
+}
