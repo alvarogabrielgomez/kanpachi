@@ -298,7 +298,7 @@ Un binario de Flutter para Windows no tiene dónde contarlo, y las dos vías obv
 
 Así que se escribe desde Dart, con `runZonedGuarded` para lo asíncrono, `FlutterError.onError` para los errores del framework y `PlatformDispatcher.instance.onError` para lo que se le escapa a la zona. Se anotan **también el arranque y el cierre limpio**: un registro que solo tiene errores no distingue "se cerró sola" de "no llegó a arrancar", que era justo la pregunta.
 
-**La carpeta se la dice el daemon, con `--log`, y eso es una excepción a la doctrina del marcador.** El marcador contesta "qué producto soy", y los dos lados lo deducen del disco. Esta es otra pregunta: "desde qué carpeta me abrieron" NO es deducible por la interfaz, porque en el bundle su ejecutable está en el temporal. La sabe solo el bundle, y ya se la pasa al daemon por esta misma vía. Sin bandera se cae al directorio de datos, y si ahí no se puede escribir, a `%LOCALAPPDATA%\Kanpachi`: el daemon es SYSTEM y la interfaz no, y el permiso que `ProgramData` hereda a sus subcarpetas deja a los usuarios crear carpetas y no crear archivos.
+**La carpeta se la dice el daemon, con `--log`, y eso es una excepción a la doctrina del marcador.** El marcador contesta "qué producto soy", y los dos lados lo deducen del disco. Esta es otra pregunta: "desde qué carpeta me abrieron" NO es deducible por la interfaz, porque en el bundle su ejecutable está en el temporal. La sabe solo el bundle, y ya se la pasa al daemon por esta misma vía. Sin bandera no escribe log, y eso es deliberado desde que hay un solo ámbito: la carpeta se la prepara el daemon —una hoja bajo `logs\`, con escritura para los usuarios, porque él es SYSTEM y la interfaz no— y la ventana escribe donde le dijeron o no escribe. La cadena de respaldo que acababa en `%LOCALAPPDATA%` era el ámbito por persona, y ya no existe.
 
 **Lo que este archivo NO ve:** un fallo nativo, del motor de Flutter, de un plugin o del driver de vídeo, no pasa por Dart. Esa mitad la cubre el código de salida que el daemon anota al ver morir el proceso, que separa una salida limpia de un `0xC0000005`.
 
@@ -2503,29 +2503,22 @@ ProgramData\Kanpachi\
                              Rotación por tamaño a los 2 MB, con UNA copia anterior
                              en kanpachi.log.1. La carpeta se mueve con --log
   logs\kanpachi-engine.log   lo que dice el motor, escrito por él. Ver abajo
-%LOCALAPPDATA%\Kanpachi\     lo de la PERSONA que abrió la ventana, escrito por
-                             ella y jamás leído por el daemon
-  ui-prefs.json              lo que la VENTANA recuerda: tamaño, si narra los
-                             pasos, y la versión publicada que ya vio. **El apodo
-                             ya no está acá**: era el segundo sitio donde vivía el
-                             mismo dato, ver profile.json
-  kanpachi-ui.log            lo que dice la ventana, con la traza de sus muertes
+  logs\ui\                   la ÚNICA hoja donde los usuarios pueden
+                             escribir. La crea el daemon al arrancar, con esa ACL
+  logs\ui\kanpachi-ui.log    lo que dice la ventana, con la traza de sus muertes
 ```
 
-### Dos sitios, y el eje es máquina contra persona
+### Un solo sitio, el de la máquina
 
-`ProgramData\Kanpachi` lo escribe el **daemon**, que corre como SYSTEM, y ahí va lo de la MÁQUINA: el token, la identidad, las dos salas, el registro, la libreta y el nombre. Los usuarios lo LEEN y no lo escriben, y esa ACL es media protección del token.
+`ProgramData\Kanpachi` lo escribe el **daemon**, que corre como SYSTEM, y ahí va todo: el token, la identidad, las dos salas, el registro, la libreta, el nombre y los ajustes de la ventana. Los usuarios lo LEEN y no lo escriben, y esa ACL es media protección del token. No hay un segundo sitio por persona, y el porqué está en la decisión 42: una sala es un adaptador, un motor y un juego de reglas, y de cada cosa hay una por máquina.
 
-`%LOCALAPPDATA%\Kanpachi` lo escribe la **ventana**, como el usuario, y ahí va lo de la PERSONA. Un tamaño de ventana no es un hecho de la máquina: dos personas en la misma PC quieren cada una el suyo, y guardarlos arriba los volvería compartidos además de imposibles de escribir. El nombre sí está arriba, y no es una excepción sino una decisión: la identidad es de la máquina y tres caras preguntan por ella.
+**La ventana lee de acá y pide por el pipe para escribir.** Leer es una lectura de disco antes del primer frame, del mismo `profile.json` de donde saca el nombre, así que la primera pantalla no espera al daemon. Escribir va por `settings`, que es el cuarto de la familia de `autostart`, `own_seed` y `nickname`.
 
-**Los ajustes vivieron en el sitio equivocado hasta la 0.6.9, y no se guardaba ninguno.** Apuntaban a la carpeta del daemon, donde la ventana no puede escribir, y el fallo lo tragaba un `debugPrint` que en release no imprime: el modo verboso se apagaba en cada arranque y la ventana no recordaba su tamaño. Medido el 2026-08-23 en el producto instalado, donde `ui-prefs.json` no existía ni había existido nunca. Quien busca sitio prueba primero la carpeta del daemon, así que **una copia portable sigue guardando dentro de la suya** y su promesa no se toca.
+**Los ajustes vivieron en un fichero aparte hasta la 0.6.9, y en el producto instalado no se guardaba ninguno.** `ui-prefs.json` apuntaba a la carpeta del daemon, donde la ventana no puede escribir, y el fallo lo tragaba un `debugPrint` que en release no imprime: el modo verboso se apagaba en cada arranque y la ventana no recordaba su tamaño. Medido el 2026-08-23 en el producto instalado, donde ese fichero no existía ni había existido nunca. Lo que quede de él se adopta una vez, desde la ventana, y se borra.
 
-**Una copia portable junta los dos** en `kanpachi-data\` junto al binario, y eso es coherente: una copia portable es una persona y una máquina a la vez. Lo decide un fichero, `kanpachi.portable`; ver el modelo de procesos.
+**El log de la ventana es lo único que ella escribe**, y por eso tiene su hoja con ACL propia: no puede ir por el pipe, porque lo que interesa de ese archivo es la última línea antes de morir, y un pipe caído es uno de los fallos que registra.
 
-**No hay ningún fichero de credenciales del motor**, y lo hubo escrito acá por error: `config.rs` llama a `set_credential_file(None)` y el README del motor promete que las credenciales viven en memoria y no tocan el disco. La credencial de un invitado se le pasa al motor en su orden de arranque y muere con el proceso.
-
-ACL de ProgramData: escritura solo SYSTEM y Administradores, lectura para usuarios de la máquina.
-
+**Una copia portable lo junta todo** en `kanpachi-data\` junto al binario, con los tres logs en la carpeta del ejecutable, y eso es su promesa entera: lo que deja está donde la abriste. Lo decide un fichero, `kanpachi.portable`; ver el modelo de procesos.
 ### Qué le hace a las dos salas entrar a otra
 
 Las dos salas son un PAR y el eje es host contra invitado. Entrar a una sala teniendo algo en medio no es cambiar de pantalla: es escribir en esos ficheros, y cada caso escribe distinto. Es lo que el daemon contesta en `displaces`, y lo que las tres caras tienen que decir antes de preguntar.
