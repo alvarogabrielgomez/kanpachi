@@ -68,6 +68,14 @@
 
 .PARAMETER Only
     Which scenarios to run. All of them by default.
+
+.PARAMETER LogFile
+    A copy of everything printed, one line at a time. The run takes over the
+    machine for a quarter of an hour and the console it opens is elevated, so
+    whoever wants to follow it from somewhere else needs the lines as they
+    happen. `Start-Transcript` does not give that: it holds what it writes and
+    flushes it when the run ends, which on 2026-08-24 showed a scenario header
+    and nothing else while the scenario was already three checks in.
 #>
 [CmdletBinding()]
 param(
@@ -77,16 +85,35 @@ param(
     [string]$Droplet = 'accentio-droplet',
     [string]$Seed = 'kanpachi.accentio.dev',
     [string]$Build = 'dist/measure',
-    [string]$PortableRoot = 'C:\kt\measure'
+    [string]$PortableRoot = 'C:\kt\measure',
+    [string]$LogFile
 )
 
 $ErrorActionPreference = 'Stop'
 
-function Step($t) { Write-Host "`n=== $t ===" -ForegroundColor Cyan }
-function Ok($t) { Write-Host "  OK   $t" -ForegroundColor Green }
-function Fail($t) { Write-Host "  FAIL $t" -ForegroundColor Red }
-function Info($t) { Write-Host "       $t" -ForegroundColor DarkGray }
-function Note($t) { Write-Host "  ..   $t" -ForegroundColor Yellow }
+# Say sale a la consola y, si se pidió, al archivo, con la hora delante.
+#
+# Se abre y se cierra el archivo en cada línea a propósito: lo que se quiere de
+# este log es la última línea mientras la corrida sigue viva, y un descriptor
+# abierto con buffer es exactamente lo que no la da.
+function Say([string]$linea, [string]$color) {
+    Write-Host $linea -ForegroundColor $color
+    if ($LogFile) {
+        try {
+            Add-Content -Path $LogFile -Value ("{0} {1}" -f (Get-Date -Format 'HH:mm:ss'), $linea) `
+                -Encoding UTF8
+        }
+        catch {
+            # Un log que puede tumbar la medición es peor que no tener log.
+        }
+    }
+}
+
+function Step($t) { Say '' 'Cyan'; Say "=== $t ===" 'Cyan' }
+function Ok($t) { Say "  OK   $t" 'Green' }
+function Fail($t) { Say "  FAIL $t" 'Red' }
+function Info($t) { Say "       $t" 'DarkGray' }
+function Note($t) { Say "  ..   $t" 'Yellow' }
 
 $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
@@ -235,6 +262,31 @@ function Peer-Returning() {
     return $st.returning
 }
 
+# Registry-Status pregunta por un código al registro y devuelve SOLO el número.
+#
+# Devuelve el código y no un sí o un no a propósito. `GET /api/i/{id}` contesta
+# 200 mientras la sala está y 404 en cuanto se cierra, y un `catch` que traduzca
+# cualquier fallo a "no está" convierte un DNS caído o un TLS que no negoció en
+# un verde: el escenario diría que la sala se cerró sin haber hablado con nadie.
+# Comparando contra 404, un cero delata la avería.
+function Registry-Status([string]$id) {
+    # PowerShell 5.1 arranca sin TLS 1.2 y el registro no sirve nada por debajo.
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    try {
+        $r = Invoke-WebRequest -Uri "https://$Seed/api/i/$id" -UseBasicParsing -TimeoutSec 20
+        return [int]$r.StatusCode
+    }
+    catch [Net.WebException] {
+        $resp = $_.Exception.Response
+        if ($null -eq $resp) { Info "the registry did not answer: $($_.Exception.Message)"; return 0 }
+        return [int]$resp.StatusCode
+    }
+    catch {
+        Info "asking the registry blew up: $_"
+        return 0
+    }
+}
+
 # ─── Desplegar y deshacer ────────────────────────────────────────────────────
 
 if ($Deploy) {
@@ -328,7 +380,15 @@ if ($Restore) {
 $script:failures = @()
 $script:code = ''
 
-function Check($what, [bool]$cond) {
+# Check sin tipar la condición, a propósito.
+#
+# Con `[bool]$cond` un `$null` no da rojo: da una excepción de conversión, la
+# atrapa el `try` del bucle, y el escenario se corta en esa línea sin correr el
+# resto. Y `$null` es justo lo que sale de `(Peer-Json 'last').found` cuando el
+# daemon no contesta, o sea el caso en el que más se quiere ver el resto de las
+# comprobaciones. Sin tipo, la regla de PowerShell hace lo correcto: `$null`,
+# cadena vacía, cero y lista vacía son falso.
+function Check($what, $cond) {
     if ($cond) { Ok $what } else { Fail $what; $script:failures += $what }
 }
 
@@ -688,7 +748,7 @@ $scenarios = @(
             Check 'and the return was switched off instead of left asleep' (
                 -not (Peer-Json 'last').room.auto_return)
 
-            Peer-Json 'leave --yes' | Out-Null
+            Peer-Json 'leave' | Out-Null
         }
     }
 
@@ -715,6 +775,11 @@ $scenarios = @(
             Check 'the guest hosts a room of its own' ($null -ne $propia.code)
             Check 'and its file is on disk' (Test-Path $hosted)
             $suId = $propia.code
+            # Se pregunta ANTES, y ese 200 es lo que le da valor al 404 de
+            # después: sin él, un registro inalcanzable daría el mismo resultado
+            # que una sala cerrada.
+            Check 'and the registry resolves its code while it is open' (
+                (Registry-Status $suId) -eq 200)
 
             # close_room: entering another room ends this one.
             Peer-Join $ajena
@@ -723,19 +788,13 @@ $scenarios = @(
             Check 'its own room file is GONE' (-not (Test-Path $hosted))
             # Al registro directamente, porque la terminal no tiene un verbo que
             # resuelva un código sin entrar. Retirada la entrada, `GET /api/i/{id}`
-            # deja de contestarla; ver registry/API.md.
-            $url = "https://$Seed/api/i/$suId"
-            $vivo = $true
-            try {
-                $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 20
-                $vivo = ($r.StatusCode -eq 200)
-            }
-            catch { $vivo = $false }
-            Check 'and its code no longer resolves, so there is nothing to reopen' (-not $vivo)
+            # contesta 404; ver registry/API.md.
+            Check 'and its code no longer resolves, so there is nothing to reopen' (
+                (Registry-Status $suId) -eq 404)
 
             # leave_room: leaving keeps the way back and switches the automatic
             # part off. Same shape as the kick in scenario 7, by the button.
-            Peer-Json 'leave --yes' | Out-Null
+            Peer-Json 'leave' | Out-Null
             Check 'the guest is out' (Wait-Until { -not (Peer-InRoom) } 120 'the guest to be out')
             Check 'the last room is still on disk' (Test-Path $last)
             $l = Peer-Json 'last'
@@ -750,11 +809,38 @@ Require-Admin
 
 Step 'the pieces'
 if (-not (Test-Path $cli)) { throw "no kanpachi.exe in $Build. Run scripts/build-measure-clocks.ps1 first." }
-if (-not (Test-Path $peerExe)) {
-    New-Item -ItemType Directory -Force $PortableRoot | Out-Null
-    Copy-Item (Join-Path $buildDir 'kanpachi-portable.exe') $peerExe -Force
+New-Item -ItemType Directory -Force $PortableRoot | Out-Null
+
+# El portable se repone cuando NO es el recién construido, y no solo cuando
+# falta.
+#
+# `C:\kt\measure` sobrevive entre corridas, así que copiar solo si el archivo no
+# está deja la copia de la vez pasada midiendo el código de la vez pasada, y
+# enseñándolo como si fuera el de ahora. Pasó el 2026-08-23: 13 y 14 corrieron
+# contra un binario de una semana antes, o sea contra el fallo que arreglaban.
+$fuente = Join-Path $buildDir 'kanpachi-portable.exe'
+if (-not (Test-Path $fuente)) {
+    throw "no kanpachi-portable.exe in $Build. Run scripts/build-measure-clocks.ps1 first."
+}
+if ((-not (Test-Path $peerExe)) -or
+    (Get-FileHash $fuente).Hash -ne (Get-FileHash $peerExe).Hash) {
+    Peer-Kill
+    Copy-Item $fuente $peerExe -Force
+    Info 'the guest binary is not the one just built, so it was replaced'
 }
 Ok "guest in $PortableRoot"
+
+# El daemon del invitado tiene que estar en pie antes del primer escenario.
+#
+# Solo lo levantan los que reinician a propósito, y el primero de la lista es
+# uno de ellos. Con `-Only 12` sobre una máquina apagada, cada verbo contesta
+# `no_daemon`, cada espera agota su plazo, y el escenario sale rojo por algo que
+# no es lo que estaba midiendo.
+if (-not (Peer-Running)) {
+    Note 'the guest daemon was down; starting it before the first scenario'
+    Peer-Start
+}
+Ok 'the guest daemon answers'
 Ok "host on $Droplet, registry at $Seed"
 
 # Host-Count must be able to read the daemon's log, or every delta check in 8,
