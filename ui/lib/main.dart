@@ -212,9 +212,7 @@ Future<void> _arrancar(List<String> args) async {
     silent: await _shouldStayQuiet(args),
     size: preferences.windowSize ?? AppSpacing.initialWindow,
   );
-  runApp(
-    KanpachiApp(onboarded: profile.onboarded, preferences: preferences),
-  );
+  runApp(KanpachiApp(onboarded: profile.onboarded, preferences: preferences));
 }
 
 /// Whether this run should stay in the tray with no window.

@@ -294,9 +294,19 @@ abstract final class AppMessages {
           'No hay conexión con el servidor de encuentro. Revisa tu '
           'internet, si persiste avisa en el grupo.',
     ),
+    // **No afirma dónde estás, y antes sí.** El daemon manda este mismo código
+    // para tres cosas distintas: estar dentro de una sala, hospedar una, y estar
+    // volviendo a una. Decía «ya estás en una sala» para las tres, y en la
+    // tercera era mentira: no hay sala, hay un reloj. Con esa frase delante, lo
+    // que se hacía era buscar una sala de la que salir que no existía.
+    //
+    // Desde que las seis puertas preguntan antes, esto llega solo por carrera o
+    // desde otra cara, así que reintentar es de verdad lo que hay que hacer.
     FailureCode.busy => const AppMessage(
       severity: MessageSeverity.neutral,
-      body: 'Ya estás en una sala. Sal de esa antes de abrir otra.',
+      body:
+          'Hay algo en marcha que lo impide: una sala abierta, o una vuelta a '
+          'otra sala. Inténtalo otra vez y Kanpachi pregunta qué hacer con eso.',
     ),
     // El `detail` acá lleva los comandos exactos que abren el paso, y por eso
     // se acompaña: el cuerpo dice qué pasa y el daemon dice qué escribir. En

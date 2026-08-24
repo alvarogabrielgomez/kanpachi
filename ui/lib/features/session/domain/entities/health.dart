@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/canary.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/displacement.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/returning.dart';
 
 /// Lo que el daemon vigila SOLO, sin que nadie se lo pida.
@@ -27,6 +28,7 @@ class HealthReport {
     this.seedDown = false,
     this.quarantine = const QuarantineStatus.unknown(),
     this.returning,
+    this.displaces,
   });
 
   /// Antes de haber preguntado. Ni avisos ni comprobación, que no es lo mismo
@@ -40,7 +42,8 @@ class HealthReport {
       // hallazgo.
       seedDown = false,
       quarantine = const QuarantineStatus.unknown(),
-      returning = null;
+      returning = null,
+      displaces = null;
 
   /// Los avisos vivos, **en el orden que los mandó el daemon**.
   ///
@@ -93,7 +96,40 @@ class HealthReport {
   /// que no cuesta una llamada más.
   final Returning? returning;
 
+  /// Qué costaría entrar a una sala ahora mismo, o nulo si no cuesta nada.
+  ///
+  /// **Es la respuesta del daemon, no una deducción de esta ventana.** Estaba
+  /// en el cable desde el principio y acá se tiraba: la pantalla miraba
+  /// [returning] y se inventaba la regla, así que no veía los otros dos casos y
+  /// solo la aplicaba donde alguien se acordó de escribirla. Ver [Displacement].
+  ///
+  /// Esta es la respuesta general, «entrar a CUALQUIER sala». Para un código
+  /// concreto manda la de su vista previa, que el daemon calcula contra ese
+  /// destino: volver a la sala a la que ya estás volviendo no desplaza nada.
+  final Displacement? displaces;
+
   bool get hasAlerts => alerts.isNotEmpty;
+
+  /// La misma salud, sin la vuelta.
+  ///
+  /// # Por qué la pantalla necesita adelantarse al daemon justo acá
+  ///
+  /// Porque la vuelta la manda él y el latido tarda hasta dos segundos en
+  /// traer la respuesta. Pulsar «salir de la sala» y seguir viendo el aviso
+  /// con su reloj corriendo se lee como un botón que no hizo nada, que es
+  /// exactamente lo que se acaba de arreglar. El latido siguiente confirma, y
+  /// si el daemon dijera que no, lo devuelve.
+  ///
+  /// Y se lleva por delante el desplazamiento cuando era la vuelta: dejar de
+  /// volver es exactamente lo que hacía que entrar costara algo.
+  HealthReport withoutReturning() => HealthReport(
+    alerts: alerts,
+    canary: canary,
+    net: net,
+    seedDown: seedDown,
+    quarantine: quarantine,
+    displaces: displaces?.kind == DisplaceKind.stopReturning ? null : displaces,
+  );
 
   /// Las clases de aviso que esta versión de la UI sabe nombrar.
   ///
@@ -120,6 +156,7 @@ class HealthReport {
           const <String, Object?>{},
     ),
     returning: Returning.fromJson(json['returning']),
+    displaces: Displacement.fromJson(json['displaces']),
   );
 }
 

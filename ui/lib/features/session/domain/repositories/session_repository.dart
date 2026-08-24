@@ -77,7 +77,17 @@ abstract interface class SessionRepository {
   /// disparador de "alguien acaba de abrir la pantalla donde se lee el aviso".
   void recheckForeignRules();
 
-  Future<void> leaveRoom(Room room);
+  /// Sale de la sala, y **también deja de volver a una**.
+  ///
+  /// No lleva la sala, y dejó de llevarla porque la sala no siempre está: una
+  /// máquina volviendo no está dentro de ninguna, y «salir de la sala» es
+  /// exactamente lo que alguien quiere decir cuando quiere que eso pare. El
+  /// daemon ya cubría los dos casos con el mismo método, y el parámetro solo
+  /// servía para que esta ventana no pudiera pedirlo sin sala. Ver
+  /// `usecase.Session.LeaveRoom`.
+  ///
+  /// Idempotente: salir de donde no se está es la intención ya cumplida.
+  Future<void> leaveRoom();
 
   /// La sala tal como el daemon la ve AHORA, o null si no hay ninguna.
   ///
@@ -142,7 +152,10 @@ abstract interface class SessionRepository {
   /// Puede tardar, porque levanta el motor de verdad. No es un "restaurar
   /// pantalla": vuelve a crear la red real con la identidad guardada, así que
   /// quien siguiera dentro reconecta sin pedir credencial nueva.
-  Future<Room> resumeSavedRoom();
+  /// Reabre la sala que esta máquina hospedaba. `replace` es quien llama
+  /// diciendo que dejar atrás lo que estorbe está bien: reabrir es entrar, y
+  /// entrar puede desplazar una vuelta que ya estaba en marcha.
+  Future<Room> resumeSavedRoom({bool replace = false});
 
   /// Descarta esa sala. Borra el archivo y no vuelve a preguntar.
   Future<void> discardSavedRoom();

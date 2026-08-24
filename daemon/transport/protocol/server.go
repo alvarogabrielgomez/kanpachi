@@ -115,7 +115,10 @@ type API interface {
 	SetNickname(ctx context.Context, nick string) (string, error)
 
 	SavedRoom() (domain.HostedRoom, bool)
-	ResumeRoom(ctx context.Context) (domain.RoomState, error)
+	// ResumeRoom carries the same `replace` as the two above, and for the same
+	// reason: reopening is entering, and entering can displace a return that is
+	// already in flight.
+	ResumeRoom(ctx context.Context, replace bool) (domain.RoomState, error)
 	DiscardSavedRoom(ctx context.Context) error
 	LastRoom() (domain.LastRoom, bool)
 	ForgetLastRoom(ctx context.Context) error
@@ -684,7 +687,15 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 		return s.savedRoom()
 
 	case MethodResumeRoom:
-		st, err := s.api.ResumeRoom(ctx)
+		// `replace` con la misma forma que en crear y entrar: se omite en falso,
+		// y el cero rechaza. Así olvidarlo es seguro en vez de destructivo.
+		p, e := decodeStrict[struct {
+			Replace bool `json:"replace,omitempty"`
+		}](req.Params)
+		if e != nil {
+			return nil, e
+		}
+		st, err := s.api.ResumeRoom(ctx, p.Replace)
 		return s.roomOrErr(st, err)
 
 	case MethodDiscardSavedRoom:

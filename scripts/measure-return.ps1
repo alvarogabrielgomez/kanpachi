@@ -4,11 +4,13 @@
     clocks cut short.
 
 .DESCRIPTION
-    Eleven scenarios. The first seven are the return feature's cases; 8 to 11
+    Fourteen scenarios. The first seven are the return feature's cases; 8 to 11
     are the 2026-08-16 fixes — the reattach, the member key, and the control
-    rule that stopped accumulating. None of them can be proven by a test: they
-    need a host that goes away, a registry that keeps answering, and a guest
-    that gives up on its own.
+    rule that stopped accumulating; 12 to 14 are the 2026-08-23 ones: the leave
+    button, the startup race between the two state files, and what displacing
+    writes to them. None of them can be
+    proven by a test: they need a host that goes away, a registry that keeps
+    answering, and a guest that gives up on its own.
 
       1  going back after Kanpachi is closed and opened
       2  the host reopening its room, same code, guest reconnecting
@@ -21,10 +23,14 @@
       9  a dirty restart coming back as itself: credential handed back
       10 the control rule scoped to who is there, never an accumulation
       11 a kicked member returning as a stranger: new address, nothing back
+      12 pressing leave while going back, and it staying off across a restart
+      13 both state files at once: the machine's own room wins the startup
+      14 displacing: closing ends the room, leaving keeps the way back
 
     8 to 11 run in that order and feed each other; the default full run does
     1-6, then 8-11, then 7, because 7 wants a guest inside to kick and 11
-    leaves one.
+    leaves one. 12 to 14 stand alone and go last: 13 and 14 open a room of their
+    own on the guest machine, so they leave the most behind.
 
     # The two machines
 
@@ -38,9 +44,9 @@
     never by looking at a screen or at a state file. The wire is a contract with
     locks on it; what a screen prints changes when somebody improves it.
 
-    The one exception is the EXISTENCE of last-room.json, which is the point of
-    scenario 6: the file is sealed and cannot be read from here, and its absence
-    is exactly what is being measured.
+    The one exception is the EXISTENCE of last-room.json and hosted-room.json,
+    which is the point of scenarios 6, 12 and 13: the files are sealed and cannot
+    be read from here, and whether they are there is exactly what is measured.
 
     # Before running it
 
@@ -598,6 +604,144 @@ $scenarios = @(
             Start-Sleep -Seconds 45
             Check 'and after a close and open it is still out' (-not (Peer-InRoom))
             Check 'with nothing scheduled to go back' ($null -eq (Peer-Returning))
+        }
+    }
+
+    @{
+        id    = 12
+        name  = 'pressing leave while going back switches it off'
+        run   = {
+            Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
+            Start-Sleep -Seconds 8
+            $h = Host-Json 'status'
+            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes' }
+            $script:code = $h.code + '@' + $h.seed
+            Peer-Join $script:code
+            Check 'the guest is in' (Wait-Until { Peer-InRoom } 120 'the guest to be in')
+
+            # The host goes away WITHOUT closing the room, so the guest starts
+            # going back on its own. That is the state the button acts on.
+            Host-Run 'sudo -n systemctl stop kanpachid' | Out-Null
+            Check 'the guest is going back' (Wait-Until {
+                    $null -ne (Peer-Returning) } 180 'the guest to start going back')
+
+            Peer-Json 'leave' | Out-Null
+            Check 'it stopped going back' (Wait-Until {
+                    $null -eq (Peer-Returning) } 30 'the return to stop')
+
+            $last = Peer-Json 'last'
+            Check 'the room is still saved, so going back by hand is on offer' ($last.found)
+            Check 'and it will not go back on its own any more' (-not $last.room.auto_return)
+            Check 'and the file is still on disk' (Test-Path (Join-Path $peerData 'last-room.json'))
+
+            # It has to survive a restart. Switching it off only in memory would
+            # come back armed on the next start, which is not what leaving means.
+            Peer-Kill
+            Peer-Start
+            Start-Sleep -Seconds 20
+            Check 'and after a close and open it is still not going back' (
+                $null -eq (Peer-Returning))
+        }
+    }
+
+    @{
+        id    = 13
+        name  = 'a machine holding BOTH state files reopens its own room'
+        run   = {
+            # The race this exists for: `hosted-room.json` says there is a room
+            # of this machine to reopen, `last-room.json` says it was going back
+            # to somebody else's. Both fire at startup, and before the fix
+            # whoever took the lock first won: either the room did not come back
+            # at all, or it came back with the return left armed and asleep.
+            Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
+            Start-Sleep -Seconds 8
+            $h = Host-Json 'status'
+            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes' }
+            Peer-Join ($h.code + '@' + $h.seed)
+            Check 'the guest is in somebody elses room' (
+                Wait-Until { Peer-InRoom } 120 'the guest to be in')
+
+            # Killed dirty, so `last-room.json` keeps auto_return on: only
+            # leaving on purpose and being kicked switch it off.
+            Peer-Kill
+            $last = Join-Path $peerData 'last-room.json'
+            Peer-Start
+            Check 'the return is armed' ((Peer-Json 'last').room.auto_return)
+
+            # Now this machine also has a room of its own, saved. Opening it
+            # goes through the gate and stops the return, so the file is put
+            # back by hand with the daemon down, which is the state a laptop
+            # reaches when a reopen failed and it later joined somebody else.
+            $copiaLast = Get-Content -Raw -Encoding Byte $last
+            Peer-Json 'host Propia --yes' | Out-Null
+            Check 'the guest hosts its own room now' (
+                Wait-Until { (Peer-Json 'status').role -eq 'host' } 150 'the room to open')
+            Peer-Kill
+            Set-Content -Path $last -Value $copiaLast -Encoding Byte
+            Check 'both state files are on disk' (
+                (Test-Path $last) -and (Test-Path (Join-Path $peerData 'hosted-room.json')))
+
+            Peer-Start
+            Start-Sleep -Seconds 60
+            Check 'the machines OWN room came back' (
+                (Peer-Json 'status').role -eq 'host')
+            Check 'and the return was switched off instead of left asleep' (
+                -not (Peer-Json 'last').room.auto_return)
+
+            Peer-Json 'leave --yes' | Out-Null
+        }
+    }
+
+    @{
+        id    = 14
+        name  = 'displacing writes the two state files, each in its own way'
+        run   = {
+            # What the confirmation promises has to be true on disk, and the two
+            # kinds promise different things: closing your own room ENDS it,
+            # leaving somebody else's keeps the way back and only switches the
+            # automatic part off.
+            $hosted = Join-Path $peerData 'hosted-room.json'
+            $last = Join-Path $peerData 'last-room.json'
+
+            Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
+            Start-Sleep -Seconds 8
+            $h = Host-Json 'status'
+            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes' }
+            $ajena = $h.code + '@' + $h.seed
+
+            # The guest opens a room of its OWN first, so there is something to
+            # close, and its code is asked to the registry before and after.
+            $propia = Peer-Json 'host Propia --yes'
+            Check 'the guest hosts a room of its own' ($null -ne $propia.code)
+            Check 'and its file is on disk' (Test-Path $hosted)
+            $suId = $propia.code
+
+            # close_room: entering another room ends this one.
+            Peer-Join $ajena
+            Check 'the guest got into the other room' (
+                Wait-Until { Peer-InRoom } 150 'the guest to be in')
+            Check 'its own room file is GONE' (-not (Test-Path $hosted))
+            # Al registro directamente, porque la terminal no tiene un verbo que
+            # resuelva un código sin entrar. Retirada la entrada, `GET /api/i/{id}`
+            # deja de contestarla; ver registry/API.md.
+            $url = "https://$Seed/api/i/$suId"
+            $vivo = $true
+            try {
+                $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 20
+                $vivo = ($r.StatusCode -eq 200)
+            }
+            catch { $vivo = $false }
+            Check 'and its code no longer resolves, so there is nothing to reopen' (-not $vivo)
+
+            # leave_room: leaving keeps the way back and switches the automatic
+            # part off. Same shape as the kick in scenario 7, by the button.
+            Peer-Json 'leave --yes' | Out-Null
+            Check 'the guest is out' (Wait-Until { -not (Peer-InRoom) } 120 'the guest to be out')
+            Check 'the last room is still on disk' (Test-Path $last)
+            $l = Peer-Json 'last'
+            Check 'so going back by hand is still on offer' ($l.found)
+            Check 'but not on its own, because leaving was deliberate' (
+                -not $l.room.auto_return)
         }
     }
 )

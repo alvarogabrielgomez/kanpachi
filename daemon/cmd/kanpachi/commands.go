@@ -952,11 +952,22 @@ func cmdPending(_ context.Context, op options, _ []string) error {
 	return nil
 }
 
-func cmdResume(_ context.Context, op options, _ []string) error {
+func cmdResume(_ context.Context, op options, args []string) error {
+	_, noQuestions := takeYes(args)
+	// Reopening is entering, so it goes through the same gate as `host` and
+	// `join`. The case it is here for is this machine holding both state files at
+	// once: a room of its own to reopen, and a return to somebody else's already
+	// in flight.
+	replace, err := confirmDisplacement(op, noQuestions)
+	if err != nil {
+		return err
+	}
 	if !op.json {
 		fmt.Println("Reopening the previous room with its same code.")
 	}
-	return withRoom(op, protocol.MethodResumeRoom, nil)
+	return withRoom(op, protocol.MethodResumeRoom, struct {
+		Replace bool `json:"replace,omitempty"`
+	}{replace})
 }
 
 func cmdDiscard(_ context.Context, op options, _ []string) error {

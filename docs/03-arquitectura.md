@@ -698,7 +698,9 @@ Cinco puertos tienen adaptador real y siete siguen en `sinimplementar`, fallando
 
 **La auditoría se compone en el binario y no dentro del firewall.** `ExposureAudit` hace tres preguntas y el firewall solo puede contestar dos: `RouterMappings` le habla al router del usuario por IGD, que es otro protocolo sobre otra red. Contestarla `nil, nil` desde dentro del firewall haría que "no hay mapeos" y "nadie miró" fueran indistinguibles, en la única pantalla cuyo trabajo es distinguir esas dos cosas. Se compone explícita y no por embebido, para que el objeto que solo mide no cargue además con `Apply` y `PurgeOwned`.
 
-**Apagar limpio es SALIR.** `LeaveRoomOnShutdown` cierra los puertos, restaura las reglas ajenas suspendidas, revierte los ajustes, borra `hosted-room.json` y **vuelve a medir**. Devuelve error, a diferencia de salir de la sala, y la razón es que al apagar no hay nadie mirando la pantalla: una alerta añadida a un estado que el proceso va a tirar en un segundo no es un informe. Y borra el archivo porque su ausencia es lo que dice que la salida fue limpia: conservarlo haría que todo apagado se leyera como una muerte sucia, y el aviso de "quedó una sala abierta" dejaría de significar nada por salir siempre.
+**Apagar limpio devuelve la máquina, y ya NO cierra la sala.** `LeaveRoomOnShutdown` cierra los puertos, restaura las reglas ajenas suspendidas, revierte los ajustes y **vuelve a medir**. Devuelve error, a diferencia de salir de la sala, y la razón es que al apagar no hay nadie mirando la pantalla: una alerta añadida a un estado que el proceso va a tirar en un segundo no es un informe.
+
+**`hosted-room.json` se conserva**, y eso se revirtió a propósito. Antes se borraba y su ausencia significaba "la salida fue limpia", leído al revés: la presencia era una muerte sucia. Apagar el proceso no es que la sala se acabe. Un `apt upgrade`, un reinicio o un `systemctl restart` paran el daemon y la sala sigue siendo de quien la abrió, así que al arrancar se reabre con el mismo código y los enlaces repartidos siguen valiendo. Lo que sí la termina es `LeaveRoom`, que borra el fichero y retira la entrada del registro. Tampoco se avisa acá a los miembros de que la sala se cierra: sería mentira, y cada invitado dejaría de reconectar.
 
 ### La regla verificada por un test
 
@@ -1083,7 +1085,7 @@ Reglas que se derivan:
 - **El host se va:** sus reglas de firewall desaparecen con su máquina. Los invitados no tienen nada abierto, porque en un juego de estrella nunca abrieron nada. La red queda inerte, no insegura.
 
   La excepción, y es la única: un perfil de MALLA, o sea con `client_ports` no vacío, sí abre puertos en cada invitado. Es lo que documenta `06-catalogo.md` y lo que pide el netcode viejo de paso bloqueado, donde cada cliente habla con todos. Poner algo en `client_ports` expande el radio de explosión de todos los miembros y por eso el listón es más alto: se justifica en el perfil, se prueba que NO funcionaba en estrella, y la UI lo dice antes de entrar. La enorme mayoría de los juegos es estrella y ahí la frase de arriba vale literal.
-- **El host vuelve:** su propio daemon conserva la sala en `hosted-room.json` con el juego que estaba activo, y al arrancar **pregunta** si reabrirla. Al reabrir, la identidad de la red es la misma, el perfil se repone resolviéndolo contra el catálogo de esa máquina, y las reglas se regeneran para los miembros presentes en ese momento. Nunca reabre sola. Ver decisión 2.
+- **El host vuelve:** su propio daemon conserva la sala en `hosted-room.json` con el juego que estaba activo, y al arrancar **la reabre sola**, sin preguntar. Al reabrir, la identidad de la red es la misma, el perfil se repone resolviéndolo contra el catálogo de esa máquina, y las reglas se regeneran para los miembros presentes en ese momento, que al principio son cero. Ver decisión 2. La versión que preguntaba ya no existe: la sala vuelve sin que nadie esté delante, que es lo que hace que un reinicio del servidor no le cueste la partida a nadie.
 - **Nadie hereda el rol.** No hay promoción automática ni elección. Un invitado que quiera hospedar crea una sala nueva.
 - **Se va el último nodo y la red deja de existir.** No queda estado de RED en ningún lado: ningún servidor sostiene la sala, y el seed no puede levantarla. Es la consecuencia natural de no tener servidor de salas, no una limitación que haya que disculpar.
 
@@ -2495,25 +2497,46 @@ ProgramData\Kanpachi\
                              pintado en la pantalla de cada miembro— y la ventana
                              lo lee del disco antes del primer frame para saber si
                              enseña el alta o la portada
-  ui-prefs.json              lo que la VENTANA recuerda: tamaño, si narra los
-                             pasos, y la versión publicada que ya vio. Lo escribe
-                             Flutter, y vive acá para que una copia portable se
-                             lleve sus ajustes dentro de la carpeta. **El apodo ya
-                             no está acá**: era el segundo sitio donde vivía el
-                             mismo dato, ver profile.json
   logs\kanpachi.log          lo que el daemon dice, Y la traza de un pánico, que
                              antes se perdía. En todo modo salvo consola, que va a
                              la salida estándar, que es donde mira quien programa.
                              Rotación por tamaño a los 2 MB, con UNA copia anterior
                              en kanpachi.log.1. La carpeta se mueve con --log
   logs\kanpachi-engine.log   lo que dice el motor, escrito por él. Ver abajo
+%LOCALAPPDATA%\Kanpachi\     lo de la PERSONA que abrió la ventana, escrito por
+                             ella y jamás leído por el daemon
+  ui-prefs.json              lo que la VENTANA recuerda: tamaño, si narra los
+                             pasos, y la versión publicada que ya vio. **El apodo
+                             ya no está acá**: era el segundo sitio donde vivía el
+                             mismo dato, ver profile.json
+  kanpachi-ui.log            lo que dice la ventana, con la traza de sus muertes
 ```
+
+### Dos sitios, y el eje es máquina contra persona
+
+`ProgramData\Kanpachi` lo escribe el **daemon**, que corre como SYSTEM, y ahí va lo de la MÁQUINA: el token, la identidad, las dos salas, el registro, la libreta y el nombre. Los usuarios lo LEEN y no lo escriben, y esa ACL es media protección del token.
+
+`%LOCALAPPDATA%\Kanpachi` lo escribe la **ventana**, como el usuario, y ahí va lo de la PERSONA. Un tamaño de ventana no es un hecho de la máquina: dos personas en la misma PC quieren cada una el suyo, y guardarlos arriba los volvería compartidos además de imposibles de escribir. El nombre sí está arriba, y no es una excepción sino una decisión: la identidad es de la máquina y tres caras preguntan por ella.
+
+**Los ajustes vivieron en el sitio equivocado hasta la 0.6.9, y no se guardaba ninguno.** Apuntaban a la carpeta del daemon, donde la ventana no puede escribir, y el fallo lo tragaba un `debugPrint` que en release no imprime: el modo verboso se apagaba en cada arranque y la ventana no recordaba su tamaño. Medido el 2026-08-23 en el producto instalado, donde `ui-prefs.json` no existía ni había existido nunca. Quien busca sitio prueba primero la carpeta del daemon, así que **una copia portable sigue guardando dentro de la suya** y su promesa no se toca.
+
+**Una copia portable junta los dos** en `kanpachi-data\` junto al binario, y eso es coherente: una copia portable es una persona y una máquina a la vez. Lo decide un fichero, `kanpachi.portable`; ver el modelo de procesos.
 
 **No hay ningún fichero de credenciales del motor**, y lo hubo escrito acá por error: `config.rs` llama a `set_credential_file(None)` y el README del motor promete que las credenciales viven en memoria y no tocan el disco. La credencial de un invitado se le pasa al motor en su orden de arranque y muere con el proceso.
 
-En una carpeta portable el árbol de la derecha es el mismo, colgando de `kanpachi-data\` junto al binario en vez de `ProgramData\Kanpachi`. Lo decide un fichero, `kanpachi.portable`; ver el modelo de procesos.
-
 ACL de ProgramData: escritura solo SYSTEM y Administradores, lectura para usuarios de la máquina.
+
+### Qué le hace a las dos salas entrar a otra
+
+Las dos salas son un PAR y el eje es host contra invitado. Entrar a una sala teniendo algo en medio no es cambiar de pantalla: es escribir en esos ficheros, y cada caso escribe distinto. Es lo que el daemon contesta en `displaces`, y lo que las tres caras tienen que decir antes de preguntar.
+
+| Lo que estorba | Qué pasa en disco |
+|---|---|
+| Hospedas la tuya (`close_room`) | Se borra `hosted-room.json` **y** se retira la entrada del registro. La sala **termina**: su código deja de resolver y no queda nada que reabrir. Es lo más destructivo que hace el producto |
+| Estás en la de otro (`leave_room`) | El fichero se queda. `last-room.json` se reescribe como salida deliberada, o sea con la vuelta automática APAGADA y sin la semilla de miembro |
+| Estás volviendo (`stop_returning`) | Se reescribe `last-room.json` con la vuelta apagada, y el fichero se conserva. Por eso volver a mano se sigue ofreciendo, que es lo mismo que hace que expulsar no sea banear |
+
+**Y los dos ficheros se pelean en el arranque, si están los dos.** El supervisor corre primero y la vuelta arranca con su plazo en cero, así que su primer intento cae en el primer latido; reabrir la sala propia sale a continuación en su propia gorrutina. Sin arbitrar, ganaba quien tomara el candado antes, y las dos formas de perder eran malas: la sala propia sin reabrir con gente esperándola, o reabierta con la vuelta armada y dormida hasta que alguien la cerrara. **Gana la sala de esta máquina**, porque `reabrirLaSala` pasa por la misma compuerta con el consentimiento puesto. Es la jerarquía que la vuelta ya reconocía cediendo con `ErrBusy`.
 
 **El daemon es la única fuente de verdad.** Cerrar la ventana no cierra la sala, así que el estado tiene que sobrevivir a la UI. La UI lo lee por `Status()` y persiste únicamente cosas de presentación, como el tamaño de la ventana. Guardar la sala también del lado de Flutter crearía dos verdades que se desincronizan justo en el caso que el producto promete soportar, que es cerrar la ventana con la partida viva.
 

@@ -353,7 +353,7 @@ func (s *salaFalsa) SavedRoom() (domain.HostedRoom, bool) {
 	return domain.HostedRoom{}, s.pendiente
 }
 
-func (s *salaFalsa) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
+func (s *salaFalsa) ResumeRoom(ctx context.Context, _ bool) (domain.RoomState, error) {
 	s.orden.anota("reabrir-sala")
 	if s.reabrirCuelga {
 		<-ctx.Done()

@@ -70,7 +70,21 @@ func (s *Session) DiscardSavedRoom(_ context.Context) error {
 // la cuarentena por defecto existe para impedir. Con cero miembros presentes el
 // conjunto deseado es el vacío, así que reponer el juego no abre nada hasta que
 // haya alguien de verdad.
-func (s *Session) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
+//
+// # Por qué esto también pasa por la compuerta
+//
+// Porque reabrir es entrar, y entrar puede desplazar algo. El caso concreto son
+// los dos ficheros de estado a la vez: `hosted-room.json` diciendo que hay sala
+// que reponer, y `last-room.json` con la vuelta armada. Sin esto los dos salen
+// disparados en el arranque sin nadie que arbitre, y gana quien tome el candado
+// antes: o la sala propia no reabre y solo queda un error en el log, o reabre y
+// la vuelta se queda dormida esperando a que se cierre. Ver
+// [Session.clearTheWayLocked] y [Runtime.reabrirLaSala], que pasa `replace` en
+// cierto porque la sala de esta máquina gana sobre volver a la de otro.
+//
+// La guarda de estar YA dentro de una sala se queda por delante y sin tocar: con
+// ella en falso, la compuerta solo puede caer en la rama de la vuelta.
+func (s *Session) ResumeRoom(ctx context.Context, replace bool) (domain.RoomState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -81,6 +95,10 @@ func (s *Session) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
 		return domain.RoomState{}, ErrNoSavedRoom
 	}
 	saved := s.saved
+
+	if err := s.clearTheWayLocked(ctx, saved.Room, replace); err != nil {
+		return domain.RoomState{}, err
+	}
 
 	if err := s.state.Transition(domain.StateResolving, "el usuario reabrió la sala anterior"); err != nil {
 		return domain.RoomState{}, err

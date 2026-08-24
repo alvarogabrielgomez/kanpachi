@@ -87,13 +87,20 @@ func whatGetsLost(d *protocol.DisplacesView) string {
 		name = "(unnamed)"
 	}
 	switch d.Kind {
+	// Closing says the room ENDS, and the two lines below it used to stop at the
+	// ports. What actually happens is that `hosted-room.json` goes and the entry
+	// is retired from the registry: the code stops resolving and there is nothing
+	// left to reopen. That is the most destructive thing this product does, and
+	// announcing it as "the ports close" undersells it.
 	case "close_room":
-		s := fmt.Sprintf("Entering another room means CLOSING yours, %s.", name)
+		s := fmt.Sprintf("Entering another room means CLOSING yours, %s, for good.", name)
 		if d.Members > 0 {
 			s += fmt.Sprintf("\n  The %d people inside drop and the game ports close.", d.Members)
 		} else {
 			s += "\n  The game ports close."
 		}
+		s += fmt.Sprintf("\n  Its code %s stops working and there is nothing left to reopen.",
+			hyphenated(d.Code))
 		return s
 	case "stop_returning":
 		return fmt.Sprintf("Entering another room means giving up on going back to %s, %s.",

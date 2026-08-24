@@ -1856,3 +1856,25 @@ El retardo creciente es global y no por cuenta, porque no hay cuentas: bloquear 
 **Medido de punta a punta el 2026-08-20**, en un contenedor privilegiado con la topología del fallo: un `veth` haciendo de adaptador de la sala (`100.93.137.1`), un miembro al otro lado (`100.93.137.7`) y el servidor atado a propósito a `10.42.0.15`, que es el equivalente de la IP del pod. Sin desvío el datagrama no llega; con el desvío llega, **y llega con el origen intacto** (`100.93.137.7`), que es lo que hace que el juego siga viendo a cada miembro por su dirección y que las reglas por miembro sigan valiendo; al quitarlo, deja de llegar. La misma corrida encontró un fallo real: borrar nuestra tabla en el mismo lote que la crea contesta ENOENT cuando todavía no está, y eso tumbaba TODA primera aplicación.
 
 **Lo que sigue estando escrito en los docs:** que el servidor se ate a `0.0.0.0`. El desvío es la red de seguridad para quien copió un compose, no una excusa para dejar de decirlo.
+
+## 41. Lo que cuesta entrar a una sala lo calcula el daemon, y cada cara lo pinta
+
+Entrar a una sala puede costar algo: estás dentro de una y sales, hospedas la tuya y **la cierras**, o estás volviendo a una y dejas de intentarlo. Quién decide cuál de las tres, y si hay alguna, es el daemon. Lo publica en `displaces`, dentro del mismo estado que las tres caras ya piden, y también en la vista previa de un código, donde va calculado contra ESE destino.
+
+**El daemon no puede preguntar.** Corre como SYSTEM o como root, sin ventana y sin terminal, así que la mitad que decide y la mitad que pregunta están separadas por fuerza. Solo se comparte la primera. La ventana enseña un modal, el asistente un `survey.Confirm`, y la terminal pregunta o exige `--yes` cuando no hay dónde contestar.
+
+**Tres caras aplicando la regla por su cuenta son tres copias que se separan**, y eso ya pasó: la ventana la deducía de «hay una vuelta armada», que no ve los otros dos casos, y estaba escrita en dos de las seis puertas que entran a una sala. Las otras cuatro iban derechas al daemon, que las rechazaba con `busy` sin que nadie hubiera podido consentir. La peor era el enlace `kanpachi://`, que se enseña encima de la sala abierta a propósito: **un host no podía aceptar un enlace nunca**.
+
+**Lo que se confirma es una escritura en disco, y por eso el texto es distinto en cada caso.** Cerrar la sala propia borra su fichero y retira su entrada del registro: el código deja de resolver y no queda nada que reabrir. Salir de la de otro no destruye nada y apaga que se vuelva sola. Dejar de volver apaga un reloj. Ver `03-arquitectura.md`, donde está la tabla.
+
+## 42. Lo de la máquina lo escribe el daemon, lo de la persona lo escribe la ventana
+
+Dos sitios, y el eje no es «lo importante y lo demás»: es a quién pertenece el dato.
+
+`ProgramData\Kanpachi` es de la MÁQUINA y lo escribe el daemon, que corre como SYSTEM. Los usuarios leen y no escriben, y esa ACL es media protección del token de la API local. `%LOCALAPPDATA%\Kanpachi` es de la PERSONA que abrió la ventana, y lo escribe ella. El daemon no lo lee nunca.
+
+**Un ajuste de la ventana no es un hecho de la máquina.** Dos personas en la misma PC quieren cada una su tamaño de ventana y su modo verboso. El apodo sí es de la máquina, por la decisión 38, y por eso está arriba: no es una excepción a esta regla, es la otra mitad de la misma.
+
+**Sin la regla escrita, se guarda en el sitio equivocado y no se nota.** Los ajustes apuntaban a la carpeta del daemon, donde la ventana no puede escribir, y el fallo lo tragaba un `debugPrint` que en una compilación de release no imprime nada: el modo verboso se apagaba en cada arranque y la ventana no recordaba su tamaño. Medido el 2026-08-23 en el producto instalado, donde `ui-prefs.json` no existía ni había existido nunca. El registro de la ventana ya vivía en el sitio bueno, pero por accidente y como último recurso, sin que nadie lo hubiera decidido.
+
+**Una copia portable junta los dos en su carpeta**, y eso no rompe la regla: una copia portable es una persona y una máquina a la vez. Por eso quien busca sitio prueba primero la carpeta del daemon, escribe una prueba de verdad, y solo cae al sitio de la persona cuando esa prueba falla. Crear la carpeta sale bien donde crear un fichero dentro no, que es justo la forma del permiso de `ProgramData`.

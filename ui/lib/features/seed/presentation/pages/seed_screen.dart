@@ -12,6 +12,7 @@ import 'package:kanpachi_ui/features/session/domain/daemon_failure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/own_seed.dart';
 import 'package:kanpachi_ui/features/session/presentation/daemon_failure_text.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
+import 'package:kanpachi_ui/features/shell/presentation/ask_trust.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
 
@@ -118,7 +119,11 @@ class _SeedScreenState extends State<SeedScreen> {
       final String? nombre = session.hostIntentName;
       shell.back();
       if (nombre != null && v.configured.isNotEmpty) {
-        shell.askTrust(
+        // Por la compuerta, igual que la portada. Este camino iba derecho a la
+        // confianza, así que quien llegaba acá con una vuelta armada terminaba
+        // en «ya estás en una sala» después de haber escrito su servidor.
+        askTrustOrDisplace(
+          context,
           TrustRequest.hosting(seed: v.configured, suggestedName: nombre),
         );
       }

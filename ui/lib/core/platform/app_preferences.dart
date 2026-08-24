@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart';
+import 'package:kanpachi_ui/core/platform/app_log.dart';
+import 'package:kanpachi_ui/core/platform/user_dir.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 
 /// What this window remembers between runs.
@@ -43,9 +45,16 @@ import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 /// even though its data folder travelled whole, deleting the folder left that
 /// file behind, and two builds could not disagree about the size of a window.
 ///
-/// The store goes where the daemon's data goes, which is what makes the
-/// promise true: everything a portable copy remembers sits in the folder it
-/// was run from. See `PipeNames.dataDir` for who decides that folder.
+/// # Dónde acaba el fichero
+///
+/// **En la carpeta del daemon cuando se puede escribir ahí, y si no en la de la
+/// persona.** En una copia portable se puede, y eso es lo que sostiene su
+/// promesa: todo lo que recuerda vive en la carpeta desde la que se abrió. En el
+/// producto instalado no se puede, porque los usuarios solo LEEN
+/// `C:\ProgramData\Kanpachi`, así que va a `%LOCALAPPDATA%\Kanpachi`. Que es
+/// además donde le tocaba: un tamaño de ventana es de quien mira la ventana, no
+/// de la máquina. La regla entera está en [UserDir]; quién decide la carpeta del
+/// daemon, en `PipeNames.dataDir`.
 class AppPreferences {
   AppPreferences._(this._file, this._values, this._defaultVerbose);
 
@@ -74,17 +83,48 @@ class AppPreferences {
   /// `PipeNames`, which lives a layer out. This file must not reach into a
   /// feature to answer it.
   ///
+  /// # Dónde acaba, y por qué no basta con `dir`
+  ///
+  /// Se prueban dos sitios en orden: la carpeta del daemon, y la de la persona
+  /// que abrió la ventana. En una copia portable gana la primera, que es lo que
+  /// mantiene la promesa de que todo lo que recuerda vive en su carpeta. En el
+  /// producto instalado esa carpeta es `C:\ProgramData\Kanpachi`, donde los
+  /// usuarios **leen y no escriben** por decisión del instalador, así que gana
+  /// la segunda. Ver [UserDir], donde está escrita la regla.
+  ///
+  /// **Apuntar solo a `dir` no era guardar, era aparentar.** Medido el
+  /// 2026-08-23 en el producto instalado: `ui-prefs.json` no existía en la
+  /// carpeta del daemon y nunca había existido, así que el modo verboso se
+  /// apagaba en cada arranque, la ventana no recordaba su tamaño, y el fallo lo
+  /// tragaba un `debugPrint` que en una compilación de release no imprime. El
+  /// mismo problema ya lo había resuelto [AppLog] con esta misma forma, y su
+  /// registro cayendo a la carpeta de la persona era la prueba en vivo.
+  ///
+  /// # Por qué se PRUEBA a escribir en vez de mirar si existe
+  ///
+  /// Porque crear la carpeta sale bien en un sitio donde después no se puede
+  /// crear un archivo dentro, que es exactamente la forma del permiso de
+  /// `C:\ProgramData`. La prueba usa el mismo `.tmp` que usa [_save], así que
+  /// comprueba la operación que de verdad importa y no una parecida.
+  ///
   /// **A store that cannot be read opens EMPTY instead of failing.** What is
-  /// lost then is a nickname and a window size; what refusing would cost is
-  /// the window, and with it the tray icon and the only way to close a room.
+  /// lost then is a window size; what refusing would cost is the window, and
+  /// with it the tray icon and the only way to close a room.
   static Future<AppPreferences> open({
     String? dir,
     bool defaultVerbose = kDebugMode,
   }) async {
+    // Sin carpeta que probar no hay tienda, y ese caso se conserva a propósito:
+    // es el de los tests, y caer al sitio de la persona los pondría a escribir
+    // en el `%LOCALAPPDATA%` de quien los corre.
     if (dir == null || dir.trim().isEmpty) {
       return AppPreferences._(null, <String, Object?>{}, defaultVerbose);
     }
-    final File file = File('${dir.trim()}\\$fileName');
+    final File? file = _primerSitioEscribible(<String?>[dir, UserDir.path]);
+    if (file == null) {
+      AppLog.warn('los ajustes de la ventana no se van a poder guardar');
+      return AppPreferences._(null, <String, Object?>{}, defaultVerbose);
+    }
     Map<String, Object?> values = <String, Object?>{};
     try {
       if (file.existsSync()) {
@@ -102,9 +142,33 @@ class AppPreferences {
       // Se dice y se sigue con lo que hay. Un JSON a medias es un arranque
       // interrumpido, y la respuesta correcta es empezar de cero: el fichero
       // se reescribe entero en el primer cambio.
-      debugPrint('los ajustes de la ventana no se pudieron leer: $e');
+      AppLog.warn('los ajustes de la ventana no se pudieron leer', '$e');
     }
     return AppPreferences._(file, values, defaultVerbose);
+  }
+
+  /// El primero de los candidatos donde se pueda escribir de verdad.
+  ///
+  /// Null cuando ninguno sirve, que es el caso de los tests: entonces todo
+  /// contesta de memoria y guardar no hace nada, dicho en el registro.
+  static File? _primerSitioEscribible(List<String?> candidatos) {
+    for (final String? candidato in candidatos) {
+      if (candidato == null || candidato.trim().isEmpty) continue;
+      final String base = candidato.trim();
+      try {
+        Directory(base).createSync(recursive: true);
+        final File file = File('$base${Platform.pathSeparator}$fileName');
+        final File temp = File('${file.path}.tmp');
+        temp.writeAsStringSync('', flush: true);
+        temp.deleteSync();
+        return file;
+      } on Object {
+        // Ese sitio no sirve y se prueba el siguiente. No se anota acá: fallar
+        // en la carpeta del daemon es lo NORMAL en el producto instalado, y un
+        // aviso por cada arranque sería ruido sobre algo que funciona.
+      }
+    }
+    return null;
   }
 
   /// Vuelca el mapa entero, y por un fichero temporal.
@@ -120,7 +184,10 @@ class AppPreferences {
       await temp.writeAsString(jsonEncode(_values), flush: true);
       await temp.rename(file.path);
     } on Object catch (e) {
-      debugPrint('los ajustes de la ventana no se pudieron guardar: $e');
+      // Al registro y no a `debugPrint`, que en release no imprime: así es como
+      // el producto instalado se pasó meses sin guardar un ajuste y sin dejar
+      // rastro de que lo intentaba.
+      AppLog.warn('los ajustes de la ventana no se pudieron guardar', '$e');
     }
   }
 

@@ -12,6 +12,7 @@ import 'package:kanpachi_ui/features/seed/presentation/widgets/seed_trust_block.
 import 'package:kanpachi_ui/features/seed/presentation/widgets/host_trust_block.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
+import 'package:kanpachi_ui/features/shell/presentation/ask_trust.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
 
@@ -163,8 +164,28 @@ class InviteScreen extends StatelessWidget {
                     // ir allá antes enseñaría una sala vacía durante el minuto
                     // que tarda en abrirse, y una sala que no llegó a abrirse
                     // dejaría la pantalla puesta sobre nada.
-                    onPressed: () =>
-                        unawaited(context.read<SessionCubit>().acceptInvite()),
+                    //
+                    // **Por la compuerta, y ese era el agujero peor.** Esta
+                    // pantalla se enseña ENCIMA de la sala abierta a propósito,
+                    // porque el caso normal es un host al que le pasan un
+                    // código. Sin preguntar, el daemon rechazaba con «ya estás
+                    // en una sala» y no había dónde consentir: ese host no podía
+                    // aceptar un enlace nunca.
+                    //
+                    // Lo que se mira es el desplazamiento de la vista previa, que
+                    // el daemon calculó contra ESTA sala. La respuesta general
+                    // diría que sí volviendo a esta misma sala, o sea pediría
+                    // permiso para abandonar justo lo que se está haciendo.
+                    onPressed: () {
+                      if (askDisplaceFirst(
+                        context,
+                        DisplaceIntent.acceptInvite,
+                        preview: invite.displaces,
+                      )) {
+                        return;
+                      }
+                      unawaited(context.read<SessionCubit>().acceptInvite());
+                    },
                   ),
                 ),
               ],

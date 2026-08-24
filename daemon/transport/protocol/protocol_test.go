@@ -605,11 +605,11 @@ func (a *apiFalsa) ObserveGame(context.Context, domain.ProcessRef, map[int]bool,
 	return nil, nil
 }
 
-func (a *apiFalsa) SavedRoom() (domain.HostedRoom, bool)                 { return domain.HostedRoom{}, false }
-func (a *apiFalsa) ResumeRoom(context.Context) (domain.RoomState, error) { return a.estado, nil }
-func (a *apiFalsa) DiscardSavedRoom(context.Context) error               { return nil }
-func (a *apiFalsa) LastRoom() (domain.LastRoom, bool)                    { return domain.LastRoom{}, false }
-func (a *apiFalsa) ForgetLastRoom(context.Context) error                 { return nil }
+func (a *apiFalsa) SavedRoom() (domain.HostedRoom, bool)                       { return domain.HostedRoom{}, false }
+func (a *apiFalsa) ResumeRoom(context.Context, bool) (domain.RoomState, error) { return a.estado, nil }
+func (a *apiFalsa) DiscardSavedRoom(context.Context) error                     { return nil }
+func (a *apiFalsa) LastRoom() (domain.LastRoom, bool)                          { return domain.LastRoom{}, false }
+func (a *apiFalsa) ForgetLastRoom(context.Context) error                       { return nil }
 
 // El registro de esta máquina. `seed` guarda lo último que se fijó, para que un
 // test pueda comprobar que escribir y releer devuelven lo mismo.

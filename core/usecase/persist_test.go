@@ -88,7 +88,7 @@ func TestReabrirConservaLaIdentidadDeLaRed(t *testing.T) {
 	código := b.session.Status().Room
 
 	b = reinicia(t, b)
-	st, err := b.session.ResumeRoom(ctx())
+	st, err := b.session.ResumeRoom(ctx(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestReabrirReponeElJuegoResolviéndoloContraElCatálogoPropio(t *testing.T)
 	}
 	b = reinicia(t, b)
 
-	st, err := b.session.ResumeRoom(ctx())
+	st, err := b.session.ResumeRoom(ctx(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestReabrirSinElPerfilDejaLaSalaSinJuego(t *testing.T) {
 	b.catalog.builtin = []byte(`{"kanpachi_catalog":1,"profiles":[]}`)
 	b = reinicia(t, b)
 
-	st, err := b.session.ResumeRoom(ctx())
+	st, err := b.session.ResumeRoom(ctx(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestReabrirNoRestauraMiembros(t *testing.T) {
 	b.motor.peers = nil
 	b = reinicia(t, b)
 
-	st, err := b.session.ResumeRoom(ctx())
+	st, err := b.session.ResumeRoom(ctx(), false)
 	if err != nil {
 		t.Fatal(err)
 	}

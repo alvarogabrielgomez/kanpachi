@@ -46,6 +46,26 @@ enum AppScreen {
   seedPassword,
 }
 
+/// Qué se hace después de confirmar [AppDialog.confirmDisplace].
+///
+/// Un enum y no un callback guardado, por lo mismo que [TrustRequest] viaja en
+/// el estado: [ShellState] es inmutable y comparable, y una función dentro
+/// rompería la igualdad y con ella el redibujado.
+enum DisplaceIntent {
+  /// Seguir al diálogo de confianza, que es quien abre o entra. Es el camino de
+  /// cuatro de las seis puertas.
+  trust,
+
+  /// Reabrir la sala propia guardada. No pasa por la confianza: es la sala de
+  /// esta máquina en el registro de esta máquina.
+  resumeSavedRoom,
+
+  /// Entrar por el enlace `kanpachi://`. Tampoco pasa por el diálogo de
+  /// confianza, y no es un olvido: la pantalla del enlace **es** la confianza,
+  /// con el registro y la huella de quien hospeda ya delante.
+  acceptInvite,
+}
+
 /// Los diálogos, que se dibujan por encima de la pantalla actual.
 enum AppDialog {
   none,
@@ -57,7 +77,8 @@ enum AppDialog {
   /// salirse: es terminar la sala para todos los que están jugando.
   confirmClose,
 
-  /// Dejar de volver a la sala anterior, para entrar a otra o abrir una propia.
+  /// Dejar atrás lo que estorbe para entrar a una sala: salir de la de otro,
+  /// CERRAR la propia, o dejar de volver a la anterior.
   ///
   /// Va ANTES del de confianza: primero se pregunta por lo que se pierde y
   /// después por la máquina a la que se le va a hablar.
@@ -99,6 +120,7 @@ class ShellState {
     this.portable = false,
     this.kickTarget,
     this.trust,
+    this.displaceThen = DisplaceIntent.trust,
   });
 
   final AppScreen screen;
@@ -152,6 +174,9 @@ class ShellState {
   /// función dentro rompería la igualdad y con ella el redibujado.
   final TrustRequest? trust;
 
+  /// Qué sigue si se confirma el desplazamiento. Ver [DisplaceIntent].
+  final DisplaceIntent displaceThen;
+
   ShellState copyWith({
     AppScreen? screen,
     List<AppScreen>? history,
@@ -166,6 +191,7 @@ class ShellState {
     bool clearKickTarget = false,
     TrustRequest? trust,
     bool clearTrust = false,
+    DisplaceIntent? displaceThen,
   }) => ShellState(
     portable: portable,
     screen: screen ?? this.screen,
@@ -179,6 +205,7 @@ class ShellState {
     pickerCameFromRoom: pickerCameFromRoom ?? this.pickerCameFromRoom,
     kickTarget: clearKickTarget ? null : (kickTarget ?? this.kickTarget),
     trust: clearTrust ? null : (trust ?? this.trust),
+    displaceThen: displaceThen ?? this.displaceThen,
   );
 }
 
@@ -377,14 +404,23 @@ class ShellCubit extends Cubit<ShellState> {
   void askTrust(TrustRequest req) =>
       emit(state.copyWith(dialog: AppDialog.trustSeed, trust: req));
 
-  /// Pregunta antes de dejar atrás la sala a la que se estaba volviendo.
+  /// Pregunta antes de dejar atrás lo que estorba para entrar a una sala.
   ///
   /// Lleva el MISMO [TrustRequest] que se va a usar después, y no un callback:
   /// este estado es inmutable y comparable, y una función dentro rompería la
   /// igualdad. Al confirmar, el diálogo lo pasa a [askTrust] con `replace`
   /// puesto, que es lo único que cambia entre haber preguntado y no.
-  void askDisplace(TrustRequest next) =>
-      emit(state.copyWith(dialog: AppDialog.confirmDisplace, trust: next));
+  /// `next` solo lo lleva [DisplaceIntent.trust], que es el único camino que
+  /// sigue al diálogo de confianza. Los otros dos ya saben qué hacer con su
+  /// propia pantalla detrás.
+  void askDisplace(DisplaceIntent then, {TrustRequest? next}) => emit(
+    state.copyWith(
+      dialog: AppDialog.confirmDisplace,
+      trust: next,
+      clearTrust: next == null,
+      displaceThen: then,
+    ),
+  );
 
   void askKick(Member member) =>
       emit(state.copyWith(dialog: AppDialog.confirmKick, kickTarget: member));

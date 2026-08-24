@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:kanpachi_ui/core/platform/user_dir.dart';
+
 /// El registro de ESTA ventana, en un archivo al lado del del daemon.
 ///
 /// # Por qué existe
@@ -53,7 +55,7 @@ abstract final class AppLog {
   /// instalado se quedaría sin registro y sin decirlo.
   static void open({String? dir, String? fallback}) {
     if (_file != null) return;
-    for (final String? candidate in <String?>[dir, fallback, _localAppData()]) {
+    for (final String? candidate in <String?>[dir, fallback, UserDir.path]) {
       if (candidate == null || candidate.isEmpty) continue;
       final File? opened = _tryOpen(candidate);
       if (opened != null) {
@@ -88,6 +90,15 @@ abstract final class AppLog {
 
   static void info(String message, [String? detail]) =>
       write('info ', message, detail);
+
+  /// Algo salió mal y la ventana sigue funcionando sin ello.
+  ///
+  /// Existe porque `debugPrint` no imprime en una compilación de release, y lo
+  /// que se estaba tragando así era un ajuste que no se guardaba nunca: el
+  /// producto instalado lo hizo durante meses sin dejar una sola línea. Un fallo
+  /// que solo se ve desde el depurador es un fallo que no se ve.
+  static void warn(String message, [String? detail]) =>
+      write('warn ', message, detail);
 
   /// Anota un error con su traza, que es lo que esto existe para guardar.
   ///
@@ -142,11 +153,5 @@ abstract final class AppLog {
       // Un archivo que no se puede rotar se sigue usando: crecer de más es
       // menos malo que quedarse sin registro.
     }
-  }
-
-  static String? _localAppData() {
-    final String? base = Platform.environment['LOCALAPPDATA'];
-    if (base == null || base.isEmpty) return null;
-    return '$base${Platform.pathSeparator}Kanpachi';
   }
 }

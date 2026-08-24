@@ -213,7 +213,15 @@ func (s *Session) leaveLocked(
 	// The guest's last room is NOT cleared either way: it exists precisely to go
 	// back, and being kicked does not change that, because kicking is not
 	// banning.
-	if dest == cerrarDeVerdad {
+	//
+	// **Only the HOST clears it**, and that guard used to be missing here while
+	// the line below it had one. Without it a guest leaving somebody else's room
+	// deleted its OWN saved room, in silence, and the state that makes that
+	// reachable is ordinary: a reopen that fails keeps the file on purpose, which
+	// is what [Session.SavedRoom] exists to offer. So the laptop that could not
+	// reopen at the office, then joined a friend's room and left it, lost the
+	// room it was still being offered to reopen.
+	if dest == cerrarDeVerdad && s.state.IsHost() {
 		if err := s.deps.State.ClearRoom(); err != nil {
 			s.deps.Log.Warn("no se pudo borrar la sala guardada al salir", "error", err)
 		}
