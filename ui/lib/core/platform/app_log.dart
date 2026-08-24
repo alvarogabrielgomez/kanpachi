@@ -1,6 +1,5 @@
 import 'dart:io';
 
-
 /// El registro de ESTA ventana, en un archivo al lado del del daemon.
 ///
 /// # Por qué existe

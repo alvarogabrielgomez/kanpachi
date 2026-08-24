@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:kanpachi_ui/core/platform/machine_dir.dart';
+import 'package:kanpachi_ui/core/platform/machine_settings.dart';
 
 /// What the DAEMON remembers about the person, read from disk by this window.
 ///
@@ -35,12 +36,20 @@ import 'package:kanpachi_ui/core/platform/machine_dir.dart';
 ///
 /// This is why `profile.json` is in the clear and not sealed like the room.
 class MachineProfile {
-  MachineProfile._(this._nickname);
+  MachineProfile._(this._nickname, this.settings);
 
   /// The file, beside the token, the identity key and the seed.
   static const String fileName = 'profile.json';
 
   final String _nickname;
+
+  /// Everything else the daemon keeps in that same file: narration, the window
+  /// size and the newer version somebody already found.
+  ///
+  /// **They come out of the SAME read**, and that is the point of putting them
+  /// here rather than in a second opener: this runs before the first frame, and
+  /// two reads of one file to answer two questions about it would be two.
+  final MachineSettings settings;
 
   /// Opens the store. Call once, before the first frame.
   ///
@@ -48,26 +57,50 @@ class MachineProfile {
   /// `AppPreferences.open` and for the same reason: what is lost then is a
   /// name, and what refusing would cost is the window. An empty one reads as
   /// "nobody chose a name", which is exactly what a fresh install is.
-  static Future<MachineProfile> open({String? dir}) async {
-    if (dir == null || dir.trim().isEmpty) return MachineProfile._('');
+  static Future<MachineProfile> open({
+    String? dir,
+    bool defaultVerbose = false,
+  }) async {
+    final MachineProfile vacio = MachineProfile._(
+      '',
+      MachineSettings(verbose: defaultVerbose),
+    );
+    if (dir == null || dir.trim().isEmpty) return vacio;
     final File file = File(MachineDir.join(dir.trim(), fileName));
     try {
-      if (!file.existsSync()) return MachineProfile._('');
+      if (!file.existsSync()) return vacio;
       final Object? read = jsonDecode(await file.readAsString());
       if (read is Map<String, dynamic>) {
         final Object? nick = read['nickname'];
-        if (nick is String) return MachineProfile._(nick.trim());
+        final Object? w = read['window_width'];
+        final Object? h = read['window_height'];
+        final Object? u = read['pending_update'];
+        return MachineProfile._(
+          nick is String ? nick.trim() : '',
+          MachineSettings(
+            // El defecto entra SOLO cuando nadie eligió, que es lo que
+            // significa que la clave no esté. Un `false` guardado a propósito
+            // tiene que ganarle a un defecto de `true`, que es el caso de una
+            // copia portable donde alguien apagó la narración.
+            verbose: read['verbose'] is bool
+                ? read['verbose'] as bool
+                : defaultVerbose,
+            windowWidth: w is num ? w.round() : 0,
+            windowHeight: h is num ? h.round() : 0,
+            pendingUpdate: u is String ? u.trim() : '',
+          ),
+        );
       }
     } on Object catch (e) {
       debugPrint('el perfil de esta máquina no se pudo leer: $e');
     }
-    return MachineProfile._('');
+    return vacio;
   }
 
   /// Builds one from a value already known, for the tests and for the moment
   /// right after the daemon confirms a new name.
-  factory MachineProfile.of(String nickname) =>
-      MachineProfile._(nickname.trim());
+  factory MachineProfile.of(String nickname, {MachineSettings? settings}) =>
+      MachineProfile._(nickname.trim(), settings ?? const MachineSettings());
 
   /// The name you are seen by, or empty if nobody chose one yet.
   String get nickname => _nickname;

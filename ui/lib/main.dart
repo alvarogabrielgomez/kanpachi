@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -8,12 +9,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/theme/app_theme.dart';
 import 'package:kanpachi_ui/core/platform/app_log.dart';
 import 'package:kanpachi_ui/core/platform/app_preferences.dart';
+import 'package:kanpachi_ui/core/platform/machine_dir.dart';
 import 'package:kanpachi_ui/core/platform/machine_profile.dart';
 import 'package:kanpachi_ui/core/platform/single_instance.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/density_tokens.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/session/domain/repositories/session_repository.dart';
+import 'package:kanpachi_ui/features/session/infra/daemon/daemon_connector.dart';
 import 'package:kanpachi_ui/features/session/infra/daemon/pipe/pipe_names.dart';
+import 'package:kanpachi_ui/features/session/infra/daemon/pipe_session_repository.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/pages/shell_page.dart';
@@ -187,18 +191,28 @@ Future<void> _arrancar(List<String> args) async {
   // Donde escribe el daemon, que en una copia portable es la carpeta desde
   // donde la abrieron. Antes iban a `%APPDATA%`, o sea fuera de la carpeta y
   // compartidos con cualquier otro Kanpachi de esta máquina.
-  final AppPreferences preferences = await AppPreferences.open(
+  // Los tres ajustes y el nombre salen de la MISMA lectura de `profile.json`,
+  // que es el fichero que deja el daemon. Antes eran dos ficheros y dos
+  // lecturas, y uno de ellos lo escribía esta ventana en una carpeta aparte
+  // porque en el producto instalado no puede escribir en la del daemon. Ver
+  // [AppPreferences] para por qué eso dejó de ser así.
+  final MachineProfile profile = await MachineProfile.open(
     dir: PipeNames.dataDir,
     defaultVerbose: kDebugMode || PipeNames.isPortable,
   );
 
-  // El nombre ya no está ahí dentro: lo guarda el daemon, y esta ventana lo LEE
-  // del mismo directorio, igual que lee el token. Sigue siendo una lectura de
-  // disco antes del primer frame, así que la decisión de qué pantalla abrir no
-  // pasa a depender de que el daemon ya esté arriba. Ver [MachineProfile].
-  final MachineProfile profile = await MachineProfile.open(
-    dir: PipeNames.dataDir,
+  // El repositorio se arma ACÁ y no en el registro de dependencias, porque los
+  // ajustes lo necesitan antes del primer frame y el registro corre después.
+  // Es el mismo objeto que después baja por el IoC: uno solo, una conexión.
+  final SessionRepository repository = PipeSessionRepository(DaemonConnector());
+
+  final AppPreferences preferences = await AppPreferences.open(
+    initial: profile.settings,
+    save: repository.settings,
   );
+
+  // Y lo que quedara del fichero de antes se adopta una vez y se borra.
+  await adoptarPreferenciasViejas(repository, PipeNames.dataDir);
 
   // El marcador se lee ACÁ, una vez, y baja por el registro de dependencias.
   // La pantalla que lo necesita vive en presentación y no puede importar infra.
@@ -458,4 +472,58 @@ class _SinBarra extends MaterialScrollBehavior {
     PointerDeviceKind.trackpad,
     PointerDeviceKind.stylus,
   };
+}
+
+/// Se lleva lo que quedara en el `ui-prefs.json` de antes, y lo borra.
+///
+/// Los dos sitios donde pudo quedar son la carpeta de datos, que es donde lo
+/// dejaba una copia portable, y `%LOCALAPPDATA%\Kanpachi`, donde acabó el
+/// producto instalado durante una versión. La clave `nickname` se ignora, con
+/// la regla que ya estaba escrita: una copia de la ventana no le gana al nombre
+/// que eligió el daemon.
+///
+/// **Va acá y no en el daemon** porque el daemon corre como SYSTEM y no sabe de
+/// qué usuario es cada `%LOCALAPPDATA%`. Esta ventana sí lo sabe: es la suya.
+///
+/// No lanza nunca. Un fichero que no se puede borrar se deja, y lo peor que
+/// pasa entonces es que el arranque siguiente vuelva a mandar los mismos
+/// valores, que es escribir lo que ya estaba.
+Future<void> adoptarPreferenciasViejas(
+  SessionRepository repository,
+  String dataDir,
+) async {
+  const String viejo = 'ui-prefs.json';
+  final String? local = Platform.environment['LOCALAPPDATA'];
+  final List<String> sitios = <String>[
+    MachineDir.join(dataDir, viejo),
+    if (local != null && local.isNotEmpty)
+      MachineDir.join(MachineDir.join(local, MachineDir.folder), viejo),
+  ];
+
+  for (final String ruta in sitios) {
+    final File f = File(ruta);
+    try {
+      if (!f.existsSync()) continue;
+      final Object? leido = jsonDecode(await f.readAsString());
+      if (leido is Map<String, dynamic>) {
+        final Object? v = leido['verbose'];
+        final Object? w = leido['window_width'];
+        final Object? h = leido['window_height'];
+        final Object? u = leido['pending_update'];
+        final bool hayTamano = w is num && h is num;
+        // Solo viaja lo que de verdad estaba. Lo ausente no se manda, así que
+        // no pisa lo que ya hubiera en `profile.json`.
+        await repository.settings(
+          verbose: v is bool ? v : null,
+          windowWidth: hayTamano ? w.round() : null,
+          windowHeight: hayTamano ? h.round() : null,
+          pendingUpdate: u is String && u.trim().isNotEmpty ? u.trim() : null,
+        );
+        AppLog.info('se adoptaron los ajustes que guardaba la ventana', ruta);
+      }
+      f.deleteSync();
+    } on Object catch (e) {
+      AppLog.warn('no se pudieron adoptar los ajustes viejos', '$ruta $e');
+    }
+  }
 }

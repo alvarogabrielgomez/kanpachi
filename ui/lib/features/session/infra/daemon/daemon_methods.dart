@@ -96,6 +96,16 @@ abstract final class DaemonMethods {
   /// distinguishable from a chosen name, and then it would win.
   static const String nickname = 'nickname';
 
+  /// Lo demás que esta máquina recuerda de cómo se presenta: si narra lo que
+  /// hace el daemon, el tamaño de la ventana, y la versión publicada que ya se
+  /// sabe más nueva que la que corre.
+  ///
+  /// Cuarta de la familia de [autostart], [ownSeed] y [nickname], con la misma
+  /// forma. Una sola para las tres, al revés que aquéllas: cada una de esas
+  /// tiene una autoridad distinta detrás y estas tres solo se escriben, en el
+  /// mismo fichero. Lo que no viaje no se toca.
+  static const String settings = 'settings';
+
   /// Which engine this installation carries: build id and network library,
   /// read off the file's sentinels by the daemon. Read-only, for the settings
   /// screen's version detail.

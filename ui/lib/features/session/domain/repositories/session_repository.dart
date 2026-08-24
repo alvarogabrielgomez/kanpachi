@@ -1,3 +1,4 @@
+import 'package:kanpachi_ui/core/platform/machine_settings.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/engine_info.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
@@ -259,6 +260,17 @@ abstract interface class SessionRepository {
   /// así que una escritura desde acá falla callada. Ver [MachineProfile], que
   /// es la lectura del mismo dato antes del primer frame.
   Future<MachineNickname> nickname({String? nickname});
+
+  /// Lee o cambia los ajustes de esta máquina. Lo que no se pase no se toca.
+  ///
+  /// El nombre NO viaja por acá: lo escribe [nickname], que además valida y
+  /// deriva la sugerencia. Un escritor por hecho.
+  Future<MachineSettings> settings({
+    bool? verbose,
+    int? windowWidth,
+    int? windowHeight,
+    String? pendingUpdate,
+  });
 
   /// Qué motor lleva esta instalación. Solo lectura; el daemon lo saca de los
   /// centinelas del fichero que va a lanzar. Para el detalle de versión de
