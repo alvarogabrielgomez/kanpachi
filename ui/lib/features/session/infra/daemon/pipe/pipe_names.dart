@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:kanpachi_ui/core/platform/machine_dir.dart';
+
 /// The names and paths the daemon publishes, mirrored on this side.
 ///
 /// They live in one file because they are a contract with `daemon/transport/
@@ -57,7 +59,7 @@ abstract final class PipeNames {
 
   static bool get isPortable {
     final String beside = File(Platform.resolvedExecutable).parent.path;
-    return File('$beside\\$portableMarker').existsSync();
+    return File(MachineDir.join(beside, portableMarker)).existsSync();
   }
 
   /// Which name this build talks to.
@@ -138,14 +140,15 @@ abstract final class PipeNames {
     if (told != null) return told;
     final String junto = File(Platform.resolvedExecutable).parent.path;
     if (isPortable) {
-      return '$junto\\$portableData';
+      return MachineDir.join(junto, portableData);
     }
-    final String programData =
-        Platform.environment['ProgramData'] ?? r'C:\ProgramData';
-    return '$programData\\Kanpachi';
+    // El del sistema, que cambia con el sistema. Vivía acá escrito a mano,
+    // con `ProgramData` y una barra invertida, así que fuera de Windows
+    // contestaba una ruta que no existe. Ver [MachineDir].
+    return MachineDir.defaultPath ?? '';
   }
 
-  static String get tokenPath => '$dataDir\\$tokenFile';
+  static String get tokenPath => MachineDir.join(dataDir, tokenFile);
 }
 
 /// Reads the token the daemon left on disk.

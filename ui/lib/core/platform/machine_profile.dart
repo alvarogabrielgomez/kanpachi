@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:kanpachi_ui/core/platform/machine_dir.dart';
 
 /// What the DAEMON remembers about the person, read from disk by this window.
 ///
@@ -49,7 +50,7 @@ class MachineProfile {
   /// "nobody chose a name", which is exactly what a fresh install is.
   static Future<MachineProfile> open({String? dir}) async {
     if (dir == null || dir.trim().isEmpty) return MachineProfile._('');
-    final File file = File('${dir.trim()}\\$fileName');
+    final File file = File(MachineDir.join(dir.trim(), fileName));
     try {
       if (!file.existsSync()) return MachineProfile._('');
       final Object? read = jsonDecode(await file.readAsString());
