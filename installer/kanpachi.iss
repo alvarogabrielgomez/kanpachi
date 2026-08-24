@@ -1,4 +1,4 @@
-; Instalador de Kanpachi. Compilar:
+﻿; Instalador de Kanpachi. Compilar:
 ;
 ;   .\scripts\build-production.ps1 -Output .\dist\carga
 ;   ISCC.exe /DCarga=".\dist\carga" installer\kanpachi.iss
@@ -375,13 +375,18 @@ begin
     'Continuar?', mbConfirmation, MB_YESNO) = IDYES;
 end;
 
-procedure BorrarPreferenciasDeLaUI();
+procedure BorrarRestosDeLaUI();
 var
   Perfiles: TArrayOfString;
   I: Integer;
   Perfil, DirectorioApp, DirectorioPublisher, Preferencias: string;
+  DirectorioLocal: string;
 begin
-  { Flutter no guarda estas preferencias junto al ejecutable. En Windows,
+  { Dos restos por perfil, de dos epocas distintas: el JSON de
+    shared_preferences y la carpeta `%LOCALAPPDATA%\Kanpachi`. Ninguno de los
+    dos lo escribe ya Kanpachi, que guarda todo en el sitio de la maquina.
+
+    Flutter no guarda estas preferencias junto al ejecutable. En Windows,
     shared_preferences usa path_provider.getApplicationSupportPath(), que
     deriva Roaming AppData\CompanyName\ProductName desde VERSIONINFO.
 
@@ -430,11 +435,26 @@ begin
     end;
     RemoveDir(DirectorioApp);
     RemoveDir(DirectorioPublisher);
+
+    { Y `%LOCALAPPDATA%\Kanpachi`, que es donde la ventana dejo su log desde el
+      2026-08-09 y, durante una version, sus ajustes.
+
+      No lo limpiaba nadie: quedaba en cada perfil despues de desinstalar. Ahora
+      Kanpachi guarda todo en el sitio de la maquina, asi que esta carpeta es un
+      resto entero y se borra entera. }
+    DirectorioLocal := AddBackslash(Perfil) + 'AppData\Local\{#AppName}';
+    if DirExists(DirectorioLocal) then
+    begin
+      if DelTree(DirectorioLocal, True, True, True) then
+        Log('Restos de la UI eliminados de un perfil.')
+      else
+        Log('No se pudieron eliminar los restos de la UI de un perfil.');
+    end;
   end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then
-    BorrarPreferenciasDeLaUI();
+    BorrarRestosDeLaUI();
 end;
