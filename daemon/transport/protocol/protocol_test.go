@@ -485,6 +485,7 @@ type apiFalsa struct {
 	// apodo es el nombre de esta máquina y apodoSugerido el que saldría del
 	// nombre del equipo. Vacíos por omisión, que es no haber elegido ninguno.
 	apodo         string
+	perfil        domain.Profile
 	apodoSugerido string
 	// passwordLen es cuántos caracteres llegó a SeedPassword, y no cuáles. Ver
 	// [apiFalsa.SeedPassword].
@@ -635,6 +636,15 @@ func (a *apiFalsa) SetNickname(_ context.Context, nick string) (string, error) {
 	}
 	a.apodo = limpio.String()
 	return a.apodo, nil
+}
+
+// Los ajustes, con la misma forma: se guarda lo último para poder comprobar que
+// escribir y releer coinciden. La regla del parche NO se reimplementa acá, se
+// llama a la del dominio, que es la que corre en producción.
+func (a *apiFalsa) Settings() domain.Profile { return a.perfil }
+func (a *apiFalsa) SetSettings(_ context.Context, in domain.SettingsPatch) (domain.Profile, error) {
+	a.perfil = domain.ApplySettings(a.perfil, in)
+	return a.perfil, nil
 }
 
 // SeedPassword guarda LA LONGITUD de lo que llegó y no lo que llegó.

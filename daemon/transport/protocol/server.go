@@ -114,6 +114,12 @@ type API interface {
 	// servidor conteste, así que esto funciona sin conexión.
 	SetNickname(ctx context.Context, nick string) (string, error)
 
+	// Settings y SetSettings son lo demás que esta máquina recuerda de cómo se
+	// presenta, y viven en el mismo fichero que el nombre. Ver
+	// [MethodSettings] para por qué son un método y no tres.
+	Settings() domain.Profile
+	SetSettings(ctx context.Context, in domain.SettingsPatch) (domain.Profile, error)
+
 	SavedRoom() (domain.HostedRoom, bool)
 	// ResumeRoom carries the same `replace` as the two above, and for the same
 	// reason: reopening is entering, and entering can displace a return that is
@@ -680,6 +686,9 @@ func (s *Server) dispatch(ctx context.Context, req Request) (json.RawMessage, *E
 	case MethodNickname:
 		return s.nickname(ctx, req.Params)
 
+	case MethodSettings:
+		return s.settings(ctx, req.Params)
+
 	case MethodSeedPassword:
 		return s.seedPassword(ctx, req.Params)
 
@@ -969,6 +978,55 @@ func (s *Server) nickname(ctx context.Context, params json.RawMessage) (json.Raw
 		// Quien entra a una sala sin nombre elegido usa este y lo dice.
 		Suggested string `json:"suggested"`
 	}{s.api.Nickname(), s.api.SuggestedNickname()})
+}
+
+// ajustesParams es la forma de ida y la de vuelta a la vez.
+//
+// Punteros en la ida porque ausente significa "no lo toques", y valores en la
+// vuelta porque ahí siempre hay algo que decir. Ver [MethodSettings].
+type ajustesParams struct {
+	Verbose       *bool   `json:"verbose"`
+	WindowWidth   *int    `json:"window_width"`
+	WindowHeight  *int    `json:"window_height"`
+	PendingUpdate *string `json:"pending_update"`
+}
+
+// settings lee o cambia los ajustes de esta máquina.
+//
+// Misma forma que [Server.nickname]: sin parámetros lee, con campos escribe los
+// que vengan, y siempre contesta lo que quedó puesto.
+func (s *Server) settings(ctx context.Context, params json.RawMessage) (json.RawMessage, *Error) {
+	var p ajustesParams
+	if len(params) > 0 {
+		leído, e := decodeStrict[ajustesParams](params)
+		if e != nil {
+			return nil, e
+		}
+		p = leído
+	}
+
+	perfil := s.api.Settings()
+	// Se escribe solo si viene algo. Un `settings` sin parámetros es una
+	// lectura, y no tiene por qué tocar el disco.
+	if p.Verbose != nil || p.WindowWidth != nil || p.WindowHeight != nil ||
+		p.PendingUpdate != nil {
+		var err error
+		perfil, err = s.api.SetSettings(ctx, domain.SettingsPatch{
+			Verbose:       p.Verbose,
+			WindowW:       p.WindowWidth,
+			WindowH:       p.WindowHeight,
+			PendingUpdate: p.PendingUpdate,
+		})
+		if err != nil {
+			return nil, errorFor(err)
+		}
+	}
+	return result(struct {
+		Verbose       bool   `json:"verbose"`
+		WindowWidth   int    `json:"window_width"`
+		WindowHeight  int    `json:"window_height"`
+		PendingUpdate string `json:"pending_update"`
+	}{perfil.Verbose, perfil.WindowW, perfil.WindowH, perfil.PendingUpdate})
 }
 
 // seedPassword entrega el password del registro propio.
