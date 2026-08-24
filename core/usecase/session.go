@@ -233,6 +233,19 @@ func (d Deps) validate() error {
 type Session struct {
 	deps Deps
 
+	// profileMu protege el fichero del perfil, y NO es `mu`.
+	//
+	// Hacen falta los dos. El perfil se lee entero y se reescribe entero, y
+	// desde que tiene dos escritores —el nombre por un lado y los ajustes por
+	// otro— dos cambios a la vez pierden uno: los dos leen lo mismo y los dos
+	// escriben encima.
+	//
+	// Y no puede ser `mu`, porque `mu` está tomado durante el minuto entero que
+	// tarda abrir una sala. Guardar un tamaño de ventana no puede esperar detrás
+	// de eso, que es el mismo argumento por el que el cancelador y el diario de
+	// progreso tienen el suyo.
+	profileMu sync.Mutex
+
 	// mu protege todo lo de abajo. El named pipe atiende varias conexiones y
 	// el supervisor empuja eventos del motor al mismo tiempo, así que dos
 	// escrituras concurrentes al estado son el caso normal, no el raro.

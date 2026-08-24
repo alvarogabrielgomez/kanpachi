@@ -1,6 +1,9 @@
 package domain
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // The machine's own profile: what this installation of Kanpachi remembers
 // about the person using it, independent of any room.
@@ -130,6 +133,33 @@ func ParseProfile(raw []byte) Profile {
 	}
 	if nick, err := ParseNickname(j.Nickname); err == nil {
 		p.Nick = nick
+	}
+	return p
+}
+
+// ApplySettings devuelve el perfil con el parche encima. Sin efectos.
+//
+// # Por qué es del dominio y no del caso de uso
+//
+// Porque es la invariante de qué significa "cambiar un ajuste", y las
+// invariantes viven acá, que es la misma razón por la que el decodificador
+// estricto de una sala tampoco está en el adaptador. El caso de uso se queda
+// con lo suyo, que es tomar el candado, leer y escribir.
+//
+// # La invariante del tamaño
+//
+// Ancho y alto van JUNTOS o no van. Media medida no es una medida, y un parche
+// que traiga solo uno dejaría el fichero con un tamaño que ninguna ventana tuvo
+// nunca.
+func ApplySettings(p Profile, in SettingsPatch) Profile {
+	if in.Verbose != nil {
+		p.Verbose = *in.Verbose
+	}
+	if in.WindowW != nil && in.WindowH != nil {
+		p.WindowW, p.WindowH = *in.WindowW, *in.WindowH
+	}
+	if in.PendingUpdate != nil {
+		p.PendingUpdate = strings.TrimSpace(*in.PendingUpdate)
 	}
 	return p
 }
