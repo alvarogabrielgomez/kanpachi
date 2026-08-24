@@ -172,8 +172,22 @@ func prepararCarpetaDeLogDeLaUI(ruta string) error {
 			TrusteeValue: windows.TrusteeValueFromSID(usuarios),
 		},
 	}}
-	// El nil del segundo argumento es "sobre lo que ya hay", que es lo que hace
-	// que esto SUME y no reemplace.
+	// **Esto SUMA a lo heredado, no lo reemplaza**, y está medido y no supuesto:
+	// aplicar `DACL_SECURITY_INFORMATION` sin `PROTECTED_...` deja la herencia
+	// encendida, así que la hoja acaba con las tres entradas heredadas —SYSTEM y
+	// Administradores con todo, Usuarios con lectura— más ésta. Que SYSTEM y
+	// Administradores sigan ahí es lo que mantiene el log legible para un
+	// reporte de fallo.
+	//
+	// Lo que se concede de más, dicho porque se midió: `DELETE` cae también
+	// sobre la carpeta en sí y no solo sobre los ficheros de dentro, así que un
+	// usuario de la máquina puede BORRAR esta carpeta. No puede sustituirla
+	// —crear algo en `logs\` exige una escritura que no tiene— y el daemon la
+	// vuelve a crear en el arranque siguiente. Lo peor que consigue es dejar sin
+	// log a la ventana hasta entonces, y eso ya lo puede hacer cualquiera que
+	// pueda hablarle al pipe, que es cualquier usuario interactivo. Los ficheros
+	// SÍ lo necesitan: la rotación borra el `.old` anterior, y `GENERIC_WRITE`
+	// sobre un fichero no incluye borrarlo.
 	dacl, err := windows.ACLFromEntries(entradas, nil)
 	if err != nil {
 		return fmt.Errorf("armando los permisos de %s: %w", ruta, err)
