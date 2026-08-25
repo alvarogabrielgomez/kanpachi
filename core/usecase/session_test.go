@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -2172,5 +2173,46 @@ func TestElReacotadoEsOportunistaAlConectarYExigenteAlTerminarElReinicio(t *test
 	}
 	if err := b.session.OnEngineRestarted(ctx()); err == nil {
 		t.Fatal("el motor volvió entero, no se pudo acotar, y se dio por bueno")
+	}
+}
+
+// TestUnMiembroDesconectadoConservaSuSilla.
+//
+// La silla es de quien tiene ficha, no de quien el motor ve ahora mismo.
+// Hasta el 2026-08-25 la puerta se calculaba desde la tabla de la malla, que es
+// una señal de VIDA: llega tarde, llega antes de que la ruta converja, se
+// pierde en un búfer lleno, y no tiene evento para el que cierra la tapa del
+// portátil. Atar una decisión de conectividad a eso dejó a una sala entera
+// fuera durante treinta y tres horas.
+func TestUnMiembroDesconectadoConservaSuSilla(t *testing.T) {
+	b, invitado := salaConDosYJuego(t)
+
+	// Se le cae el WiFi: el motor deja de verlo, y no manda nada.
+	b.session.dropPeerLocked(invitado)
+	b.clock.avanza(2 * timing.ArrivalGrace)
+
+	if !slices.Contains(b.session.authorizedControlIPsLocked(), invitado) {
+		t.Fatal("perdió su silla por estar desconectado, teniendo ficha viva")
+	}
+}
+
+// TestAlDesconectadoSeLePuedeExpulsar.
+//
+// Es la otra mitad obligatoria de [TestUnMiembroDesconectadoConservaSuSilla]:
+// si un ausente conserva su silla hasta que venza su ficha, el host tiene que
+// poder quitársela antes. Hasta acá no podía, porque expulsar resolvía al
+// miembro contra la tabla del motor y contestaba que esa dirección no es de
+// nadie. Conservar la silla sin poder retirarla es peor que no conservarla.
+func TestAlDesconectadoSeLePuedeExpulsar(t *testing.T) {
+	b, invitado := salaConDosYJuego(t)
+
+	b.session.dropPeerLocked(invitado)
+	b.clock.avanza(2 * timing.ArrivalGrace)
+
+	if _, err := b.session.KickMember(ctx(), invitado); err != nil {
+		t.Fatalf("no se pudo expulsar a un miembro ausente: %v", err)
+	}
+	if slices.Contains(b.session.authorizedControlIPsLocked(), invitado) {
+		t.Fatal("un expulsado conservó la puerta abierta")
 	}
 }

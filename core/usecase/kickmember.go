@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -39,7 +40,7 @@ func (s *Session) KickMember(ctx context.Context, ip netip.Addr) (domain.RoomSta
 		return domain.RoomState{}, err
 	}
 
-	peer, ok := s.virtualIPOf(ip)
+	peer, ok := s.memberAtLocked(ip)
 	if !ok {
 		return domain.RoomState{}, fmt.Errorf("%w: %s", ErrNotAMember, ip)
 	}
@@ -155,6 +156,34 @@ func (s *Session) raiseKickAlertLocked(peer domain.Peer, fallos []error) {
 	})
 }
 
+// memberAtLocked resuelve a quién pertenece una dirección, mire o no el motor.
+//
+// Primero la tabla de la malla, que trae el nombre que la otra máquina reporta
+// y el camino. Si no está ahí, el libro, que es donde vive la membresía.
+//
+// Ese respaldo es obligatorio desde que la puerta se calcula del libro
+// ([Session.authorizedControlIPsLocked]): un ausente conserva su silla hasta
+// que su ficha venza, así que el host tiene que poder quitársela antes.
+// Resolviendo solo contra el motor, expulsar contestaba que esa dirección no es
+// de nadie justo con quien más falta hacía. Conservar la silla sin poder
+// retirarla es peor que no conservarla.
+//
+// El nombre sale del libro cuando el motor no lo tiene, y es el que ESTE host
+// anotó al emitir, no el que la otra máquina se puso. Alcanza para el aviso y
+// para la línea de log, que es para lo que se usa.
+//
+// Asume el candado tomado.
+func (s *Session) memberAtLocked(ip netip.Addr) (domain.Peer, bool) {
+	if p, ok := s.virtualIPOf(ip); ok {
+		return p, true
+	}
+	c, ok := s.issued[ip]
+	if !ok || c.Revoked || c.Expired(s.deps.Clock.Now()) {
+		return domain.Peer{}, false
+	}
+	return domain.Peer{VirtualIP: ip, Name: c.Name}, true
+}
+
 // dropPeerLocked saca a alguien de la lista de miembros. Asume el candado.
 func (s *Session) dropPeerLocked(ip netip.Addr) {
 	kept := make([]domain.Peer, 0, len(s.state.Peers))
@@ -201,52 +230,88 @@ func (s *Session) credentialFor(ip netip.Addr) (domain.Credential, error) {
 	return domain.Credential{}, fmt.Errorf("%w: no hay credencial emitida para %s", ErrNotAMember, ip)
 }
 
-// authorizedControlIPsLocked junta las IPs de los miembros presentes con las
-// de quienes acaban de recibir una credencial y todavía no entraron a la red.
+// authorizedControlIPsLocked son los MIEMBROS de esta sala, y punto.
 //
-// Es lo que evita la condición de carrera: si la autorización esperara a que el
-// motor reporte a la persona como miembro activo de la malla P2P, el primer
-// intento de conexión del invitado rebotaría contra el firewall. Pre-autorizar
-// el puerto de control en cuanto se emite la credencial cierra la ventana.
+// # Por qué el libro y no la malla
 //
-// **La pre-autorización dura la gracia de llegada, no la vida de la
-// credencial**, y esa diferencia se midió el 2026-08-16: filtrando solo lo
-// vencido, el canal que corre como SYSTEM quedó abierto hacia 73 direcciones
-// —todo lo emitido en 24 horas, presente o no— mientras la regla del juego
-// tenía 2. Es la MISMA pregunta que contesta el latido de renovación, con el
-// mismo predicado: quien no está y ya pasó su ventana de ingreso no
-// pre-autoriza nada, aunque su credencial siga viva por si vuelve. Ver
-// [arrivalGraceOpen].
+// Porque son dos hechos con dueños y ritmos distintos, y hasta el 2026-08-25
+// esto leía el equivocado. La tabla de la malla es una señal de VIDA, la tiene
+// el transporte, cambia rápido y no es fiable: llega tarde, llega antes de que
+// la ruta lleve dirección, se pierde en un búfer lleno, y NO TIENE EVENTO para
+// el que cierra la tapa del portátil. El libro es una MEMBRESÍA, la tiene esta
+// máquina entera, cambia despacio y es autoritativa.
+//
+// Quien no se fue formalmente no salió de la sala: está desconectado, y su
+// silla sigue siendo suya. Es lo que ya promete [Session.credentialByMemberLocked],
+// que le devuelve al que vuelve su misma ficha y su misma dirección.
+//
+// # La medición de las 73 direcciones, releída
+//
+// El 2026-08-16 se recortó esto a una ventana de diez minutos porque el oyente
+// que corre como SYSTEM quedaba abierto hacia 73 direcciones. El mensaje de
+// aquel commit dice de dónde salieron: «one guest caught in the rejoin loop».
+// UN invitado, quemando una dirección por vuelta. El arreglo de esa quema es la
+// llave de miembro, que entró CINCO MINUTOS ANTES ese mismo día, y el freno de
+// reingreso entró en el mismo commit que la ventana. O sea que la ventana se
+// puso sobre un número que los dos arreglos anteriores ya habían vuelto
+// imposible, y nadie volvió a medir. Ese recorte dejó a una sala entera fuera
+// durante treinta y tres horas.
+//
+// # Es la UNIÓN del libro y la malla, y la malla no sobra
+//
+// Porque el libro vive en memoria y un host que reinicia el daemon y retoma la
+// sala se queda sin él, con la gente todavía dentro de la red. Ver el precio
+// asumido en [Session.credentialFor]. Con el libro como única fuente, ese host
+// no le abriría un puerto a nadie hasta que cada uno volviera a entrar, que es
+// cambiar treinta y tres horas de sala muerta por un reinicio que expulsa a
+// todo el mundo en silencio. La malla se queda hasta que el libro sepa
+// sobrevivir a un reinicio.
+//
+// # Qué acota esto ahora, ya que la ventana no
+//
+// Tres filtros, y los tres son del libro: vencida no autoriza, revocada no
+// autoriza, expulsado no autoriza. El plazo de seguridad ya existe y no hace
+// falta inventarlo: el latido deja de renovar a quien no está
+// ([Session.renewCredentialsLocked]), así que la ficha de un ausente muere a
+// las veinticuatro horas de su última renovación y su silla se libera sola.
+//
+// El orden no es cosmético. La lista alimenta la firma del conjunto de reglas,
+// y recorrer un mapa da un orden distinto en cada pasada, así que sin ordenar
+// la firma cambiaría sola y reaplicaría reglas por nada.
 //
 // Asume el candado tomado.
 func (s *Session) authorizedControlIPsLocked() []netip.Addr {
-	out := domain.MemberIPs(s.state.Peers)
 	if !s.state.IsHost() {
-		return out
+		return domain.MemberIPs(s.state.Peers)
 	}
 
 	now := s.deps.Clock.Now()
 	s.forgetOldKicks(now)
 
-	seen := make(map[netip.Addr]bool, len(out))
-	for _, ip := range out {
+	seen := make(map[netip.Addr]bool, len(s.issued)+len(s.state.Peers))
+	out := make([]netip.Addr, 0, len(s.issued)+len(s.state.Peers))
+	add := func(ip netip.Addr) {
+		if seen[ip] {
+			return
+		}
+		if _, kicked := s.kicked[ip]; kicked {
+			return
+		}
 		seen[ip] = true
+		out = append(out, ip)
 	}
 
 	for ip, c := range s.issued {
-		if c.Expired(now) || c.Revoked || seen[ip] {
+		if c.Expired(now) || c.Revoked {
 			continue
 		}
-		if _, kicked := s.kicked[ip]; kicked {
-			continue
-		}
-		if !arrivalGraceOpen(c, now) {
-			continue
-		}
-		out = append(out, ip)
-		seen[ip] = true
+		add(ip)
+	}
+	for _, ip := range domain.MemberIPs(s.state.Peers) {
+		add(ip)
 	}
 
+	slices.SortFunc(out, netip.Addr.Compare)
 	return out
 }
 
@@ -254,10 +319,12 @@ func (s *Session) authorizedControlIPsLocked() []netip.Addr {
 // de ingreso: la recibió hace menos de [timing.ArrivalGrace], así que su dueño
 // puede estar todavía entrando y su ausencia no significa nada.
 //
-// Es UN predicado y lo comparten las dos preguntas que dependen de él, la
-// renovación del latido y la pre-autorización del canal de control. Estuvieron
-// contestadas por separado y la segunda contestaba 24 horas, que es cómo el
-// oyente que corre como SYSTEM terminó abierto a 73 direcciones de nadie.
+// Lo consulta el latido de renovación, para no gastar una llamada al motor
+// empujando el vencimiento de una ficha que nadie estrenó. Hasta el 2026-08-25
+// lo consultaba también la pre-autorización del canal de control, y ahí es
+// donde no servía: mezclar «esta ficha es nueva» con «a esta persona se le
+// abre el puerto» es lo que dejó fuera al que volvía. Ver
+// [Session.authorizedControlIPsLocked].
 func arrivalGraceOpen(c domain.Credential, now time.Time) bool {
 	return now.Sub(c.IssuedAt) < timing.ArrivalGrace
 }

@@ -1002,18 +1002,22 @@ func ruleSignature(rs domain.RuleSet) string { return fmt.Sprintf("%v", rs.Rules
 // es lo que hace que la comprobación de la decisión 19 mida lo que de verdad se
 // pidió, en vez de una segunda versión del cálculo que puede separarse.
 //
-// # Las dos listas de miembros que hay acá, y por qué siguen siendo dos
+// # Una sola lista de miembros, desde el 2026-08-25
 //
-// Los puertos del juego se abren hacia `MemberIPs(s.state.Peers)`, o sea hacia
-// quien ESTÁ. El canal de control se abre además hacia quien acaba de recibir
-// credencial y todavía no entró, que es lo que evita que su primer intento de
-// conexión rebote contra el firewall. Ver [Session.authorizedControlIPsLocked].
+// Los puertos del juego y el canal de control se abren hacia LO MISMO: los
+// miembros de la sala, que en el host los da el libro de credenciales. Ver
+// [Session.authorizedControlIPsLocked].
 //
-// La diferencia es deliberada y ahora es la única que queda. Hasta el
-// 2026-08-13 había otra, sin querer: la tabla del motor contaba de menos en el
-// host, así que un invitado ya dentro tenía canal de control y no tenía puertos
-// de juego. Eso lo cierra [Session.withAdmittedLocked], que le suma a la lista
-// de miembros a quien tiene el canal de la sala abierto.
+// Fueron dos listas y las dos estaban atadas a la tabla del motor, que es una
+// señal de vida y no una membresía. De ahí salieron dos fallos medidos. El
+// 2026-08-13, un invitado ya dentro con canal de control abierto y sin una sola
+// regla de juego, porque la tabla del motor contaba de menos en el host. Y el
+// 2026-08-25, la sala entera fuera durante treinta y tres horas, porque la
+// tabla convergía después de que la compuerta se aplicara y nadie releía.
+//
+// Abrir los puertos del juego hacia un miembro desconectado no cuesta nada: del
+// otro lado no hay quien conecte. Cerrárselos a quien SÍ está sí cuesta, y es
+// lo que pasaba.
 //
 // Asume el candado tomado.
 func (s *Session) desiredRuleSetLocked() (domain.RuleSet, error) {
@@ -1021,7 +1025,7 @@ func (s *Session) desiredRuleSetLocked() (domain.RuleSet, error) {
 		s.state.Game,
 		s.state.Role,
 		s.state.LocalIP,
-		domain.MemberIPs(s.state.Peers),
+		s.authorizedControlIPsLocked(),
 	)
 	if err != nil {
 		return domain.RuleSet{}, err
