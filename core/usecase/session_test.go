@@ -2216,3 +2216,48 @@ func TestAlDesconectadoSeLePuedeExpulsar(t *testing.T) {
 		t.Fatal("un expulsado conservó la puerta abierta")
 	}
 }
+
+// TestElQueVuelveConservaSuFichaYSuDirecciónAunqueLleveHorasFuera.
+//
+// Es la promesa entera de la llave de miembro, y la garantía de la que cuelga
+// la silla de [Session.authorizedControlIPsLocked]: el que vuelve recibe LO
+// SUYO, sin importar cuánto llevara fuera.
+//
+// Este test existe además como freno. El 2026-08-25 se propuso que la puerta
+// soltara la entrada del que vuelve cuando estuviera ausente y su ficha pasara
+// la ventana de ingreso, para cortar un bucle que se alimentaba de su propio
+// reintento. Esa condición la cumple TODO retorno legítimo: quien vuelve no
+// está en la malla todavía, porque está marcando, y su ficha es vieja por
+// definición. Habría reintroducido el fallo que la puerta acababa de cerrar.
+func TestElQueVuelveConservaSuFichaYSuDirecciónAunqueLleveHorasFuera(t *testing.T) {
+	b, _ := salaConDosYJuego(t)
+	req := issueReq(t, "pericoman")
+
+	cred, err := b.session.IssueCredentialFor(ctx(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Se le cae el WiFi y vuelve horas después. No está en la malla, y su ficha
+	// pasó de sobra la ventana de ingreso.
+	b.session.dropPeerLocked(cred.VirtualIP)
+	b.clock.avanza(6 * time.Hour)
+
+	otra, err := b.session.IssueCredentialFor(ctx(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// La emisión es lo que distingue de verdad, y no el ID ni la dirección: el
+	// motor falso devuelve un ID constante, y el reparto recorre la subred de
+	// menor a mayor, así que una ficha NUEVA saldría con el mismo ID y la misma
+	// dirección. Lo que no se puede fingir es la fecha de nacimiento.
+	if !otra.IssuedAt.Equal(cred.IssuedAt) {
+		t.Fatalf("no se le devolvió su ficha: nació de nuevo, %s en vez de %s", otra.IssuedAt, cred.IssuedAt)
+	}
+	if otra.VirtualIP != cred.VirtualIP {
+		t.Fatalf("al que vuelve se le movió la dirección: %s en vez de %s", otra.VirtualIP, cred.VirtualIP)
+	}
+	if !slices.Contains(b.session.authorizedControlIPsLocked(), cred.VirtualIP) {
+		t.Fatal("volvió y la puerta no se le abrió")
+	}
+}
