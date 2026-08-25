@@ -2261,3 +2261,54 @@ func TestElQueVuelveConservaSuFichaYSuDirecciónAunqueLleveHorasFuera(t *testing
 		t.Fatal("volvió y la puerta no se le abrió")
 	}
 }
+
+// TestElVetoDeLaExpulsiónNuncaDuraMásQueLaReservaDeSuDirección.
+//
+// Son dos plazos sobre la misma dirección y hasta el 2026-08-25 nadie los
+// reconciliaba. El veto de [timing.KickGrace] impide que el expulsado vuelva a
+// la lista mientras el motor le cierra la sesión. La reserva la daba un recorte
+// que solo ACORTABA: si a la ficha ya le quedaban segundos, no hacía nada, la
+// dirección se liberaba al vencer y el veto seguía puesto sobre ella.
+//
+// Quien recibiera esa dirección en el hueco caía de la lista de miembros en
+// cada relectura, se quedaba fuera de la puerta y sin regla de firewall, y no
+// veía más que un marcado que no contesta. Del lado del host se registraba como
+// que el motor no ve a alguien con credencial emitida, que se lee como problema
+// del motor.
+func TestElVetoDeLaExpulsiónNuncaDuraMásQueLaReservaDeSuDirección(t *testing.T) {
+	b, invitado := salaConDosYJuego(t)
+
+	// Se le deja a la ficha menos vida que la ventana del veto, que es el caso
+	// que el recorte no cubría: solo acortaba, así que acá no hacía nada.
+	cred, ok := b.session.issued[invitado]
+	if !ok {
+		t.Fatal("la sala de prueba no dejó credencial para el invitado")
+	}
+	b.clock.avanza(cred.ExpiresAt.Sub(b.deps.Clock.Now()) - 5*time.Second)
+
+	if _, err := b.session.KickMember(ctx(), invitado); err != nil {
+		t.Fatal(err)
+	}
+
+	// El motor ya le cerró la sesión, que es lo que tarda alrededor de un
+	// segundo y para lo que existe la ventana.
+	b.motor.peers = []domain.Peer{{VirtualIP: b.session.Status().LocalIP, Name: nick(t, "alvaro")}}
+
+	// Mientras el veto corra, la dirección tiene que seguir reservada.
+	b.clock.avanza(timing.KickGrace - time.Second)
+	if !b.session.takenAddressesLocked()[invitado] {
+		t.Fatalf("la dirección %s se liberó con el veto todavía puesto", invitado)
+	}
+
+	// Y quien entre después no hereda el veto de nadie.
+	b.motor.credenciales = func() domain.Credential {
+		return domain.Credential{ID: "c-nueva", Token: "token-del-motor"}
+	}
+	nueva, err := b.session.IssueCredentialFor(ctx(), issueReq(t, "wololo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(b.session.authorizedControlIPsLocked(), nueva.VirtualIP) {
+		t.Fatalf("quien acaba de entrar en %s se quedó fuera de la puerta", nueva.VirtualIP)
+	}
+}

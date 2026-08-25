@@ -101,18 +101,32 @@ func (s *Session) KickMember(ctx context.Context, ip netip.Addr) (domain.RoomSta
 	s.kicked[ip] = now
 	s.dropPeerLocked(ip)
 
-	// La entrada del libro se marca REVOCADA con el vencimiento acortado a la
-	// gracia de llegada, y las dos mitades tienen su porqué. Revocada: el que
+	// La entrada del libro se marca REVOCADA con el vencimiento FIJADO a la
+	// gracia de llegada, y las tres cosas tienen su porqué. Revocada: el que
 	// vuelve con su llave de miembro no recupera esta credencial ni su
-	// dirección, entra como nuevo. El vencimiento corto: la dirección sigue
-	// retenida mientras la tabla de rutas del motor todavía recuerda al
-	// expulsado, y después se libera sola, en vez de quedar tomada las 24 horas
-	// de una credencial que ya no autoriza a nadie.
+	// dirección, entra como nuevo, y ni la puerta ni el latido la miran nunca
+	// más. El vencimiento corto: la dirección sigue retenida mientras la tabla
+	// de rutas del motor todavía recuerda al expulsado, y después se libera
+	// sola, en vez de quedar tomada las 24 horas de una credencial que ya no
+	// autoriza a nadie.
+	//
+	// # Por qué FIJA y no solo acorta
+	//
+	// Porque acortando sin más hay un hueco entre dos plazos que nadie
+	// reconcilia. Si a la ficha ya le quedaban segundos, acortar no hace nada:
+	// su dirección se libera al vencer, y `s.kicked[ip]` sigue vetando esa
+	// dirección durante lo que reste de [timing.KickGrace]. Quien la reciba en
+	// ese hueco cae de la lista de miembros en cada relectura, se queda fuera
+	// de la puerta y sin regla de firewall, y no ve más que un marcado que no
+	// contesta. Del lado del host se registra como que el motor no ve a alguien
+	// con credencial emitida, que se lee como problema del motor.
+	//
+	// Extenderla no concede nada: una entrada revocada no autoriza, no se
+	// renueva y no se le devuelve a nadie. Lo único que hace es retener la
+	// dirección, que es para lo que está.
 	if c, ok := s.issued[ip]; ok {
 		c.Revoked = true
-		if grace := now.Add(timing.ArrivalGrace); c.ExpiresAt.After(grace) {
-			c.ExpiresAt = grace
-		}
+		c.ExpiresAt = now.Add(timing.ArrivalGrace)
 		s.issued[ip] = c
 	}
 
