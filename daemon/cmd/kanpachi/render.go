@@ -644,6 +644,10 @@ func alertName(s string) string {
 		return "game not restored"
 	case "quarantine_off":
 		return "quarantine off"
+	case "no_member_channels":
+		return "nobody can talk to the room"
+	case "room_almost_full":
+		return "the room is nearly out of addresses"
 	default:
 		return s
 	}

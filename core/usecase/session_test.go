@@ -2443,3 +2443,42 @@ func TestUnMiembroSinMallaSaleComoAFKYNadieLoInterroga(t *testing.T) {
 		}
 	}
 }
+
+// TestUnaSalaConMiembrosPresentesYSinCanalesLevantaAlerta.
+//
+// Medido el 2026-08-25: treinta y tres horas con miembros en la lista, cero
+// sockets de control y ni una línea que lo dijera. El host tenía las dos
+// mitades del diagnóstico en la mano, a quién ve y con quién habla, y no las
+// comparó ni una vez.
+//
+// Exige que estén PRESENTES. «Tres miembros y ningún canal» es ambiguo; «tres
+// miembros online y ningún canal» es un fallo, y «tres miembros AFK» es una
+// tarde normal. Sin esa distinción la alerta gritaría en falso cada noche.
+func TestUnaSalaConMiembrosPresentesYSinCanalesLevantaAlerta(t *testing.T) {
+	b, _ := salaConDosYJuego(t)
+	b.control.conectados = nil
+	b.clock.avanza(timing.ArrivalGrace + time.Minute)
+
+	st := b.session.RefreshAlerts(ctx())
+	if !tieneAlerta(st, domain.AlertNoMemberChannels) {
+		t.Fatalf("miembros presentes sin ningún canal no levantó alerta: %+v", st.Alerts)
+	}
+}
+
+// TestUnaSalaSoloConAusentesNoGrita: la otra mitad, y es la que impide que la
+// alerta se vuelva ruido. Nadie conectado y nadie presente es una sala vacía,
+// no una sala rota.
+func TestUnaSalaSoloConAusentesNoGrita(t *testing.T) {
+	b, _ := salaConDosYJuego(t)
+	b.control.conectados = nil
+	b.motor.peers = []domain.Peer{{VirtualIP: b.session.Status().LocalIP, Name: nick(t, "alvaro")}}
+	b.clock.avanza(timing.ArrivalGrace + time.Minute)
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
+		t.Fatal(err)
+	}
+
+	st := b.session.RefreshAlerts(ctx())
+	if tieneAlerta(st, domain.AlertNoMemberChannels) {
+		t.Fatal("una sala con todos AFK se reportó como rota")
+	}
+}

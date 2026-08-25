@@ -961,6 +961,10 @@ func alertName(k domain.AlertKind) string {
 		return "game_lost"
 	case domain.AlertQuarantineOff:
 		return "quarantine_off"
+	case domain.AlertNoMemberChannels:
+		return "no_member_channels"
+	case domain.AlertRoomAlmostFull:
+		return "room_almost_full"
 	default:
 		// Que este caso exista no lo vuelve aceptable: una alerta que llega como
 		// "unknown" no la pinta nadie, así que el módulo de exposición avisa al
