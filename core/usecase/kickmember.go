@@ -577,6 +577,12 @@ func (s *Session) tellStaleMembersLocked(ctx context.Context) {
 		if p.Self || !p.VirtualIP.IsValid() {
 			continue
 		}
+		// A quien no está no se le avisa. El plazo de reintentos existe para el
+		// que no contesta ahora mismo, no para gastarlo entero contra alguien
+		// que no tiene un canal por el que oírlo. Ver [domain.Peer.Away].
+		if p.Away {
+			continue
+		}
 		if c, hay := s.issued[p.VirtualIP]; hay && !c.Expired(ahora) {
 			continue
 		}

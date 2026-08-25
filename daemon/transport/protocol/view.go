@@ -263,6 +263,18 @@ type PeerView struct {
 	RTTMS int64  `json:"rtt_ms"`
 	Self  bool   `json:"self"`
 	Host  bool   `json:"host"`
+
+	// Away es que tiene silla y el motor no lo ve. Ver [domain.Peer.Away].
+	Away bool `json:"away,omitempty"`
+	// AwayForMS es cuánto lleva sin aparecer. Cero es que está.
+	//
+	// Calculado y no como marca de tiempo, por lo mismo que
+	// [RoomView.HostGoneForMS]: la cara que lo pinta no tiene por qué compartir
+	// reloj con el daemon, y restar contra dos relojes da números que mienten.
+	AwayForMS int64 `json:"away_for_ms,omitempty"`
+	// SeatFreesInMS es cuánto le queda a su ficha antes de vencer y soltar su
+	// dirección. Solo lo sabe el host, que es quien tiene el libro.
+	SeatFreesInMS int64 `json:"seat_frees_in_ms,omitempty"`
 }
 
 type NetView struct {
@@ -354,12 +366,15 @@ func roomView(st domain.RoomState, missing string, now time.Time) RoomView {
 	}
 	for _, p := range st.Peers {
 		v.Peers = append(v.Peers, PeerView{
-			IP:    p.VirtualIP.String(),
-			Name:  p.Name.String(),
-			Path:  pathName(p.Path),
-			RTTMS: p.RTT.Milliseconds(),
-			Self:  p.Self,
-			Host:  p.Host,
+			IP:            p.VirtualIP.String(),
+			Name:          p.Name.String(),
+			Path:          pathName(p.Path),
+			RTTMS:         p.RTT.Milliseconds(),
+			Self:          p.Self,
+			Host:          p.Host,
+			Away:          p.Away,
+			AwayForMS:     p.AwayFor.Milliseconds(),
+			SeatFreesInMS: p.SeatFreesIn.Milliseconds(),
 		})
 	}
 	for _, a := range st.Alerts {

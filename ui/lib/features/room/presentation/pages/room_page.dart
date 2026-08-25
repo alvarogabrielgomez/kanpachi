@@ -996,14 +996,22 @@ class _MemberRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final Color dot = switch (member.path) {
-      PeerPath.self => colors.textMuted,
-      PeerPath.relay => colors.warn,
-      PeerPath.direct => colors.ok,
-      // Apagado y no ámbar: ámbar es relay, o sea "la red va lenta", y de este
-      // miembro lo que no se sabe es por dónde llega, no que llegue mal.
-      PeerPath.unconfirmed => colors.textMuted,
-    };
+    // El AFK manda sobre el camino, y tiene que mandar: a quien el motor no ve
+    // no le queda camino que pintar, y el valor por omisión del cable es
+    // `direct`, o sea que sin esto la sala pintaba en verde a alguien que no
+    // está. Apagado y no rojo: no se fue ni falló nada, su silla sigue puesta.
+    // Lo que lleva fuera lo dice la línea de debajo, donde iría la latencia.
+    final Color dot = member.isAway
+        ? colors.textMuted
+        : switch (member.path) {
+            PeerPath.self => colors.textMuted,
+            PeerPath.relay => colors.warn,
+            PeerPath.direct => colors.ok,
+            // Apagado y no ámbar: ámbar es relay, o sea "la red va lenta", y de
+            // este miembro lo que no se sabe es por dónde llega, no que llegue
+            // mal.
+            PeerPath.unconfirmed => colors.textMuted,
+          };
     return Row(
       children: <Widget>[
         AppStatusDot(color: dot),

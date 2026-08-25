@@ -414,6 +414,18 @@ type Session struct {
 	// salido o no.
 	staleProxAviso map[netip.Addr]avisoStale
 
+	// vistoEnLaMalla es, por miembro, la última vez que el motor lo reportó.
+	//
+	// Es la mitad que le falta al libro para contestar «cuánto lleva fuera».
+	// El libro sabe QUIÉN es miembro y no sabe nada de presencia; la tabla del
+	// motor sabe quién está AHORA y no recuerda nada. Ver [domain.Peer.Away].
+	//
+	// Solo del host, porque solo el host tiene libro. En memoria, y perderlo al
+	// reiniciar no rompe nada: un miembro sin marca cuenta como visto por
+	// primera vez cuando se le mira, que es lo honesto para un daemon que
+	// acaba de arrancar.
+	vistoEnLaMalla map[netip.Addr]time.Time
+
 	// lastRejoin y rejoinWait son el reloj del reingreso del INVITADO.
 	//
 	// La espera se guarda en vez de ser una constante porque lleva jitter, y el

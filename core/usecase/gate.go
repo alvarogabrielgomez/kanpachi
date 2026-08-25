@@ -79,11 +79,7 @@ func (s *Session) displacementForLocked(hacia domain.Room) domain.Displacement {
 		otros := 0
 		if s.state.IsHost() {
 			kind = domain.DisplaceCloseRoom
-			for _, p := range s.state.Peers {
-				if !p.Self {
-					otros++
-				}
-			}
+			otros = domain.CountPresent(s.state.Peers)
 		}
 		return domain.Displacement{
 			Kind:    kind,

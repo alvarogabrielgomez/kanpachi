@@ -47,8 +47,14 @@ func (s *Session) renewCredentialsLocked(ctx context.Context) {
 	ahora := s.deps.Clock.Now()
 	s.lastRenew = ahora
 
+	// Presentes son los que ESTÁN, no los que son miembros. Un AFK figura en la
+	// lista porque su silla sigue puesta, y renovarle la ficha le quitaría a esa
+	// silla el único plazo que la libera. Ver [domain.Peer.Away].
 	presentes := make(map[netip.Addr]bool, len(s.state.Peers))
 	for _, p := range s.state.Peers {
+		if p.Away {
+			continue
+		}
 		presentes[p.VirtualIP] = true
 	}
 

@@ -2378,3 +2378,68 @@ func TestSalirDeLaSalaDiceTambiénPorQué(t *testing.T) {
 		t.Fatalf("salir no dijo por qué. Lo que hay:\n%s", b.log.todo())
 	}
 }
+
+// TestUnMiembroSinMallaSaleComoAFKYNadieLoInterroga.
+//
+// Su silla sigue puesta, así que sigue en la lista. Lo que cambia es que se
+// SABE que no está: se dice cuánto lleva fuera y cuánto le queda a su ficha.
+//
+// Y de eso cuelga lo que paga el trabajo entero. El canario armaba sus
+// objetivos desde la lista de miembros sin mirar si estaban, y fallaba contra
+// cada ausente UNA VEZ POR MINUTO con «no hay canal abierto». Ese es
+// literalmente el ruido bajo el que quedó sepultado el fallo de treinta y tres
+// horas. El latido tampoco puede renovarle la ficha, porque su vencimiento es
+// el único plazo que libera la silla.
+func TestUnMiembroSinMallaSaleComoAFKYNadieLoInterroga(t *testing.T) {
+	b, invitado := salaConDosYJuego(t)
+	cred := b.session.issued[invitado]
+
+	// Se le cae el WiFi. El motor deja de verlo y no manda nada.
+	b.motor.peers = []domain.Peer{{VirtualIP: b.session.Status().LocalIP, Name: nick(t, "alvaro")}}
+	// Más que la ventana de nacimiento de la ficha: dentro de ella el latido
+	// renueva a propósito, porque una emisión fresca viene seguida de una
+	// llegada y su ausencia todavía no significa nada.
+	fuera := timing.ArrivalGrace + time.Minute
+	b.clock.avanza(fuera)
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
+		t.Fatal(err)
+	}
+
+	var afk *domain.Peer
+	st := b.session.Status()
+	for i := range st.Peers {
+		if st.Peers[i].VirtualIP == invitado {
+			afk = &st.Peers[i]
+		}
+	}
+	if afk == nil {
+		t.Fatalf("el ausente desapareció de la lista teniendo ficha viva: %+v", st.Peers)
+	}
+	if !afk.Away {
+		t.Fatal("está fuera de la malla y no salió marcado como AFK")
+	}
+	if afk.AwayFor < fuera {
+		t.Fatalf("no dijo cuánto lleva fuera: %v", afk.AwayFor)
+	}
+	if afk.SeatFreesIn <= 0 {
+		t.Fatalf("no dijo cuánto le queda a su silla: %v", afk.SeatFreesIn)
+	}
+
+	// El canario no le pregunta a quien no está.
+	if plan, ok := b.session.canaryPlanLocked(ctx(), false); ok {
+		for _, a := range plan.asked {
+			if a.At == invitado {
+				t.Fatal("el canario eligió a un ausente: esa es la línea de error por minuto")
+			}
+		}
+	}
+
+	// Y el latido no le renueva la ficha, que es lo único que libera su silla.
+	b.motor.renovadas = nil
+	b.session.renewCredentialsLocked(ctx())
+	for _, id := range b.motor.renovadas {
+		if id == cred.ID {
+			t.Fatal("el latido renovó la ficha de un ausente: su silla no se libera nunca")
+		}
+	}
+}

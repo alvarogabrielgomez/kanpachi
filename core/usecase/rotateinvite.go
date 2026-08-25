@@ -191,7 +191,7 @@ func (s *Session) RotateInviteCode(ctx context.Context) (domain.RoomState, error
 	}
 
 	s.deps.Log.Info("código renovado",
-		"antes", old.InviteID.String(), "ahora", room.InviteID.String(), "presentes", len(s.state.Peers))
+		"antes", old.InviteID.String(), "ahora", room.InviteID.String(), "presentes", domain.CountPresent(s.state.Peers))
 	return s.snapshot(), nil
 }
 

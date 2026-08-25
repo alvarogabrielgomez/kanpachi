@@ -62,6 +62,25 @@ type Peer struct {
 	// Host marca a quien declaró hospedar. Sale del canje de credencial, no de
 	// que el peer lo diga: un miembro que se declare host no cambia nada.
 	Host bool
+
+	// Away es que tiene ficha viva y el motor no lo ve.
+	//
+	// NO se fue: su silla sigue puesta, y volverá a ella con su misma ficha y
+	// su misma dirección. En lenguaje de juego, está AFK.
+	//
+	// Es una señal de VIDA y no de membresía, y de ahí sale todo lo que decide:
+	// a quién sondea el canario, a quién renueva el latido, a quién se le
+	// intenta avisar algo. Ninguna de esas tres cosas tiene sentido contra
+	// alguien que no está escuchando, y las tres lo hacían. Quién es miembro lo
+	// contesta el libro, y eso no cambia por estar AFK. Ver
+	// [usecase.Session.authorizedControlIPsLocked].
+	Away bool
+	// AwayFor es cuánto lleva sin aparecer en la malla. Cero es que está.
+	AwayFor time.Duration
+	// SeatFreesIn es cuánto le queda a su ficha antes de vencer y soltar su
+	// dirección. Solo lo sabe el host, que es quien tiene el libro. Cero es que
+	// no aplica.
+	SeatFreesIn time.Duration
 }
 
 // NetCheck es el diagnóstico de red, y no es adorno: convierte "no conecta" en

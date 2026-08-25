@@ -67,3 +67,48 @@ func TestExpulsarPorIPDiceAQuiénEstásEchando(t *testing.T) {
 		}
 	})
 }
+
+// TestElHuecoDelPingLoOcupaElAFK.
+//
+// La columna donde va la latencia es la que contesta «¿este miembro está?». Si
+// no hay medición porque no está, el hueco tiene que decirlo en vez de dejar un
+// guion que se lee como «todavía no se midió».
+func TestElHuecoDelPingLoOcupaElAFK(t *testing.T) {
+	casos := []struct {
+		nombre string
+		p      protocol.PeerView
+		quiero string
+	}{
+		{"presente con medición", protocol.PeerView{RTTMS: 42}, "42 ms"},
+		{"presente sin medición todavía", protocol.PeerView{}, "-"},
+		{"ausente hace minutos", protocol.PeerView{Away: true, AwayForMS: 3 * 60 * 1000}, "AFK 3m"},
+		{"ausente hace segundos", protocol.PeerView{Away: true, AwayForMS: 42 * 1000}, "AFK 42s"},
+		{"ausente hace horas", protocol.PeerView{Away: true, AwayForMS: 5 * 3600 * 1000}, "AFK 5h"},
+		{"ausente sin saber desde cuándo", protocol.PeerView{Away: true}, "AFK"},
+	}
+	for _, c := range casos {
+		t.Run(c.nombre, func(t *testing.T) {
+			if got := peerLatency(c.p); got != c.quiero {
+				t.Fatalf("peerLatency = %q, se esperaba %q", got, c.quiero)
+			}
+		})
+	}
+}
+
+// TestElAsistenteDiceQuiénNoEstá.
+//
+// La lista de expulsar es la única pantalla del asistente donde se elige a una
+// persona concreta, así que es donde importa saber si esa persona está. Sin
+// eso, echar a alguien porque «no responde» es echar a alguien que se fue a
+// buscar café.
+func TestElAsistenteDiceQuiénNoEstá(t *testing.T) {
+	presente := protocol.PeerView{Name: "pericoman", IP: "100.93.137.2", RTTMS: 42}
+	if got, quiero := kickLabel(presente), "Kick pericoman (100.93.137.2)"; got != quiero {
+		t.Fatalf("kickLabel = %q, se esperaba %q", got, quiero)
+	}
+
+	afk := protocol.PeerView{Name: "wololo", IP: "100.93.137.4", Away: true, AwayForMS: 3 * 60 * 1000}
+	if got, quiero := kickLabel(afk), "Kick wololo (100.93.137.4) [AFK 3m]"; got != quiero {
+		t.Fatalf("kickLabel = %q, se esperaba %q", got, quiero)
+	}
+}

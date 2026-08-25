@@ -196,7 +196,7 @@ func (s *Session) leaveLocked(
 	// abriste un juego. Lo que sí puede afirmar son las dos condiciones que
 	// habilitan la pregunta, que ese juego estuvo activo y que hubo alguien
 	// más, y las anota acá porque en un instante se van a borrar con la sala.
-	if !s.state.Game.IsZero() && len(s.state.Peers) >= 2 {
+	if !s.state.Game.IsZero() && domain.CountPresent(s.state.Peers) >= 1 {
 		if s.verificables == nil {
 			s.verificables = make(map[string]string)
 		}
