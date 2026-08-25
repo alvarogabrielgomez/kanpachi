@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -1015,11 +1016,54 @@ func (logMudo) Info(string, ...any)  {}
 func (logMudo) Warn(string, ...any)  {}
 func (logMudo) Error(string, ...any) {}
 
+// logAnotador guarda cada línea con sus pares clave-valor aplanados, para poder
+// afirmar que algo se DIJO. Un log que no se puede leer desde un test es un log
+// del que nadie comprueba nada.
+type logAnotador struct {
+	mu     sync.Mutex
+	líneas []string
+}
+
+func (l *logAnotador) anota(nivel, msg string, kv []any) {
+	var b strings.Builder
+	b.WriteString(nivel)
+	b.WriteString(" ")
+	b.WriteString(msg)
+	for i := 0; i+1 < len(kv); i += 2 {
+		fmt.Fprintf(&b, " %v=%v", kv[i], kv[i+1])
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.líneas = append(l.líneas, b.String())
+}
+
+func (l *logAnotador) Info(msg string, kv ...any)  { l.anota("INFO", msg, kv) }
+func (l *logAnotador) Warn(msg string, kv ...any)  { l.anota("WARN", msg, kv) }
+func (l *logAnotador) Error(msg string, kv ...any) { l.anota("ERROR", msg, kv) }
+
+func (l *logAnotador) dijoAlgoCon(s string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, x := range l.líneas {
+		if strings.Contains(x, s) {
+			return true
+		}
+	}
+	return false
+}
+
+func (l *logAnotador) todo() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return strings.Join(l.líneas, "\n")
+}
+
 // bank es todo el escenario armado, para que cada test toque solo lo suyo.
 type bank struct {
 	deps     Deps
 	motor    *mockMotor
 	firewall *mockFirewall
+	log      *logAnotador
 	netcfg   *mockNetcfg
 	catalog  *mockCatalog
 	state    *mockState
@@ -1383,6 +1427,7 @@ func bancoSinSesión() *bank {
 		sonda:    &mockSonda{},
 		canary:   newOpening(),
 		clock:    &fixedClock{ahora: time.Date(2026, 8, 2, 20, 0, 0, 0, time.UTC)},
+		log:      &logAnotador{},
 	}
 	// La auditoría refleja lo que el firewall tiene aplicado, que es lo que
 	// significa "intacto". Así el diff del dominio corre de verdad en los
@@ -1404,7 +1449,7 @@ func bancoSinSesión() *bank {
 		Prober:      b.sonda,
 		Canary:      b.canary,
 		Clock:       b.clock,
-		Log:         logMudo{},
+		Log:         b.log,
 		// Un lector constante hace que la subred y las claves salgan siempre
 		// iguales, y que el test sea el mismo en cada ejecución.
 		Rand: bytes.NewReader(bytes.Repeat([]byte{0x11}, 1<<16)),

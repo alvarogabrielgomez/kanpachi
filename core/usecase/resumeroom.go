@@ -100,14 +100,14 @@ func (s *Session) ResumeRoom(ctx context.Context, replace bool) (domain.RoomStat
 		return domain.RoomState{}, err
 	}
 
-	if err := s.state.Transition(domain.StateResolving, "el usuario reabrió la sala anterior"); err != nil {
+	if err := s.transitionLocked(domain.StateResolving, "el usuario reabrió la sala anterior"); err != nil {
 		return domain.RoomState{}, err
 	}
 	ok := false
 	defer func() {
 		if !ok {
 			s.teardown(ctx)
-			_ = s.state.TransitionWithExit(domain.StateIdle, "falló reabrir la sala anterior", domain.ExitFailed)
+			_ = s.transitionWithExitLocked(domain.StateIdle, "falló reabrir la sala anterior", domain.ExitFailed)
 			s.snapshot()
 		}
 	}()
@@ -133,7 +133,7 @@ func (s *Session) ResumeRoom(ctx context.Context, replace bool) (domain.RoomStat
 		Seeds:         seedsFor(saved.Room),
 	}
 
-	if err := s.state.Transition(domain.StateConnecting, "levantando la red de la sala anterior"); err != nil {
+	if err := s.transitionLocked(domain.StateConnecting, "levantando la red de la sala anterior"); err != nil {
 		return domain.RoomState{}, err
 	}
 	if err := s.deps.Engine.HostNetwork(ctx, spec); err != nil {
@@ -176,7 +176,7 @@ func (s *Session) ResumeRoom(ctx context.Context, replace bool) (domain.RoomStat
 	if err := s.deps.Control.Serve(ctx, s.controlScope()); err != nil {
 		return domain.RoomState{}, fmt.Errorf("abriendo el canal de la sala: %w", err)
 	}
-	if err := s.state.Transition(domain.StateConnected, "la sala anterior está levantada"); err != nil {
+	if err := s.transitionLocked(domain.StateConnected, "la sala anterior está levantada"); err != nil {
 		return domain.RoomState{}, err
 	}
 

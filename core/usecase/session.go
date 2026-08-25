@@ -728,6 +728,43 @@ func (s *Session) IssuedAddresses() []netip.Addr {
 	return out
 }
 
+// transitionLocked mueve el estado de la sala y lo DICE.
+//
+// Existe porque los doce sitios que cambiaban el estado ya llevaban el motivo
+// escrito en la llamada y ninguno lo registraba. El 2026-08-25 un host pasó
+// treinta y tres horas sin poder recibir a nadie y su log no tiene una sola
+// línea de estado en toda la ventana: había que deducir en qué estado estaba
+// por lo que hacía y no por lo que decía.
+//
+// La línea sale con los dos extremos y el motivo. Con el estado de llegada solo
+// no se puede reconstruir una secuencia, que es lo que se lee cuando algo se
+// quedó a medias.
+//
+// Asume el candado tomado.
+func (s *Session) transitionLocked(next domain.ConnState, reason string) error {
+	return s.transitionWithExitLocked(next, reason, domain.ExitNone)
+}
+
+// transitionWithExitLocked es lo mismo diciendo por qué se sale.
+//
+// Salir lleva su propia línea y no se cuela en la de arriba: es el único caso
+// en que hay un motivo de SALIDA además del motivo del cambio, y perderlo deja
+// sin explicar la mitad de las veces que una sala se cierra sola.
+//
+// Asume el candado tomado.
+func (s *Session) transitionWithExitLocked(next domain.ConnState, reason string, exit domain.ExitReason) error {
+	antes := s.state.Conn
+	if err := s.state.TransitionWithExit(next, reason, exit); err != nil {
+		return err
+	}
+	kv := []any{"de", antes.String(), "a", next.String(), "motivo", reason}
+	if exit != domain.ExitNone {
+		kv = append(kv, "salida", exit.String())
+	}
+	s.deps.Log.Info("la sala cambió de estado", kv...)
+	return nil
+}
+
 // snapshot copia lo que se puede mutar desde fuera y publica el resultado para
 // que Status no tenga que tomar el candado.
 //

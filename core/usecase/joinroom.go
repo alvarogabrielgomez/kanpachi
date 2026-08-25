@@ -68,7 +68,7 @@ func (s *Session) JoinRoom(
 	s.deps.Progress.Begin("entrar a la sala")
 	s.deps.Progress.Stepf(domain.ScopeDaemon, "código válido: %s, servido por %s", room.InviteID, room.Seed)
 
-	if err := s.state.Transition(domain.StateResolving, "el usuario pegó un código"); err != nil {
+	if err := s.transitionLocked(domain.StateResolving, "el usuario pegó un código"); err != nil {
 		return domain.RoomState{}, err
 	}
 	ok := false
@@ -83,7 +83,7 @@ func (s *Session) JoinRoom(
 			limpio, fin := cleanupContext(ctx)
 			s.teardown(limpio)
 			fin()
-			_ = s.state.TransitionWithExit(domain.StateIdle, "falló el ingreso a la sala", domain.ExitFailed)
+			_ = s.transitionWithExitLocked(domain.StateIdle, "falló el ingreso a la sala", domain.ExitFailed)
 			// Republicar no es opcional. Quien llama recibe un error y descarta
 			// el estado, así que sin esto la copia que lee Status se quedaría
 			// con la de antes del fallo y la pantalla de inicio no diría nunca
@@ -112,7 +112,7 @@ func (s *Session) JoinRoom(
 	}
 	hostKey := lookup.HostKey
 
-	if err := s.state.Transition(domain.StateConnecting, "buscando al host"); err != nil {
+	if err := s.transitionLocked(domain.StateConnecting, "buscando al host"); err != nil {
 		return domain.RoomState{}, err
 	}
 	if err := s.ensureMemberKeyLocked(room); err != nil {
@@ -190,7 +190,7 @@ func (s *Session) JoinRoom(
 	if err := s.refreshPeersLocked(ctx); err != nil {
 		return domain.RoomState{}, err
 	}
-	if err := s.state.Transition(domain.StateConnected, "dentro de la sala"); err != nil {
+	if err := s.transitionLocked(domain.StateConnected, "dentro de la sala"); err != nil {
 		return domain.RoomState{}, err
 	}
 

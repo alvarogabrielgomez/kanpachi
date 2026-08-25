@@ -2337,3 +2337,44 @@ func TestAgotarLaSubredEsUnErrorConNombre(t *testing.T) {
 		t.Fatal("una sala sin subred se reportó como subred agotada")
 	}
 }
+
+// TestCadaCambioDeEstadoDeLaSalaEscribeUnaLínea.
+//
+// Los doce sitios que movían el estado ya llevaban el motivo escrito en la
+// llamada y NINGUNO lo registraba. El 2026-08-25 un host pasó treinta y tres
+// horas sin poder recibir a nadie y su log no tiene una sola línea de estado en
+// toda la ventana.
+func TestCadaCambioDeEstadoDeLaSalaEscribeUnaLínea(t *testing.T) {
+	b := nuevoBanco(t)
+
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
+		t.Fatal(err)
+	}
+
+	quiero := []string{
+		"la sala cambió de estado de=sin sala a=resolviendo motivo=el usuario creó una sala",
+		"la sala cambió de estado de=resolviendo a=conectando motivo=levantando la red",
+		"la sala cambió de estado de=conectando a=conectado motivo=la sala está levantada",
+	}
+	for _, q := range quiero {
+		if !b.log.dijoAlgoCon(q) {
+			t.Fatalf("no se registró la transición %q. Lo que hay:\n%s", q, b.log.todo())
+		}
+	}
+}
+
+// TestSalirDeLaSalaDiceTambiénPorQué.
+//
+// El motivo de SALIDA es el único que no cabe en el par de estados, y es el que
+// explica la mitad de las veces que una sala se cierra sola.
+func TestSalirDeLaSalaDiceTambiénPorQué(t *testing.T) {
+	b := salaCreada(t)
+
+	b.session.LeaveRoom(ctx())
+	if !b.log.dijoAlgoCon("la sala cambió de estado de=conectado a=sin sala") {
+		t.Fatalf("salir no dejó línea de estado. Lo que hay:\n%s", b.log.todo())
+	}
+	if !b.log.dijoAlgoCon("salida=") {
+		t.Fatalf("salir no dijo por qué. Lo que hay:\n%s", b.log.todo())
+	}
+}

@@ -290,7 +290,7 @@ func (s *Session) leaveLocked(
 	// Transition a Idle limpia la sala entera. Es legal desde cualquier
 	// estado, incluso a mitad de un intento de conexión que no responde,
 	// porque salir es una acción del usuario que tiene que funcionar siempre.
-	if err := s.state.TransitionWithExit(domain.StateIdle, reason, exit); err != nil {
+	if err := s.transitionWithExitLocked(domain.StateIdle, reason, exit); err != nil {
 		// Inalcanzable con la tabla de transiciones actual. Se registra en vez
 		// de ignorarse porque, si alguien la edita mal, el síntoma sería una
 		// sesión que no se puede abandonar y este log es lo que lo diría.
