@@ -29,6 +29,7 @@ package kanpachi
 import (
 	"fmt"
 	"net/netip"
+	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 )
@@ -435,6 +436,18 @@ func toPeers(raw []peerOut) ([]domain.Peer, error) {
 			Name:      name,
 			Path:      kind,
 			Self:      kind == domain.PathSelf,
+			// Milisegundos en el cable, Duration acá. Se tiraba, y con él se
+			// caía la columna de latencia de `kanpachi members`, el `rtt` de
+			// toda línea MALLA, y un diagnóstico que concluía «todavía no hay
+			// una medición de ida y vuelta» de un campo que nadie escribía.
+			// Medido el 2026-08-25: el ingreso que SÍ funcionó también decía
+			// cero, así que el diagnóstico era un falso positivo garantizado en
+			// todo fallo de marcado.
+			//
+			// `Host` NO se pone acá, y no es un olvido: el motor no puede saber
+			// qué miembro es el host. Lo marca [usecase.markRoles], que tiene el
+			// rol y la subred de la sala.
+			RTT: time.Duration(p.RTTMs) * time.Millisecond,
 		})
 	}
 	return out, nil

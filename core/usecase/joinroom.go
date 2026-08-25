@@ -530,6 +530,13 @@ func (s *Session) logMeshOnDialFailureLocked(ctx context.Context, host netip.Add
 		return
 	}
 
+	// Los roles se marcan ANTES de registrar. El motor no puede saber qué
+	// miembro es el host, así que la salida cruda del adaptador trae `Host` en
+	// falso para todo el mundo, y esta línea afirmaba `host false` incluso del
+	// host que se acababa de intentar marcar. Acá sí hay con qué resolverlo: el
+	// rol, la dirección propia y la subred de la sala.
+	peers = markRoles(peers, s.state.LocalIP, s.state.Role, s.state.Subnet)
+
 	var hostPeer *domain.Peer
 	for _, p := range peers {
 		if p.Self {
@@ -547,6 +554,10 @@ func (s *Session) logMeshOnDialFailureLocked(ctx context.Context, host netip.Add
 		s.deps.Log.Warn("el motor conoce una ruta al host, pero el canal no levantó: "+
 			"la ruta no prueba que el plano de datos haya entregado el SYN; revisar la sesión relay, el listener y el firewall",
 			"host", host.String(), "camino", hostPeer.Path.String(), "rtt", hostPeer.RTT.String())
+		// Esta rama dejó de ser un falso positivo el 2026-08-25. Hasta ese día
+		// el adaptador tiraba el `rtt_ms` del cable, así que el campo valía cero
+		// SIEMPRE y esta línea salía en todo fallo de marcado, dijera lo que
+		// dijera el motor. Se leyó como evidencia durante una caída real.
 		if hostPeer.RTT <= 0 {
 			s.deps.Log.Warn("el rtt del host es 0: todavía no hay una medición de ida y vuelta; "+
 				"la ruta OSPF puede existir mientras el handshake del relay sigue sin completar",

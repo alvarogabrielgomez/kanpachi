@@ -159,9 +159,14 @@ func (m *VigiaDeMalla) Correr(ctx context.Context) {
 			if p.Self {
 				continue
 			}
+			// Sin `host`, y a propósito. El motor no puede saber qué miembro es
+			// el host: lo marca `markRoles` en la sesión, con el rol y la subred
+			// de la sala, que es justo lo que este vigía NO tiene y no debe
+			// tener. Imprimirlo acá era imprimir un `false` constante, incluido
+			// el del host.
 			m.Log.Info("MALLA: el motor ve a alguien", "ip", p.VirtualIP.String(),
 				"nombre", p.Name.String(), "camino", p.Path.String(),
-				"rtt", p.RTT.String(), "host", p.Host)
+				"rtt", p.RTT.String())
 		}
 	}
 }

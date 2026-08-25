@@ -480,11 +480,31 @@ func (s *Session) OnMemberChannelUp(ctx context.Context, ip netip.Addr) domain.R
 	// así, sin una línea más en el log.
 	//
 	// La causa es que [Session.onPeersChangedLocked] solo lo llamaba el evento
-	// `peers_changed` del motor, y el motor NO lo emitió: cero apariciones en
-	// su log, mientras el observador de malla sí veía al miembro. Y
-	// [Session.withAdmittedLocked], que existe justamente para el caso en que
-	// el motor cuenta de menos, vive DENTRO de [Session.refreshPeersLocked], o
-	// sea que la red de seguridad no tenía quién la disparara.
+	// `peers_changed` del motor. Y [Session.withAdmittedLocked], que existe
+	// justamente para el caso en que el motor cuenta de menos, vive DENTRO de
+	// [Session.refreshPeersLocked], o sea que la red de seguridad no tenía quién
+	// la disparara.
+	//
+	// # Una frase de acá que era falsa, corregida el 2026-08-25
+	//
+	// Esto decía que el motor NO emitió el evento, «cero apariciones en su log».
+	// **Es falso**, y salía de un grep que no podía encontrarlo: los eventos del
+	// protocolo salen por el STDOUT del hijo, que es el canal de órdenes,
+	// mientras `kanpachi-engine.log` recibe solo el `tracing` de EasyTier. Ese
+	// fichero da cero para `peers_changed` pase lo que pase, y también para
+	// `connected` y `disconnected`. Encima `peers_changed` es el único evento
+	// que el daemon no registra, así que su ausencia del log del daemon tampoco
+	// probaba nada.
+	//
+	// El motor SÍ lo emite, desde el bus de EasyTier. Lo que falla es CUÁNDO:
+	// sale con `PeerConnAdded`, antes de que la ruta lleve dirección, así que la
+	// relectura que dispara devuelve una lista sin el miembro que acaba de
+	// entrar, y la convergencia posterior no produce ningún evento más. La
+	// prueba positiva de que dispara está en el historial: el commit `fa5850a`
+	// midió 19 aplicaciones de política al abrir una sala y hasta 31 en un
+	// segundo, y el único llamador de `applyPolicyIfChanged` es
+	// [Session.onPeersChangedLocked]. La red de seguridad de eso es el vigía de
+	// malla, que mira la tabla ya convergida.
 	//
 	// El canal abriéndose es la evidencia de primera mano de que hay alguien, y
 	// es la misma que ya decide a quién se le abre el canal de control. Si el
