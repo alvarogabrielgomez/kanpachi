@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
@@ -46,14 +47,72 @@ type Malla interface {
 //
 // No es un latido: se anota el cambio, no el tick. Sin cambios no escribe una
 // sola línea, que es lo que lo hace legible durante una espera larga.
+//
+// # Qué SÍ es, desde el 2026-08-25
+//
+// Además de anotar, avisa. Sondeaba el motor una vez por segundo, comparaba
+// contra la muestra anterior, y tiraba la respuesta en una línea de log. Ese
+// mismo trabajo es lo único del árbol que ve la tabla del motor YA
+// CONVERGIDA, así que es la red de seguridad del evento `peers_changed`, que
+// llega antes de que la ruta lleve dirección. Ver [VigiaDeMalla.Cambios].
 type VigiaDeMalla struct {
 	Motor Malla
 	Log   port.Logger
+
+	// tics reemplaza el reloj del bucle, y SOLO lo ponen los tests de este
+	// paquete. Nil es el ticker de verdad, a [timing.MeshBeat]. Es el mismo
+	// asiento que el supervisor tiene en `beats` y `sweeps`, y por lo mismo: sin
+	// él, un test que necesita cuatro vueltas tarda cuatro segundos y no puede
+	// afirmar nada sobre lo que NO pasó entre dos de ellas.
+	tics <-chan time.Time
+
+	// una protege la creación perezosa de `cambios`, para que pedir el canal y
+	// arrancar el vigía no compitan.
+	una sync.Once
+	// cambios avisa de que la malla cambió. Uno solo cabe, y el envío NUNCA
+	// bloquea. Ver [VigiaDeMalla.Cambios].
+	cambios chan struct{}
+}
+
+// Cambios es por donde el supervisor se entera de que la malla cambió.
+//
+// # Amortiguado a uno, y sin bloquear
+//
+// A uno porque lo que se manda no es un dato, es «vuelve a mirar»: diez avisos
+// seguidos piden exactamente lo mismo que uno.
+//
+// Sin bloquear porque este vigía existe para seguir vivo mientras la sesión
+// tiene el candado tomado de punta a punta, que es justo cuando el despachador
+// puede estar esperando detrás. Un envío bloqueante acá convertiría al testigo
+// en otra víctima. Es la misma regla que `drenar` un escalón más abajo.
+func (m *VigiaDeMalla) Cambios() <-chan struct{} {
+	m.una.Do(func() { m.cambios = make(chan struct{}, 1) })
+	return m.cambios
+}
+
+// avisar empuja el «vuelve a mirar» si hay quien lo escuche y no hay uno ya en
+// la cola.
+func (m *VigiaDeMalla) avisar() {
+	if m.cambios == nil {
+		return
+	}
+	select {
+	case m.cambios <- struct{}{}:
+	default: // ya hay uno esperando, y pide lo mismo
+	}
 }
 
 func (m *VigiaDeMalla) Correr(ctx context.Context) {
-	t := time.NewTicker(timing.MeshBeat)
-	defer t.Stop()
+	// Crea el canal si nadie lo pidió todavía, para que arrancar antes que el
+	// supervisor no deje al vigía mudo para siempre.
+	m.Cambios()
+
+	tics := m.tics
+	if tics == nil {
+		t := time.NewTicker(timing.MeshBeat)
+		defer t.Stop()
+		tics = t.C
+	}
 
 	// El arranque no cuenta como cambio: sin sala no hay malla, y anunciarlo
 	// sería una línea de ruido en cada arranque.
@@ -62,7 +121,7 @@ func (m *VigiaDeMalla) Correr(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
+		case <-tics:
 		}
 
 		peers, err := m.Motor.Peers(ctx)
@@ -80,6 +139,14 @@ func (m *VigiaDeMalla) Correr(ctx context.Context) {
 		}
 		anterior := firma
 		firma = nueva
+
+		// El aviso va ACÁ y no al final: lo que sigue son líneas de log, y quien
+		// espera para abrir la compuerta no tiene por qué esperarlas.
+		//
+		// Se avisa también cuando la malla se queda vacía, que es el caso que
+		// sale por el `continue` de abajo. Vaciarse es el cambio más gordo que
+		// hay, y hasta el 2026-08-25 solo escribía un Warn.
+		m.avisar()
 
 		if len(peers) == 0 {
 			// Que se vacíe con la sala en pie es un hecho, y de los gordos.
