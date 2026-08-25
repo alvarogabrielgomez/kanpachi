@@ -285,6 +285,11 @@ func (s *Session) IssueCredentialFor(ctx context.Context, req domain.CredentialR
 
 	ip, err := nextFreeAddress(s.state.Subnet, s.takenAddressesLocked())
 	if err != nil {
+		// El host lo DICE. Quien ve este error es el invitado, del otro lado del
+		// vestíbulo, así que sin esta línea el dueño de la sala se enteraba solo
+		// si alguien se lo contaba.
+		s.deps.Log.Error("no se le pudo dar dirección a quien entra",
+			"nombre", req.Name.String(), "subred", s.state.Subnet.String(), "error", err)
 		return domain.Credential{}, err
 	}
 
@@ -400,7 +405,7 @@ func nextFreeAddress(subnet netip.Prefix, taken map[netip.Addr]bool) (netip.Addr
 			return a, nil
 		}
 	}
-	return netip.Addr{}, fmt.Errorf("la sala %s no tiene direcciones libres", subnet)
+	return netip.Addr{}, fmt.Errorf("%w: %s", ErrNoFreeAddress, subnet)
 }
 
 // lastAddress es el broadcast del prefijo. Se calcula sobre los cuatro bytes

@@ -97,6 +97,15 @@ var (
 	// ErrRulesFailed es que las reglas no se recalcularon. Ya salió de la red,
 	// porque su credencial sí se revocó.
 	ErrRulesFailed = errors.New("las reglas del firewall no se recalcularon")
+
+	// ErrNoFreeAddress es que el /24 de la sala está lleno.
+	//
+	// Tipado porque sin centinela ningún llamador podía separarlo de «la sala no
+	// tiene subred», que es un fallo de otra clase y se arregla de otra forma.
+	// Y porque quien lo ve es el INVITADO: el host no se enteraba, así que la
+	// única vía de diagnóstico era que alguien le contara qué error le salió.
+	// Ese es el mismo silencio que costó treinta y tres horas el 2026-08-25.
+	ErrNoFreeAddress = errors.New("la sala se quedó sin direcciones libres")
 )
 
 // Deps son los puertos que la sesión necesita.

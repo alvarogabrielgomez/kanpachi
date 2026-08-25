@@ -2312,3 +2312,28 @@ func TestElVetoDeLaExpulsiónNuncaDuraMásQueLaReservaDeSuDirección(t *testing.
 		t.Fatalf("quien acaba de entrar en %s se quedó fuera de la puerta", nueva.VirtualIP)
 	}
 }
+
+// TestAgotarLaSubredEsUnErrorConNombre.
+//
+// El error era sin centinela, así que ningún llamador podía distinguir «no
+// quedan direcciones» de «la sala no tiene subred». Sin línea en el host, sin
+// alerta y sin pantalla: el host se enteraba solo si un invitado le contaba
+// qué error vio. Es el mismo patrón de silencio que costó treinta y tres horas.
+func TestAgotarLaSubredEsUnErrorConNombre(t *testing.T) {
+	subred := netip.MustParsePrefix("100.93.137.0/24")
+	lleno := map[netip.Addr]bool{}
+	for a := subred.Addr(); subred.Contains(a); a = a.Next() {
+		lleno[a] = true
+	}
+
+	_, err := nextFreeAddress(subred, lleno)
+	if !errors.Is(err, ErrNoFreeAddress) {
+		t.Fatalf("agotar la subred no dio ErrNoFreeAddress: %v", err)
+	}
+
+	// Y no confundir los dos fallos: sin subred es otra cosa, y no lleva este
+	// centinela.
+	if _, err := nextFreeAddress(netip.Prefix{}, nil); errors.Is(err, ErrNoFreeAddress) {
+		t.Fatal("una sala sin subred se reportó como subred agotada")
+	}
+}
