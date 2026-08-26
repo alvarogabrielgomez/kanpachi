@@ -92,4 +92,49 @@ void main() {
     expect(find.byType(Tooltip), findsNothing);
     expect(find.textContaining('Host'), findsNothing);
   });
+
+  testWidgets(
+    'pulsar la etiqueta enseña la huella, y pulsar fuera la esconde',
+    (WidgetTester tester) async {
+      await pinta(tester, conVeredicto(HostVerdict.conocida, salas: 126));
+
+      expect(find.text('5502 6194 5464 5033 2100'), findsNothing);
+
+      await tester.tap(find.byType(HostTrustChip));
+      await tester.pumpAndSettle();
+      expect(find.text('5502 6194 5464 5033 2100'), findsOneWidget);
+
+      // Fuera, y no otra vez encima: el panel abierto tiende una capa sobre
+      // toda la pantalla para cerrarse, así que la píldora queda debajo de
+      // ella. Es lo que se espera de algo que se abrió pulsando.
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+      expect(find.text('5502 6194 5464 5033 2100'), findsNothing);
+    },
+  );
+
+  testWidgets('con la llave cambiada el panel trae las dos huellas', (
+    WidgetTester tester,
+  ) async {
+    await pinta(
+      tester,
+      PendingInvite(
+        link: 'kanpachi://A7K2-M9QX@servidor',
+        fingerprint: '1111 2222 3333 4444 5555',
+        verdict: HostVerdict.llaveCambiada,
+        knownFingerprint: '5502 6194 5464 5033 2100',
+        knownRooms: 4,
+      ),
+    );
+
+    await tester.tap(find.byType(HostTrustChip));
+    await tester.pumpAndSettle();
+
+    // Con etiqueta las dos, porque lo que se pide es compararlas y sin
+    // nombre no se sabe cuál es cuál.
+    expect(find.text('ANTES'), findsOneWidget);
+    expect(find.text('AHORA'), findsOneWidget);
+    expect(find.text('5502 6194 5464 5033 2100'), findsOneWidget);
+    expect(find.text('1111 2222 3333 4444 5555'), findsOneWidget);
+  });
 }

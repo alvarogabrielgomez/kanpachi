@@ -6,7 +6,6 @@ import 'package:kanpachi_ui/core/design_system/molecules/app_dialog.dart';
 import 'package:kanpachi_ui/core/design_system/molecules/app_editable_name.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
-import 'package:kanpachi_ui/features/seed/presentation/widgets/host_trust_block.dart';
 import 'package:kanpachi_ui/features/seed/presentation/widgets/host_trust_chip.dart';
 import 'package:kanpachi_ui/features/seed/presentation/widgets/seed_trust_block.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
@@ -107,7 +106,7 @@ class _TrustSeedDialogState extends State<TrustSeedDialog> {
         // Con la huella cambiada el botón dice lo que hace de verdad y deja
         // de ser el camino cómodo: se pinta como el de cancelar. No se
         // quita, porque el aviso avisa y quitarlo sería bloquear con otro
-        // nombre. Ver [HostTrustBlock].
+        // nombre. Ver [HostTrustChip].
         confirmLabel: _huellaCambiada
             ? 'Entrar igual'
             : (entrando ? 'Confiar y entrar' : 'Confiar y crear'),
@@ -154,12 +153,6 @@ class _TrustSeedDialogState extends State<TrustSeedDialog> {
           // que califica: a esa máquina le hablas, y esa llave firmó la sala.
           // Debajo se leía como una propiedad del servidor. Ver [HostTrustChip].
           _FilaDelSeed(seed: widget.request.seed, host: _confianzaDelHost),
-          // La caja entera queda para el único caso que pide comparar dos
-          // huellas. Ver [HostTrustBlock].
-          if (_huellaCambiada) ...<Widget>[
-            const SizedBox(height: AppSpacing.lg),
-            HostTrustBlock(invite: _confianzaDelHost!),
-          ],
           if (!entrando) ...<Widget>[
             const SizedBox(height: AppSpacing.lg),
             _NombreDeLaSala(controller: _nombre),
