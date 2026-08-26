@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Changed
+
+- Cut the release notes down to what somebody deciding which file to download needs. The body repeated the whole product's story on every publication, so the two lines that change between versions sat under a page and a half that never does ([686b4fe](https://github.com/alvarogabrielgomez/kanpachi/commit/686b4fe))
+
 ## [0.7.1] - 2026-08-26
 
 ### Fixed
