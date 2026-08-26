@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
-import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/core/messages/app_message_notice.dart';
 import 'package:kanpachi_ui/core/messages/message_catalog.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
-import 'package:kanpachi_ui/features/session/presentation/widgets/progress_steps.dart';
+import 'package:kanpachi_ui/features/session/presentation/widgets/detail_drawer.dart';
 
 /// The notice for an action the user asked for, that did not happen.
 ///
@@ -86,53 +85,12 @@ class _FailureNoticeState extends State<FailureNotice> {
         ),
         if (puedeDetallar && _abierto) ...<Widget>[
           const SizedBox(height: AppSpacing.xl),
-          _Detalles(failure: widget.failure),
+          DetailDrawer(
+            progress: widget.failure.progress,
+            reason: widget.failure.reason,
+          ),
         ],
       ],
-    );
-  }
-}
-
-/// The steps of what failed, plus the raw daemon text.
-///
-/// The steps come first and the raw line last, and that order is the point:
-/// the error line says where it stopped, and the steps say how far it got.
-/// Almost always the second is what tells you which one of them to go look at.
-class _Detalles extends StatelessWidget {
-  const _Detalles({required this.failure});
-
-  final ActionFailure failure;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.x3l),
-      decoration: BoxDecoration(
-        color: colors.surfaceSunken,
-        borderRadius: AppRadius.allLg,
-        border: Border.all(color: colors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          if (failure.progress != null)
-            ProgressSteps(progress: failure.progress!),
-          if (failure.progress != null && failure.reason.isNotEmpty)
-            const SizedBox(height: AppSpacing.x3l),
-          if (failure.reason.isNotEmpty) ...<Widget>[
-            Text(
-              'Lo que dijo el daemon',
-              style: context.type.strong.copyWith(color: colors.textMuted),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            SelectableText(
-              failure.reason,
-              style: context.type.monoSm.copyWith(color: colors.textOnChip),
-            ),
-          ],
-        ],
-      ),
     );
   }
 }

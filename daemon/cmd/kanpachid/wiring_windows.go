@@ -11,6 +11,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"golang.org/x/sys/windows"
 
@@ -129,5 +130,76 @@ func quitarCuarentenaDeBase(ctx context.Context, dataDir string, log port.Logger
 		return fmt.Errorf("quitando la cuarentena de base: %w", err)
 	}
 	log.Info("cuarentena de base retirada", "cantidad", n)
+	return nil
+}
+
+// prepararCarpetaDeLogDeLaUI crea la hoja del log de la ventana y le da
+// escritura a los usuarios de la máquina.
+//
+// # Qué se concede, y qué NO
+//
+// **La ACL de la raíz no se toca**, y esa es la mitad del asunto: `api.token`
+// sigue en solo lectura para los usuarios, que es media protección del token de
+// la API local. Lo que se concede es escritura en una carpeta que no contiene
+// otra cosa que el log de la interfaz. El log del daemon está en la carpeta de
+// arriba y sigue sin poder tocarse, así que nadie puede forjar líneas en el
+// registro que se pega en un reporte de fallo.
+//
+// Y no se corta la herencia, al revés que [protegerFichero]: SYSTEM y
+// Administradores tienen que seguir pudiendo leer este archivo, que es el que
+// alguien va a mandar cuando la ventana se muera.
+//
+// # Por qué lo hace el daemon y no el instalador
+//
+// Para que una instalación que se ACTUALIZA lo reciba sin reinstalar. El
+// instalador crea el directorio de datos una vez, y esto tiene que existir en
+// las máquinas donde Kanpachi ya estaba.
+func prepararCarpetaDeLogDeLaUI(ruta string) error {
+	if err := os.MkdirAll(ruta, 0o700); err != nil {
+		return fmt.Errorf("creando %s: %w", ruta, err)
+	}
+	usuarios, err := windows.CreateWellKnownSid(windows.WinBuiltinUsersSid)
+	if err != nil {
+		return fmt.Errorf("resolviendo el SID de Usuarios: %w", err)
+	}
+	entradas := []windows.EXPLICIT_ACCESS{{
+		AccessPermissions: windows.GENERIC_READ | windows.GENERIC_WRITE | windows.DELETE,
+		AccessMode:        windows.GRANT_ACCESS,
+		Inheritance:       windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+		Trustee: windows.TRUSTEE{
+			TrusteeForm:  windows.TRUSTEE_IS_SID,
+			TrusteeType:  windows.TRUSTEE_IS_GROUP,
+			TrusteeValue: windows.TrusteeValueFromSID(usuarios),
+		},
+	}}
+	// **Esto SUMA a lo heredado, no lo reemplaza**, y está medido y no supuesto:
+	// aplicar `DACL_SECURITY_INFORMATION` sin `PROTECTED_...` deja la herencia
+	// encendida, así que la hoja acaba con las tres entradas heredadas —SYSTEM y
+	// Administradores con todo, Usuarios con lectura— más ésta. Que SYSTEM y
+	// Administradores sigan ahí es lo que mantiene el log legible para un
+	// reporte de fallo.
+	//
+	// Lo que se concede de más, dicho porque se midió: `DELETE` cae también
+	// sobre la carpeta en sí y no solo sobre los ficheros de dentro, así que un
+	// usuario de la máquina puede BORRAR esta carpeta. No puede sustituirla
+	// —crear algo en `logs\` exige una escritura que no tiene— y el daemon la
+	// vuelve a crear en el arranque siguiente. Lo peor que consigue es dejar sin
+	// log a la ventana hasta entonces, y eso ya lo puede hacer cualquiera que
+	// pueda hablarle al pipe, que es cualquier usuario interactivo. Los ficheros
+	// SÍ lo necesitan: la rotación borra el `.old` anterior, y `GENERIC_WRITE`
+	// sobre un fichero no incluye borrarlo.
+	dacl, err := windows.ACLFromEntries(entradas, nil)
+	if err != nil {
+		return fmt.Errorf("armando los permisos de %s: %w", ruta, err)
+	}
+	err = windows.SetNamedSecurityInfo(
+		ruta,
+		windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION,
+		nil, nil, dacl, nil,
+	)
+	if err != nil {
+		return fmt.Errorf("aplicando los permisos de %s: %w", ruta, err)
+	}
 	return nil
 }

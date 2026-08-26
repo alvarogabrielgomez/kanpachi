@@ -193,6 +193,31 @@ const (
 	// reenvía su copia pisaría el nombre elegido desde la terminal.
 	MethodNickname Method = "nickname"
 
+	// MethodSettings lee o cambia lo que esta máquina recuerda de cómo se
+	// presenta: si las caras narran paso a paso lo que hace el daemon, el
+	// tamaño de la ventana, y la versión publicada que ya se sabe más nueva que
+	// la que corre.
+	//
+	// Cuarto de la familia de [MethodAutostart], [MethodOwnSeed] y
+	// [MethodNickname], con la misma forma y por el mismo motivo: uno solo para
+	// leer y para escribir, porque la pantalla que lo cambia tiene que releerlo
+	// justo después para dibujar lo que quedó.
+	//
+	// **Uno para las tres y no tres métodos**, al revés que los de la familia.
+	// Cada uno de aquellos tiene una autoridad distinta detrás —el Administrador
+	// de servicios, un registro que se sondea antes de guardarlo, un nombre que
+	// se valida y del que se deriva una sugerencia— y estas tres solo se
+	// escriben, en el mismo fichero.
+	//
+	// **Cada campo es opcional y ausente significa "no lo toques".** Sin eso,
+	// una ventana que apaga la narración mandaría un tamaño de cero al lado y
+	// borraría el que había.
+	//
+	// El nombre NO se escribe por acá, y por eso no viaja en la respuesta: lo
+	// contesta [MethodNickname], que además da la sugerencia. Un escritor por
+	// hecho.
+	MethodSettings Method = "settings"
+
 	// MethodEngineInfo dice qué motor lleva esta instalación: build id y
 	// librería de red, leídos del fichero que el daemon va a lanzar. Solo
 	// lectura, para la pantalla de Configuración; `kanpachi version` lee lo
@@ -257,6 +282,7 @@ var métodos = map[Method]bool{
 	MethodAutostart:           true,
 	MethodOwnSeed:             true,
 	MethodNickname:            true,
+	MethodSettings:            true,
 	MethodEngineInfo:          true,
 	MethodSeedPassword:        true,
 }

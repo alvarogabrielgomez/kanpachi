@@ -82,6 +82,27 @@ type HostedRoom struct {
 	// GameID es el juego que estaba activo. Vacío es válido y es lo normal.
 	GameID string
 
+	// MembersGen es la generación del libro de credenciales que hay en disco.
+	//
+	// # Por qué un campo más acá, con la invariante de arriba delante
+	//
+	// Porque no es un plazo, no es una lista de miembros y no es una regla: es
+	// un contador sin autoridad propia. Lo único que hace es dejar detectar que
+	// el libro que hay al lado es una copia RESTAURADA, más vieja que la última
+	// que este daemon escribió. Ver [CredentialBook].
+	//
+	// **Un valor manipulado falla cerrado en un sentido y no compra nada en el
+	// otro.** Subirlo hace que todo libro se lea como viejo y se rechace, o sea
+	// que el host arranca sin libro: pierde el lazo para expulsar, que es
+	// exactamente lo que pasaba antes de que el libro existiera. Bajarlo deja
+	// aceptar un libro anterior, y para escribirlo hay que poder escribir ESTE
+	// fichero, que ya lleva la identidad de la red REAL de la sala. Quien llegó
+	// ahí tiene la sala entera y no necesita el libro.
+	//
+	// Cero es que no hay libro que comprobar, y es lo que trae un fichero
+	// escrito antes de que este campo existiera.
+	MembersGen uint64
+
 	SavedAt time.Time
 }
 
@@ -167,7 +188,10 @@ type persistedRoomJSON struct {
 	CardKey       string `json:"card_key"`
 	Card          string `json:"card"`
 	GameID        string `json:"game_id"`
-	SavedAt       string `json:"saved_at"`
+	// MembersGen sin `omitempty`: el cero es un estado real, «no hay libro que
+	// comprobar», y escribirlo deja el fichero legible a ojo.
+	MembersGen uint64 `json:"members_gen"`
+	SavedAt    string `json:"saved_at"`
 }
 
 type lastRoomJSON struct {
@@ -202,6 +226,7 @@ func (p HostedRoom) Encode() ([]byte, error) {
 		CardKey:       base64.StdEncoding.EncodeToString(p.CardKey[:]),
 		Card:          base64.StdEncoding.EncodeToString(p.Card),
 		GameID:        p.GameID,
+		MembersGen:    p.MembersGen,
 		SavedAt:       p.SavedAt.UTC().Format(time.RFC3339),
 	}, "", "  ")
 }
@@ -228,7 +253,7 @@ func DecodeHostedRoom(raw []byte) (HostedRoom, error) {
 		return HostedRoom{}, fmt.Errorf("%w: el nick del host: %v", ErrPersistedShape, err)
 	}
 
-	out := HostedRoom{Room: room, Name: ClampRoomName(j.Name), Host: host, GameID: j.GameID}
+	out := HostedRoom{Room: room, Name: ClampRoomName(j.Name), Host: host, GameID: j.GameID, MembersGen: j.MembersGen}
 
 	if err := fixedFromBase64(j.NetworkID, out.NetworkID[:], "network_id"); err != nil {
 		return HostedRoom{}, err

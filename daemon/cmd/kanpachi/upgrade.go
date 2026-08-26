@@ -33,6 +33,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -43,6 +44,7 @@ import (
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/daemon/adapter/state/jsonfile"
+	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
 	"github.com/accentiostudios/kanpachi/internal/selfupdate"
 )
 
@@ -85,12 +87,40 @@ func cmdUpgrade(ctx context.Context, op options, args []string) error {
 		}
 	}
 
+	// What this machine already found out, from whichever face asked last.
+	//
+	// **A shared answer and not a cache with a lifetime.** A published version
+	// does not get unpublished, so this cannot go stale; what it saves is the
+	// other face asking the same question of a channel that allows sixty an
+	// hour PER IP, shared by everybody behind one router. The window has kept
+	// this answer since it existed and the terminal asked again every time.
+	//
+	// It fails quietly. With no daemon there is no shared answer, and asking
+	// the channel still works: a daemon that is down is not a reason to be
+	// unable to upgrade.
+	guardada := ""
+	if !force {
+		guardada = versiónPendienteGuardada(op)
+	}
+	if checkOnly && asked == "" && guardada != "" &&
+		selfupdate.IsVersion(Version) && selfupdate.Outdated(Version, guardada) {
+		fmt.Printf("%s is out, and this machine is on %s.\n", guardada, Version)
+		fmt.Println("  Found earlier, here or in the window.")
+		fmt.Println("  To ask the channel again:  kanpachi upgrade --check --force")
+		return nil
+	}
+
 	tag := asked
 	if tag == "" {
 		var err error
 		tag, err = latestPublished(ctx)
 		if err != nil {
 			return fmt.Errorf("could not find out which version is published: %w", err)
+		}
+		// Se apunta para la otra cara, con el mismo criterio que usa la
+		// ventana: solo lo que de verdad va por delante de lo que corre.
+		if selfupdate.IsVersion(Version) && selfupdate.Outdated(Version, tag) {
+			guardarVersiónPendiente(op, tag)
 		}
 	}
 
@@ -327,3 +357,43 @@ func installPackage(ctx context.Context, path string, reinstall bool) error {
 
 // hasTerminal says whether anybody is watching.
 func hasTerminal() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
+
+// versiónPendienteGuardada pregunta al daemon qué versión nueva se sabe ya.
+//
+// Devuelve "" ante cualquier problema, y eso NO es tragarse un error: la
+// respuesta guardada es un atajo, y no tenerlo solo cuesta una pregunta a la
+// red. Fallar acá dejaría sin actualizar a quien tiene el daemon caído, que es
+// justo una de las razones para actualizar.
+func versiónPendienteGuardada(op options) string {
+	c, err := dial(op)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = c.Close() }()
+	raw, err := c.Call(protocol.MethodSettings, nil)
+	if err != nil {
+		return ""
+	}
+	var v struct {
+		PendingUpdate string `json:"pending_update"`
+	}
+	if json.Unmarshal(raw, &v) != nil {
+		return ""
+	}
+	return v.PendingUpdate
+}
+
+// guardarVersiónPendiente apunta lo encontrado para la otra cara.
+//
+// No falla el comando si no puede: quien escribió `upgrade` viene a
+// actualizar, no a dejar una nota.
+func guardarVersiónPendiente(op options, tag string) {
+	c, err := dial(op)
+	if err != nil {
+		return
+	}
+	defer func() { _ = c.Close() }()
+	_, _ = c.Call(protocol.MethodSettings, struct {
+		PendingUpdate string `json:"pending_update"`
+	}{tag})
+}

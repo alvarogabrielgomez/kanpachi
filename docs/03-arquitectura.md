@@ -298,7 +298,7 @@ Un binario de Flutter para Windows no tiene dónde contarlo, y las dos vías obv
 
 Así que se escribe desde Dart, con `runZonedGuarded` para lo asíncrono, `FlutterError.onError` para los errores del framework y `PlatformDispatcher.instance.onError` para lo que se le escapa a la zona. Se anotan **también el arranque y el cierre limpio**: un registro que solo tiene errores no distingue "se cerró sola" de "no llegó a arrancar", que era justo la pregunta.
 
-**La carpeta se la dice el daemon, con `--log`, y eso es una excepción a la doctrina del marcador.** El marcador contesta "qué producto soy", y los dos lados lo deducen del disco. Esta es otra pregunta: "desde qué carpeta me abrieron" NO es deducible por la interfaz, porque en el bundle su ejecutable está en el temporal. La sabe solo el bundle, y ya se la pasa al daemon por esta misma vía. Sin bandera se cae al directorio de datos, y si ahí no se puede escribir, a `%LOCALAPPDATA%\Kanpachi`: el daemon es SYSTEM y la interfaz no, y el permiso que `ProgramData` hereda a sus subcarpetas deja a los usuarios crear carpetas y no crear archivos.
+**La carpeta se la dice el daemon, con `--log`, y eso es una excepción a la doctrina del marcador.** El marcador contesta "qué producto soy", y los dos lados lo deducen del disco. Esta es otra pregunta: "desde qué carpeta me abrieron" NO es deducible por la interfaz, porque en el bundle su ejecutable está en el temporal. La sabe solo el bundle, y ya se la pasa al daemon por esta misma vía. Sin bandera no escribe log, y eso es deliberado desde que hay un solo ámbito: la carpeta se la prepara el daemon —una hoja bajo `logs\`, con escritura para los usuarios, porque él es SYSTEM y la interfaz no— y la ventana escribe donde le dijeron o no escribe. La cadena de respaldo que acababa en `%LOCALAPPDATA%` era el ámbito por persona, y ya no existe.
 
 **Lo que este archivo NO ve:** un fallo nativo, del motor de Flutter, de un plugin o del driver de vídeo, no pasa por Dart. Esa mitad la cubre el código de salida que el daemon anota al ver morir el proceso, que separa una salida limpia de un `0xC0000005`.
 
@@ -508,16 +508,29 @@ type CatalogStore interface {
 //   hosted-room.json  SOLO EN EL HOST. Dice que hay una sala que reponer, y
 //                     nada más: apagarse limpio lo conserva, y lo único que lo
 //                     borra es cerrar la sala
+//   members.json      SOLO EN EL HOST. El libro de credenciales, sellado. Va
+//                     aparte porque el de arriba lleva identidad y referencias
+//                     y jamás política, y una lista de miembros con sus plazos
+//                     es lo contrario
 //   last-room.json    SOLO EN INVITADOS. Código, seed, nombre y nick. Jamás la
 //                     credencial ni la identidad de la red real
 type StateStore interface {
     LoadRoom() ([]byte, error)
     SaveRoom([]byte) error
     ClearRoom() error
+    LoadMembers() ([]byte, error)
+    SaveMembers([]byte) error
+    ClearMembers() error
     LoadLast() ([]byte, error)
     SaveLast([]byte) error
     ClearLast() error
 }
+
+**`members.json` compra dos cosas y hay que decir cuál no.** No devuelve a nadie a la sala: el motor es un hijo que muere con el daemon y su lista de credenciales muere con él, así que renovar un id anterior al reinicio es error duro por contrato. Compra la dirección estable al volver, y poder expulsar a quien ya estaba dentro, que estaba escrito como precio asumido y ahora se paga.
+
+**No guarda el token**, que es el único secreto de la ficha y además es inútil tras reiniciar. Sí guarda la llave de miembro, que es pública pero estable y enlazable, así que deja en disco un registro durable de quién jugó en esta sala. Se acepta porque vive en el directorio de datos con su ACL y muere con la sala: cerrarla lo borra.
+
+**Contra la reversión hay un contador, no una firma.** El sello es AES-256-GCM: ya cifra y ya autentica, y una firma encima no compraría nada porque quien pueda falsificarla ya puede leer `identity.key`. Lo que el sello no cubre es que una copia más vieja de la misma máquina abre perfecto, y restaurar un libro anterior a una expulsión le devolvería al expulsado su dirección y su ranura pre-autorizada en el oyente que corre como SYSTEM. El contador sube en cada escritura y `hosted-room.json` guarda el último, así que un libro atrasado se rechaza. Quien pueda escribir los dos ficheros ya tiene la identidad de red de la sala en el segundo.
 
 // SystemEvents son las cosas que le pasan a la MÁQUINA y que invalidan lo que
 // Kanpachi dejó puesto. Tres canales y no un enum, a diferencia de
@@ -698,7 +711,9 @@ Cinco puertos tienen adaptador real y siete siguen en `sinimplementar`, fallando
 
 **La auditoría se compone en el binario y no dentro del firewall.** `ExposureAudit` hace tres preguntas y el firewall solo puede contestar dos: `RouterMappings` le habla al router del usuario por IGD, que es otro protocolo sobre otra red. Contestarla `nil, nil` desde dentro del firewall haría que "no hay mapeos" y "nadie miró" fueran indistinguibles, en la única pantalla cuyo trabajo es distinguir esas dos cosas. Se compone explícita y no por embebido, para que el objeto que solo mide no cargue además con `Apply` y `PurgeOwned`.
 
-**Apagar limpio es SALIR.** `LeaveRoomOnShutdown` cierra los puertos, restaura las reglas ajenas suspendidas, revierte los ajustes, borra `hosted-room.json` y **vuelve a medir**. Devuelve error, a diferencia de salir de la sala, y la razón es que al apagar no hay nadie mirando la pantalla: una alerta añadida a un estado que el proceso va a tirar en un segundo no es un informe. Y borra el archivo porque su ausencia es lo que dice que la salida fue limpia: conservarlo haría que todo apagado se leyera como una muerte sucia, y el aviso de "quedó una sala abierta" dejaría de significar nada por salir siempre.
+**Apagar limpio devuelve la máquina, y ya NO cierra la sala.** `LeaveRoomOnShutdown` cierra los puertos, restaura las reglas ajenas suspendidas, revierte los ajustes y **vuelve a medir**. Devuelve error, a diferencia de salir de la sala, y la razón es que al apagar no hay nadie mirando la pantalla: una alerta añadida a un estado que el proceso va a tirar en un segundo no es un informe.
+
+**`hosted-room.json` se conserva**, y eso se revirtió a propósito. Antes se borraba y su ausencia significaba "la salida fue limpia", leído al revés: la presencia era una muerte sucia. Apagar el proceso no es que la sala se acabe. Un `apt upgrade`, un reinicio o un `systemctl restart` paran el daemon y la sala sigue siendo de quien la abrió, así que al arrancar se reabre con el mismo código y los enlaces repartidos siguen valiendo. Lo que sí la termina es `LeaveRoom`, que borra el fichero y retira la entrada del registro. Tampoco se avisa acá a los miembros de que la sala se cierra: sería mentira, y cada invitado dejaría de reconectar.
 
 ### La regla verificada por un test
 
@@ -1083,7 +1098,7 @@ Reglas que se derivan:
 - **El host se va:** sus reglas de firewall desaparecen con su máquina. Los invitados no tienen nada abierto, porque en un juego de estrella nunca abrieron nada. La red queda inerte, no insegura.
 
   La excepción, y es la única: un perfil de MALLA, o sea con `client_ports` no vacío, sí abre puertos en cada invitado. Es lo que documenta `06-catalogo.md` y lo que pide el netcode viejo de paso bloqueado, donde cada cliente habla con todos. Poner algo en `client_ports` expande el radio de explosión de todos los miembros y por eso el listón es más alto: se justifica en el perfil, se prueba que NO funcionaba en estrella, y la UI lo dice antes de entrar. La enorme mayoría de los juegos es estrella y ahí la frase de arriba vale literal.
-- **El host vuelve:** su propio daemon conserva la sala en `hosted-room.json` con el juego que estaba activo, y al arrancar **pregunta** si reabrirla. Al reabrir, la identidad de la red es la misma, el perfil se repone resolviéndolo contra el catálogo de esa máquina, y las reglas se regeneran para los miembros presentes en ese momento. Nunca reabre sola. Ver decisión 2.
+- **El host vuelve:** su propio daemon conserva la sala en `hosted-room.json` con el juego que estaba activo, y al arrancar **la reabre sola**, sin preguntar. Al reabrir, la identidad de la red es la misma, el perfil se repone resolviéndolo contra el catálogo de esa máquina, y las reglas se regeneran para los miembros presentes en ese momento, que al principio son cero. Ver decisión 2. La versión que preguntaba ya no existe: la sala vuelve sin que nadie esté delante, que es lo que hace que un reinicio del servidor no le cueste la partida a nadie.
 - **Nadie hereda el rol.** No hay promoción automática ni elección. Un invitado que quiera hospedar crea una sala nueva.
 - **Se va el último nodo y la red deja de existir.** No queda estado de RED en ningún lado: ningún servidor sostiene la sala, y el seed no puede levantarla. Es la consecuencia natural de no tener servidor de salas, no una limitación que haya que disculpar.
 
@@ -1137,7 +1152,22 @@ Sostenido treinta segundos muestreando cada cinco: no era retraso.
 
 **Lo que esto arregla de rebote.** El latido que empuja el vencimiento de las credenciales solo renueva a los presentes, a propósito, para que la dirección de un ausente se libere sola. Con el host contando de menos, un miembro invisible dejaba de renovarse y se caía a las 24 h.
 
-**Lo que queda abierto.** Por qué la tabla del motor no reporta al invitado en el host no está medido: la asimetría es del motor, no del daemon. Este arreglo no la explica, la rodea con una fuente que el host ya tenía.
+**Lo que quedaba abierto, cerrado el 2026-08-25.** Por qué la tabla del motor no reporta al invitado en el host. El motor emite `peers_changed` con `PeerConnAdded`, y su `peers()` descarta toda ruta que todavía no lleve dirección: cuando salta el evento la ruta OSPF no resolvió `ipv4_addr`, así que la relectura inmediata devuelve una lista sin el que acaba de entrar, y la convergencia posterior no produce ningún evento más. Lo cierra el vigía de malla, que mira la tabla ya convergida una vez por segundo y avisa al supervisor por su canal de trabajo. Ver `09-relojes.md`.
+
+#### La membresía y la presencia son dos listas, y deciden cosas distintas
+
+Desde el 2026-08-25, quién puede marcar el puerto de control y a quién se le abren los puertos del juego lo contesta el **libro de credenciales** del host, unido a la tabla del motor. Las dos fuentes de arriba siguen enteras y contestan otra pregunta: quién ESTÁ.
+
+| Lista | De dónde sale | Qué decide |
+|---|---|---|
+| Membresía | `Session.issued` (el libro) unido a la tabla del motor, menos vencidos, revocados y expulsados | la compuerta, el alcance del oyente, la dirección que te toca |
+| Presencia | la tabla del motor más quién tiene canal abierto | online contra AFK, degradado contra directo, a quién sondea el canario, a quién renueva el latido |
+
+El porqué del corte está en la decisión 43: una decisión de conectividad atada a una señal de vida deja fuera a quien la señal todavía no reporta, y la señal no tiene ningún evento para quien cierra la tapa del portátil.
+
+**Un miembro con ficha viva al que el motor no ve sale en la lista marcado `Away`**, con dos duraciones calculadas: cuánto lleva fuera y cuánto le queda a su ficha. Viajan en `PeerView` como `away`, `away_for_ms` y `seat_frees_in_ms`, calculadas y no como marcas de tiempo, por lo mismo que `host_gone_for_ms`. Ver la decisión 44.
+
+**El `rtt_ms` del cable llega al `Peer` desde el 2026-08-25**, y antes se tiraba en `toPeers`. Con el campo siempre en cero, la columna de latencia salía en blanco, cada línea de malla decía `0s`, y el diagnóstico de fallo de marcado afirmaba que no había medición de ida y vuelta pasara lo que pasara.
 
 ### transport/pipe, implementa la entrada
 
@@ -2495,25 +2525,41 @@ ProgramData\Kanpachi\
                              pintado en la pantalla de cada miembro— y la ventana
                              lo lee del disco antes del primer frame para saber si
                              enseña el alta o la portada
-  ui-prefs.json              lo que la VENTANA recuerda: tamaño, si narra los
-                             pasos, y la versión publicada que ya vio. Lo escribe
-                             Flutter, y vive acá para que una copia portable se
-                             lleve sus ajustes dentro de la carpeta. **El apodo ya
-                             no está acá**: era el segundo sitio donde vivía el
-                             mismo dato, ver profile.json
   logs\kanpachi.log          lo que el daemon dice, Y la traza de un pánico, que
                              antes se perdía. En todo modo salvo consola, que va a
                              la salida estándar, que es donde mira quien programa.
                              Rotación por tamaño a los 2 MB, con UNA copia anterior
                              en kanpachi.log.1. La carpeta se mueve con --log
   logs\kanpachi-engine.log   lo que dice el motor, escrito por él. Ver abajo
+  logs\ui\                   la ÚNICA hoja donde los usuarios pueden
+                             escribir. La crea el daemon al arrancar, con esa ACL
+  logs\ui\kanpachi-ui.log    lo que dice la ventana, con la traza de sus muertes
 ```
 
-**No hay ningún fichero de credenciales del motor**, y lo hubo escrito acá por error: `config.rs` llama a `set_credential_file(None)` y el README del motor promete que las credenciales viven en memoria y no tocan el disco. La credencial de un invitado se le pasa al motor en su orden de arranque y muere con el proceso.
+### Un solo sitio, el de la máquina
 
-En una carpeta portable el árbol de la derecha es el mismo, colgando de `kanpachi-data\` junto al binario en vez de `ProgramData\Kanpachi`. Lo decide un fichero, `kanpachi.portable`; ver el modelo de procesos.
+`ProgramData\Kanpachi` lo escribe el **daemon**, que corre como SYSTEM, y ahí va todo: el token, la identidad, las dos salas, el registro, la libreta, el nombre y los ajustes de la ventana. Los usuarios lo LEEN y no lo escriben, y esa ACL es media protección del token. No hay un segundo sitio por persona, y el porqué está en la decisión 42: una sala es un adaptador, un motor y un juego de reglas, y de cada cosa hay una por máquina.
 
-ACL de ProgramData: escritura solo SYSTEM y Administradores, lectura para usuarios de la máquina.
+**La ventana lee de acá y pide por el pipe para escribir.** Leer es una lectura de disco antes del primer frame, del mismo `profile.json` de donde saca el nombre, así que la primera pantalla no espera al daemon. Escribir va por `settings`, que es el cuarto de la familia de `autostart`, `own_seed` y `nickname`.
+
+**Los ajustes vivieron en un fichero aparte hasta la 0.6.9, y en el producto instalado no se guardaba ninguno.** `ui-prefs.json` apuntaba a la carpeta del daemon, donde la ventana no puede escribir, y el fallo lo tragaba un `debugPrint` que en release no imprime: el modo verboso se apagaba en cada arranque y la ventana no recordaba su tamaño. Medido el 2026-08-23 en el producto instalado, donde ese fichero no existía ni había existido nunca. Lo que quede de él se adopta una vez, desde la ventana, y se borra.
+
+**El log de la ventana es lo único que ella escribe**, y por eso tiene su hoja con ACL propia: no puede ir por el pipe, porque lo que interesa de ese archivo es la última línea antes de morir, y un pipe caído es uno de los fallos que registra.
+
+**Una copia portable lo junta todo** en `kanpachi-data\` junto al binario, con los tres logs en la carpeta del ejecutable, y eso es su promesa entera: lo que deja está donde la abriste. Lo decide un fichero, `kanpachi.portable`; ver el modelo de procesos.
+### Qué le hace a las dos salas entrar a otra
+
+Las dos salas son un PAR y el eje es host contra invitado. Entrar a una sala teniendo algo en medio no es cambiar de pantalla: es escribir en esos ficheros, y cada caso escribe distinto. Es lo que el daemon contesta en `displaces`, y lo que las tres caras tienen que decir antes de preguntar.
+
+| Lo que estorba | Qué pasa en disco |
+|---|---|
+| Hospedas la tuya (`close_room`) | Se borra `hosted-room.json` **y** se retira la entrada del registro. La sala **termina**: su código deja de resolver y no queda nada que reabrir. Es lo más destructivo que hace el producto |
+| Estás en la de otro (`leave_room`) | El fichero se queda. `last-room.json` se reescribe como salida deliberada, o sea con la vuelta automática APAGADA y sin la semilla de miembro |
+| Estás volviendo (`stop_returning`) | Se reescribe `last-room.json` con la vuelta apagada, y el fichero se conserva. Por eso volver a mano se sigue ofreciendo, que es lo mismo que hace que expulsar no sea banear |
+
+**Y los dos ficheros se pelean en el arranque, si están los dos.** El supervisor corre primero y la vuelta arranca con su plazo en cero, así que su primer intento cae en el primer latido; reabrir la sala propia sale a continuación en su propia gorrutina. Sin arbitrar, ganaba quien tomara el candado antes, y las dos formas de perder eran malas: la sala propia sin reabrir con gente esperándola, o reabierta con la vuelta armada y dormida hasta que alguien la cerrara. **Gana la sala de esta máquina**, porque `reabrirLaSala` pasa por la misma compuerta con el consentimiento puesto. Es la jerarquía que la vuelta ya reconocía cediendo con `ErrBusy`.
+
+**Las tres filas y el arranque están medidos, no razonados**, el 2026-08-24, con las dos máquinas de `scripts/measure-return.ps1` y los relojes cortos: el droplet de host por Tailscale y esta máquina de invitada con la copia portable. Escenario 13 deja los dos ficheros puestos con el daemon abajo y arranca: vuelve la sala propia y la vuelta queda apagada, no dormida. Escenario 14 mide las dos primeras filas de la tabla en disco y contra el registro: cerrando, el fichero desaparece y el código pasa de resolver a dar 404; saliendo, el fichero se queda y `auto_return` cae a falso. Escenario 12 mide el botón de salir durante una vuelta, incluida la parte que no se ve, que es que siga apagada tras cerrar y abrir.
 
 **El daemon es la única fuente de verdad.** Cerrar la ventana no cierra la sala, así que el estado tiene que sobrevivir a la UI. La UI lo lee por `Status()` y persiste únicamente cosas de presentación, como el tamaño de la ventana. Guardar la sala también del lado de Flutter crearía dos verdades que se desincronizan justo en el caso que el producto promete soportar, que es cerrar la ventana con la partida viva.
 
@@ -2670,6 +2716,7 @@ Todo lo que sigue está leído del código que se compila. La única parte que h
 | Clave de la tarjeta | AES-256 aleatoria, una por sala | En el fragmento del enlace, que el navegador no transmite al servidor | Vive con el código |
 | Secreto de encuentro | 32 bytes derivados por Argon2id del invite ID, salt `kanpachi/v1/secret` | En ningún sitio. Se deriva en las dos puntas | Mientras el código valga |
 | Secreto de la red REAL | 32 bytes aleatorios que genera el host, y que no derivan de ningún string que alguien pueda escribir | `hosted-room.json`, sellado | Mientras la sala viva |
+| Llave de miembro de cada invitado | Ed25519 PÚBLICA, por sala. No abre nada: hace que al pasar por la puerta te reconozcan | `members.json`, sellado. **El token de la credencial NO se guarda** | Mientras la sala viva. Cerrarla borra el fichero |
 | Par del canal de control | X25519 efímero de `nacl/box` | Solo en memoria | La sesión |
 | `signing` del seed | 32 bytes que ACUÑAN tokens. Vale tanto como el password y no caduca | `auth.json` del seed, 0600 | Hasta que se cambie el password |
 | Verificador del password | Argon2id sobre la prueba que manda el cliente, con su sal | `auth.json` | Ídem |

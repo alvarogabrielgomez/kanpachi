@@ -1,3 +1,4 @@
+import 'package:kanpachi_ui/core/platform/machine_settings.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/engine_info.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
@@ -77,7 +78,17 @@ abstract interface class SessionRepository {
   /// disparador de "alguien acaba de abrir la pantalla donde se lee el aviso".
   void recheckForeignRules();
 
-  Future<void> leaveRoom(Room room);
+  /// Sale de la sala, y **también deja de volver a una**.
+  ///
+  /// No lleva la sala, y dejó de llevarla porque la sala no siempre está: una
+  /// máquina volviendo no está dentro de ninguna, y «salir de la sala» es
+  /// exactamente lo que alguien quiere decir cuando quiere que eso pare. El
+  /// daemon ya cubría los dos casos con el mismo método, y el parámetro solo
+  /// servía para que esta ventana no pudiera pedirlo sin sala. Ver
+  /// `usecase.Session.LeaveRoom`.
+  ///
+  /// Idempotente: salir de donde no se está es la intención ya cumplida.
+  Future<void> leaveRoom();
 
   /// La sala tal como el daemon la ve AHORA, o null si no hay ninguna.
   ///
@@ -142,7 +153,10 @@ abstract interface class SessionRepository {
   /// Puede tardar, porque levanta el motor de verdad. No es un "restaurar
   /// pantalla": vuelve a crear la red real con la identidad guardada, así que
   /// quien siguiera dentro reconecta sin pedir credencial nueva.
-  Future<Room> resumeSavedRoom();
+  /// Reabre la sala que esta máquina hospedaba. `replace` es quien llama
+  /// diciendo que dejar atrás lo que estorbe está bien: reabrir es entrar, y
+  /// entrar puede desplazar una vuelta que ya estaba en marcha.
+  Future<Room> resumeSavedRoom({bool replace = false});
 
   /// Descarta esa sala. Borra el archivo y no vuelve a preguntar.
   Future<void> discardSavedRoom();
@@ -246,6 +260,17 @@ abstract interface class SessionRepository {
   /// así que una escritura desde acá falla callada. Ver [MachineProfile], que
   /// es la lectura del mismo dato antes del primer frame.
   Future<MachineNickname> nickname({String? nickname});
+
+  /// Lee o cambia los ajustes de esta máquina. Lo que no se pase no se toca.
+  ///
+  /// El nombre NO viaja por acá: lo escribe [nickname], que además valida y
+  /// deriva la sugerencia. Un escritor por hecho.
+  Future<MachineSettings> settings({
+    bool? verbose,
+    int? windowWidth,
+    int? windowHeight,
+    String? pendingUpdate,
+  });
 
   /// Qué motor lleva esta instalación. Solo lectura; el daemon lo saca de los
   /// centinelas del fichero que va a lanzar. Para el detalle de versión de

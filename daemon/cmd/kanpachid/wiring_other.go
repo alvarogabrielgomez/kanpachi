@@ -15,6 +15,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/accentiostudios/kanpachi/core/port"
 	"github.com/accentiostudios/kanpachi/daemon/paths"
@@ -48,3 +49,14 @@ func quitarCuarentenaDeBase(context.Context, string, port.Logger) error {
 // porque en Unix el modo es lo que gobierna. Lo que no gobierna es en Windows,
 // que es donde vive el adaptador de verdad.
 func protegerFichero(string) error { return nil }
+
+// prepararCarpetaDeLogDeLaUI acá solo crea la carpeta.
+//
+// No hay ventana fuera de Windows todavía, y el día que la haya el permiso no
+// se arregla con esto: `/var/lib/kanpachi` es de root en 0700 y el canal local
+// solo acepta a root o al uid del daemon, así que lo PRIMERO que hay que
+// decidir es si ese canal admite al usuario del escritorio. Ver
+// `daemon/transport/pipe/pipe_linux.go`.
+func prepararCarpetaDeLogDeLaUI(ruta string) error {
+	return os.MkdirAll(ruta, 0o700)
+}

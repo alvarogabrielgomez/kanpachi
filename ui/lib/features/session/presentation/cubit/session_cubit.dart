@@ -501,6 +501,15 @@ class SessionCubit extends Cubit<SessionState> {
   String? _pendingHostName;
   Game? _pendingHostGame;
 
+  /// Si aquella creación ya llevaba el consentimiento de desplazar.
+  ///
+  /// Viaja CON la intención en vez de volver a preguntarse, y esa es la
+  /// respuesta correcta: el permiso se dio para esta creación, y lo único que se
+  /// interpuso fue un requisito. Volver a preguntar sería pedir dos veces lo
+  /// mismo; no llevarlo sería que la creación reanudada muera en «ya estás en
+  /// una sala» después de que alguien ya dijo que sí.
+  bool _pendingHostReplace = false;
+
   /// Si hay una creación de sala esperando a que se resuelva un requisito.
   bool get hasHostIntent => _pendingHostName != null;
 
@@ -509,9 +518,14 @@ class SessionCubit extends Cubit<SessionState> {
 
   /// Recuerda que se estaba por abrir una sala. Lo llama quien desvía el flujo
   /// hacia una pantalla transitoria, ANTES de desviarlo.
-  void rememberHostIntent({required String name, Game? game}) {
+  void rememberHostIntent({
+    required String name,
+    Game? game,
+    bool replace = false,
+  }) {
     _pendingHostName = name;
     _pendingHostGame = game;
+    _pendingHostReplace = replace;
   }
 
   /// Olvida la intención. Lo llama cada salida que ABANDONA el flujo: la
@@ -522,6 +536,7 @@ class SessionCubit extends Cubit<SessionState> {
   void dropHostIntent() {
     _pendingHostName = null;
     _pendingHostGame = null;
+    _pendingHostReplace = false;
   }
 
   /// Reintenta la creación pendiente, con el nombre y el juego de entonces.
@@ -532,7 +547,11 @@ class SessionCubit extends Cubit<SessionState> {
   Future<bool> resumeHostIntent() async {
     final String? name = _pendingHostName;
     if (name == null) return false;
-    return createRoom(name: name, game: _pendingHostGame);
+    return createRoom(
+      name: name,
+      game: _pendingHostGame,
+      replace: _pendingHostReplace,
+    );
   }
 
   /// Opens a room. Returns whether it opened.
@@ -577,7 +596,7 @@ class SessionCubit extends Cubit<SessionState> {
     if (!ok &&
         (code == FailureCode.seedPassword.wire ||
             code == FailureCode.noOwnSeed.wire)) {
-      rememberHostIntent(name: name, game: game);
+      rememberHostIntent(name: name, game: game, replace: replace);
     } else {
       dropHostIntent();
     }
@@ -623,11 +642,11 @@ class SessionCubit extends Cubit<SessionState> {
   /// entero conserva el seed: un código pelado significa la semilla por
   /// defecto, así que recortarlo mandaría a otro servidor a quien recibió una
   /// invitación de un Kanpachi autohospedado.
-  Future<bool> acceptInvite() async {
+  Future<bool> acceptInvite({bool replace = false}) async {
     final PendingInvite? invitation = state.invite;
     if (invitation == null || !invitation.understood) return false;
     emit(state.copyWith(clearInvite: true));
-    return joinRoom(invitation.link);
+    return joinRoom(invitation.link, replace: replace);
   }
 
   /// Abre un juego en la sala que ya existe.
@@ -699,12 +718,12 @@ class SessionCubit extends Cubit<SessionState> {
   /// levanta el motor igual que crear, tarda lo mismo, y sin fase la ventana se
   /// queda muda hasta noventa segundos. Lo que se ve al terminar es la misma
   /// sala, con el mismo código y el mismo enlace que ya se repartió.
-  Future<bool> resumeSavedRoom() async {
+  Future<bool> resumeSavedRoom({bool replace = false}) async {
     if (state.savedRoom == null) return false;
     emit(state.copyWith(phase: SessionPhase.creating, clearSavedRoom: true));
     _watchProgress();
     await _try(FailedAction.resumeRoom, onFail: SessionPhase.idle, () async {
-      final Room sala = await _repository.resumeSavedRoom();
+      final Room sala = await _repository.resumeSavedRoom(replace: replace);
       emit(state.copyWith(phase: SessionPhase.inRoom, room: sala));
     });
     _stopWatching();
@@ -798,8 +817,18 @@ class SessionCubit extends Cubit<SessionState> {
       // El diario de pasos, igual que al abrir: acá también hay una espera con
       // barra y frase que alimentar.
       _watchProgress();
-      await _try(FailedAction.leaveRoom, () => _repository.leaveRoom(current));
+      await _try(FailedAction.leaveRoom, () => _repository.leaveRoom());
       _stopWatching();
+    } else if (state.health.returning != null) {
+      // **Volver también se sale, y esta rama es la que faltaba.** Sin sala
+      // esto no le pedía NADA al daemon: limpiaba el estado local, y el latido
+      // siguiente traía la vuelta intacta con su reloj corriendo. El botón del
+      // aviso de vuelta se veía muerto, y lo estaba.
+      //
+      // Sin fase y sin diario: dejar de volver no desmonta nada. No hay
+      // puertos abiertos, no hay reglas puestas y no hay red que bajar, así
+      // que una pantalla de espera prometería un trabajo que no existe.
+      await _try(FailedAction.leaveRoom, () => _repository.leaveRoom());
     }
     if (isClosed) return;
     emit(
@@ -808,6 +837,10 @@ class SessionCubit extends Cubit<SessionState> {
         clearRoom: true,
         clearPending: true,
         work: RoomWork.none,
+        // La vuelta se apaga acá y no se espera al latido: hasta dos segundos
+        // con el aviso puesto después de pulsar es lo que hace que el botón
+        // parezca roto. Ver [HealthReport.withoutReturning].
+        health: state.health.withoutReturning(),
       ),
     );
   }

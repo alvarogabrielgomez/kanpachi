@@ -234,7 +234,11 @@ try {
         Fail "the dirty death left no hosted-room.json, so there is nothing to reopen"
         $failures++
     }
-    else { Ok "hosted-room.json was left, which is the sign of a bad close" }
+    # It being there is NOT "the close was dirty" any more. That reading is
+    # gone: a clean shutdown keeps the file too, because stopping the process is
+    # not the room ending. What its presence says now is the one thing it has
+    # always been able to say on its own -- there is a room to reopen.
+    else { Ok "hosted-room.json was left, so there is a room to reopen" }
 
     $daemon = StartDaemon
     $r = Ctl 'resume_room' $null

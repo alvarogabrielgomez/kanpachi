@@ -47,6 +47,11 @@ func (s *Session) DiscardSavedRoom(_ context.Context) error {
 	if err := s.deps.State.ClearRoom(); err != nil {
 		return fmt.Errorf("borrando la sala del arranque anterior: %w", err)
 	}
+	// Y su libro, que sin sala no autoriza nada y solo conserva quién jugó.
+	if err := s.deps.State.ClearMembers(); err != nil {
+		s.deps.Log.Warn("no se pudo borrar el libro de la sala descartada", "error", err)
+	}
+	s.membersGen = 0
 	s.saved = domain.HostedRoom{}
 	s.hasSaved = false
 	s.deps.Log.Info("la sala del arranque anterior se descartó")
@@ -70,7 +75,21 @@ func (s *Session) DiscardSavedRoom(_ context.Context) error {
 // la cuarentena por defecto existe para impedir. Con cero miembros presentes el
 // conjunto deseado es el vacío, así que reponer el juego no abre nada hasta que
 // haya alguien de verdad.
-func (s *Session) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
+//
+// # Por qué esto también pasa por la compuerta
+//
+// Porque reabrir es entrar, y entrar puede desplazar algo. El caso concreto son
+// los dos ficheros de estado a la vez: `hosted-room.json` diciendo que hay sala
+// que reponer, y `last-room.json` con la vuelta armada. Sin esto los dos salen
+// disparados en el arranque sin nadie que arbitre, y gana quien tome el candado
+// antes: o la sala propia no reabre y solo queda un error en el log, o reabre y
+// la vuelta se queda dormida esperando a que se cierre. Ver
+// [Session.clearTheWayLocked] y [Runtime.reabrirLaSala], que pasa `replace` en
+// cierto porque la sala de esta máquina gana sobre volver a la de otro.
+//
+// La guarda de estar YA dentro de una sala se queda por delante y sin tocar: con
+// ella en falso, la compuerta solo puede caer en la rama de la vuelta.
+func (s *Session) ResumeRoom(ctx context.Context, replace bool) (domain.RoomState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -82,14 +101,18 @@ func (s *Session) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
 	}
 	saved := s.saved
 
-	if err := s.state.Transition(domain.StateResolving, "el usuario reabrió la sala anterior"); err != nil {
+	if err := s.clearTheWayLocked(ctx, saved.Room, replace); err != nil {
+		return domain.RoomState{}, err
+	}
+
+	if err := s.transitionLocked(domain.StateResolving, "el usuario reabrió la sala anterior"); err != nil {
 		return domain.RoomState{}, err
 	}
 	ok := false
 	defer func() {
 		if !ok {
 			s.teardown(ctx)
-			_ = s.state.TransitionWithExit(domain.StateIdle, "falló reabrir la sala anterior", domain.ExitFailed)
+			_ = s.transitionWithExitLocked(domain.StateIdle, "falló reabrir la sala anterior", domain.ExitFailed)
 			s.snapshot()
 		}
 	}()
@@ -115,7 +138,7 @@ func (s *Session) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
 		Seeds:         seedsFor(saved.Room),
 	}
 
-	if err := s.state.Transition(domain.StateConnecting, "levantando la red de la sala anterior"); err != nil {
+	if err := s.transitionLocked(domain.StateConnecting, "levantando la red de la sala anterior"); err != nil {
 		return domain.RoomState{}, err
 	}
 	if err := s.deps.Engine.HostNetwork(ctx, spec); err != nil {
@@ -158,7 +181,7 @@ func (s *Session) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
 	if err := s.deps.Control.Serve(ctx, s.controlScope()); err != nil {
 		return domain.RoomState{}, fmt.Errorf("abriendo el canal de la sala: %w", err)
 	}
-	if err := s.state.Transition(domain.StateConnected, "la sala anterior está levantada"); err != nil {
+	if err := s.transitionLocked(domain.StateConnected, "la sala anterior está levantada"); err != nil {
 		return domain.RoomState{}, err
 	}
 
@@ -177,6 +200,10 @@ func (s *Session) ResumeRoom(ctx context.Context) (domain.RoomState, error) {
 
 	s.republishCardLocked(ctx)
 
+	// El libro vuelve ANTES de guardar, para que la generación que se escribe
+	// sea la que se acaba de leer y no un cero que rechazaría el libro en el
+	// arranque siguiente.
+	s.loadMembersLocked(saved)
 	s.saveRoomLocked()
 	s.saved = domain.HostedRoom{}
 	s.hasSaved = false

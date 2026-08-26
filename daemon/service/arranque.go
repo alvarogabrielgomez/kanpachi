@@ -65,8 +65,9 @@ type Sala interface {
 
 	// SavedRoom is the room this machine hosts, as it was left on disk.
 	SavedRoom() (domain.HostedRoom, bool)
-	// ResumeRoom reopens it with the SAME code and the SAME network.
-	ResumeRoom(ctx context.Context) (domain.RoomState, error)
+	// ResumeRoom reopens it with the SAME code and the SAME network. `replace`
+	// is the caller saying that giving up on going back somewhere else is fine.
+	ResumeRoom(ctx context.Context, replace bool) (domain.RoomState, error)
 }
 
 // Deps son las piezas YA CONSTRUIDAS.
@@ -202,7 +203,16 @@ func (r *Runtime) reabrirLaSala(ctx context.Context) {
 	r.reabriendo.Add(1)
 	go func() {
 		defer r.reabriendo.Done()
-		if _, err := r.deps.Sala.ResumeRoom(ctx); err != nil {
+		// `replace` en cierto, y es lo que arbitra el arranque. Esta máquina
+		// puede tener a la vez una sala propia que reponer y una vuelta armada a
+		// la sala de otro, y las dos salen disparadas acá: el supervisor arranca
+		// antes y la vuelta tiene su plazo en cero. Sin decir quién gana, gana
+		// quien tome el candado primero, y las dos formas de perder son malas —
+		// la sala propia sin reabrir con gente esperándola, o la vuelta dormida
+		// hasta que alguien cierre. La sala de esta máquina gana, que es la misma
+		// jerarquía que [usecase.Session.Return] ya reconoce cediendo con
+		// `ErrBusy`.
+		if _, err := r.deps.Sala.ResumeRoom(ctx, true); err != nil {
 			// Not fatal, and that is why it does not bring the startup down: the
 			// daemon stays alive without a room, and whoever looks at `status`
 			// sees why. Bringing it down would trade a room that does not come

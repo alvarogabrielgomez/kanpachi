@@ -214,6 +214,8 @@ Two limits:
 ## See also
 
 - [Run a 24/7 game server](run-a-game-server.md) without Docker.
+- [Run a game server on Kubernetes](run-a-game-server-kubernetes.md), which
+  builds on this page and covers what a cluster does differently.
 - [Every command](reference-cli.md), including `profile` and the game ids.
 - [Kanpachi Protection](../../kanpachi-protection.md): the promise and where it
   stops.

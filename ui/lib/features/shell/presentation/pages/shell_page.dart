@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
@@ -8,13 +10,13 @@ import 'package:kanpachi_ui/core/messages/loading_phrases.dart';
 import 'package:kanpachi_ui/features/shell/presentation/failure_navigation.dart';
 import 'package:kanpachi_ui/features/games/presentation/pages/game_picker_page.dart';
 import 'package:kanpachi_ui/features/games/presentation/pages/manual_game_page.dart';
-import 'package:kanpachi_ui/features/home/presentation/widgets/confirm_displace_dialog.dart';
 import 'package:kanpachi_ui/features/home/presentation/pages/home_page.dart';
 import 'package:kanpachi_ui/features/invite/presentation/pages/invite_pages.dart';
 import 'package:kanpachi_ui/features/onboarding/presentation/pages/onboarding_pages.dart';
 import 'package:kanpachi_ui/features/room/presentation/pages/exposure_page.dart';
 import 'package:kanpachi_ui/features/room/presentation/pages/room_page.dart';
 import 'package:kanpachi_ui/features/room/presentation/widgets/room_dialogs.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/displacement.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/room.dart';
 import 'package:kanpachi_ui/features/session/presentation/pages/loading_page.dart';
 import 'package:kanpachi_ui/features/seed/presentation/pages/seed_password_screen.dart';
@@ -26,6 +28,7 @@ import 'package:kanpachi_ui/features/settings/presentation/pages/settings_page.d
 import 'package:kanpachi_ui/features/onboarding/presentation/widgets/recommended_setup.dart';
 import 'package:kanpachi_ui/features/settings/presentation/widgets/settings_dialogs.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
+import 'package:kanpachi_ui/features/shell/presentation/widgets/confirm_displace_dialog.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/shell_bars.dart';
 
 /// El marco de la aplicación: la ventana ES la app.
@@ -475,23 +478,63 @@ class _DialogLayer extends StatelessWidget {
       AppDialog.confirmClose => ConfirmCloseDialog(
         membersInside: session.room?.members.length ?? 0,
       ),
-      // Lo que se deja atrás sale del ESTADO y el destino del [ShellState],
-      // que es lo que hace que este diálogo no tenga que saber adónde iba nadie.
-      AppDialog.confirmDisplace =>
-        (session.health.returning == null || shell.trust == null)
-            ? const SizedBox.shrink()
-            : ConfirmDisplaceDialog(
-                returning: session.health.returning!,
-                onConfirm: () => context.read<ShellCubit>().askTrust(
-                  _conReemplazo(shell.trust!),
-                ),
-              ),
+      // Lo que se deja atrás lo contesta el DAEMON y llega en la salud; adónde
+      // iba quien preguntó lo guarda el [ShellState]. Así este diálogo no tiene
+      // que saber ninguna de las dos cosas.
+      AppDialog.confirmDisplace => _DisplaceDialog(
+        shell: shell,
+        session: session,
+      ),
       AppDialog.trustSeed =>
         shell.trust == null
             ? const SizedBox.shrink()
             : TrustSeedDialog(request: shell.trust!),
       AppDialog.confirmQuarantineOff => const ConfirmQuarantineOffDialog(),
       AppDialog.recommendedSetup => const RecommendedSetupDialog(),
+    };
+  }
+}
+
+/// El diálogo de desplazamiento, con lo que el daemon dijo que cuesta entrar.
+///
+/// Una CLASE y no un `Widget _metodo()`, por la regla de la casa que
+/// `ds_purity_test` sostiene: un helper cae siempre en la rama `update()` de
+/// `Element.updateChild` y pierde el salto que habilita un `const`. Acá pesa de
+/// verdad, porque el latido reconstruye esta capa cada dos segundos.
+class _DisplaceDialog extends StatelessWidget {
+  const _DisplaceDialog({required this.shell, required this.session});
+
+  final ShellState shell;
+  final SessionState session;
+
+  @override
+  Widget build(BuildContext context) {
+    // Nada que desplazar es que ya no hay nada que preguntar: pasó el latido y
+    // la vuelta se apagó, o la sala se cerró desde la terminal. Se cierra en vez
+    // de dejar un modal encima de una pregunta sin objeto.
+    final Displacement? d = session.health.displaces;
+    if (d == null) return const SizedBox.shrink();
+    return switch (shell.displaceThen) {
+      DisplaceIntent.resumeSavedRoom => ConfirmDisplaceDialog(
+        displaces: d,
+        onConfirm: () => unawaited(
+          context.read<SessionCubit>().resumeSavedRoom(replace: true),
+        ),
+      ),
+      DisplaceIntent.acceptInvite => ConfirmDisplaceDialog(
+        displaces: d,
+        onConfirm: () =>
+            unawaited(context.read<SessionCubit>().acceptInvite(replace: true)),
+      ),
+      DisplaceIntent.trust =>
+        shell.trust == null
+            ? const SizedBox.shrink()
+            : ConfirmDisplaceDialog(
+                displaces: d,
+                onConfirm: () => context.read<ShellCubit>().askTrust(
+                  _conReemplazo(shell.trust!),
+                ),
+              ),
     };
   }
 }

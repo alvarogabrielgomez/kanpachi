@@ -1,14 +1,16 @@
-<#
+﻿<#
 .SYNOPSIS
     Measures a guest going back to a room, across two real machines, with the
     clocks cut short.
 
 .DESCRIPTION
-    Eleven scenarios. The first seven are the return feature's cases; 8 to 11
+    Fourteen scenarios. The first seven are the return feature's cases; 8 to 11
     are the 2026-08-16 fixes — the reattach, the member key, and the control
-    rule that stopped accumulating. None of them can be proven by a test: they
-    need a host that goes away, a registry that keeps answering, and a guest
-    that gives up on its own.
+    rule that stopped accumulating; 12 to 14 are the 2026-08-23 ones: the leave
+    button, the startup race between the two state files, and what displacing
+    writes to them. None of them can be
+    proven by a test: they need a host that goes away, a registry that keeps
+    answering, and a guest that gives up on its own.
 
       1  going back after Kanpachi is closed and opened
       2  the host reopening its room, same code, guest reconnecting
@@ -21,10 +23,14 @@
       9  a dirty restart coming back as itself: credential handed back
       10 the control rule scoped to who is there, never an accumulation
       11 a kicked member returning as a stranger: new address, nothing back
+      12 pressing leave while going back, and it staying off across a restart
+      13 both state files at once: the machine's own room wins the startup
+      14 displacing: closing ends the room, leaving keeps the way back
 
     8 to 11 run in that order and feed each other; the default full run does
     1-6, then 8-11, then 7, because 7 wants a guest inside to kick and 11
-    leaves one.
+    leaves one. 12 to 14 stand alone and go last: 13 and 14 open a room of their
+    own on the guest machine, so they leave the most behind.
 
     # The two machines
 
@@ -38,9 +44,9 @@
     never by looking at a screen or at a state file. The wire is a contract with
     locks on it; what a screen prints changes when somebody improves it.
 
-    The one exception is the EXISTENCE of last-room.json, which is the point of
-    scenario 6: the file is sealed and cannot be read from here, and its absence
-    is exactly what is being measured.
+    The one exception is the EXISTENCE of last-room.json and hosted-room.json,
+    which is the point of scenarios 6, 12 and 13: the files are sealed and cannot
+    be read from here, and whether they are there is exactly what is measured.
 
     # Before running it
 
@@ -62,6 +68,14 @@
 
 .PARAMETER Only
     Which scenarios to run. All of them by default.
+
+.PARAMETER LogFile
+    A copy of everything printed, one line at a time. The run takes over the
+    machine for a quarter of an hour and the console it opens is elevated, so
+    whoever wants to follow it from somewhere else needs the lines as they
+    happen. `Start-Transcript` does not give that: it holds what it writes and
+    flushes it when the run ends, which on 2026-08-24 showed a scenario header
+    and nothing else while the scenario was already three checks in.
 #>
 [CmdletBinding()]
 param(
@@ -71,16 +85,35 @@ param(
     [string]$Droplet = 'accentio-droplet',
     [string]$Seed = 'kanpachi.accentio.dev',
     [string]$Build = 'dist/measure',
-    [string]$PortableRoot = 'C:\kt\measure'
+    [string]$PortableRoot = 'C:\kt\measure',
+    [string]$LogFile
 )
 
 $ErrorActionPreference = 'Stop'
 
-function Step($t) { Write-Host "`n=== $t ===" -ForegroundColor Cyan }
-function Ok($t) { Write-Host "  OK   $t" -ForegroundColor Green }
-function Fail($t) { Write-Host "  FAIL $t" -ForegroundColor Red }
-function Info($t) { Write-Host "       $t" -ForegroundColor DarkGray }
-function Note($t) { Write-Host "  ..   $t" -ForegroundColor Yellow }
+# Say sale a la consola y, si se pidió, al archivo, con la hora delante.
+#
+# Se abre y se cierra el archivo en cada línea a propósito: lo que se quiere de
+# este log es la última línea mientras la corrida sigue viva, y un descriptor
+# abierto con buffer es exactamente lo que no la da.
+function Say([string]$linea, [string]$color) {
+    Write-Host $linea -ForegroundColor $color
+    if ($LogFile) {
+        try {
+            Add-Content -Path $LogFile -Value ("{0} {1}" -f (Get-Date -Format 'HH:mm:ss'), $linea) `
+                -Encoding UTF8
+        }
+        catch {
+            # Un log que puede tumbar la medición es peor que no tener log.
+        }
+    }
+}
+
+function Step($t) { Say '' 'Cyan'; Say "=== $t ===" 'Cyan' }
+function Ok($t) { Say "  OK   $t" 'Green' }
+function Fail($t) { Say "  FAIL $t" 'Red' }
+function Info($t) { Say "       $t" 'DarkGray' }
+function Note($t) { Say "  ..   $t" 'Yellow' }
 
 $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
@@ -175,8 +208,32 @@ function Peer-Json([string]$verb) {
 # check ever looks at, and the scenario then waits 120s for a room the daemon
 # was never told about. Found 2026-08-16: the manual join worked while the
 # harness join silently did not.
+#
+# # Why `--quarantine off` travels with every host and join
+#
+# Because `--yes` does NOT answer that question, on purpose: it already means
+# "trust the registry" and "open the foreign firewall", and the quarantine is a
+# third decision with its own flag (`daemon/cmd/kanpachi/firewall.go`). With no
+# saved answer the daemon asks, and the CLI, seeing a real terminal in the
+# elevated console, PRINTS A MENU AND WAITS FOR A KEY. Nothing times out: the
+# run sat on it for twelve minutes on 2026-08-24 while the log showed a scenario
+# header and no checks.
+#
+# It went unnoticed for as long as it did because the guest's data directory
+# carried a `quarantine-decision.json` from an earlier run, so scenarios 1 to 11
+# never met the question. A harness that only works on a machine it has already
+# run on is a harness that lies about being reproducible.
+#
+# `off` and not `on`: this runs on somebody's daily machine, the quarantine
+# reaches THE WHOLE MACHINE and not just the adapter, and none of the fourteen
+# scenarios measures it. Leaving the firewall as it was found is the answer that
+# does not change what is being measured.
 function Peer-Join([string]$code) {
-    $j = Peer-Json "join $code --yes"
+    # Se anuncia antes porque `join` BLOQUEA hasta que la sala está: sin esta
+    # línea, los minutos que tarda son minutos sin nada escrito, y no se
+    # distinguen de un cuelgue.
+    Note "the guest is joining $code"
+    $j = Peer-Json "join $code --yes --quarantine off"
     if ($null -eq $j) { return }
     if ($j.conn -ne 'connected') {
         Info "join answered ($($script:lastCode)): $($j | ConvertTo-Json -Compress -Depth 4)"
@@ -229,6 +286,31 @@ function Peer-Returning() {
     return $st.returning
 }
 
+# Registry-Status pregunta por un código al registro y devuelve SOLO el número.
+#
+# Devuelve el código y no un sí o un no a propósito. `GET /api/i/{id}` contesta
+# 200 mientras la sala está y 404 en cuanto se cierra, y un `catch` que traduzca
+# cualquier fallo a "no está" convierte un DNS caído o un TLS que no negoció en
+# un verde: el escenario diría que la sala se cerró sin haber hablado con nadie.
+# Comparando contra 404, un cero delata la avería.
+function Registry-Status([string]$id) {
+    # PowerShell 5.1 arranca sin TLS 1.2 y el registro no sirve nada por debajo.
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    try {
+        $r = Invoke-WebRequest -Uri "https://$Seed/api/i/$id" -UseBasicParsing -TimeoutSec 20
+        return [int]$r.StatusCode
+    }
+    catch [Net.WebException] {
+        $resp = $_.Exception.Response
+        if ($null -eq $resp) { Info "the registry did not answer: $($_.Exception.Message)"; return 0 }
+        return [int]$resp.StatusCode
+    }
+    catch {
+        Info "asking the registry blew up: $_"
+        return 0
+    }
+}
+
 # ─── Desplegar y deshacer ────────────────────────────────────────────────────
 
 if ($Deploy) {
@@ -245,7 +327,18 @@ if ($Deploy) {
             Native { & gh release download --pattern 'kanpachi-amd64.deb' --output $deb --clobber } | Out-Null
         }
         Native { & scp -q $deb "${Droplet}:/tmp/kanpachi-released.deb" } | Out-Null
-        Host-Run 'sudo -n dpkg -i /tmp/kanpachi-released.deb' | Out-Null
+        # Este es el UNICO sitio del script que necesita un sudo de verdad, y no
+        # se puede evitar: instalar el paquete entero pone unidades de systemd y
+        # el catalogo, y eso no cabe en los cuatro `install -m755` que el
+        # sudoers enumera. Pasa una sola vez, en un droplet donde Kanpachi nunca
+        # se instalo. Lo demas, deploy y restore incluidos, va por esos cuatro.
+        $out = Host-Try 'sudo -n dpkg -i /tmp/kanpachi-released.deb'
+        if ($script:lastCode -ne 0) {
+            throw ("installing the published package needs a real sudo, and `sudo -n` was refused.`n" +
+                "  Do it once by hand and run this again:`n" +
+                "    ssh $Droplet 'sudo dpkg -i /tmp/kanpachi-released.deb'`n" +
+                $out.Trim())
+        }
         Ok 'published package installed'
     }
     else { Ok 'published package already installed' }
@@ -309,11 +402,32 @@ if ($Restore) {
     Host-Try 'sudo -n systemctl stop kanpseed-registry' | Out-Null
     Native { & scp -q $deb "${Droplet}:/tmp/kanpachi-released.deb" } | Out-Null
     Native { & scp -q (Join-Path $buildDir 'kanpseed-released') "${Droplet}:/tmp/kanpseed" } | Out-Null
-    Host-Run ('sudo -n dpkg -i /tmp/kanpachi-released.deb' +
-        ' && sudo -n install -m755 /tmp/kanpseed /usr/local/bin/kanpseed' +
-        ' && sudo -n systemctl start kanpseed-registry') | Out-Null
-    Ok 'released kanpseed and package back in place'
-    Info (Host-Run 'sudo -n systemctl is-active kanpseed-registry').Trim()
+
+    # Se desempaqueta sin privilegio y se instalan los binarios uno a uno.
+    #
+    # `sudo -n dpkg -i` no existe para este usuario: el sudoers del droplet da
+    # cuatro `install -m755` con la ruta de origen Y la de destino escritas
+    # enteras, y nada más. Un `dpkg` pide contraseña, `sudo -n` se rinde, y esta
+    # rama fallaba entera. Descubierto el 2026-08-24, restaurando a mano.
+    #
+    # Desempaquetar en `/tmp` y copiar a los nombres exactos que el sudoers
+    # nombra es lo que queda, y es más honesto que ampliar el permiso: cada
+    # cosa que este script puede escribir como root sigue estando enumerada.
+    Host-Run ('rm -rf /tmp/rel && mkdir -p /tmp/rel' +
+        ' && dpkg-deb -x /tmp/kanpachi-released.deb /tmp/rel' +
+        ' && cp /tmp/rel/usr/libexec/kanpachi/kanpachid /tmp/kanpachid' +
+        ' && cp /tmp/rel/usr/bin/kanpachi /tmp/kanpachi' +
+        ' && cp /tmp/rel/usr/libexec/kanpachi/kanpachi-engine /tmp/kanpachi-engine') | Out-Null
+    Host-Run 'sudo -n install -m755 /tmp/kanpachid /usr/libexec/kanpachi/kanpachid' | Out-Null
+    Host-Run 'sudo -n install -m755 /tmp/kanpachi /usr/bin/kanpachi' | Out-Null
+    Host-Run 'sudo -n install -m755 /tmp/kanpachi-engine /usr/libexec/kanpachi/kanpachi-engine' | Out-Null
+    Host-Run 'sudo -n install -m755 /tmp/kanpseed /usr/local/bin/kanpseed' | Out-Null
+    Host-Run 'sudo -n systemctl start kanpseed-registry' | Out-Null
+    Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
+    Ok 'released kanpseed, daemon, client and engine back in place'
+    Info ('kanpseed-registry: ' + (Host-Run 'sudo -n systemctl is-active kanpseed-registry').Trim())
+    Info ('kanpachid: ' + (Host-Try 'sudo -n systemctl is-active kanpachid').Trim())
+    Info (Host-Run 'kanpachi version | head -2').Trim()
     return
 }
 
@@ -322,7 +436,15 @@ if ($Restore) {
 $script:failures = @()
 $script:code = ''
 
-function Check($what, [bool]$cond) {
+# Check sin tipar la condición, a propósito.
+#
+# Con `[bool]$cond` un `$null` no da rojo: da una excepción de conversión, la
+# atrapa el `try` del bucle, y el escenario se corta en esa línea sin correr el
+# resto. Y `$null` es justo lo que sale de `(Peer-Json 'last').found` cuando el
+# daemon no contesta, o sea el caso en el que más se quiere ver el resto de las
+# comprobaciones. Sin tipo, la regla de PowerShell hace lo correcto: `$null`,
+# cadena vacía, cero y lista vacía son falso.
+function Check($what, $cond) {
     if ($cond) { Ok $what } else { Fail $what; $script:failures += $what }
 }
 
@@ -348,7 +470,7 @@ $scenarios = @(
             # no da tty. Del lado del invitado el peligro es el contrario, que si
             # haya terminal y el comando se quede colgado esperando una respuesta
             # que ningun script va a dar.
-            $h = Host-Json 'host Medicion --yes'
+            $h = Host-Json 'host Medicion --yes --quarantine off'
             $script:code = $h.code + '@' + $h.seed
             Check 'the host opened a room' ($null -ne $h -and $h.code)
             Info "code $script:code"
@@ -463,7 +585,7 @@ $scenarios = @(
             Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
             Start-Sleep -Seconds 8
             $h = Host-Json 'status'
-            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes' }
+            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes --quarantine off' }
             $script:code = $h.code + '@' + $h.seed
             if (-not (Peer-Running)) { Peer-Start }
             if (-not (Peer-InRoom)) { Peer-Join $script:code }
@@ -579,7 +701,7 @@ $scenarios = @(
             Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
             Start-Sleep -Seconds 8
             $h = Host-Json 'status'
-            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes' }
+            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes --quarantine off' }
             $script:code = $h.code + '@' + $h.seed
             Peer-Join $script:code
             Check 'the guest is in' (Wait-Until { Peer-InRoom } 120 'the guest to be in')
@@ -600,17 +722,223 @@ $scenarios = @(
             Check 'with nothing scheduled to go back' ($null -eq (Peer-Returning))
         }
     }
+
+    @{
+        id    = 12
+        name  = 'pressing leave while going back switches it off'
+        run   = {
+            Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
+            Start-Sleep -Seconds 8
+            $h = Host-Json 'status'
+            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes --quarantine off' }
+            $script:code = $h.code + '@' + $h.seed
+            Peer-Join $script:code
+            Check 'the guest is in' (Wait-Until { Peer-InRoom } 120 'the guest to be in')
+
+            # The host goes away WITHOUT closing the room, so the guest starts
+            # going back on its own. That is the state the button acts on.
+            Host-Run 'sudo -n systemctl stop kanpachid' | Out-Null
+            Check 'the guest is going back' (Wait-Until {
+                    $null -ne (Peer-Returning) } 180 'the guest to start going back')
+
+            Peer-Json 'leave' | Out-Null
+            Check 'it stopped going back' (Wait-Until {
+                    $null -eq (Peer-Returning) } 30 'the return to stop')
+
+            $last = Peer-Json 'last'
+            Check 'the room is still saved, so going back by hand is on offer' ($last.found)
+            Check 'and it will not go back on its own any more' (-not $last.room.auto_return)
+            Check 'and the file is still on disk' (Test-Path (Join-Path $peerData 'last-room.json'))
+
+            # It has to survive a restart. Switching it off only in memory would
+            # come back armed on the next start, which is not what leaving means.
+            Peer-Kill
+            Peer-Start
+            Start-Sleep -Seconds 20
+            Check 'and after a close and open it is still not going back' (
+                $null -eq (Peer-Returning))
+        }
+    }
+
+    @{
+        id    = 13
+        name  = 'a machine holding BOTH state files reopens its own room'
+        run   = {
+            # The race this exists for: `hosted-room.json` says there is a room
+            # of this machine to reopen, `last-room.json` says it was going back
+            # to somebody else's. Both fire at startup, and before the fix
+            # whoever took the lock first won: either the room did not come back
+            # at all, or it came back with the return left armed and asleep.
+            Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
+            Start-Sleep -Seconds 8
+            $h = Host-Json 'status'
+            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes --quarantine off' }
+            Peer-Join ($h.code + '@' + $h.seed)
+            Check 'the guest is in somebody elses room' (
+                Wait-Until { Peer-InRoom } 120 'the guest to be in')
+
+            # Killed dirty, so `last-room.json` keeps auto_return on: only
+            # leaving on purpose and being kicked switch it off.
+            Peer-Kill
+            $last = Join-Path $peerData 'last-room.json'
+            Peer-Start
+            Check 'the return is armed' ((Peer-Json 'last').room.auto_return)
+
+            # Now this machine also has a room of its own, saved. Opening it
+            # goes through the gate and stops the return, so the file is put
+            # back by hand with the daemon down, which is the state a laptop
+            # reaches when a reopen failed and it later joined somebody else.
+            $copiaLast = Get-Content -Raw -Encoding Byte $last
+            Peer-Json 'host Propia --yes --quarantine off' | Out-Null
+            Check 'the guest hosts its own room now' (
+                Wait-Until { (Peer-Json 'status').role -eq 'host' } 150 'the room to open')
+            Peer-Kill
+            Set-Content -Path $last -Value $copiaLast -Encoding Byte
+            Check 'both state files are on disk' (
+                (Test-Path $last) -and (Test-Path (Join-Path $peerData 'hosted-room.json')))
+
+            Peer-Start
+            Start-Sleep -Seconds 60
+            Check 'the machines OWN room came back' (
+                (Peer-Json 'status').role -eq 'host')
+            Check 'and the return was switched off instead of left asleep' (
+                -not (Peer-Json 'last').room.auto_return)
+
+            Peer-Json 'leave' | Out-Null
+        }
+    }
+
+    @{
+        id    = 14
+        name  = 'displacing writes the two state files, each in its own way'
+        run   = {
+            # What the confirmation promises has to be true on disk, and the two
+            # kinds promise different things: closing your own room ENDS it,
+            # leaving somebody else's keeps the way back and only switches the
+            # automatic part off.
+            $hosted = Join-Path $peerData 'hosted-room.json'
+            $last = Join-Path $peerData 'last-room.json'
+
+            Host-Run 'sudo -n systemctl start kanpachid' | Out-Null
+            Start-Sleep -Seconds 8
+            $h = Host-Json 'status'
+            if ($h.conn -ne 'connected') { $h = Host-Json 'host Medicion --yes --quarantine off' }
+            $ajena = $h.code + '@' + $h.seed
+
+            # The guest opens a room of its OWN first, so there is something to
+            # close, and its code is asked to the registry before and after.
+            $propia = Peer-Json 'host Propia --yes --quarantine off'
+            Check 'the guest hosts a room of its own' ($null -ne $propia.code)
+            Check 'and its file is on disk' (Test-Path $hosted)
+            $suId = $propia.code
+            # Se pregunta ANTES, y ese 200 es lo que le da valor al 404 de
+            # después: sin él, un registro inalcanzable daría el mismo resultado
+            # que una sala cerrada.
+            Check 'and the registry resolves its code while it is open' (
+                (Registry-Status $suId) -eq 200)
+
+            # close_room: entering another room ends this one.
+            Peer-Join $ajena
+            Check 'the guest got into the other room' (
+                Wait-Until { Peer-InRoom } 150 'the guest to be in')
+            Check 'its own room file is GONE' (-not (Test-Path $hosted))
+            # Al registro directamente, porque la terminal no tiene un verbo que
+            # resuelva un código sin entrar. Retirada la entrada, `GET /api/i/{id}`
+            # contesta 404; ver registry/API.md.
+            Check 'and its code no longer resolves, so there is nothing to reopen' (
+                (Registry-Status $suId) -eq 404)
+
+            # leave_room: leaving keeps the way back and switches the automatic
+            # part off. Same shape as the kick in scenario 7, by the button.
+            Peer-Json 'leave' | Out-Null
+            Check 'the guest is out' (Wait-Until { -not (Peer-InRoom) } 120 'the guest to be out')
+            Check 'the last room is still on disk' (Test-Path $last)
+            $l = Peer-Json 'last'
+            Check 'so going back by hand is still on offer' ($l.found)
+            Check 'but not on its own, because leaving was deliberate' (
+                -not $l.room.auto_return)
+        }
+    }
 )
 
 Require-Admin
 
 Step 'the pieces'
 if (-not (Test-Path $cli)) { throw "no kanpachi.exe in $Build. Run scripts/build-measure-clocks.ps1 first." }
-if (-not (Test-Path $peerExe)) {
-    New-Item -ItemType Directory -Force $PortableRoot | Out-Null
-    Copy-Item (Join-Path $buildDir 'kanpachi-portable.exe') $peerExe -Force
+New-Item -ItemType Directory -Force $PortableRoot | Out-Null
+
+# El portable se repone cuando NO es el recién construido, y no solo cuando
+# falta.
+#
+# `C:\kt\measure` sobrevive entre corridas, así que copiar solo si el archivo no
+# está deja la copia de la vez pasada midiendo el código de la vez pasada, y
+# enseñándolo como si fuera el de ahora. Pasó el 2026-08-23: 13 y 14 corrieron
+# contra un binario de una semana antes, o sea contra el fallo que arreglaban.
+$fuente = Join-Path $buildDir 'kanpachi-portable.exe'
+if (-not (Test-Path $fuente)) {
+    throw "no kanpachi-portable.exe in $Build. Run scripts/build-measure-clocks.ps1 first."
+}
+if ((-not (Test-Path $peerExe)) -or
+    (Get-FileHash $fuente).Hash -ne (Get-FileHash $peerExe).Hash) {
+    Peer-Kill
+    Copy-Item $fuente $peerExe -Force
+    Info 'the guest binary is not the one just built, so it was replaced'
 }
 Ok "guest in $PortableRoot"
+
+# El daemon del invitado tiene que estar en pie antes del primer escenario.
+#
+# Solo lo levantan los que reinician a propósito, y el primero de la lista es
+# uno de ellos. Con `-Only 12` sobre una máquina apagada, cada verbo contesta
+# `no_daemon`, cada espera agota su plazo, y el escenario sale rojo por algo que
+# no es lo que estaba midiendo.
+if (-not (Peer-Running)) {
+    Note 'the guest daemon was down; starting it before the first scenario'
+    Peer-Start
+}
+Ok 'the guest daemon answers'
+
+# Hospedar pide dos cosas que entrar no pide, y 13 y 14 son los primeros
+# escenarios que le piden al INVITADO abrir una sala.
+#
+#  1. **Un registro elegido.** Entrar a la sala de otro no lo elige, y eso está
+#     escrito en la ayuda de `seed` como decisión y no como olvido: la siguiente
+#     sala que abriera esta máquina se serviría desde el servidor de un
+#     desconocido sin que nadie lo hubiera decidido.
+#  2. **La credencial de ese registro, si está cerrado.** El de producción lo
+#     está, y sin ella `host` contesta `seed_password`.
+#
+# Las dos se comprueban acá y no dentro de un escenario. Un `host` que falla a
+# mitad del 13 deja cuatro checks en rojo que no tienen nada que ver con lo que
+# el 13 mide, y el motivo real no aparece por ningún lado: el escenario tira la
+# respuesta del `host` y lo único que queda es el plazo agotado de la espera de
+# después. Medido el 2026-08-24, así, con siete rojos y ninguna pista.
+#
+# Solo se exige cuando va a correr un escenario que hospeda desde el invitado.
+# El 12 no lo necesita, y corrió entero en verde sin credencial ninguna.
+$vanAHospedar = (-not $Only) -or ($Only -contains 13) -or ($Only -contains 14)
+
+if ($vanAHospedar -and (Peer-Json 'seed').seed -ne $Seed) {
+    Note "the guest had no registry of its own; pointing it at $Seed"
+    Peer-Json "seed $Seed" | Out-Null
+}
+if ($vanAHospedar) {
+    if ((Peer-Json 'seed').seed -ne $Seed) {
+        throw "the guest would not take $Seed as its registry, so it cannot open a room of its own."
+    }
+    Ok "the guest opens its rooms on $Seed"
+}
+
+$seedToken = Join-Path $peerData 'seed-token.json'
+if ($vanAHospedar -and -not (Test-Path $seedToken)) {
+    throw ("the guest has no credential for $Seed, so scenarios 13 and 14 cannot open a room there.`n" +
+        "  The password is never an argument and there is no flag for it: see ``kanpachi help password``.`n" +
+        "  Answer it once, in this elevated console, and it stays in $seedToken :`n" +
+        "    & '$cli' --pipe '$peerPipe' --data '$peerData' password`n" +
+        "  Or from a file, which is the door written for a script:`n" +
+        "    Get-Content <file> | & '$cli' --pipe '$peerPipe' --data '$peerData' password")
+}
+if ($vanAHospedar) { Ok "the guest has a credential for $Seed, so it can host" }
 Ok "host on $Droplet, registry at $Seed"
 
 # Host-Count must be able to read the daemon's log, or every delta check in 8,

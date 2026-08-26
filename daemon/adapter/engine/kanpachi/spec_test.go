@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 )
@@ -265,4 +266,29 @@ func nick(t *testing.T, s string) domain.Nickname {
 		t.Fatal(err)
 	}
 	return n
+}
+
+// TestElRTTDelCableLlegaAlPeer.
+//
+// El motor lo manda en cada respuesta de miembros y hasta el 2026-08-25 se
+// tiraba, así que TODO diagnóstico que concluía algo de un RTT en cero
+// concluía de un campo que nadie escribía nunca: la columna de latencia de
+// `kanpachi members` salía siempre en blanco, cada línea MALLA decía `rtt 0s`,
+// y el diagnóstico de fallo de marcado afirmaba «todavía no hay una medición
+// de ida y vuelta» pasara lo que pasara. Ese día se leyó como evidencia
+// durante una caída real y solo se descartó por casualidad, comparando contra
+// un ingreso que SÍ funcionó y que también decía cero.
+func TestElRTTDelCableLlegaAlPeer(t *testing.T) {
+	peers, err := toPeers([]peerOut{{
+		VirtualIP: "100.93.137.2", Hostname: "jorungador", Path: "relay", RTTMs: 42,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(peers) != 1 {
+		t.Fatalf("miembros = %d", len(peers))
+	}
+	if peers[0].RTT != 42*time.Millisecond {
+		t.Fatalf("RTT = %v, se esperaba 42ms", peers[0].RTT)
+	}
 }

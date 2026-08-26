@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -2172,5 +2173,376 @@ func TestElReacotadoEsOportunistaAlConectarYExigenteAlTerminarElReinicio(t *test
 	}
 	if err := b.session.OnEngineRestarted(ctx()); err == nil {
 		t.Fatal("el motor volvió entero, no se pudo acotar, y se dio por bueno")
+	}
+}
+
+// TestUnMiembroDesconectadoConservaSuSilla.
+//
+// La silla es de quien tiene ficha, no de quien el motor ve ahora mismo.
+// Hasta el 2026-08-25 la puerta se calculaba desde la tabla de la malla, que es
+// una señal de VIDA: llega tarde, llega antes de que la ruta converja, se
+// pierde en un búfer lleno, y no tiene evento para el que cierra la tapa del
+// portátil. Atar una decisión de conectividad a eso dejó a una sala entera
+// fuera durante treinta y tres horas.
+func TestUnMiembroDesconectadoConservaSuSilla(t *testing.T) {
+	b, invitado := salaConDosYJuego(t)
+
+	// Se le cae el WiFi: el motor deja de verlo, y no manda nada.
+	b.session.dropPeerLocked(invitado)
+	b.clock.avanza(2 * timing.ArrivalGrace)
+
+	if !slices.Contains(b.session.authorizedControlIPsLocked(), invitado) {
+		t.Fatal("perdió su silla por estar desconectado, teniendo ficha viva")
+	}
+}
+
+// TestAlDesconectadoSeLePuedeExpulsar.
+//
+// Es la otra mitad obligatoria de [TestUnMiembroDesconectadoConservaSuSilla]:
+// si un ausente conserva su silla hasta que venza su ficha, el host tiene que
+// poder quitársela antes. Hasta acá no podía, porque expulsar resolvía al
+// miembro contra la tabla del motor y contestaba que esa dirección no es de
+// nadie. Conservar la silla sin poder retirarla es peor que no conservarla.
+func TestAlDesconectadoSeLePuedeExpulsar(t *testing.T) {
+	b, invitado := salaConDosYJuego(t)
+
+	b.session.dropPeerLocked(invitado)
+	b.clock.avanza(2 * timing.ArrivalGrace)
+
+	if _, err := b.session.KickMember(ctx(), invitado); err != nil {
+		t.Fatalf("no se pudo expulsar a un miembro ausente: %v", err)
+	}
+	if slices.Contains(b.session.authorizedControlIPsLocked(), invitado) {
+		t.Fatal("un expulsado conservó la puerta abierta")
+	}
+}
+
+// TestElQueVuelveConservaSuFichaYSuDirecciónAunqueLleveHorasFuera.
+//
+// Es la promesa entera de la llave de miembro, y la garantía de la que cuelga
+// la silla de [Session.authorizedControlIPsLocked]: el que vuelve recibe LO
+// SUYO, sin importar cuánto llevara fuera.
+//
+// Este test existe además como freno. El 2026-08-25 se propuso que la puerta
+// soltara la entrada del que vuelve cuando estuviera ausente y su ficha pasara
+// la ventana de ingreso, para cortar un bucle que se alimentaba de su propio
+// reintento. Esa condición la cumple TODO retorno legítimo: quien vuelve no
+// está en la malla todavía, porque está marcando, y su ficha es vieja por
+// definición. Habría reintroducido el fallo que la puerta acababa de cerrar.
+func TestElQueVuelveConservaSuFichaYSuDirecciónAunqueLleveHorasFuera(t *testing.T) {
+	b, _ := salaConDosYJuego(t)
+	req := issueReq(t, "pericoman")
+
+	cred, err := b.session.IssueCredentialFor(ctx(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Se le cae el WiFi y vuelve horas después. No está en la malla, y su ficha
+	// pasó de sobra la ventana de ingreso.
+	b.session.dropPeerLocked(cred.VirtualIP)
+	b.clock.avanza(6 * time.Hour)
+
+	otra, err := b.session.IssueCredentialFor(ctx(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// La emisión es lo que distingue de verdad, y no el ID ni la dirección: el
+	// motor falso devuelve un ID constante, y el reparto recorre la subred de
+	// menor a mayor, así que una ficha NUEVA saldría con el mismo ID y la misma
+	// dirección. Lo que no se puede fingir es la fecha de nacimiento.
+	if !otra.IssuedAt.Equal(cred.IssuedAt) {
+		t.Fatalf("no se le devolvió su ficha: nació de nuevo, %s en vez de %s", otra.IssuedAt, cred.IssuedAt)
+	}
+	if otra.VirtualIP != cred.VirtualIP {
+		t.Fatalf("al que vuelve se le movió la dirección: %s en vez de %s", otra.VirtualIP, cred.VirtualIP)
+	}
+	if !slices.Contains(b.session.authorizedControlIPsLocked(), cred.VirtualIP) {
+		t.Fatal("volvió y la puerta no se le abrió")
+	}
+}
+
+// TestElVetoDeLaExpulsiónNuncaDuraMásQueLaReservaDeSuDirección.
+//
+// Son dos plazos sobre la misma dirección y hasta el 2026-08-25 nadie los
+// reconciliaba. El veto de [timing.KickGrace] impide que el expulsado vuelva a
+// la lista mientras el motor le cierra la sesión. La reserva la daba un recorte
+// que solo ACORTABA: si a la ficha ya le quedaban segundos, no hacía nada, la
+// dirección se liberaba al vencer y el veto seguía puesto sobre ella.
+//
+// Quien recibiera esa dirección en el hueco caía de la lista de miembros en
+// cada relectura, se quedaba fuera de la puerta y sin regla de firewall, y no
+// veía más que un marcado que no contesta. Del lado del host se registraba como
+// que el motor no ve a alguien con credencial emitida, que se lee como problema
+// del motor.
+func TestElVetoDeLaExpulsiónNuncaDuraMásQueLaReservaDeSuDirección(t *testing.T) {
+	b, invitado := salaConDosYJuego(t)
+
+	// Se le deja a la ficha menos vida que la ventana del veto, que es el caso
+	// que el recorte no cubría: solo acortaba, así que acá no hacía nada.
+	m, ok := b.session.members[invitado]
+	if !ok || m.Cred == nil {
+		t.Fatal("la sala de prueba no dejó credencial para el invitado")
+	}
+	cred := *m.Cred
+	b.clock.avanza(cred.ExpiresAt.Sub(b.deps.Clock.Now()) - 5*time.Second)
+
+	if _, err := b.session.KickMember(ctx(), invitado); err != nil {
+		t.Fatal(err)
+	}
+
+	// El motor ya le cerró la sesión, que es lo que tarda alrededor de un
+	// segundo y para lo que existe la ventana.
+	b.motor.peers = []domain.Peer{{VirtualIP: b.session.Status().LocalIP, Name: nick(t, "alvaro")}}
+
+	// Mientras el veto corra, la dirección tiene que seguir reservada.
+	b.clock.avanza(timing.KickGrace - time.Second)
+	if !b.session.takenAddressesLocked()[invitado] {
+		t.Fatalf("la dirección %s se liberó con el veto todavía puesto", invitado)
+	}
+
+	// Y quien entre después no hereda el veto de nadie.
+	b.motor.credenciales = func() domain.Credential {
+		return domain.Credential{ID: "c-nueva", Token: "token-del-motor"}
+	}
+	nueva, err := b.session.IssueCredentialFor(ctx(), issueReq(t, "wololo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(b.session.authorizedControlIPsLocked(), nueva.VirtualIP) {
+		t.Fatalf("quien acaba de entrar en %s se quedó fuera de la puerta", nueva.VirtualIP)
+	}
+}
+
+// TestAgotarLaSubredEsUnErrorConNombre.
+//
+// El error era sin centinela, así que ningún llamador podía distinguir «no
+// quedan direcciones» de «la sala no tiene subred». Sin línea en el host, sin
+// alerta y sin pantalla: el host se enteraba solo si un invitado le contaba
+// qué error vio. Es el mismo patrón de silencio que costó treinta y tres horas.
+func TestAgotarLaSubredEsUnErrorConNombre(t *testing.T) {
+	subred := netip.MustParsePrefix("100.93.137.0/24")
+	lleno := map[netip.Addr]bool{}
+	for a := subred.Addr(); subred.Contains(a); a = a.Next() {
+		lleno[a] = true
+	}
+
+	_, err := nextFreeAddress(subred, lleno)
+	if !errors.Is(err, ErrNoFreeAddress) {
+		t.Fatalf("agotar la subred no dio ErrNoFreeAddress: %v", err)
+	}
+
+	// Y no confundir los dos fallos: sin subred es otra cosa, y no lleva este
+	// centinela.
+	if _, err := nextFreeAddress(netip.Prefix{}, nil); errors.Is(err, ErrNoFreeAddress) {
+		t.Fatal("una sala sin subred se reportó como subred agotada")
+	}
+}
+
+// TestCadaCambioDeEstadoDeLaSalaEscribeUnaLínea.
+//
+// Los doce sitios que movían el estado ya llevaban el motivo escrito en la
+// llamada y NINGUNO lo registraba. El 2026-08-25 un host pasó treinta y tres
+// horas sin poder recibir a nadie y su log no tiene una sola línea de estado en
+// toda la ventana.
+func TestCadaCambioDeEstadoDeLaSalaEscribeUnaLínea(t *testing.T) {
+	b := nuevoBanco(t)
+
+	if _, err := b.session.CreateRoom(ctx(), nick(t, "alvaro"), "Los panas", false, false); err != nil {
+		t.Fatal(err)
+	}
+
+	quiero := []string{
+		"la sala cambió de estado de=sin sala a=resolviendo motivo=el usuario creó una sala",
+		"la sala cambió de estado de=resolviendo a=conectando motivo=levantando la red",
+		"la sala cambió de estado de=conectando a=conectado motivo=la sala está levantada",
+	}
+	for _, q := range quiero {
+		if !b.log.dijoAlgoCon(q) {
+			t.Fatalf("no se registró la transición %q. Lo que hay:\n%s", q, b.log.todo())
+		}
+	}
+}
+
+// TestSalirDeLaSalaDiceTambiénPorQué.
+//
+// El motivo de SALIDA es el único que no cabe en el par de estados, y es el que
+// explica la mitad de las veces que una sala se cierra sola.
+func TestSalirDeLaSalaDiceTambiénPorQué(t *testing.T) {
+	b := salaCreada(t)
+
+	b.session.LeaveRoom(ctx())
+	if !b.log.dijoAlgoCon("la sala cambió de estado de=conectado a=sin sala") {
+		t.Fatalf("salir no dejó línea de estado. Lo que hay:\n%s", b.log.todo())
+	}
+	if !b.log.dijoAlgoCon("salida=") {
+		t.Fatalf("salir no dijo por qué. Lo que hay:\n%s", b.log.todo())
+	}
+}
+
+// TestUnMiembroSinMallaSaleComoAFKYNadieLoInterroga.
+//
+// Su silla sigue puesta, así que sigue en la lista. Lo que cambia es que se
+// SABE que no está: se dice cuánto lleva fuera y cuánto le queda a su ficha.
+//
+// Y de eso cuelga lo que paga el trabajo entero. El canario armaba sus
+// objetivos desde la lista de miembros sin mirar si estaban, y fallaba contra
+// cada ausente UNA VEZ POR MINUTO con «no hay canal abierto». Ese es
+// literalmente el ruido bajo el que quedó sepultado el fallo de treinta y tres
+// horas. El latido tampoco puede renovarle la ficha, porque su vencimiento es
+// el único plazo que libera la silla.
+func TestUnMiembroSinMallaSaleComoAFKYNadieLoInterroga(t *testing.T) {
+	b, invitado := salaConDosYJuego(t)
+	cred := *b.session.members[invitado].Cred
+
+	// Se le cae el WiFi. El motor deja de verlo y no manda nada.
+	b.motor.peers = []domain.Peer{{VirtualIP: b.session.Status().LocalIP, Name: nick(t, "alvaro")}}
+	// Más que la ventana de nacimiento de la ficha: dentro de ella el latido
+	// renueva a propósito, porque una emisión fresca viene seguida de una
+	// llegada y su ausencia todavía no significa nada.
+	fuera := timing.ArrivalGrace + time.Minute
+	b.clock.avanza(fuera)
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
+		t.Fatal(err)
+	}
+
+	var afk *domain.Peer
+	st := b.session.Status()
+	for i := range st.Peers {
+		if st.Peers[i].VirtualIP == invitado {
+			afk = &st.Peers[i]
+		}
+	}
+	if afk == nil {
+		t.Fatalf("el ausente desapareció de la lista teniendo ficha viva: %+v", st.Peers)
+	}
+	if !afk.Away {
+		t.Fatal("está fuera de la malla y no salió marcado como AFK")
+	}
+	if afk.AwayFor < fuera {
+		t.Fatalf("no dijo cuánto lleva fuera: %v", afk.AwayFor)
+	}
+	if afk.SeatFreesIn <= 0 {
+		t.Fatalf("no dijo cuánto le queda a su silla: %v", afk.SeatFreesIn)
+	}
+
+	// El canario no le pregunta a quien no está.
+	if plan, ok := b.session.canaryPlanLocked(ctx(), false); ok {
+		for _, a := range plan.asked {
+			if a.At == invitado {
+				t.Fatal("el canario eligió a un ausente: esa es la línea de error por minuto")
+			}
+		}
+	}
+
+	// Y el latido no le renueva la ficha, que es lo único que libera su silla.
+	b.motor.renovadas = nil
+	b.session.renewCredentialsLocked(ctx())
+	for _, id := range b.motor.renovadas {
+		if id == cred.ID {
+			t.Fatal("el latido renovó la ficha de un ausente: su silla no se libera nunca")
+		}
+	}
+}
+
+// TestUnaSalaConMiembrosPresentesYSinCanalesLevantaAlerta.
+//
+// Medido el 2026-08-25: treinta y tres horas con miembros en la lista, cero
+// sockets de control y ni una línea que lo dijera. El host tenía las dos
+// mitades del diagnóstico en la mano, a quién ve y con quién habla, y no las
+// comparó ni una vez.
+//
+// Exige que estén PRESENTES. «Tres miembros y ningún canal» es ambiguo; «tres
+// miembros online y ningún canal» es un fallo, y «tres miembros AFK» es una
+// tarde normal. Sin esa distinción la alerta gritaría en falso cada noche.
+func TestUnaSalaConMiembrosPresentesYSinCanalesLevantaAlerta(t *testing.T) {
+	b, _ := salaConDosYJuego(t)
+	b.control.conectados = nil
+	b.clock.avanza(timing.ArrivalGrace + time.Minute)
+
+	st := b.session.RefreshAlerts(ctx())
+	if !tieneAlerta(st, domain.AlertNoMemberChannels) {
+		t.Fatalf("miembros presentes sin ningún canal no levantó alerta: %+v", st.Alerts)
+	}
+}
+
+// TestUnaSalaSoloConAusentesNoGrita: la otra mitad, y es la que impide que la
+// alerta se vuelva ruido. Nadie conectado y nadie presente es una sala vacía,
+// no una sala rota.
+func TestUnaSalaSoloConAusentesNoGrita(t *testing.T) {
+	b, _ := salaConDosYJuego(t)
+	b.control.conectados = nil
+	b.motor.peers = []domain.Peer{{VirtualIP: b.session.Status().LocalIP, Name: nick(t, "alvaro")}}
+	b.clock.avanza(timing.ArrivalGrace + time.Minute)
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
+		t.Fatal(err)
+	}
+
+	st := b.session.RefreshAlerts(ctx())
+	if tieneAlerta(st, domain.AlertNoMemberChannels) {
+		t.Fatal("una sala con todos AFK se reportó como rota")
+	}
+}
+
+// TestLosHechosDeUnMiembroNoSePisanEntreEllos.
+//
+// Es lo que compra el registro único. Antes eran cinco mapas por la misma
+// dirección y nada los reconciliaba: la ficha, el veto de expulsión, el
+// enfriamiento del aviso, la última vez visto en la malla y la lista fundida.
+// Un parpadeo del motor podía dejar a dos de ellos diciendo cosas distintas de
+// la misma persona, y la única función del árbol que detectaba el desacuerdo se
+// alcanzaba solo por un evento que llega antes de tiempo.
+func TestLosHechosDeUnMiembroNoSePisanEntreEllos(t *testing.T) {
+	b, invitado := salaConDosYJuego(t)
+	self := b.session.Status().LocalIP
+
+	m := b.session.members[invitado]
+	if m == nil || m.Cred == nil {
+		t.Fatalf("la sala de prueba no dejó registro del invitado: %+v", b.session.members)
+	}
+	fichaAntes := m.Cred.ID
+
+	// El motor parpadea: deja de verlo y lo vuelve a ver.
+	b.motor.peers = []domain.Peer{{VirtualIP: self, Name: nick(t, "alvaro")}}
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
+		t.Fatal(err)
+	}
+	if m.Presence.InMesh {
+		t.Fatal("el motor dejó de verlo y siguió marcado presente")
+	}
+	if m.Cred == nil || m.Cred.ID != fichaAntes {
+		t.Fatal("salir de la malla le borró la ficha: son dos hechos distintos")
+	}
+	if m.Presence.MeshAt.IsZero() {
+		t.Fatal("perdió cuándo se le vio, que es lo que dice cuánto lleva fuera")
+	}
+
+	b.motor.peers = []domain.Peer{
+		{VirtualIP: self, Name: nick(t, "alvaro")},
+		{VirtualIP: invitado, Name: nick(t, "humberto"), Path: domain.PathDirect},
+	}
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
+		t.Fatal(err)
+	}
+	if !m.Presence.InMesh || m.Path != domain.PathDirect {
+		t.Fatal("volvió a la malla y no se anotó")
+	}
+	if m.Cred == nil || m.Cred.ID != fichaAntes {
+		t.Fatal("volver le cambió la ficha")
+	}
+
+	// Expulsarlo escribe el veto y revoca la ficha en el MISMO registro, así que
+	// no puede existir uno sin el otro.
+	if _, err := b.session.KickMember(ctx(), invitado); err != nil {
+		t.Fatal(err)
+	}
+	if !m.Presence.Kicked {
+		t.Fatal("se expulsó sin dejar veto")
+	}
+	if m.Cred == nil || !m.Cred.Revoked {
+		t.Fatal("se puso el veto y no se revocó la ficha: eran dos mapas y ahora son uno")
+	}
+	if slices.Contains(b.session.authorizedControlIPsLocked(), invitado) {
+		t.Fatal("un expulsado conservó la puerta abierta")
 	}
 }

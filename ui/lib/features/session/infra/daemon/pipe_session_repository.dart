@@ -1,3 +1,4 @@
+import 'package:kanpachi_ui/core/platform/machine_settings.dart';
 import 'package:kanpachi_ui/core/messages/message_keys.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/exposure.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
@@ -160,6 +161,28 @@ class PipeSessionRepository implements SessionRepository {
     return MachineNickname(
       chosen: r['nickname'] as String? ?? '',
       suggested: r['suggested'] as String? ?? '',
+    );
+  }
+
+  @override
+  Future<MachineSettings> settings({
+    bool? verbose,
+    int? windowWidth,
+    int? windowHeight,
+    String? pendingUpdate,
+  }) async {
+    final Map<String, Object?> r =
+        await _mapa(DaemonMethods.settings, <String, Object?>{
+          'verbose': ?verbose,
+          'window_width': ?windowWidth,
+          'window_height': ?windowHeight,
+          'pending_update': ?pendingUpdate,
+        });
+    return MachineSettings(
+      verbose: r['verbose'] as bool? ?? false,
+      windowWidth: r['window_width'] as int? ?? 0,
+      windowHeight: r['window_height'] as int? ?? 0,
+      pendingUpdate: r['pending_update'] as String? ?? '',
     );
   }
 
@@ -333,7 +356,7 @@ class PipeSessionRepository implements SessionRepository {
   }
 
   @override
-  Future<void> leaveRoom(Room room) async {
+  Future<void> leaveRoom() async {
     await _mapa(DaemonMethods.leaveRoom);
   }
 
@@ -415,8 +438,17 @@ class PipeSessionRepository implements SessionRepository {
   }
 
   @override
-  Future<Room> resumeSavedRoom() async =>
-      _conReglasAjenas(await _sala(await _mapa(DaemonMethods.resumeRoom)));
+  Future<Room> resumeSavedRoom({
+    bool replace = false,
+  }) async => _conReglasAjenas(
+    await _sala(
+      await _mapa(DaemonMethods.resumeRoom, <String, Object?>{
+        // Se omite en falso, igual que en crear y entrar: el cero del daemon
+        // rechaza, y eso hace que olvidarlo sea seguro en vez de destructivo.
+        if (replace) 'replace': true,
+      }),
+    ),
+  );
 
   @override
   Future<void> discardSavedRoom() async {

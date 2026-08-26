@@ -137,12 +137,31 @@ func rulesOf(policy *ole.IDispatch) (*ole.IDispatch, error) {
 // thousand objects per sweep if they are not released. The sweep runs every
 // minute for as long as the daemon lives.
 //
+// # The enumerator itself goes back too, and forgetting it cost 346 MB
+//
+// `_NewEnum` answers with a VARIANT that OWNS a reference, and go-ole's
+// ToIUnknown is a plain cast that adds none. So the reference QueryInterface
+// added is the only one `enum.Release` gives back, and the VARIANT's stays held
+// for the life of the process: one live enumerator per call, each one pinning
+// its snapshot of the whole store. It is COM memory, out of reach of the
+// collector and of the scavenger, so the process only returns it by dying.
+//
+// Measured on 2026-08-20, opening and closing six rooms while switching games:
+// the daemon went from 80 MB to 426 MB and stayed there. Every apply enumerates
+// the store, the exposure sweep enumerates it twice more every minute, and the
+// machine measured carries 1157 rules.
+//
 // fn returning false stops the walk early.
 func eachRule(rules *ole.IDispatch, fn func(rule *ole.IDispatch) (bool, error)) error {
 	enumV, err := oleutil.GetProperty(rules, "_NewEnum")
 	if err != nil {
 		return fmt.Errorf("enumerating the rules: %w", err)
 	}
+	// Declared BEFORE the enumerator's own release so that it runs after it: the
+	// reference QueryInterface added goes back first, and then the one this
+	// VARIANT has been holding since GetProperty returned.
+	defer func() { _ = enumV.Clear() }()
+
 	enum, err := enumV.ToIUnknown().IEnumVARIANT(ole.IID_IEnumVariant)
 	if err != nil {
 		return fmt.Errorf("getting the rule enumerator: %w", err)

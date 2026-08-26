@@ -327,11 +327,17 @@ func (logMudo) Warn(string, ...any)  {}
 func (logMudo) Error(string, ...any) {}
 
 // banco es el escenario montado, con los relojes en la mano.
+// mallaFalsa es el vigía visto por el supervisor: un canal y nada más.
+type mallaFalsa struct{ cambios chan struct{} }
+
+func (m *mallaFalsa) Cambios() <-chan struct{} { return m.cambios }
+
 type banco struct {
 	sala     *salaFalsa
 	motor    *motorFalso
 	control  *controlFalso
 	sistema  *sistemaFalso
+	malla    *mallaFalsa
 	latidos  chan time.Time
 	barridos chan time.Time
 	sup      *Supervisor
@@ -351,6 +357,7 @@ func nuevoBanco() *banco {
 		motor:    nuevoMotor(),
 		control:  nuevoControl(),
 		sistema:  nuevoSistema(),
+		malla:    &mallaFalsa{cambios: make(chan struct{}, 1)},
 		latidos:  make(chan time.Time, 4),
 		barridos: make(chan time.Time, 4),
 	}
@@ -360,6 +367,7 @@ func nuevoBanco() *banco {
 		Control: b.control,
 		System:  b.sistema,
 		Log:     logMudo{},
+		Malla:   b.malla,
 	}, b.latidos, b.barridos)
 
 	// El temporizador del watchdog se reemplaza por una cola que el test

@@ -66,10 +66,14 @@ class Member {
     this.latencyMs,
     this.isHost = false,
     this.isSelf = false,
+    this.isAway = false,
+    this.awayForMs = 0,
+    this.seatFreesInMs = 0,
   });
 
   factory Member.fromJson(Map<String, Object?> json) {
     final int rtt = (json['rtt_ms'] as num? ?? 0).toInt();
+    final bool away = json['away'] as bool? ?? false;
     return Member(
       name: json['name'] as String? ?? '',
       address: json['ip'] as String? ?? '',
@@ -77,9 +81,17 @@ class Member {
       // Zero is "not measured yet", which is not the same as zero milliseconds.
       // Showing "0 ms" next to somebody who just joined would be a number the
       // product invented.
-      latencyMs: rtt > 0 ? rtt : null,
+      //
+      // Somebody the engine cannot see has no round trip at all, so the slot is
+      // empty on purpose and the AFK badge takes it. Leaving a latency there
+      // from the last time they were seen would be showing a measurement of a
+      // path that no longer exists.
+      latencyMs: away || rtt <= 0 ? null : rtt,
       isHost: json['host'] as bool? ?? false,
       isSelf: json['self'] as bool? ?? false,
+      isAway: away,
+      awayForMs: (json['away_for_ms'] as num? ?? 0).toInt(),
+      seatFreesInMs: (json['seat_frees_in_ms'] as num? ?? 0).toInt(),
     );
   }
 
@@ -93,11 +105,49 @@ class Member {
   final bool isHost;
   final bool isSelf;
 
+  /// Tiene silla en esta sala y el motor no lo ve.
+  ///
+  /// **No se fue.** Quien no hizo una salida formal sigue siendo miembro:
+  /// volverá a su misma dirección con su misma credencial. En lenguaje de juego,
+  /// está AFK.
+  final bool isAway;
+
+  /// Cuánto lleva sin aparecer, en milisegundos. Cero es que está.
+  ///
+  /// Llega CALCULADO desde el daemon y no como marca de tiempo, por lo mismo
+  /// que el contador del host ausente: esta pantalla no tiene por qué compartir
+  /// reloj con el daemon, y restar contra dos relojes da números que mienten.
+  final int awayForMs;
+
+  /// Cuánto le queda a su ficha antes de vencer y soltar su dirección. Solo lo
+  /// sabe el host, que es quien tiene el libro. Cero es que no aplica.
+  final int seatFreesInMs;
+
+  /// Lo que ocupa el hueco del ping cuando no hay ping.
+  ///
+  /// Vacío si está: ahí va la latencia. Es una unidad sola, la mayor que no sea
+  /// cero, que es como se dice en voz alta.
+  String get awayLabel {
+    if (!isAway) return '';
+    if (awayForMs <= 0) return 'AFK';
+    final Duration d = Duration(milliseconds: awayForMs);
+    if (d.inHours >= 1) return 'AFK ${d.inHours}h';
+    if (d.inMinutes >= 1) return 'AFK ${d.inMinutes}m';
+    return 'AFK ${d.inSeconds}s';
+  }
+
   /// La línea de debajo del nombre: `100.87.3.2 · directo · 45 ms`.
+  ///
+  /// El AFK toma el sitio de la latencia y no se suma a ella: son dos respuestas
+  /// a la misma pregunta, «¿esta persona está?», y solo una puede ser cierta.
   String get meta {
     if (isSelf) return address;
     final List<String> parts = <String>[address, path.label];
-    if (latencyMs != null) parts.add('$latencyMs ms');
+    if (isAway) {
+      parts.add(awayLabel);
+    } else if (latencyMs != null) {
+      parts.add('$latencyMs ms');
+    }
     return parts.where((String p) => p.isNotEmpty).join(' · ');
   }
 

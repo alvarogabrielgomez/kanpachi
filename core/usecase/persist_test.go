@@ -88,7 +88,7 @@ func TestReabrirConservaLaIdentidadDeLaRed(t *testing.T) {
 	código := b.session.Status().Room
 
 	b = reinicia(t, b)
-	st, err := b.session.ResumeRoom(ctx())
+	st, err := b.session.ResumeRoom(ctx(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestReabrirReponeElJuegoResolviéndoloContraElCatálogoPropio(t *testing.T)
 	}
 	b = reinicia(t, b)
 
-	st, err := b.session.ResumeRoom(ctx())
+	st, err := b.session.ResumeRoom(ctx(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestReabrirSinElPerfilDejaLaSalaSinJuego(t *testing.T) {
 	b.catalog.builtin = []byte(`{"kanpachi_catalog":1,"profiles":[]}`)
 	b = reinicia(t, b)
 
-	st, err := b.session.ResumeRoom(ctx())
+	st, err := b.session.ResumeRoom(ctx(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestReabrirNoRestauraMiembros(t *testing.T) {
 	b.motor.peers = nil
 	b = reinicia(t, b)
 
-	st, err := b.session.ResumeRoom(ctx())
+	st, err := b.session.ResumeRoom(ctx(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,5 +392,43 @@ func TestLaSalaGuardadaSobreviveUnaVuelta(t *testing.T) {
 		t.Errorf("host: %q", guardada.Host)
 	case guardada.SavedAt.IsZero():
 		t.Error("sin fecha de guardado")
+	}
+}
+
+// TestElLibroDeCredencialesSobreviveAlReinicioDelHost.
+//
+// Sin él, un host que reinicia y reabre su sala pierde el lazo entre dirección
+// y credencial de quien ya estaba dentro: no puede expulsarlo hasta que vuelva
+// a entrar, y quien vuelve recibe otra dirección. Estaba escrito como precio
+// asumido en `credentialFor`, y esto es lo que lo paga.
+//
+// Lo que NO devuelve es a nadie a la sala: el motor muere con el daemon y su
+// lista de credenciales muere con él. Ver [domain.CredentialBook].
+func TestElLibroDeCredencialesSobreviveAlReinicioDelHost(t *testing.T) {
+	b, invitado := salaConDosYJuego(t)
+	cred := *b.session.members[invitado].Cred
+
+	if b.state.members == nil {
+		t.Fatal("emitir una credencial no dejó libro en disco")
+	}
+
+	b = reinicia(t, b)
+	if _, err := b.session.ResumeRoom(ctx(), false); err != nil {
+		t.Fatal(err)
+	}
+
+	m, ok := b.session.members[invitado]
+	if !ok || m.Cred == nil {
+		t.Fatalf("reabrir perdió la ficha de quien ya estaba dentro: %+v", b.session.members)
+	}
+	if m.Cred.ID != cred.ID {
+		t.Fatalf("volvió otra ficha: %s en vez de %s", m.Cred.ID, cred.ID)
+	}
+	if m.Cred.Token != "" {
+		t.Fatal("el libro trajo el token de vuelta: es el único secreto de la ficha")
+	}
+	// Y con la ficha vuelve lo que ella permite: expulsar a quien ya estaba.
+	if _, err := b.session.KickMember(ctx(), invitado); err != nil {
+		t.Fatalf("no se pudo expulsar tras reabrir: %v", err)
 	}
 }

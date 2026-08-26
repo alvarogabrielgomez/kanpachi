@@ -143,7 +143,7 @@ func (s *Session) OnEngineRestarted(ctx context.Context) error {
 // exactamente lo que pasa cuando una interfaz vuelve.
 func (s *Session) tunnelUpLocked(ctx context.Context, reason string) (domain.RoomState, error) {
 	s.state.SetTunnelUp()
-	if err := s.state.Transition(domain.StateConnected, razónTexto(reason, "el motor conectó")); err != nil {
+	if err := s.transitionLocked(domain.StateConnected, razónTexto(reason, "el motor conectó")); err != nil {
 		s.deps.Log.Warn("transición rechazada", "error", err)
 	}
 	// La compuerta se vuelve a acotar ANTES de aplicar nada, y hace falta de
@@ -213,7 +213,7 @@ func (s *Session) rederiveConnLocked() {
 	if quiero == domain.StateDegraded {
 		motivo = "hay algún miembro llegando por relay"
 	}
-	if err := s.state.Transition(quiero, motivo); err != nil {
+	if err := s.transitionLocked(quiero, motivo); err != nil {
 		s.deps.Log.Warn("transición rechazada", "error", err)
 		return
 	}
@@ -237,7 +237,7 @@ func (s *Session) tunnelDownLocked(ctx context.Context, ev domain.EngineEvent) (
 	}
 
 	texto := razón(ev, "el motor perdió la conexión")
-	if err := s.state.Transition(domain.StateReconnecting, texto); err != nil {
+	if err := s.transitionLocked(domain.StateReconnecting, texto); err != nil {
 		s.deps.Log.Warn("transición rechazada", "error", err)
 	}
 	s.deps.Log.Warn("sin túnel, reintentando", "motivo", texto, "plazo", timing.ReconnectLimit)

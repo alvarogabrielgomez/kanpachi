@@ -39,7 +39,7 @@ func (s *Session) KickMember(ctx context.Context, ip netip.Addr) (domain.RoomSta
 		return domain.RoomState{}, err
 	}
 
-	peer, ok := s.virtualIPOf(ip)
+	peer, ok := s.memberAtLocked(ip)
 	if !ok {
 		return domain.RoomState{}, fmt.Errorf("%w: %s", ErrNotAMember, ip)
 	}
@@ -93,26 +93,38 @@ func (s *Session) KickMember(ctx context.Context, ip netip.Addr) (domain.RoomSta
 	// cualquier evento de cambio de miembros en esa ventana lo reconstruiría
 	// desde una realidad que todavía no se enteró, deshaciendo el recorte y
 	// reabriéndole el puerto.
-	if s.kicked == nil {
-		s.kicked = make(map[netip.Addr]time.Time)
-	}
 	now := s.deps.Clock.Now()
-	s.kicked[ip] = now
+	m := s.members.At(ip)
+	m.Presence.Kicked = true
+	m.Presence.KickedAt = now
 	s.dropPeerLocked(ip)
 
-	// La entrada del libro se marca REVOCADA con el vencimiento acortado a la
-	// gracia de llegada, y las dos mitades tienen su porqué. Revocada: el que
+	// La entrada del libro se marca REVOCADA con el vencimiento FIJADO a la
+	// gracia de llegada, y las tres cosas tienen su porqué. Revocada: el que
 	// vuelve con su llave de miembro no recupera esta credencial ni su
-	// dirección, entra como nuevo. El vencimiento corto: la dirección sigue
-	// retenida mientras la tabla de rutas del motor todavía recuerda al
-	// expulsado, y después se libera sola, en vez de quedar tomada las 24 horas
-	// de una credencial que ya no autoriza a nadie.
-	if c, ok := s.issued[ip]; ok {
+	// dirección, entra como nuevo, y ni la puerta ni el latido la miran nunca
+	// más. El vencimiento corto: la dirección sigue retenida mientras la tabla
+	// de rutas del motor todavía recuerda al expulsado, y después se libera
+	// sola, en vez de quedar tomada las 24 horas de una credencial que ya no
+	// autoriza a nadie.
+	//
+	// # Por qué FIJA y no solo acorta
+	//
+	// Porque acortando sin más hay un hueco entre dos plazos que nadie
+	// reconcilia. Si a la ficha ya le quedaban segundos, acortar no hace nada:
+	// su dirección se libera al vencer, y `s.kicked[ip]` sigue vetando esa
+	// dirección durante lo que reste de [timing.KickGrace]. Quien la reciba en
+	// ese hueco cae de la lista de miembros en cada relectura, se queda fuera
+	// de la puerta y sin regla de firewall, y no ve más que un marcado que no
+	// contesta. Del lado del host se registra como que el motor no ve a alguien
+	// con credencial emitida, que se lee como problema del motor.
+	//
+	// Extenderla no concede nada: una entrada revocada no autoriza, no se
+	// renueva y no se le devuelve a nadie. Lo único que hace es retener la
+	// dirección, que es para lo que está.
+	if c := m.Cred; c != nil {
 		c.Revoked = true
-		if grace := now.Add(timing.ArrivalGrace); c.ExpiresAt.After(grace) {
-			c.ExpiresAt = grace
-		}
-		s.issued[ip] = c
+		c.ExpiresAt = now.Add(timing.ArrivalGrace)
 	}
 
 	// El canal de control se recorta ANTES que el firewall, y el orden importa:
@@ -140,6 +152,12 @@ func (s *Session) KickMember(ctx context.Context, ip netip.Addr) (domain.RoomSta
 		return s.snapshot(), fmt.Errorf("%w: %w", ErrKickPartial, errors.Join(fallos...))
 	}
 
+	// El libro baja a disco DESPUÉS de las dos capas, porque lo que hay que
+	// conservar es el resultado: la ficha revocada con su vencimiento recortado,
+	// que es lo que retiene la dirección del expulsado. Guardarlo antes dejaría
+	// en disco una ficha viva de alguien a quien el host acaba de echar.
+	s.saveMembersLocked()
+
 	s.deps.Log.Info("miembro expulsado", "nombre", peer.Name.String(), "ip", ip.String())
 	return s.snapshot(), nil
 }
@@ -155,6 +173,34 @@ func (s *Session) raiseKickAlertLocked(peer domain.Peer, fallos []error) {
 	})
 }
 
+// memberAtLocked resuelve a quién pertenece una dirección, mire o no el motor.
+//
+// Primero la tabla de la malla, que trae el nombre que la otra máquina reporta
+// y el camino. Si no está ahí, el libro, que es donde vive la membresía.
+//
+// Ese respaldo es obligatorio desde que la puerta se calcula del libro
+// ([Session.authorizedControlIPsLocked]): un ausente conserva su silla hasta
+// que su ficha venza, así que el host tiene que poder quitársela antes.
+// Resolviendo solo contra el motor, expulsar contestaba que esa dirección no es
+// de nadie justo con quien más falta hacía. Conservar la silla sin poder
+// retirarla es peor que no conservarla.
+//
+// El nombre sale del libro cuando el motor no lo tiene, y es el que ESTE host
+// anotó al emitir, no el que la otra máquina se puso. Alcanza para el aviso y
+// para la línea de log, que es para lo que se usa.
+//
+// Asume el candado tomado.
+func (s *Session) memberAtLocked(ip netip.Addr) (domain.Peer, bool) {
+	if p, ok := s.virtualIPOf(ip); ok {
+		return p, true
+	}
+	m, ok := s.members[ip]
+	if !ok || m.Cred == nil || m.Cred.Revoked || m.Cred.Expired(s.deps.Clock.Now()) {
+		return domain.Peer{}, false
+	}
+	return domain.Peer{VirtualIP: ip, Name: m.Cred.Name}, true
+}
+
 // dropPeerLocked saca a alguien de la lista de miembros. Asume el candado.
 func (s *Session) dropPeerLocked(ip netip.Addr) {
 	kept := make([]domain.Peer, 0, len(s.state.Peers))
@@ -164,15 +210,6 @@ func (s *Session) dropPeerLocked(ip netip.Addr) {
 		}
 	}
 	s.state.Peers = kept
-}
-
-// forgetOldKicks limpia la lista de expulsados recientes. Asume el candado.
-func (s *Session) forgetOldKicks(now time.Time) {
-	for ip, t := range s.kicked {
-		if now.Sub(t) >= timing.KickGrace {
-			delete(s.kicked, ip)
-		}
-	}
 }
 
 // credentialFor busca la credencial emitida a una IP virtual.
@@ -188,76 +225,86 @@ func (s *Session) forgetOldKicks(now time.Time) {
 // pre-autorización del canal de control no abría el puerto a nadie. Ver
 // [Session.authorizedControlIPsLocked].
 //
-// El precio es que el mapa vive en memoria: un host que reinicia el daemon y
+// El precio es que la tabla vive en memoria: un host que reinicia el daemon y
 // retoma la sala pierde el lazo IP↔credencial de quien ya estaba dentro, y no
 // puede expulsarlo hasta que vuelva a entrar. Se paga a sabiendas, porque la
 // alternativa era un lazo que no existía.
 //
 // Asume el candado tomado.
 func (s *Session) credentialFor(ip netip.Addr) (domain.Credential, error) {
-	if c, ok := s.issued[ip]; ok {
-		return c, nil
+	if m, ok := s.members[ip]; ok && m.Cred != nil {
+		return *m.Cred, nil
 	}
 	return domain.Credential{}, fmt.Errorf("%w: no hay credencial emitida para %s", ErrNotAMember, ip)
 }
 
-// authorizedControlIPsLocked junta las IPs de los miembros presentes con las
-// de quienes acaban de recibir una credencial y todavía no entraron a la red.
+// authorizedControlIPsLocked son los MIEMBROS de esta sala, y punto.
 //
-// Es lo que evita la condición de carrera: si la autorización esperara a que el
-// motor reporte a la persona como miembro activo de la malla P2P, el primer
-// intento de conexión del invitado rebotaría contra el firewall. Pre-autorizar
-// el puerto de control en cuanto se emite la credencial cierra la ventana.
+// # Por qué el libro y no la malla
 //
-// **La pre-autorización dura la gracia de llegada, no la vida de la
-// credencial**, y esa diferencia se midió el 2026-08-16: filtrando solo lo
-// vencido, el canal que corre como SYSTEM quedó abierto hacia 73 direcciones
-// —todo lo emitido en 24 horas, presente o no— mientras la regla del juego
-// tenía 2. Es la MISMA pregunta que contesta el latido de renovación, con el
-// mismo predicado: quien no está y ya pasó su ventana de ingreso no
-// pre-autoriza nada, aunque su credencial siga viva por si vuelve. Ver
-// [arrivalGraceOpen].
+// Porque son dos hechos con dueños y ritmos distintos, y hasta el 2026-08-25
+// esto leía el equivocado. La tabla de la malla es una señal de VIDA, la tiene
+// el transporte, cambia rápido y no es fiable: llega tarde, llega antes de que
+// la ruta lleve dirección, se pierde en un búfer lleno, y NO TIENE EVENTO para
+// el que cierra la tapa del portátil. El libro es una MEMBRESÍA, la tiene esta
+// máquina entera, cambia despacio y es autoritativa.
+//
+// Quien no se fue formalmente no salió de la sala: está desconectado, y su
+// silla sigue siendo suya. Es lo que ya promete [Session.credentialByMemberLocked],
+// que le devuelve al que vuelve su misma ficha y su misma dirección.
+//
+// # La medición de las 73 direcciones, releída
+//
+// El 2026-08-16 se recortó esto a una ventana de diez minutos porque el oyente
+// que corre como SYSTEM quedaba abierto hacia 73 direcciones. El mensaje de
+// aquel commit dice de dónde salieron: «one guest caught in the rejoin loop».
+// UN invitado, quemando una dirección por vuelta. El arreglo de esa quema es la
+// llave de miembro, que entró CINCO MINUTOS ANTES ese mismo día, y el freno de
+// reingreso entró en el mismo commit que la ventana. O sea que la ventana se
+// puso sobre un número que los dos arreglos anteriores ya habían vuelto
+// imposible, y nadie volvió a medir. Ese recorte dejó a una sala entera fuera
+// durante treinta y tres horas.
+//
+// # Es la UNIÓN del libro y la malla, y la malla no sobra
+//
+// Porque el libro vive en memoria y un host que reinicia el daemon y retoma la
+// sala se queda sin él, con la gente todavía dentro de la red. Ver el precio
+// asumido en [Session.credentialFor]. Con el libro como única fuente, ese host
+// no le abriría un puerto a nadie hasta que cada uno volviera a entrar, que es
+// cambiar treinta y tres horas de sala muerta por un reinicio que expulsa a
+// todo el mundo en silencio. La malla se queda hasta que el libro sepa
+// sobrevivir a un reinicio.
+//
+// # Qué acota esto ahora, ya que la ventana no
+//
+// Tres filtros, y los tres son del libro: vencida no autoriza, revocada no
+// autoriza, expulsado no autoriza. El plazo de seguridad ya existe y no hace
+// falta inventarlo: el latido deja de renovar a quien no está
+// ([Session.renewCredentialsLocked]), así que la ficha de un ausente muere a
+// las veinticuatro horas de su última renovación y su silla se libera sola.
+//
+// El orden no es cosmético. La lista alimenta la firma del conjunto de reglas,
+// y recorrer un mapa da un orden distinto en cada pasada, así que sin ordenar
+// la firma cambiaría sola y reaplicaría reglas por nada.
 //
 // Asume el candado tomado.
 func (s *Session) authorizedControlIPsLocked() []netip.Addr {
-	out := domain.MemberIPs(s.state.Peers)
 	if !s.state.IsHost() {
-		return out
+		return domain.MemberIPs(s.state.Peers)
 	}
-
-	now := s.deps.Clock.Now()
-	s.forgetOldKicks(now)
-
-	seen := make(map[netip.Addr]bool, len(out))
-	for _, ip := range out {
-		seen[ip] = true
-	}
-
-	for ip, c := range s.issued {
-		if c.Expired(now) || c.Revoked || seen[ip] {
-			continue
-		}
-		if _, kicked := s.kicked[ip]; kicked {
-			continue
-		}
-		if !arrivalGraceOpen(c, now) {
-			continue
-		}
-		out = append(out, ip)
-		seen[ip] = true
-	}
-
-	return out
+	return s.members.MemberIPsOf(s.deps.Clock.Now(), s.state.LocalIP)
 }
 
 // arrivalGraceOpen dice si una credencial emitida sigue dentro de su ventana
 // de ingreso: la recibió hace menos de [timing.ArrivalGrace], así que su dueño
 // puede estar todavía entrando y su ausencia no significa nada.
 //
-// Es UN predicado y lo comparten las dos preguntas que dependen de él, la
-// renovación del latido y la pre-autorización del canal de control. Estuvieron
-// contestadas por separado y la segunda contestaba 24 horas, que es cómo el
-// oyente que corre como SYSTEM terminó abierto a 73 direcciones de nadie.
+// Lo consulta el latido de renovación, para no gastar una llamada al motor
+// empujando el vencimiento de una ficha que nadie estrenó. Hasta el 2026-08-25
+// lo consultaba también la pre-autorización del canal de control, y ahí es
+// donde no servía: mezclar «esta ficha es nueva» con «a esta persona se le
+// abre el puerto» es lo que dejó fuera al que volvía. Ver
+// [Session.authorizedControlIPsLocked].
 func arrivalGraceOpen(c domain.Credential, now time.Time) bool {
 	return now.Sub(c.IssuedAt) < timing.ArrivalGrace
 }
@@ -324,10 +371,10 @@ func (s *Session) onPeersChangedLocked(ctx context.Context) (domain.RoomState, e
 	// a quien el host acaba de echar. Sin este filtro, el evento de cambio de
 	// miembros deshace el recorte inmediato de KickMember y le vuelve a abrir
 	// el puerto durante el segundo que tarda la revocación.
-	now := s.deps.Clock.Now()
-	s.forgetOldKicks(now)
-	for ip := range s.kicked {
-		s.dropPeerLocked(ip)
+	for ip, m := range s.members {
+		if m.Presence.Kicked {
+			s.dropPeerLocked(ip)
+		}
 	}
 	// El ÚNICO sitio que se salta la aplicación cuando nada cambió, y el único
 	// que la necesita: el motor emite este evento en ráfagas, y el conjunto
@@ -385,7 +432,9 @@ func (s *Session) OnMemberChannelUp(ctx context.Context, ip netip.Addr) domain.R
 	if !s.state.IsHost() || !s.state.Conn.InRoom() {
 		return s.snapshot()
 	}
-	delete(s.staleProxAviso, ip)
+	if m, ok := s.members[ip]; ok {
+		m.StaleNext, m.StaleTries = time.Time{}, 0
+	}
 
 	// Releer la malla ACÁ es lo que hace que el invitado pueda jugar, y no un
 	// refinamiento.
@@ -399,11 +448,31 @@ func (s *Session) OnMemberChannelUp(ctx context.Context, ip netip.Addr) domain.R
 	// así, sin una línea más en el log.
 	//
 	// La causa es que [Session.onPeersChangedLocked] solo lo llamaba el evento
-	// `peers_changed` del motor, y el motor NO lo emitió: cero apariciones en
-	// su log, mientras el observador de malla sí veía al miembro. Y
-	// [Session.withAdmittedLocked], que existe justamente para el caso en que
-	// el motor cuenta de menos, vive DENTRO de [Session.refreshPeersLocked], o
-	// sea que la red de seguridad no tenía quién la disparara.
+	// `peers_changed` del motor. Y la fusión con el canal de control, que existe
+	// justamente para el caso en que el motor cuenta de menos, vive DENTRO de
+	// [Session.refreshMembersLocked], o sea que la red de seguridad no tenía
+	// quién la disparara.
+	//
+	// # Una frase de acá que era falsa, corregida el 2026-08-25
+	//
+	// Esto decía que el motor NO emitió el evento, «cero apariciones en su log».
+	// **Es falso**, y salía de un grep que no podía encontrarlo: los eventos del
+	// protocolo salen por el STDOUT del hijo, que es el canal de órdenes,
+	// mientras `kanpachi-engine.log` recibe solo el `tracing` de EasyTier. Ese
+	// fichero da cero para `peers_changed` pase lo que pase, y también para
+	// `connected` y `disconnected`. Encima `peers_changed` es el único evento
+	// que el daemon no registra, así que su ausencia del log del daemon tampoco
+	// probaba nada.
+	//
+	// El motor SÍ lo emite, desde el bus de EasyTier. Lo que falla es CUÁNDO:
+	// sale con `PeerConnAdded`, antes de que la ruta lleve dirección, así que la
+	// relectura que dispara devuelve una lista sin el miembro que acaba de
+	// entrar, y la convergencia posterior no produce ningún evento más. La
+	// prueba positiva de que dispara está en el historial: el commit `fa5850a`
+	// midió 19 aplicaciones de política al abrir una sala y hasta 31 en un
+	// segundo, y el único llamador de `applyPolicyIfChanged` es
+	// [Session.onPeersChangedLocked]. La red de seguridad de eso es el vigía de
+	// malla, que mira la tabla ya convergida.
 	//
 	// El canal abriéndose es la evidencia de primera mano de que hay alguien, y
 	// es la misma que ya decide a quién se le abre el canal de control. Si el
@@ -427,17 +496,6 @@ func (s *Session) OnMemberChannelUp(ctx context.Context, ip netip.Addr) domain.R
 // de control durante mucho rato, y sin tope eso sería una línea de aviso cada
 // dos segundos para siempre.
 const StaleNoticeTries = 10
-
-// avisoStale es cuándo se le puede volver a hablar a un miembro sin credencial,
-// y cuántos intentos rápidos seguidos lleva fallados.
-//
-// Los intentos se cuentan porque el plazo solo no distingue los dos casos que
-// hay que tratar distinto: el otro lado todavía no redialó, que se resuelve en
-// segundos, y no hay por dónde hablarle, que no se resuelve.
-type avisoStale struct {
-	prox     time.Time
-	intentos int
-}
 
 // tellStaleMembersLocked le avisa a quien está en la sala y no tiene credencial
 // de este host.
@@ -476,16 +534,20 @@ func (s *Session) tellStaleMembersLocked(ctx context.Context) {
 		if p.Self || !p.VirtualIP.IsValid() {
 			continue
 		}
-		if c, hay := s.issued[p.VirtualIP]; hay && !c.Expired(ahora) {
+		// A quien no está no se le avisa. El plazo de reintentos existe para el
+		// que no contesta ahora mismo, no para gastarlo entero contra alguien
+		// que no tiene un canal por el que oírlo. Ver [domain.Peer.Away].
+		if p.Away {
 			continue
 		}
-		estado := s.staleProxAviso[p.VirtualIP]
-		if !estado.prox.IsZero() && ahora.Before(estado.prox) {
+		m := s.members.At(p.VirtualIP)
+		if m.Cred != nil && !m.Cred.Expired(ahora) {
 			continue
 		}
-		if s.staleProxAviso == nil {
-			s.staleProxAviso = make(map[netip.Addr]avisoStale)
+		if !m.StaleNext.IsZero() && ahora.Before(m.StaleNext) {
+			continue
 		}
+		intentos := m.StaleTries
 
 		err := s.deps.Control.Notify(ctx, p.VirtualIP, domain.RoomNotice{
 			Kind:   domain.NoticeStale,
@@ -495,30 +557,28 @@ func (s *Session) tellStaleMembersLocked(ctx context.Context) {
 		case err == nil:
 			s.deps.Log.Info("se le avisó a un miembro de que este host no tiene su credencial",
 				"nombre", p.Name.String(), "ip", p.VirtualIP.String())
-			s.staleProxAviso[p.VirtualIP] = avisoStale{prox: ahora.Add(timing.StaleNoticeCooldown)}
-		case estado.intentos+1 < StaleNoticeTries:
+			m.StaleNext, m.StaleTries = ahora.Add(timing.StaleNoticeCooldown), 0
+		case intentos+1 < StaleNoticeTries:
 			s.deps.Log.Warn("no se le pudo avisar a un miembro sin credencial, se reintenta",
 				"ip", p.VirtualIP.String(), "error", err, "en", timing.StaleNoticeRetry)
-			s.staleProxAviso[p.VirtualIP] = avisoStale{
-				prox: ahora.Add(timing.StaleNoticeRetry), intentos: estado.intentos + 1,
-			}
+			m.StaleNext, m.StaleTries = ahora.Add(timing.StaleNoticeRetry), intentos+1
 		default:
 			// Se agotaron los intentos rápidos. Esto ya no es "todavía no
 			// redialó", es un miembro al que no hay por dónde hablarle, y para
 			// ése el aviso no es el camino: su propio reingreso lo es. Se pasa al
 			// plazo largo para no llenar el log con lo mismo.
 			s.deps.Log.Warn("no se le pudo avisar a un miembro sin credencial, se deja de insistir",
-				"ip", p.VirtualIP.String(), "error", err, "intentos", estado.intentos+1)
-			s.staleProxAviso[p.VirtualIP] = avisoStale{prox: ahora.Add(timing.StaleNoticeCooldown)}
+				"ip", p.VirtualIP.String(), "error", err, "intentos", intentos+1)
+			m.StaleNext, m.StaleTries = ahora.Add(timing.StaleNoticeCooldown), 0
 		}
 	}
-	// Y se olvida lo que ya no frena nada, para que el mapa no crezca con la
-	// sala. Borrar un plazo cumplido es además lo que devuelve los intentos
-	// rápidos: quien siga sin credencial dentro de un rato vuelve a tener su
-	// ráfaga corta en vez de quedar condenado al plazo largo para siempre.
-	for ip, e := range s.staleProxAviso {
-		if ahora.After(e.prox) {
-			delete(s.staleProxAviso, ip)
+	// Y se olvida el plazo que ya se cumplió, que es lo que devuelve los
+	// intentos rápidos: quien siga sin credencial dentro de un rato vuelve a
+	// tener su ráfaga corta en vez de quedar condenado al plazo largo para
+	// siempre. La entrada entera la suelta [domain.MemberTable.Forget].
+	for _, m := range s.members {
+		if !m.StaleNext.IsZero() && ahora.After(m.StaleNext) {
+			m.StaleNext, m.StaleTries = time.Time{}, 0
 		}
 	}
 }
@@ -604,19 +664,19 @@ func (s *Session) logMemberDiffLocked(antes []domain.Peer) {
 //
 // Asume el candado tomado.
 func (s *Session) logInvitadosQueNoLleganLocked(presentes map[netip.Addr]bool) {
-	if !s.state.IsHost() || len(s.issued) == 0 {
+	if !s.state.IsHost() || len(s.members) == 0 {
 		return
 	}
 	ahora := s.deps.Clock.Now()
 
-	faltan := make([]string, 0, len(s.issued))
-	for ip, c := range s.issued {
+	faltan := make([]string, 0, len(s.members))
+	for ip, m := range s.members {
 		// Una credencial vencida ya no autoriza a nadie, así que su ausencia no
 		// es noticia: quien la tenía se fue hace rato y esto no es un fallo.
-		if c.Expired(ahora) || presentes[ip] {
+		if m.Cred == nil || m.Cred.Expired(ahora) || presentes[ip] {
 			continue
 		}
-		faltan = append(faltan, c.Name.String()+" "+ip.String())
+		faltan = append(faltan, m.Cred.Name.String()+" "+ip.String())
 	}
 	if len(faltan) == 0 {
 		return

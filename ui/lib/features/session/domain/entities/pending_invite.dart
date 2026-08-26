@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/displacement.dart';
 
 /// Un enlace `kanpachi://` que llegó de fuera y todavía nadie confirmó.
 ///
@@ -23,6 +24,7 @@ class PendingInvite {
     this.knownNick = '',
     this.knownFingerprint = '',
     this.knownRooms = 0,
+    this.displaces,
   });
 
   factory PendingInvite.fromJson(Map<String, Object?> json) => PendingInvite(
@@ -37,6 +39,7 @@ class PendingInvite {
     knownNick: json['known_nick'] as String? ?? '',
     knownFingerprint: json['known_fingerprint'] as String? ?? '',
     knownRooms: json['known_rooms'] as int? ?? 0,
+    displaces: Displacement.fromJson(json['displaces']),
   );
 
   /// Lo que llegó, tal cual, sin interpretar.
@@ -80,6 +83,17 @@ class PendingInvite {
   final String knownNick;
   final String knownFingerprint;
   final int knownRooms;
+
+  /// Qué costaría entrar a ESTA sala, contestado por el daemon contra ESTE
+  /// destino.
+  ///
+  /// Manda sobre la respuesta general de la salud, y la diferencia es real:
+  /// volver a la sala a la que ya se está volviendo no desplaza nada, y con la
+  /// respuesta general la pantalla pediría permiso para abandonar lo que va a
+  /// hacer. Viaja acá porque esta llamada es la que la pantalla ya hace justo
+  /// antes de preguntar, así que la pregunta puede nombrar lo que está en juego
+  /// sin una segunda vuelta por el cable.
+  final Displacement? displaces;
 
   /// Si hay una sala a la que ofrecerse entrar.
   bool get understood => code.isNotEmpty;

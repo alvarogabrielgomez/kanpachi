@@ -1766,7 +1766,9 @@ El retardo creciente es global y no por cuenta, porque no hay cuentas: bloquear 
 
 **Lo que NO se hace, y por qué.** No se cuenta como miembro a quien tiene credencial y todavía no abrió el canal. Ese caso ya está resuelto donde corresponde: su dirección se preautoriza en el canal de control en cuanto se emite la credencial, que es justo lo que le permite llegar a abrirlo. Contarlo como presente reservaría su dirección para siempre y renovaría la credencial de alguien que quizá nunca llegó.
 
-**Lo que queda sin explicar.** Por qué la tabla del motor no reporta al invitado en el host. La asimetría es del motor y no está medida. Esta decisión no la explica: la rodea con una fuente que el host ya tenía y no estaba mirando.
+**Lo que quedaba sin explicar, explicado el 2026-08-25.** Por qué la tabla del motor no reporta al invitado en el host. El motor emite `peers_changed` con `PeerConnAdded`, y su `peers()` descarta toda ruta que todavía no lleve dirección. Cuando salta el evento la ruta OSPF no resolvió `ipv4_addr`, así que la relectura que el daemon dispara al instante devuelve una lista sin el que acaba de entrar. Las rutas convergen segundos después y eso no produce ningún evento más. Lo cierra el vigía de malla, que mira la tabla ya convergida una vez por segundo y avisa al supervisor. Ver la decisión 43.
+
+**Lo que esta lista dejó de decidir.** Quién puede marcar el puerto de control y a quién se le abren los puertos del juego. Eso lo contesta el libro de credenciales desde la decisión 43, y esta lista contesta ahora una pregunta distinta: quién ESTÁ. Las dos fuentes de acá siguen valiendo enteras para eso.
 
 ## 36. El firewall ajeno que bloquea se abre con consentimiento, y queda anotado
 
@@ -1856,3 +1858,92 @@ El retardo creciente es global y no por cuenta, porque no hay cuentas: bloquear 
 **Medido de punta a punta el 2026-08-20**, en un contenedor privilegiado con la topología del fallo: un `veth` haciendo de adaptador de la sala (`100.93.137.1`), un miembro al otro lado (`100.93.137.7`) y el servidor atado a propósito a `10.42.0.15`, que es el equivalente de la IP del pod. Sin desvío el datagrama no llega; con el desvío llega, **y llega con el origen intacto** (`100.93.137.7`), que es lo que hace que el juego siga viendo a cada miembro por su dirección y que las reglas por miembro sigan valiendo; al quitarlo, deja de llegar. La misma corrida encontró un fallo real: borrar nuestra tabla en el mismo lote que la crea contesta ENOENT cuando todavía no está, y eso tumbaba TODA primera aplicación.
 
 **Lo que sigue estando escrito en los docs:** que el servidor se ate a `0.0.0.0`. El desvío es la red de seguridad para quien copió un compose, no una excusa para dejar de decirlo.
+
+## 41. Lo que cuesta entrar a una sala lo calcula el daemon, y cada cara lo pinta
+
+Entrar a una sala puede costar algo: estás dentro de una y sales, hospedas la tuya y **la cierras**, o estás volviendo a una y dejas de intentarlo. Quién decide cuál de las tres, y si hay alguna, es el daemon. Lo publica en `displaces`, dentro del mismo estado que las tres caras ya piden, y también en la vista previa de un código, donde va calculado contra ESE destino.
+
+**El daemon no puede preguntar.** Corre como SYSTEM o como root, sin ventana y sin terminal, así que la mitad que decide y la mitad que pregunta están separadas por fuerza. Solo se comparte la primera. La ventana enseña un modal, el asistente un `survey.Confirm`, y la terminal pregunta o exige `--yes` cuando no hay dónde contestar.
+
+**Tres caras aplicando la regla por su cuenta son tres copias que se separan**, y eso ya pasó: la ventana la deducía de «hay una vuelta armada», que no ve los otros dos casos, y estaba escrita en dos de las seis puertas que entran a una sala. Las otras cuatro iban derechas al daemon, que las rechazaba con `busy` sin que nadie hubiera podido consentir. La peor era el enlace `kanpachi://`, que se enseña encima de la sala abierta a propósito: **un host no podía aceptar un enlace nunca**.
+
+**Lo que se confirma es una escritura en disco, y por eso el texto es distinto en cada caso.** Cerrar la sala propia borra su fichero y retira su entrada del registro: el código deja de resolver y no queda nada que reabrir. Salir de la de otro no destruye nada y apaga que se vuelva sola. Dejar de volver apaga un reloj. Ver `03-arquitectura.md`, donde está la tabla.
+
+## 42. Todo lo que Kanpachi recuerda es de la máquina, y vive en un solo sitio
+
+No hay ámbito de persona. Ni el nombre, ni el registro, ni la cuarentena, ni el tamaño de la ventana, ni si las caras narran lo que hace el daemon. Un solo sitio: `C:\ProgramData\Kanpachi` en Windows, `/var/lib/kanpachi` en Linux, y la carpeta del ejecutable en una copia portable.
+
+**Una sala ES la máquina, y de ahí sale todo lo demás.** Es un adaptador virtual llamado `kanpachi0`, un proceso del motor y un juego de reglas de firewall, y de cada cosa hay una: los dos nombres son constantes del dominio y el daemon sostiene un `Session` con un estado y un candado. La cuarentena y las reglas alcanzan a toda la máquina, medido. Y la llave de identidad queda **pineada** en el registro en la primera publicación, así que una segunda identidad en la misma máquina recibe `403 pinned` al intentar reabrir ese código. Dos personas con sala propia son dos adaptadores, dos motores y dos identidades: es otro producto, no otro sitio donde guardar un fichero.
+
+**Y el daemon no sabe quién le habla.** En Windows el descriptor del pipe concede al usuario interactivo y no hay una sola llamada a `ImpersonateNamedPipeClient` en el árbol; en Linux el socket solo acepta a root o al uid del daemon. Así que cualquier usuario de la máquina ya puede manejar la sala de cualquier otro. Guardar el estado por persona parecería separación y no daría ninguna.
+
+**El reparto anterior no lo defendía ningún argumento de diseño: era un permiso.** El instalador deja a los usuarios en solo lectura sobre el directorio de datos, porque esa ACL es media protección del token de la API local. Lo que la ventana quisiera guardar **por su cuenta** tenía que ir a otro sitio, y de ahí salió `ui-prefs.json`. La línea entre los dos ficheros no decía qué clase de dato era cada uno, decía quién tenía la pluma.
+
+**Dos de sus tres claves no eran de la ventana.** La narración enciende el diario de pasos del DAEMON, que se publica por `progress` para quien pregunte. Y el aviso de versión publicada es una respuesta que la terminal le pedía al mismo canal, en cada `upgrade`, sin guardarla: dos caras, una máquina, y una cuota de sesenta preguntas por hora **por IP** compartida por todos los que salen por el mismo router. La tercera, el tamaño de la ventana, sí es de un cristal, y es de la máquina por lo mismo que todo lo demás.
+
+**Así que la ventana lee y pide para escribir.** Leer sigue siendo una lectura de disco antes del primer frame, del fichero que dejó el daemon, igual que lee `api.token`. Escribir va por el pipe, con `settings`, que es el cuarto de la familia de `autostart`, `own_seed` y `nickname` y tiene su misma forma. Lo que arregla no es el orden: en el producto instalado esa escritura fallaba, el fallo lo tragaba un `debugPrint` que en release no imprime, y durante meses el modo verboso se apagaba en cada arranque y la ventana no recordaba su tamaño, sin dejar una línea en ningún sitio. Medido el 2026-08-23: `ui-prefs.json` no existía en la carpeta del daemon ni había existido nunca.
+
+**La única excepción es el log de la ventana, y no es una excepción al ámbito.** No puede ir por el pipe: existe porque la interfaz se moría sola, dieciocho veces en doce horas, lo que interesa es la última línea antes de morir, y un pipe caído es uno de los fallos que tiene que registrar. Así que el daemon crea **una hoja** dentro de su carpeta de logs y le concede escritura a los usuarios. La raíz sigue en solo lectura, el token sigue protegido, y el log del daemon queda una carpeta más arriba, donde nadie puede forjarle líneas al fichero que alguien pega en un reporte de fallo. Lo hace el daemon y no el instalador para que una instalación que se actualiza lo reciba sin reinstalar.
+
+**Y el estado por persona costaba dinero aparte del conceptual.** El desinstalador tiene que recorrer todos los perfiles del registro para limpiar restos, porque es un instalador por máquina y quien autoriza el UAC puede no ser quien ejecutó la ventana. `%LOCALAPPDATA%\Kanpachi` no lo limpiaba nadie: quedó tirado en cada perfil desde el 2026-08-09.
+
+## 43. La compuerta se calcula de la MEMBRESÍA, no de la señal de vida
+
+**El fallo, medido el 2026-08-25 contra un host real en Kubernetes.** Durante treinta y tres horas ningún invitado entró y el host no dijo nada. Kubernetes lo reportó `Running` y `2/2 Ready` todo el tiempo. El SYN del invitado a `100.93.137.1:57623` lo descartaba la compuerta del propio host:
+
+```
+iif "kanpachi0" ip daddr 100.93.137.1 tcp dport 57623 ip saddr { 100.93.137.2, 100.93.137.5 } accept
+...
+meta nfproto ipv4 iif "kanpachi0" drop
+```
+
+El invitado era `.3` y no estaba en el conjunto. Y el paquete sí llegaba: durante un intento, `kanpachi0` del host sumó 75 paquetes contados por diferencia en `/proc/net/dev`. La malla funcionaba. Lo que fallaba era la lista con la que el host calculaba su compuerta.
+
+**La causa.** Quién puede marcar el puerto de control se calculaba desde la tabla de la malla, que es una señal de VIDA. Llega tarde, llega antes de que la ruta lleve dirección, se pierde en un búfer lleno, y no tiene ningún evento para quien cierra la tapa del portátil. La membresía es otra clase de hecho: la tiene esta máquina entera, cambia despacio, y vive en el libro de credenciales.
+
+| | Dueño | Ritmo | Qué decide |
+|---|---|---|---|
+| Membresía | el libro del host | lento | la compuerta, el alcance del oyente, la dirección que te toca |
+| Vida | el transporte | rápido | online contra AFK, degradado contra directo, a quién sondea el canario |
+
+**La decisión: la compuerta lee el libro.** Vencida no autoriza, revocada no autoriza, expulsado no autoriza, y nada más acota la lista. El plazo de seguridad ya existía: el latido deja de renovar a quien no está, así que la ficha de un ausente muere a las veinticuatro horas de su última renovación y su silla se libera sola.
+
+**La lista es la UNIÓN del libro y la malla, y la malla no sobra.** Se pensó al revés primero: que persistir el libro dejaría la rama de la malla sin trabajo. No lo hace. El libro puede faltar, y sus dos casos son ordinarios, la primera vez que se arranca una versión que lo escribe y una carga rechazada por reversión detectada o por fichero ilegible. Sin la rama de la malla, ese host reabre y echa en silencio a todo el que estaba dentro. Estar en la tabla del motor es evidencia más débil que tener ficha, y la alternativa a usarla es una expulsión masiva que nadie pidió.
+
+**Y los puertos del juego se atan al mismo sitio.** Abrirlos hacia un miembro desconectado no cuesta nada, porque del otro lado no hay quien conecte. Cerrárselos a quien sí está sí cuesta, y es lo que pasaba el 2026-08-13.
+
+**La ventana de diez minutos que esto reemplaza, releída.** El 2026-08-16 se recortó la pre-autorización porque el oyente que corre como SYSTEM quedaba abierto hacia 73 direcciones. El mensaje de aquel commit dice de dónde salieron: *one guest caught in the rejoin loop*. Un invitado, quemando una dirección por vuelta. La llave de miembro, que arregla esa quema, entró cinco minutos antes ese mismo día, y el freno de reingreso entró en el mismo commit que la ventana. La ventana se puso sobre un número que los dos arreglos anteriores ya habían vuelto imposible, y nadie volvió a medir.
+
+**Expulsar tuvo que aprender a resolver del libro.** Un ausente conserva su silla hasta que su ficha venza, así que el host tiene que poder quitársela antes. Resolviendo al expulsado solo contra la tabla del motor, expulsar contestaba que esa dirección no es de ningún miembro justo con quien más falta hacía. Conservar una silla que no se puede retirar es peor que no conservarla.
+
+### Una exposición conocida y acotada: el bloqueo por rango atrapa el loopback
+
+**Medido el 2026-08-25 en un `netns` limpio.** Con `100.93.137.1/24` sobre `lo` y un oyente en el 57623, un proceso local alcanza el puerto sin compuerta y no lo alcanza con `ip daddr 100.93.137.0/24 drop`, que es lo que emite la ranura `SlotRoomNet`. Las ranuras acotadas por adaptador no lo atrapan nunca, porque `iif lo` no casa con ellas.
+
+**No se arregla en 0.6.9, y por dos razones.** No se encontró un solo consumidor que marque hoy la dirección de la sala desde la propia máquina: el invitado marca al host, el host anuncia hacia los miembros, y el desvío del contenedor reescribe el destino en `prerouting` hacia donde escucha el juego, que queda fuera del rango de la sala. Y la mitad de Windows está sin medir, porque WFP no tiene el modelo de host débil que motiva el bloqueo por rango.
+
+**El bloqueo por rango no se debilita a ojo.** Su porqué está medido el 2026-08-10 y escrito en `gate/spec.go`: en Linux, un paquete que entra por la interfaz física con destino a la dirección virtual lo entrega el kernel, y el bloqueo acotado por adaptador no lo ve. La exención tendría que ser de `iif lo` y solo en las dos ranuras de rango. Queda propuesta para 0.7.0, junto con medir Windows.
+
+## 44. Quien no se fue está AFK, y su silla sigue puesta
+
+**El hecho que faltaba nombrar.** Nadie manda un aviso al cerrar la tapa del portátil. Un miembro que no hizo una salida formal no salió de la sala: está desconectado, y volverá a su misma dirección con su misma ficha, que es lo que la llave de miembro ya prometía.
+
+**La decisión: un miembro con ficha viva al que el motor no ve sale en la lista, marcado AFK.** Antes desaparecía, y desaparecer afirmaba lo único que nadie sabía. Con él viajan dos números calculados, cuánto lleva fuera y cuánto le queda a su ficha, con la misma forma que el contador del host ausente: la cara que los pinta no comparte reloj con el daemon, y restar contra dos relojes da números que mienten.
+
+**Se pinta donde va el ping**, igual en el CLI, en el asistente y en la ventana: `42 ms` cuando está, `AFK 3m` cuando no. En la ventana el punto de estado se apaga, porque el valor por omisión del camino en el cable es `direct` y la sala pintaba en verde a alguien que no estaba.
+
+**Tres consumidores le preguntaban cosas a quien no escuchaba.** El canario armaba sus objetivos desde la lista entera y fallaba contra cada ausente una vez por minuto con «no hay canal abierto», que es el ruido bajo el que quedó sepultado el fallo de treinta y tres horas. El latido renovaba fichas de ausentes, y ese vencimiento es el único plazo que libera una silla. Y el aviso de credencial vieja gastaba sus diez reintentos contra alguien sin canal por el que oírlo.
+
+**Sin ventana anti-parpadeo, a propósito.** La tabla del motor ya pinta el camino de cada miembro con la misma cadencia y el mismo temblor. Un plazo acá sería un número sin medición detrás, y se puede añadir el día que alguien vea el parpadeo.
+
+## 45. En un contenedor sin `hostNetwork`, la sala va por relay siempre
+
+**Lo que la CNI añade.** Un pod sin `hostNetwork` sale por la red del nodo con una traducción de direcciones de por medio, y el resultado desde fuera es NAT simétrico. El motor lo detecta y encamina por relay, que funciona y es más lento. Nada del clúster está roto y no hay nada que arreglar dentro del pod: quien quiera camino directo pone `hostNetwork: true` y acepta lo que eso trae.
+
+**Lo que sí hay que hacer, y no es obvio.** El CIDR de la CNI tiene que quedar fuera de `100.64.0.0/10`. Ese es el espacio del que Kanpachi saca la subred de cada sala, y con un solapamiento `resume` se niega para siempre y de forma irrecuperable, porque entrar dejaría a la máquina sin la red por la que entró.
+
+**La cuarentena se apaga en un pod.** Escribe en `/etc`, que es efímero, y su alcance es todo el espacio de red del pod y no el adaptador. Ver la decisión 42.
+
+**Y si el manifiesto pisa el `command` del contenedor, se pierde `KANPACHI_CONTAINER`.** Con eso muere el desvío al juego, en silencio, y la sala se ve perfecta mientras nadie alcanza el servidor. Ver la decisión 40.
+
+**Falta una sonda de vida.** El 2026-08-25 Kubernetes reportó el sidecar listo durante las treinta y tres horas en que no admitió a nadie. Lo que ahora sí se puede leer desde fuera es el log: en contenedor el daemon escribe también por la salida estándar, que es lo único que `kubectl logs` lee.

@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"strings"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
@@ -248,6 +249,8 @@ func (s *Session) RefreshAlerts(ctx context.Context) domain.RoomState {
 		found = append(found, s.repairOwnRulesLocked(ctx, alteradas, sePudoRevisar)...)
 	}
 
+	found = append(found, s.roomHealthAlertsLocked()...)
+
 	// Las alertas PEGAJOSAS sobreviven al refresco. Describen algo que pasó y
 	// que nadie va a volver a medir, a diferencia del resto, que es el
 	// resultado de una comprobación puntual y se recalcula entero.
@@ -359,4 +362,84 @@ func (s *Session) ObserveGame(ctx context.Context, root domain.ProcessRef, tree 
 	rangos := domain.ObservedRanges(listeners, tree, keepSteam)
 	s.deps.Log.Info("foto de puertos", "ejecutable", root.Executable, "rangos", len(rangos))
 	return rangos, nil
+}
+
+// roomHealthAlertsLocked mira la sala en vez de la máquina.
+//
+// Las demás comprobaciones de este fichero preguntan si esta PC está expuesta
+// de más. Estas dos preguntan si la SALA sirve, que es lo que nadie preguntaba
+// el 2026-08-25, cuando un host pasó treinta y tres horas sin poder recibir a
+// nadie mientras cada señal hacia fuera seguía en verde.
+//
+// Solo del host, que es quien tiene libro y quien tiene oyente.
+//
+// Asume el candado tomado.
+func (s *Session) roomHealthAlertsLocked() []domain.Alert {
+	if !s.state.IsHost() || !s.state.Conn.InRoom() {
+		return nil
+	}
+	ahora := s.deps.Clock.Now()
+	var found []domain.Alert
+
+	// # Miembros presentes y ningún canal
+	//
+	// Se cuentan los que ESTÁN y ya pasaron su ventana de ingreso. Sin lo
+	// primero, una sala con todo el mundo AFK gritaría cada noche; sin lo
+	// segundo, gritaría en cada ingreso legítimo, que es justo el momento en
+	// que todavía no hay canal.
+	presentes := 0
+	for _, p := range s.state.Peers {
+		if p.Self || p.Away || !p.VirtualIP.IsValid() {
+			continue
+		}
+		m, hay := s.members[p.VirtualIP]
+		if !hay || m.Cred == nil || arrivalGraceOpen(*m.Cred, ahora) {
+			continue
+		}
+		presentes++
+	}
+	if presentes > 0 && len(s.deps.Control.ConnectedMembers()) == 0 {
+		found = append(found, domain.Alert{
+			Kind: domain.AlertNoMemberChannels,
+			Detail: fmt.Sprintf("la sala tiene %d miembro(s) conectado(s) y ninguno abrió su canal: "+
+				"revisa la compuerta de esta máquina", presentes),
+		})
+	}
+
+	// # El /24 casi lleno
+	//
+	// Antes de agotarse, porque al agotarse el aviso le llegaría a quien no
+	// puede arreglarlo: el error lo ve el invitado que se quedó fuera.
+	if s.state.Subnet.IsValid() {
+		libres := freeAddressCount(s.state.Subnet, s.takenAddressesLocked())
+		if libres <= roomAlmostFullFree {
+			found = append(found, domain.Alert{
+				Kind: domain.AlertRoomAlmostFull,
+				Detail: fmt.Sprintf("a la sala le quedan %d direcciones libres de %s: "+
+					"cuando se acaben, quien entre se queda fuera sin que esta pantalla lo diga",
+					libres, s.state.Subnet),
+			})
+		}
+	}
+	return found
+}
+
+// roomAlmostFullFree es cuántas direcciones libres quedan cuando se avisa.
+//
+// Veinte sobre las 253 de un /24 es poco más del siete por ciento, y son
+// suficientes para que el aviso llegue con margen: al ritmo medido el
+// 2026-08-16, setenta y tres direcciones en cuatro horas, veinte dan poco más
+// de una hora para mirar qué las está gastando. Una sala real son cuatro o
+// cinco personas, así que en uso normal esto no se enciende nunca.
+const roomAlmostFullFree = 20
+
+// freeAddressCount cuenta los huecos que quedan en la subred de la sala.
+func freeAddressCount(subnet netip.Prefix, taken map[netip.Addr]bool) int {
+	n := 0
+	for a := subnet.Addr(); subnet.Contains(a); a = a.Next() {
+		if !taken[a] {
+			n++
+		}
+	}
+	return n
 }

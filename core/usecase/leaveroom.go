@@ -196,7 +196,7 @@ func (s *Session) leaveLocked(
 	// abriste un juego. Lo que sí puede afirmar son las dos condiciones que
 	// habilitan la pregunta, que ese juego estuvo activo y que hubo alguien
 	// más, y las anota acá porque en un instante se van a borrar con la sala.
-	if !s.state.Game.IsZero() && len(s.state.Peers) >= 2 {
+	if !s.state.Game.IsZero() && domain.CountPresent(s.state.Peers) >= 1 {
 		if s.verificables == nil {
 			s.verificables = make(map[string]string)
 		}
@@ -213,10 +213,26 @@ func (s *Session) leaveLocked(
 	// The guest's last room is NOT cleared either way: it exists precisely to go
 	// back, and being kicked does not change that, because kicking is not
 	// banning.
-	if dest == cerrarDeVerdad {
+	//
+	// **Only the HOST clears it**, and that guard used to be missing here while
+	// the line below it had one. Without it a guest leaving somebody else's room
+	// deleted its OWN saved room, in silence, and the state that makes that
+	// reachable is ordinary: a reopen that fails keeps the file on purpose, which
+	// is what [Session.SavedRoom] exists to offer. So the laptop that could not
+	// reopen at the office, then joined a friend's room and left it, lost the
+	// room it was still being offered to reopen.
+	if dest == cerrarDeVerdad && s.state.IsHost() {
 		if err := s.deps.State.ClearRoom(); err != nil {
 			s.deps.Log.Warn("no se pudo borrar la sala guardada al salir", "error", err)
 		}
+		// El libro se va con la sala, por lo mismo que se vacía la tabla en
+		// memoria: sus direcciones son válidas y no son de nadie de la sala
+		// siguiente. Con él se va el registro durable de quién jugó acá, que es
+		// lo único de este producto que enlaza a una persona con una sala.
+		if err := s.deps.State.ClearMembers(); err != nil {
+			s.deps.Log.Warn("no se pudo borrar el libro de credenciales al cerrar", "error", err)
+		}
+		s.membersGen = 0
 		s.closeRoomInRegistryLocked(ctx)
 	}
 
@@ -242,16 +258,16 @@ func (s *Session) leaveLocked(
 	s.cardKey = [domain.CardKeyLen]byte{}
 	s.sealedCard = nil
 	s.nick = domain.Nickname{}
-	s.kicked = nil
-	// Las credenciales mueren con la sala que las emitió, y esto NO es higiene.
+	// La tabla de miembros muere con la sala que la llenó, y esto NO es higiene.
 	//
 	// Sus direcciones son válidas, así que sobrevivir a la sala significa que la
 	// siguiente arrancaría abriéndole el canal de control a las IP de la
-	// anterior: [Session.authorizedControlIPsLocked] las agrega sin poder saber
+	// anterior: [Session.authorizedControlIPsLocked] las cuenta sin poder saber
 	// que son de otra sala, y [domain.ControlRules] solo descarta las
-	// inválidas. Se vacía en vez de anularse porque emitir escribe en el mapa
-	// sin comprobar, y un mapa nil ahí es un pánico.
-	clear(s.issued)
+	// inválidas. Con ella se va también el veto de expulsión, que no tiene
+	// sentido fuera de la sala que lo puso. Se vacía en vez de anularse porque
+	// emitir escribe sin comprobar, y un mapa nil ahí es un pánico.
+	clear(s.members)
 	// Y la firma del último conjunto de reglas, para que la primera aplicación
 	// de la sala siguiente se anote aunque por casualidad pida lo mismo.
 	s.appliedRules = ""
@@ -282,7 +298,7 @@ func (s *Session) leaveLocked(
 	// Transition a Idle limpia la sala entera. Es legal desde cualquier
 	// estado, incluso a mitad de un intento de conexión que no responde,
 	// porque salir es una acción del usuario que tiene que funcionar siempre.
-	if err := s.state.TransitionWithExit(domain.StateIdle, reason, exit); err != nil {
+	if err := s.transitionWithExitLocked(domain.StateIdle, reason, exit); err != nil {
 		// Inalcanzable con la tabla de transiciones actual. Se registra en vez
 		// de ignorarse porque, si alguien la edita mal, el síntoma sería una
 		// sesión que no se puede abandonar y este log es lo que lo diría.

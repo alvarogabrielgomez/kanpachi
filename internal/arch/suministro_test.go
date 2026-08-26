@@ -185,6 +185,10 @@ func TestElInstaladorActualizaUnServicioQueYaExiste(t *testing.T) {
 // AppData\CompanyName\ProductName. Sin una entrada explícita, reinstalar
 // conserva onboarding, nickname y ajustes aunque todos los binarios se hayan
 // eliminado correctamente.
+//
+// Y desde que hay un solo ámbito, el de la máquina, el segundo resto que hay
+// que llevarse es `%LOCALAPPDATA%\Kanpachi`: ahí cayó el log de la ventana
+// desde el 2026-08-09 y, durante una versión, sus ajustes. No lo borraba nadie.
 func TestElDesinstaladorBorraLasPreferenciasDeLaUIInstalada(t *testing.T) {
 	raw, err := os.ReadFile("../../installer/kanpachi.iss")
 	if err != nil {
@@ -193,10 +197,12 @@ func TestElDesinstaladorBorraLasPreferenciasDeLaUIInstalada(t *testing.T) {
 	iss := string(raw)
 
 	for _, obligatorio := range []string{
-		"procedure BorrarPreferenciasDeLaUI",
+		"procedure BorrarRestosDeLaUI",
 		"ProfileListKey",
 		"shared_preferences.json",
 		"DeleteFile(Preferencias)",
+		`AppData\Local\{#AppName}`,
+		"DelTree(DirectorioLocal",
 		"CurUninstallStep = usPostUninstall",
 	} {
 		if !strings.Contains(iss, obligatorio) {

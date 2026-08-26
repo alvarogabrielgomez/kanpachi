@@ -71,8 +71,10 @@ func (s *Session) enforceDeadlinesLocked(ctx context.Context) bool {
 		return false
 	}
 	now := s.deps.Clock.Now()
-	s.forgetOldKicks(now)
-	s.forgetExpiredCredentialsLocked(now)
+	// Soltar lo que ya no dice nada de nadie: fichas vencidas y vetos de
+	// expulsión cumplidos. Sin esto la tabla solo crece, y la dirección de quien
+	// se fue no se puede reusar. Ver [domain.MemberTable.Forget].
+	s.members.Forget(now, timing.KickGrace)
 
 	// El silencio se comprueba ANTES que la ausencia, porque es lo que la arma
 	// en el caso que el flanco del socket no cubre.

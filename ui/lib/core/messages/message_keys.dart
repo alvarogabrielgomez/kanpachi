@@ -72,7 +72,22 @@ enum AlertKind {
   /// El aviso es el ESTADO y no un regaño por una vez: sale igual si el
   /// usuario decidió no tenerla, porque decir que no apaga los bloqueos y no
   /// el termómetro.
-  quarantineOff('quarantine_off');
+  quarantineOff('quarantine_off'),
+
+  /// Hay miembros CONECTADOS en la sala y ninguno abrió su canal con este
+  /// host.
+  ///
+  /// Es la única que no habla de exposición de más: habla de una sala que
+  /// parece viva y no lo está. Solo la ve el host, que es quien tiene el
+  /// oyente.
+  noMemberChannels('no_member_channels'),
+
+  /// A la subred de la sala le quedan pocas direcciones libres.
+  ///
+  /// Avisa antes de agotarse porque al agotarse el error lo ve el invitado que
+  /// se queda fuera, y esta pantalla es la del host, que es quien puede hacer
+  /// algo.
+  roomAlmostFull('room_almost_full');
 
   const AlertKind(this.wire);
 

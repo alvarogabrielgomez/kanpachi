@@ -151,6 +151,8 @@ type Engine struct {
 	// closed evita mandar por un canal ya cerrado, que sería un pánico dentro
 	// del daemon.
 	closed bool
+	// descartados cuenta los eventos que no cupieron. Ver [Engine.emitLocked].
+	descartados uint64
 
 	// procCtx acota la vida del proceso hijo a la vida del ADAPTADOR.
 	//
@@ -409,6 +411,14 @@ func (e *Engine) stopLocked() error {
 //
 // Se descarta cuando el búfer está lleno en vez de bloquear: quien llama tiene
 // el mutex, y bloquearse acá dejaría al adaptador entero parado por un aviso.
+//
+// # Por qué el descarte deja rastro
+//
+// Porque este era el ÚNICO sitio del árbol donde un evento del motor desaparece
+// sin dejar nada: un `select` con `default` pelado, sin contador y sin línea, en
+// un camino que este mismo código llama ráfagas. Con eso, la pregunta «¿el motor
+// emitió el cambio de miembros?» no tenía respuesta local, y el 2026-08-25 se
+// contestó que no mirando un fichero de log que no podía contenerla.
 func (e *Engine) emitLocked(ev domain.EngineEvent) {
 	if e.closed {
 		return
@@ -416,6 +426,9 @@ func (e *Engine) emitLocked(ev domain.EngineEvent) {
 	select {
 	case e.events <- ev:
 	default:
+		e.descartados++
+		e.deps.Log.Warn("evento del motor descartado por búfer lleno",
+			"tipo", ev.Kind.String(), "descartados-en-total", e.descartados)
 	}
 }
 

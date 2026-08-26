@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/atoms/app_button.dart';
@@ -8,6 +10,7 @@ import 'package:kanpachi_ui/core/design_system/molecules/app_list.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/games/presentation/widgets/game_views.dart';
+import 'package:kanpachi_ui/features/seed/presentation/ask_to_host.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
@@ -112,18 +115,16 @@ class _GamePickerScreenState extends State<GamePickerScreen> {
               // Waits before navigating. See `SessionCubit.createRoom`: going
               // to the room screen with no room leaves a window with no way
               // out of it.
-              onTap: () async {
-                final SessionCubit session = context.read<SessionCubit>();
-                // El nombre sale del borrador, que es lo que se escribió en la
-                // portada. Acá había un literal, así que pasar por el selector
-                // de juego renombraba la sala de quien ya la había bautizado.
-                final String draft = session.state.roomNameDraft.trim();
-                if (await session.createRoom(
-                  name: draft.isEmpty ? 'Sala de Kanpachi' : draft,
-                )) {
-                  shell.go(AppScreen.room);
-                }
-              },
+              // **Por `askToHost` y no por `createRoom` a pelo.** Este camino
+              // abría una sala sin pasar por el diálogo de confianza, que es la
+              // única puerta por la que se abre una, y sin preguntar por lo que
+              // desplazaba: con una vuelta armada moría en «ya estás en una
+              // sala» sin nada que pulsar. Quien abre de verdad es el diálogo,
+              // así que acá ya no se navega: la pantalla de sala llega cuando
+              // el daemon dice que hay sala.
+              onTap: () => unawaited(
+                askToHost(context, suggestedName: 'Sala de Kanpachi'),
+              ),
               child: Row(
                 children: <Widget>[
                   Expanded(

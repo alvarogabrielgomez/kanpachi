@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/own_seed.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
+import 'package:kanpachi_ui/features/shell/presentation/ask_trust.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 
 /// El paso previo a abrir una sala, desde donde sea que se pida.
@@ -48,7 +49,13 @@ Future<void> askToHost(
   // Lo que viaja es la SUGERENCIA, no el nombre. El nombre de verdad es el
   // borrador de la sesión, que el diálogo enseña y deja cambiar, y que también
   // se edita en el campo de la portada. Ver [SessionState.roomNameDraft].
-  shell.askTrust(
+  //
+  // Y pasa por la compuerta, que es lo que le faltaba: abrir una sala propia
+  // desplaza una vuelta pendiente igual que entrar a la de otro, y sin
+  // preguntarlo el daemon rechazaba con «ya estás en una sala» sin que nadie
+  // hubiera podido consentir. Ver [askTrustOrDisplace].
+  askTrustOrDisplace(
+    context,
     TrustRequest.hosting(seed: propio.configured, suggestedName: suggestedName),
   );
 }

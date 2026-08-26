@@ -45,22 +45,18 @@ abstract final class AppLog {
 
   /// Abre el archivo y deja el registro listo. Idempotente.
   ///
-  /// `dir` es lo que dijo el daemon con `--log`, y es la carpeta donde él deja
-  /// el suyo. `fallback` es a dónde ir si esa no se puede escribir, y ese caso
-  /// no es raro: el daemon corre como SYSTEM y esta ventana no, y el permiso
-  /// que `C:\ProgramData` hereda a sus subcarpetas deja a los usuarios crear
-  /// carpetas y NO crear archivos. Sin la segunda oportunidad, el producto
-  /// instalado se quedaría sin registro y sin decirlo.
-  static void open({String? dir, String? fallback}) {
+  /// `dir` es lo que dijo el daemon con `--log`, y es la ÚNICA respuesta.
+  ///
+  /// Antes había una cadena de candidatos que acababa en la carpeta de la
+  /// persona, y eso era el ámbito por usuario que ya no existe: todo lo que
+  /// Kanpachi recuerda es de la máquina. El permiso que hacía falta tampoco se
+  /// resuelve desde acá, se resuelve antes: el daemon prepara una hoja dentro
+  /// de su carpeta de logs y le da escritura a los usuarios, porque él corre
+  /// como SYSTEM y puede. Ver `carpetaDelLogDeLaVentana` en el daemon.
+  static void open({String? dir}) {
     if (_file != null) return;
-    for (final String? candidate in <String?>[dir, fallback, _localAppData()]) {
-      if (candidate == null || candidate.isEmpty) continue;
-      final File? opened = _tryOpen(candidate);
-      if (opened != null) {
-        _file = opened;
-        return;
-      }
-    }
+    if (dir == null || dir.isEmpty) return;
+    _file = _tryOpen(dir);
   }
 
   /// Anota una línea, con el mismo formato que el log del daemon.
@@ -88,6 +84,15 @@ abstract final class AppLog {
 
   static void info(String message, [String? detail]) =>
       write('info ', message, detail);
+
+  /// Algo salió mal y la ventana sigue funcionando sin ello.
+  ///
+  /// Existe porque `debugPrint` no imprime en una compilación de release, y lo
+  /// que se estaba tragando así era un ajuste que no se guardaba nunca: el
+  /// producto instalado lo hizo durante meses sin dejar una sola línea. Un fallo
+  /// que solo se ve desde el depurador es un fallo que no se ve.
+  static void warn(String message, [String? detail]) =>
+      write('warn ', message, detail);
 
   /// Anota un error con su traza, que es lo que esto existe para guardar.
   ///
@@ -142,11 +147,5 @@ abstract final class AppLog {
       // Un archivo que no se puede rotar se sigue usando: crecer de más es
       // menos malo que quedarse sin registro.
     }
-  }
-
-  static String? _localAppData() {
-    final String? base = Platform.environment['LOCALAPPDATA'];
-    if (base == null || base.isEmpty) return null;
-    return '$base${Platform.pathSeparator}Kanpachi';
   }
 }

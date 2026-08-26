@@ -288,24 +288,30 @@ func BuildSession(ctx context.Context, p SessionParams) (Built, error) {
 	// daemon: `Attach` existed, was tested, and only the tests called it.
 	out.Control.Attach(out.Session)
 
-	out.Supervisor, err = supervisor.New(supervisor.Deps{
-		Room:    out.Session,
-		Engine:  out.Engine,
-		Control: out.Control,
-		System:  p.Watchers.Events,
-		Log:     log,
-	})
-	if err != nil {
-		return out, err
-	}
-
 	// The mesh watcher asks the ENGINE who is in the room's network and notes
 	// every change. It is the only datum separating two failures that look
 	// identical from outside and are fixed in opposite ways: "the firewall
 	// does not let it through" and "there is no path yet". It goes over the
 	// engine's pipe, so it stays alive while the session holds its lock, which
 	// is exactly when it is needed.
+	//
+	// It is built BEFORE the supervisor because the supervisor subscribes to its
+	// change channel: the watcher is what re-reads the member list once the
+	// engine's route table has actually converged, which no engine event does.
 	vigía := &supervisor.VigiaDeMalla{Motor: out.Engine, Log: log}
+
+	out.Supervisor, err = supervisor.New(supervisor.Deps{
+		Room:    out.Session,
+		Engine:  out.Engine,
+		Control: out.Control,
+		System:  p.Watchers.Events,
+		Log:     log,
+		Malla:   vigía,
+	})
+	if err != nil {
+		return out, err
+	}
+
 	go vigía.Correr(ctx)
 
 	return out, nil

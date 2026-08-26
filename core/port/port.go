@@ -373,6 +373,20 @@ type StateStore interface {
 	SaveRoom([]byte) error
 	ClearRoom() error
 
+	// LoadMembers, SaveMembers y ClearMembers son el libro de credenciales del
+	// host, que es lo que le permite sobrevivir a un reinicio sabiendo a quién
+	// le dio cada dirección.
+	//
+	// Fichero aparte del de la sala y no un campo suyo: aquel lleva identidad y
+	// referencias y jamás política, y una lista de miembros con sus plazos es lo
+	// contrario. Ver [domain.CredentialBook], que dice qué compra y qué no.
+	//
+	// Que falte es lo normal en un invitado, que no emite ninguna credencial, y
+	// en un host antes de que entre nadie.
+	LoadMembers() ([]byte, error)
+	SaveMembers([]byte) error
+	ClearMembers() error
+
 	LoadLast() ([]byte, error)
 	SaveLast([]byte) error
 	ClearLast() error

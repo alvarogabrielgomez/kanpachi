@@ -18,6 +18,7 @@ import 'package:kanpachi_ui/features/home/presentation/widgets/saved_room_notice
 import 'package:kanpachi_ui/features/home/presentation/widgets/last_room_strip.dart';
 import 'package:kanpachi_ui/features/home/presentation/widgets/returning_notice.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/action_failure.dart';
+import 'package:kanpachi_ui/features/session/domain/entities/displacement.dart';
 import 'package:kanpachi_ui/features/games/domain/steam_art.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/game.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/health.dart';
@@ -30,6 +31,7 @@ import 'package:kanpachi_ui/features/seed/presentation/ask_to_host.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_state.dart';
 import 'package:kanpachi_ui/features/session/presentation/widgets/failure_notice.dart';
+import 'package:kanpachi_ui/features/shell/presentation/ask_trust.dart';
 import 'package:kanpachi_ui/features/shell/presentation/cubit/shell_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/failure_navigation.dart';
 import 'package:kanpachi_ui/features/shell/presentation/widgets/screen_frame.dart';
@@ -165,8 +167,14 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) setState(() => _resolvingInvite = false);
     }
     if (!mounted) return;
+    // El desplazamiento sale de la vista previa que se acaba de pedir, y no del
+    // estado: el daemon lo calcula contra ESTE destino, así que volver a la sala
+    // a la que ya se está volviendo no desplaza nada. Con la respuesta general,
+    // pulsar «volver» en la última sala pediría permiso para abandonar
+    // exactamente lo que se está haciendo.
     _pedirConfianza(
       TrustRequest.joining(seed: seed, code: invite, preview: preview),
+      displaces: preview?.displaces,
     );
   }
 
@@ -179,20 +187,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Abre la confirmación que toque, y **esa decisión no se toma acá**.
   ///
-  /// El daemon dice en el estado si entrar desplaza algo. Volviendo a una sala,
-  /// se pregunta primero por lo que se pierde y después por el registro; sin
-  /// nada que desplazar, se va derecho al de confianza como siempre.
-  ///
-  /// Estando DENTRO de una sala este camino no existe: la pantalla es la de la
-  /// sala y no tiene campo de código. Eso está bien y se queda.
-  void _pedirConfianza(TrustRequest next) {
-    final ShellCubit shell = context.read<ShellCubit>();
-    if (context.read<SessionCubit>().state.health.returning != null) {
-      shell.askDisplace(next);
-      return;
-    }
-    shell.askTrust(next);
-  }
+  /// La regla vive en [askTrustOrDisplace], que es por donde pasan también los
+  /// dos caminos de abrir sala propia. Estaba escrita acá dentro, y por eso
+  /// aquellos dos no la tenían.
+  void _pedirConfianza(TrustRequest next, {Displacement? displaces}) =>
+      askTrustOrDisplace(context, next, preview: displaces);
 
   /// Baja al campo lo que se haya escrito en el diálogo.
   ///
@@ -255,7 +254,19 @@ class _HomeScreenState extends State<HomeScreen> {
             if (session.savedRoom != null && !session.hasRoom) ...<Widget>[
               SavedRoomNotice(
                 pending: session.savedRoom!,
-                onReopen: () => context.read<SessionCubit>().resumeSavedRoom(),
+                // Reabrir es entrar, así que pasa por la compuerta: esta
+                // máquina puede tener a la vez su sala guardada y una vuelta
+                // armada a la de otro, y reabrir sin preguntar dejaba la vuelta
+                // encendida y dormida.
+                onReopen: () {
+                  if (askDisplaceFirst(
+                    context,
+                    DisplaceIntent.resumeSavedRoom,
+                  )) {
+                    return;
+                  }
+                  unawaited(context.read<SessionCubit>().resumeSavedRoom());
+                },
                 onDiscard: () =>
                     context.read<SessionCubit>().discardSavedRoom(),
               ),
@@ -266,6 +277,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 progress: session.progress,
                 returning: session.health.returning!,
                 seedDown: session.health.seedDown,
+                verbose: session.verbose,
                 onLeave: () => context.read<SessionCubit>().leave(),
               ),
               const SizedBox(height: AppSpacing.x5l),

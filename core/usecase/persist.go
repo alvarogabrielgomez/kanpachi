@@ -31,6 +31,7 @@ func (s *Session) saveRoomLocked() {
 		CardKey:       s.cardKey,
 		Card:          s.sealedCard,
 		GameID:        s.state.Game.ID,
+		MembersGen:    s.membersGen,
 		SavedAt:       s.deps.Clock.Now(),
 	}.Encode()
 	if err != nil {
@@ -40,6 +41,97 @@ func (s *Session) saveRoomLocked() {
 	if err := s.deps.State.SaveRoom(raw); err != nil {
 		s.deps.Log.Warn("no se pudo guardar la sala en disco", "error", err)
 	}
+}
+
+// saveMembersLocked baja el libro de credenciales a disco.
+//
+// # El orden con [Session.saveRoomLocked] importa, y falla del lado seguro
+//
+// Primero el libro, después la sala con la generación nueva dentro. Si falla el
+// segundo, en disco queda un libro MÁS NUEVO que la generación que la sala
+// recuerda, y eso se acepta: un libro adelantado no es una reversión. Si falla
+// el primero, la sala recuerda una generación que el libro no alcanza y el
+// libro se rechaza entero al reabrir, o sea que el host arranca sin él, que es
+// exactamente lo que pasaba antes de que existiera.
+//
+// Solo el host: un invitado no emite ninguna credencial.
+//
+// Asume el candado tomado.
+func (s *Session) saveMembersLocked() {
+	if !s.state.IsHost() || !s.state.Conn.InRoom() || s.state.Room.InviteID.IsZero() {
+		return
+	}
+	libro := domain.CredentialBook{Gen: s.membersGen + 1, Room: s.state.Room}
+	for _, m := range s.members {
+		if m.Cred == nil {
+			continue
+		}
+		libro.Entries = append(libro.Entries, domain.BookEntry{
+			VirtualIP: m.IP,
+			ID:        m.Cred.ID,
+			Name:      m.Cred.Name,
+			MemberKey: m.Cred.MemberKey,
+			IssuedAt:  m.Cred.IssuedAt,
+			ExpiresAt: m.Cred.ExpiresAt,
+			Revoked:   m.Cred.Revoked,
+		})
+	}
+	raw, err := libro.Encode()
+	if err != nil {
+		s.deps.Log.Warn("no se pudo serializar el libro de credenciales", "error", err)
+		return
+	}
+	if err := s.deps.State.SaveMembers(raw); err != nil {
+		s.deps.Log.Warn("no se pudo guardar el libro de credenciales", "error", err)
+		return
+	}
+	s.membersGen = libro.Gen
+	s.saveRoomLocked()
+}
+
+// loadMembersLocked recupera el libro de la sala que se está reabriendo.
+//
+// Que falte es NORMAL y no es un fallo: nadie entró todavía, o esta máquina
+// nunca hospedó. Que no se pueda leer tampoco detiene nada: la sala se reabre
+// sin libro, que es como se reabría antes, y el aviso queda en el log.
+//
+// Asume el candado tomado.
+func (s *Session) loadMembersLocked(saved domain.HostedRoom) {
+	raw, err := s.deps.State.LoadMembers()
+	if err != nil {
+		s.membersGen = saved.MembersGen
+		return
+	}
+	libro, err := domain.DecodeCredentialBook(raw, saved.MembersGen, saved.Room, s.deps.Clock.Now())
+	if err != nil {
+		// Se DICE, y con el motivo. Una reversión detectada es lo único de este
+		// camino que describe a alguien manipulando ficheros, y confundirla con
+		// «no había libro» dejaría el hallazgo sin registrar.
+		s.deps.Log.Warn("el libro de credenciales guardado no se pudo usar y se ignora", "error", err)
+		s.membersGen = saved.MembersGen
+		return
+	}
+	if s.members == nil {
+		s.members = domain.MemberTable{}
+	}
+	for _, e := range libro.Entries {
+		c := domain.Credential{
+			ID:        e.ID,
+			Name:      e.Name,
+			VirtualIP: e.VirtualIP,
+			Subnet:    saved.Subnet,
+			MemberKey: e.MemberKey,
+			IssuedAt:  e.IssuedAt,
+			ExpiresAt: e.ExpiresAt,
+			Revoked:   e.Revoked,
+		}
+		m := s.members.At(e.VirtualIP)
+		m.Cred = &c
+		m.Name = e.Name
+	}
+	s.membersGen = libro.Gen
+	s.deps.Log.Info("el libro de credenciales volvió del disco",
+		"fichas", len(libro.Entries), "generación", libro.Gen)
 }
 
 // saveLastRoomLocked guarda la última sala de un INVITADO, para poder volver.

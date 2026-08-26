@@ -26,6 +26,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
 )
@@ -267,12 +268,41 @@ func printMembers(w io.Writer, st protocol.RoomView) {
 		if p.Self {
 			marks += " [you]"
 		}
-		latency := "-"
-		if p.RTTMS > 0 {
-			latency = fmt.Sprintf("%d ms", p.RTTMS)
-		}
 		fmt.Fprintf(w, "    %-14s %-16s %-8s %s%s\n",
-			p.Name, p.IP, peerPath(p.Path), latency, marks)
+			p.Name, p.IP, peerPath(p.Path), peerLatency(p), marks)
+	}
+}
+
+// peerLatency is the column that answers "is this member here?".
+//
+// The round trip and the AFK badge share it because they are two answers to
+// that one question, and only one of them can be true at a time. A member the
+// engine cannot see has no latency to show, and a bare dash there reads as "not
+// measured yet", which is what the host said for thirty-three hours while
+// nobody could get in.
+func peerLatency(p protocol.PeerView) string {
+	if p.Away {
+		if p.AwayForMS <= 0 {
+			return "AFK"
+		}
+		return "AFK " + shortSpan(time.Duration(p.AwayForMS)*time.Millisecond)
+	}
+	if p.RTTMS > 0 {
+		return fmt.Sprintf("%d ms", p.RTTMS)
+	}
+	return "-"
+}
+
+// shortSpan writes a duration the way somebody says it out loud: one unit, the
+// largest that is not zero. "3m" and not "3m0s".
+func shortSpan(d time.Duration) string {
+	switch {
+	case d >= time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	case d >= time.Minute:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	default:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
 	}
 }
 
@@ -614,6 +644,10 @@ func alertName(s string) string {
 		return "game not restored"
 	case "quarantine_off":
 		return "quarantine off"
+	case "no_member_channels":
+		return "nobody can talk to the room"
+	case "room_almost_full":
+		return "the room is nearly out of addresses"
 	default:
 		return s
 	}

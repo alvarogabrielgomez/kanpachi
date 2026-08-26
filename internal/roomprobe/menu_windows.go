@@ -79,7 +79,10 @@ func menuSinSala(ctx context.Context, e entorno) error {
 		return conAviso(e, volverALaUltima(ctx, e))
 	case reanudar:
 		fmt.Println("Reabriendo la sala anterior...")
-		_, err := e.s.ResumeRoom(ctx)
+		// `replace` en cierto porque elegir esta entrada del menú ES el
+		// consentimiento: acá no hay otra cara donde preguntar, igual que el
+		// `--yes` de la terminal.
+		_, err := e.s.ResumeRoom(ctx, true)
 		return conAviso(e, err)
 	case descartar:
 		return conAviso(e, e.s.DiscardSavedRoom(ctx))

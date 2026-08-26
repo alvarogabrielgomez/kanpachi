@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/accentiostudios/kanpachi/core/port"
 	"github.com/accentiostudios/kanpachi/internal/layout"
 )
 
@@ -38,6 +39,35 @@ type logConsola struct{}
 func (logConsola) Info(msg string, kv ...any)  { fmt.Println("info ", msg, kv) }
 func (logConsola) Warn(msg string, kv ...any)  { fmt.Println("aviso", msg, kv) }
 func (logConsola) Error(msg string, kv ...any) { fmt.Println("error", msg, kv) }
+
+// logDoble escribe en los dos sitios.
+//
+// # Por qué hace falta, y solo en contenedor
+//
+// [logArchivo] existe porque un servicio de Windows NO TIENE salida estándar.
+// Un contenedor es el caso opuesto y simétrico: **su salida estándar es el
+// único log que alguien lee**. `docker logs` y `kubectl logs` leen stdout y
+// nada más, y ahí es donde miran la agregación y quien depura.
+//
+// Medido el 2026-08-25: un host en Kubernetes pasó treinta y tres horas sin
+// poder recibir a nadie, escribiendo cumplidamente en un fichero dentro de su
+// volumen, y `kubectl logs` no mostró una sola línea en toda la ventana. Para
+// leer el diagnóstico había que entrar al pod con `exec`.
+//
+// Los dos y no solo stdout: el fichero sobrevive al reinicio del contenedor y
+// stdout no.
+type logDoble struct{ a, b port.Logger }
+
+func (l logDoble) Info(msg string, kv ...any)  { l.a.Info(msg, kv...); l.b.Info(msg, kv...) }
+func (l logDoble) Warn(msg string, kv ...any)  { l.a.Warn(msg, kv...); l.b.Warn(msg, kv...) }
+func (l logDoble) Error(msg string, kv ...any) { l.a.Error(msg, kv...); l.b.Error(msg, kv...) }
+
+// enContenedor lee la bandera que pone el entrypoint de la imagen.
+//
+// Explícita por variable de entorno, y no adivinada por `/.dockerenv` ni por
+// cgroups, por lo mismo que en el cableado: de esta bandera cuelga que Kanpachi
+// reescriba destinos, así que tiene que poder leerse en un diff.
+func enContenedor() bool { return os.Getenv("KANPACHI_CONTAINER") == "1" }
 
 // logArchivo escribe en `ProgramData\Kanpachi\logs\kanpachi.log`.
 //
@@ -232,4 +262,25 @@ func (l *logArchivo) Close() error {
 	err := l.f.Close()
 	l.f = nil
 	return err
+}
+
+// carpetaDelLogDeLaVentana dice dónde deja la interfaz SU log.
+//
+// # Por qué no es la misma que la del daemon
+//
+// Porque la interfaz corre sin elevar y el directorio de datos deja a los
+// usuarios en solo lectura, así que hace falta UNA hoja donde sí pueda escribir.
+// Que sea una hoja y no la carpeta de logs entera es lo que impide que cualquier
+// usuario de la máquina meta líneas dentro del registro que deja el daemon, que
+// es el que se pega en un reporte de fallo.
+//
+// # Y por qué en portable sí es la misma
+//
+// Porque ahí no hay ACL que estorbe y la promesa de una copia portable es que lo
+// que deja está donde la abriste: los tres logs juntos, al lado del ejecutable.
+func carpetaDelLogDeLaVentana(carpetaLog string, portable bool) string {
+	if portable {
+		return carpetaLog
+	}
+	return filepath.Join(carpetaLog, "ui")
 }

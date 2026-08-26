@@ -33,7 +33,7 @@ func TestReabrirRepublicaLaTarjeta(t *testing.T) {
 	b.registry.publicado = nil
 	antes := b.registry.publicaciones
 
-	if _, err := b.session.ResumeRoom(ctx()); err != nil {
+	if _, err := b.session.ResumeRoom(ctx(), false); err != nil {
 		t.Fatal(err)
 	}
 	if b.registry.publicaciones != antes+1 {
@@ -106,7 +106,7 @@ func TestSiLaRepublicaciónFallaLaSalaSeReabreIgual(t *testing.T) {
 	b = reinicia(t, b)
 	b.registry.err = errors.New("el registro no está")
 
-	st, err := b.session.ResumeRoom(ctx())
+	st, err := b.session.ResumeRoom(ctx(), false)
 	if err != nil {
 		t.Fatalf("la sala no se reabrió por culpa de la tarjeta: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestUnaSalaGuardadaSinTarjetaNoLlamaAlRegistro(t *testing.T) {
 	b.session.saved = sinTarjeta
 
 	antes := b.registry.publicaciones
-	if _, err := b.session.ResumeRoom(ctx()); err != nil {
+	if _, err := b.session.ResumeRoom(ctx(), false); err != nil {
 		t.Fatal(err)
 	}
 	if b.registry.publicaciones != antes {
