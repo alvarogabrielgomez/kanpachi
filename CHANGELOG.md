@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.7.0] - 2026-08-26
+
 ### Fixed
 
 - Stop the daemon eating tens of megabytes on every room it opens and closes. Each read of the Windows firewall store left its enumerator behind, and with it a snapshot of every rule on the machine: six cycles of opening a room and switching games took the process from 80 MB to 426 MB, where it stayed, because that memory belongs to COM and nothing in Go can reclaim it. A machine at rest leaked it too, twice a minute, for as long as the daemon ran ([af5584b](https://github.com/alvarogabrielgomez/kanpachi/commit/af5584b))
@@ -468,6 +470,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.7.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.0
 [0.6.8]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.8
 [0.6.7]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.7
 [0.6.6]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.6
