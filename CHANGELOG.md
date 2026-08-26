@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.7.3] - 2026-08-26
+
 ### Changed
 
 - Repaint the status dots so the three states are three states. The green is brighter in the dark window, the amber leans to red and lights up, and the grey of an off dot drops away from both instead of sitting between them. What it fixes is not taste: simulating deuteranopia over the old dark palette, the green and the grey were 6.8 apart in Lab, which is the same dot, so a member who was connected and one who was away painted the same thing. They are 17 apart now, and a test simulates both kinds of red-green blindness on every build ([f43605c](https://github.com/alvarogabrielgomez/kanpachi/commit/f43605c))
@@ -500,6 +502,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.7.3]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.3
 [0.7.2]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.2
 [0.7.1]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.1
 [0.7.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.0
