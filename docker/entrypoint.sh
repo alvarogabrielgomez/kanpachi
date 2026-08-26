@@ -164,15 +164,24 @@ ask() { kanpachi --json "$@" 2>/dev/null || true; }
 
 error_code() { printf '%s' "$1" | jq -r '.error.code // ""' 2>/dev/null || true; }
 
-# explicar traduce el código del daemon a lo que hay que tocar en el compose.
+# explain turns the daemon's error code into what to change in the compose file.
 #
 # It exists because the first version of this script threw the document away and
 # said "ask doctor", and doctor answers "nothing stops a room from opening" when
 # what is missing is a password. Sending somebody to a healthy report is worse
 # than saying nothing.
-explicar() {
+#
+# **Every name in here is ASCII, and that is not a style rule.** This runs under
+# dash, where a variable name outside [A-Za-z_][A-Za-z0-9_]* is not an
+# assignment: dash reads `qué="$2"` as a COMMAND, says "not found", and exits
+# 127. With `set -e` that kills the container. Measured on 2026-08-26 in
+# Kubernetes: seven restarts, and the line the operator got was
+# `entrypoint: 175: qué=the saved room could not be reopened: not found`,
+# which names neither the room nor the reason. Every error path in this script
+# ended here, so the explanations below had never once been printed.
+explain() {
 	documento="$1"
-	qué="$2"
+	what="$2"
 	case "$(error_code "$documento")" in
 	seed_password)
 		die "$KANPACHI_SEED asks for a password to host on it, and none was given.
@@ -200,7 +209,7 @@ explicar() {
       docker compose exec kanpachi kanpachi games"
 		;;
 	*)
-		die "$qué: $documento"
+		die "$what: $documento"
 		;;
 	esac
 }
@@ -258,7 +267,14 @@ fi
 # Asking for resume sidesteps the question entirely. The session lock serialises
 # it behind the reopen already in flight, so there is nothing to poll and no
 # clock to get wrong. busy means that reopen won the race, which is success.
-if out=$(kanpachi --timeout "$SLOW" --json resume 2>/dev/null); then
+#
+# `--yes` for the same reason `host` carries it: reopening goes through the gate
+# that asks before entering a room costs something else, and with no terminal
+# that gate REFUSES rather than assume. What is in the way here is the room the
+# daemon just reopened by itself, so without this the container refused to
+# proceed over its own success. It cannot displace anything either: the daemon
+# answers busy before it looks at `replace`.
+if out=$(kanpachi --timeout "$SLOW" --json resume --yes 2>/dev/null); then
 	say "  room: reopened with the code it already had"
 else
 	case "$(error_code "$out")" in
@@ -269,10 +285,10 @@ else
 		say "  room: none was saved, opening one"
 		abierta=$(kanpachi --timeout "$SLOW" --json host "$room_name" \
 			--yes --quarantine "$quarantine" 2>/dev/null) \
-			|| explicar "$abierta" "the room could not be opened"
+			|| explain "$abierta" "the room could not be opened"
 		;;
 	*)
-		explicar "$out" "the saved room could not be reopened"
+		explain "$out" "the saved room could not be reopened"
 		;;
 	esac
 fi
@@ -293,7 +309,7 @@ fi
 # from the members present, and with nobody there the desired set is empty.
 if [ -n "$game_id" ]; then
 	activada=$(kanpachi --json game "$game_id" 2>/dev/null) \
-		|| explicar "$activada" "the game could not be activated"
+		|| explain "$activada" "the game could not be activated"
 	say "  game: $game_id"
 fi
 

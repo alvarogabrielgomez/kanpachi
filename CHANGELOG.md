@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Fixed
+
+- Let the container start a room again. Two defects sat on top of each other. The startup script asked the daemon to reopen the saved room without saying `--yes`, and reopening crosses the gate that asks before entering a room costs something else, which REFUSES with no terminal to answer in: what was in the way was the room the daemon had already reopened by itself, so the container refused over its own success. Then the code that explains such a refusal died before printing it, because a variable in it was named with an accent and `dash` reads that as a command, not an assignment. Every error path in that script ended there, so none of its explanations had ever been printed. Measured on a real cluster: seven restarts, and the only line the operator got named neither the room nor the reason (PENDING)
+
 ### Changed
 
 - Cut the release notes down to what somebody deciding which file to download needs. The body repeated the whole product's story on every publication, so the two lines that change between versions sat under a page and a half that never does ([686b4fe](https://github.com/alvarogabrielgomez/kanpachi/commit/686b4fe))
