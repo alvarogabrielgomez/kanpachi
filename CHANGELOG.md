@@ -10,7 +10,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Fixed
 
-- Reach a game listening on loopback inside a container, which is the place the last release aimed at and missed. Enabling the kernel's loopback routing was done by writing to `/proc/sys`, and in a container `/proc/sys` is read-only: the daemon said "no se pudo desviar hacia donde escucha el juego ... read-only file system" and the room stayed unreachable. The same knob is reachable over netlink, which asks only for the capability the daemon already holds to create its adapter. Measured on a dummy interface: the value goes from 0 to 1 with nothing written to `/proc` (PENDING)
+- Reach a game listening on loopback inside a container, which is the place the last release aimed at and missed. Enabling the kernel's loopback routing was done by writing to `/proc/sys`, and in a container `/proc/sys` is read-only: the daemon said "no se pudo desviar hacia donde escucha el juego ... read-only file system" and the room stayed unreachable. The same knob is reachable over netlink, which asks only for the capability the daemon already holds to create its adapter. Measured on a dummy interface: the value goes from 0 to 1 with nothing written to `/proc` ([35841ea](https://github.com/alvarogabrielgomez/kanpachi/commit/35841ea))
 
 ## [0.7.3] - 2026-08-26
 
