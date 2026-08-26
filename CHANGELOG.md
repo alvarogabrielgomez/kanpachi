@@ -10,7 +10,7 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Fixed
 
-- Wait for the daemon to ANSWER before the container asks it anything. The startup script looked for the socket FILE, and that file lives on a volume that outlives the container, so every restart found yesterday's socket with nobody behind it, ran the first command 40 ms into a boot that had not bound anything yet, and died with "connection refused". The dead file stayed for the next start to trip over: 27 restarts in two hours on a real cluster, with the game server beside it running fine (PENDING)
+- Wait for the daemon to ANSWER before the container asks it anything. The startup script looked for the socket FILE, and that file lives on a volume that outlives the container, so every restart found yesterday's socket with nobody behind it, ran the first command 40 ms into a boot that had not bound anything yet, and died with "connection refused". The dead file stayed for the next start to trip over: 27 restarts in two hours on a real cluster, with the game server beside it running fine ([51bfd8c](https://github.com/alvarogabrielgomez/kanpachi/commit/51bfd8c))
 
 ### Changed
 
