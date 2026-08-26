@@ -1207,6 +1207,7 @@ type mockState struct {
 	mu sync.Mutex
 
 	room       []byte
+	members    []byte
 	last       []byte
 	seed       []byte
 	seedToken  []byte
@@ -1284,6 +1285,32 @@ func (e *mockState) ClearRoom() error {
 	defer e.mu.Unlock()
 	e.room = nil
 	e.deleted++
+	return nil
+}
+
+func (e *mockState) LoadMembers() ([]byte, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.members == nil {
+		return nil, errors.New("no hay libro guardado")
+	}
+	return append([]byte(nil), e.members...), nil
+}
+
+func (e *mockState) SaveMembers(raw []byte) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.errSave != nil {
+		return e.errSave
+	}
+	e.members = append([]byte(nil), raw...)
+	return nil
+}
+
+func (e *mockState) ClearMembers() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.members = nil
 	return nil
 }
 

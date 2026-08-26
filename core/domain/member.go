@@ -154,10 +154,15 @@ func (m *Member) SeatFreesIn(now time.Time) time.Duration {
 //
 // Tres filtros del libro y uno de la malla. Vencida no autoriza, revocada no
 // autoriza, expulsado no autoriza. Y quien está en la tabla del motor cuenta
-// aunque no haya ficha, porque un host que reinició el daemon perdió el libro
-// con la gente todavía dentro de la red: sin esa rama, ese host no le abriría
-// un puerto a nadie hasta que cada uno volviera a entrar. Esa rama se va cuando
-// el libro sepa sobrevivir a un reinicio.
+// aunque no haya ficha.
+//
+// Esa última rama SIGUE haciendo falta con el libro ya persistido, y esto se
+// pensó al revés primero. El libro puede faltar, y sus dos casos son
+// ordinarios: la primera vez que se arranca una versión que lo escribe, y una
+// carga rechazada por reversión detectada o por fichero ilegible. Sin la rama de
+// la malla, ese host reabre y echa en silencio a todo el que estaba dentro,
+// hasta que cada uno vuelva a entrar. Es evidencia más débil que una ficha, y la
+// alternativa a usarla es una expulsión masiva que nadie pidió.
 //
 // Quien no se fue formalmente NO salió de la sala: está desconectado, y su
 // silla sigue siendo suya hasta que su ficha venza. El latido deja de renovar a

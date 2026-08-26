@@ -335,6 +335,13 @@ type Session struct {
 	// memoria: ver el precio en [Session.credentialFor].
 	members domain.MemberTable
 
+	// membersGen es la generación del libro de credenciales que hay en disco.
+	//
+	// Sube en cada escritura y jamás baja. Es lo único que detecta una copia
+	// RESTAURADA del libro, que el sello no puede: una copia más vieja de esta
+	// misma máquina autentica perfecto. Ver [domain.CredentialBook].
+	membersGen uint64
+
 	// verificables son los juegos que SÍ se pueden marcar como verificados, con
 	// la fecha en que se salió de la sala donde estuvieron activos.
 	//

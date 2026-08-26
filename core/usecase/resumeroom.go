@@ -47,6 +47,11 @@ func (s *Session) DiscardSavedRoom(_ context.Context) error {
 	if err := s.deps.State.ClearRoom(); err != nil {
 		return fmt.Errorf("borrando la sala del arranque anterior: %w", err)
 	}
+	// Y su libro, que sin sala no autoriza nada y solo conserva quién jugó.
+	if err := s.deps.State.ClearMembers(); err != nil {
+		s.deps.Log.Warn("no se pudo borrar el libro de la sala descartada", "error", err)
+	}
+	s.membersGen = 0
 	s.saved = domain.HostedRoom{}
 	s.hasSaved = false
 	s.deps.Log.Info("la sala del arranque anterior se descartó")
@@ -195,6 +200,10 @@ func (s *Session) ResumeRoom(ctx context.Context, replace bool) (domain.RoomStat
 
 	s.republishCardLocked(ctx)
 
+	// El libro vuelve ANTES de guardar, para que la generación que se escribe
+	// sea la que se acaba de leer y no un cero que rechazaría el libro en el
+	// arranque siguiente.
+	s.loadMembersLocked(saved)
 	s.saveRoomLocked()
 	s.saved = domain.HostedRoom{}
 	s.hasSaved = false

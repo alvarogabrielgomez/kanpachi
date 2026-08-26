@@ -152,6 +152,12 @@ func (s *Session) KickMember(ctx context.Context, ip netip.Addr) (domain.RoomSta
 		return s.snapshot(), fmt.Errorf("%w: %w", ErrKickPartial, errors.Join(fallos...))
 	}
 
+	// El libro baja a disco DESPUÉS de las dos capas, porque lo que hay que
+	// conservar es el resultado: la ficha revocada con su vencimiento recortado,
+	// que es lo que retiene la dirección del expulsado. Guardarlo antes dejaría
+	// en disco una ficha viva de alguien a quien el host acaba de echar.
+	s.saveMembersLocked()
+
 	s.deps.Log.Info("miembro expulsado", "nombre", peer.Name.String(), "ip", ip.String())
 	return s.snapshot(), nil
 }

@@ -82,7 +82,7 @@ somebody unzipped it.
 | `/usr/share/kanpachi/builtin.json` | the game catalogue shipped with the package |
 | `/usr/share/doc/kanpachi/` | copyright, third-party notices, and the two GNU texts |
 | `/etc/kanpachi/quarantine.nft` | the base quarantine, written by the daemon |
-| `/var/lib/kanpachi/` | state: identity key, API token, the room, the name you are seen by. Mode `0700` |
+| `/var/lib/kanpachi/` | state: identity key, API token, the room, who is in it, the name you are seen by. Mode `0700` |
 | `/run/kanpachi/api.sock` | the control socket, in a `0700` root-owned directory |
 
 The catalogue in `/usr/share` is the package's; a user's own lives separately in

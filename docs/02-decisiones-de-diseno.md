@@ -1908,7 +1908,7 @@ El invitado era `.3` y no estaba en el conjunto. Y el paquete sí llegaba: duran
 
 **La decisión: la compuerta lee el libro.** Vencida no autoriza, revocada no autoriza, expulsado no autoriza, y nada más acota la lista. El plazo de seguridad ya existía: el latido deja de renovar a quien no está, así que la ficha de un ausente muere a las veinticuatro horas de su última renovación y su silla se libera sola.
 
-**La lista es la UNIÓN del libro y la malla, y la malla no sobra todavía.** El libro vive en memoria, y un host que reinicia el daemon y retoma la sala se queda sin él con la gente aún dentro de la red. Con el libro como única fuente, ese host no le abriría un puerto a nadie hasta que cada uno volviera a entrar, que es cambiar treinta y tres horas de sala muerta por un reinicio que expulsa a todo el mundo en silencio. La malla se queda hasta que el libro sepa sobrevivir a un reinicio.
+**La lista es la UNIÓN del libro y la malla, y la malla no sobra.** Se pensó al revés primero: que persistir el libro dejaría la rama de la malla sin trabajo. No lo hace. El libro puede faltar, y sus dos casos son ordinarios, la primera vez que se arranca una versión que lo escribe y una carga rechazada por reversión detectada o por fichero ilegible. Sin la rama de la malla, ese host reabre y echa en silencio a todo el que estaba dentro. Estar en la tabla del motor es evidencia más débil que tener ficha, y la alternativa a usarla es una expulsión masiva que nadie pidió.
 
 **Y los puertos del juego se atan al mismo sitio.** Abrirlos hacia un miembro desconectado no cuesta nada, porque del otro lado no hay quien conecte. Cerrárselos a quien sí está sí cuesta, y es lo que pasaba el 2026-08-13.
 

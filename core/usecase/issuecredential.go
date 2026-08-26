@@ -107,6 +107,11 @@ func (s *Session) renewCredentialsLocked(ctx context.Context) {
 	if renovadas+ausentes+fallidas == 0 {
 		return
 	}
+	if renovadas > 0 {
+		// Los vencimientos se movieron, y el libro los lleva. Sin esto, un host
+		// que reinicia tras una tarde entera cargaría plazos de la primera hora.
+		s.saveMembersLocked()
+	}
 	s.deps.Log.Info("credenciales renovadas",
 		"renovadas", renovadas, "ausentes", ausentes, "fallidas", fallidas,
 		"la primera vence", primero, "siguiente ronda en", timing.RenewInterval)
@@ -161,6 +166,7 @@ func (s *Session) IssueCredentialFor(ctx context.Context, req domain.CredentialR
 			m := s.members.At(ip)
 			m.Cred = &prev
 			m.Name = prev.Name
+			s.saveMembersLocked()
 			s.deps.Log.Info("credencial devuelta al que vuelve",
 				"nombre", req.Name.String(), "ip", ip.String())
 			if err := s.applyPolicy(ctx); err != nil {
@@ -211,6 +217,7 @@ func (s *Session) IssueCredentialFor(ctx context.Context, req domain.CredentialR
 	m.Name = cred.Name
 
 	s.deps.Log.Info("credencial emitida", "nombre", req.Name.String(), "ip", ip.String())
+	s.saveMembersLocked()
 
 	// Pre-autorizamos el canal de control abriéndolo para esta IP de inmediato, en
 	// lugar de esperar a que el motor reporte a la persona como miembro activo.

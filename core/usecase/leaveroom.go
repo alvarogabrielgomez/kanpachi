@@ -225,6 +225,14 @@ func (s *Session) leaveLocked(
 		if err := s.deps.State.ClearRoom(); err != nil {
 			s.deps.Log.Warn("no se pudo borrar la sala guardada al salir", "error", err)
 		}
+		// El libro se va con la sala, por lo mismo que se vacía la tabla en
+		// memoria: sus direcciones son válidas y no son de nadie de la sala
+		// siguiente. Con él se va el registro durable de quién jugó acá, que es
+		// lo único de este producto que enlaza a una persona con una sala.
+		if err := s.deps.State.ClearMembers(); err != nil {
+			s.deps.Log.Warn("no se pudo borrar el libro de credenciales al cerrar", "error", err)
+		}
+		s.membersGen = 0
 		s.closeRoomInRegistryLocked(ctx)
 	}
 

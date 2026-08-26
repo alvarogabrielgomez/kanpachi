@@ -508,16 +508,29 @@ type CatalogStore interface {
 //   hosted-room.json  SOLO EN EL HOST. Dice que hay una sala que reponer, y
 //                     nada más: apagarse limpio lo conserva, y lo único que lo
 //                     borra es cerrar la sala
+//   members.json      SOLO EN EL HOST. El libro de credenciales, sellado. Va
+//                     aparte porque el de arriba lleva identidad y referencias
+//                     y jamás política, y una lista de miembros con sus plazos
+//                     es lo contrario
 //   last-room.json    SOLO EN INVITADOS. Código, seed, nombre y nick. Jamás la
 //                     credencial ni la identidad de la red real
 type StateStore interface {
     LoadRoom() ([]byte, error)
     SaveRoom([]byte) error
     ClearRoom() error
+    LoadMembers() ([]byte, error)
+    SaveMembers([]byte) error
+    ClearMembers() error
     LoadLast() ([]byte, error)
     SaveLast([]byte) error
     ClearLast() error
 }
+
+**`members.json` compra dos cosas y hay que decir cuál no.** No devuelve a nadie a la sala: el motor es un hijo que muere con el daemon y su lista de credenciales muere con él, así que renovar un id anterior al reinicio es error duro por contrato. Compra la dirección estable al volver, y poder expulsar a quien ya estaba dentro, que estaba escrito como precio asumido y ahora se paga.
+
+**No guarda el token**, que es el único secreto de la ficha y además es inútil tras reiniciar. Sí guarda la llave de miembro, que es pública pero estable y enlazable, así que deja en disco un registro durable de quién jugó en esta sala. Se acepta porque vive en el directorio de datos con su ACL y muere con la sala: cerrarla lo borra.
+
+**Contra la reversión hay un contador, no una firma.** El sello es AES-256-GCM: ya cifra y ya autentica, y una firma encima no compraría nada porque quien pueda falsificarla ya puede leer `identity.key`. Lo que el sello no cubre es que una copia más vieja de la misma máquina abre perfecto, y restaurar un libro anterior a una expulsión le devolvería al expulsado su dirección y su ranura pre-autorizada en el oyente que corre como SYSTEM. El contador sube en cada escritura y `hosted-room.json` guarda el último, así que un libro atrasado se rechaza. Quien pueda escribir los dos ficheros ya tiene la identidad de red de la sala en el segundo.
 
 // SystemEvents son las cosas que le pasan a la MÁQUINA y que invalidan lo que
 // Kanpachi dejó puesto. Tres canales y no un enum, a diferencia de
@@ -2703,6 +2716,7 @@ Todo lo que sigue está leído del código que se compila. La única parte que h
 | Clave de la tarjeta | AES-256 aleatoria, una por sala | En el fragmento del enlace, que el navegador no transmite al servidor | Vive con el código |
 | Secreto de encuentro | 32 bytes derivados por Argon2id del invite ID, salt `kanpachi/v1/secret` | En ningún sitio. Se deriva en las dos puntas | Mientras el código valga |
 | Secreto de la red REAL | 32 bytes aleatorios que genera el host, y que no derivan de ningún string que alguien pueda escribir | `hosted-room.json`, sellado | Mientras la sala viva |
+| Llave de miembro de cada invitado | Ed25519 PÚBLICA, por sala. No abre nada: hace que al pasar por la puerta te reconozcan | `members.json`, sellado. **El token de la credencial NO se guarda** | Mientras la sala viva. Cerrarla borra el fichero |
 | Par del canal de control | X25519 efímero de `nacl/box` | Solo en memoria | La sesión |
 | `signing` del seed | 32 bytes que ACUÑAN tokens. Vale tanto como el password y no caduca | `auth.json` del seed, 0600 | Hasta que se cambie el password |
 | Verificador del password | Argon2id sobre la prueba que manda el cliente, con su sal | `auth.json` | Ídem |
