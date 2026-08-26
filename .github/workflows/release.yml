@@ -1,36 +1,36 @@
-# Publica el instalador de Windows.
+# Publishes the Windows installer.
 #
-# Un tag `v*` produce `kanpachi-setup.exe` y sus sumas. El nombre del fichero NO
-# lleva la versión, y eso es deliberado: la página de descarga apunta a
-# `releases/latest/download/kanpachi-setup.exe`, que es una URL permanente que
-# GitHub redirige a la última publicación. Con el nombre versionado, cada
-# release obligaría a editar la página, y la página que hay que editar a mano es
-# la que se queda desactualizada. La versión viaja dentro del ejecutable, en su
-# VersionInfo, y en el título de la publicación.
+# A `v*` tag produces `kanpachi-setup.exe` and its checksums. The file name does
+# NOT carry the version, and that is deliberate: the download page points at
+# `releases/latest/download/kanpachi-setup.exe`, a permanent URL that GitHub
+# redirects to the newest publication. With a versioned name, every release
+# would force an edit of that page, and the page somebody has to edit by hand is
+# the one that goes stale. The version travels inside the executable, in its
+# VersionInfo, and in the publication's title.
 #
-# **El trabajo lo hacen los scripts, no este fichero.** Acá quedan los eventos,
-# los checkouts, los toolchains, la versión derivada del evento y la
-# publicación. Lo que compila, prueba y empaqueta vive en `scripts/`, así que
-# una persona puede reproducir una publicación entera sin leer este YAML.
+# **The scripts do the work, not this file.** What stays here is the events, the
+# checkouts, the toolchains, the version derived from the event, and the
+# publishing. What builds, tests and packages lives in `scripts/`, so a person
+# can reproduce a whole publication without reading this YAML.
 #
-# Sin firmar todavía. Windows va a enseñar el aviso de SmartScreen, y eso está
-# dicho en el cuerpo de la publicación en vez de disimulado. La firma con
-# SignPath entra cuando la solicitud esté aprobada: ver `docs/07-futuro.md`.
+# Not signed yet. Windows shows the SmartScreen warning, and the publication's
+# body says so instead of hiding it. Signing with SignPath arrives once the
+# request is approved: see `docs/07-futuro.md`.
 name: Release
 
-# **Los dos disparadores automáticos son necesarios, y no es cinturón y
-# tirantes.** Un tag empujado con `git push --tags` llega por `push`. Un release
-# creado desde la web de GitHub, que crea el tag por dentro, NO produjo ninguna
-# corrida de `push` acá: el tag `v0.1.0` del 2026-08-06 existió, el fichero ya
-# estaba en su commit con `push: tags`, y la API de Actions no registró nada.
-# Ese camino entra por `release: published`.
+# **Both automatic triggers are needed, and this is not belt and braces.** A
+# tag pushed with `git push --tags` arrives through `push`. A release created
+# from GitHub's web UI, which creates the tag internally, produced NO `push` run
+# here: the `v0.1.0` tag from 2026-08-06 existed, the file was already in its
+# commit with `push: tags`, and the Actions API recorded nothing. That path
+# comes in through `release: published`.
 #
-# OJO con la consecuencia: para un release de la web, el fichero que se ejecuta
-# es el del COMMIT QUE APUNTA EL TAG. Etiquetar un commit anterior a este
-# párrafo vuelve a no disparar nada, y no hay arreglo posible en `main` para
-# eso: el tag tiene que salir de un commit que ya traiga este `on:`. Lo mismo
-# vale para los scripts que llama: el commit del tag trae su YAML y sus scripts,
-# consistentes entre sí.
+# Mind the consequence: for a release made from the web, the file that runs is
+# the one in the COMMIT THE TAG POINTS AT. Tagging a commit older than this
+# paragraph triggers nothing again, and there is no fix for that on `main`: the
+# tag has to come from a commit that already carries this `on:`. The same goes
+# for the scripts it calls, because the tag's commit brings its YAML and its
+# scripts, consistent with each other.
 on:
   push:
     tags: ["v*"]
@@ -38,13 +38,13 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
-      motor:
-        description: "Tag del motor a empaquetar, saltándose el pin. Vacío usa engine.pin"
+      engine:
+        description: "Engine tag to package, skipping the pin. Empty uses engine.pin"
         default: ""
 
-# Empujar el tag Y crear el release sobre ese mismo tag son dos eventos para una
-# sola publicación. Sin esto se compilaría dos veces lo mismo durante veinte
-# minutos cada vez; con esto, la segunda cancela a la primera y publica.
+# Pushing the tag AND creating the release on that same tag are two events for
+# one publication. Without this the same thing would build twice, twenty minutes
+# each time; with it, the second cancels the first and publishes.
 concurrency:
   group: release-${{ github.event.release.tag_name || github.ref_name }}
   cancel-in-progress: true
@@ -53,37 +53,40 @@ permissions:
   contents: write
 
 jobs:
-  instalador:
+  installer:
     name: kanpachi-setup.exe
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out
+        uses: actions/checkout@v4
 
-      # **El motor vive en otro repositorio, se publica POR TAG, y acá se
-      # DESCARGA.** Hasta el 2026-08-19 se compilaba en este job, y eso tenía
-      # dos defectos que la descarga mata de una vez: el binario que pasaba la
-      # aduana del motor (clippy, tests, el barrido de listeners) no era el que
-      # viajaba —era otra compilación del mismo ref—, y el ref era `main`, un
-      # puntero móvil que no reconstruye nada. Hoy el binario publicado ES el
-      # que pasó la aduana, el pin es contenido (tag + SHA256 en `engine.pin`),
-      # y este job tarda segundos de descarga en vez de doce minutos de Rust.
+      # **The engine lives in another repository, publishes BY TAG, and is
+      # DOWNLOADED here.** Until 2026-08-19 this job built it, and that had two
+      # defects the download kills at once: the binary that passed the engine's
+      # customs (clippy, tests, the listener sweep) was not the one that
+      # shipped, because it was another build of the same ref, and that ref was
+      # `main`, a moving pointer that rebuilds nothing. Today the published
+      # binary IS the one that passed customs, the pin is content (tag + SHA256
+      # in `engine.pin`), and this job spends seconds downloading instead of
+      # twelve minutes of Rust.
       #
-      # La espera de 25 minutos cubre la carrera real: taguear el motor y
-      # taguear Kanpachi seguido, con la aduana del motor todavía publicando.
-      # Con tope, porque un motor que nunca va a publicar (aduana roja) tiene
-      # que dejar este release ROJO con nombre y apellido, no colgado.
+      # The 25-minute wait covers the real race: tagging the engine and tagging
+      # Kanpachi one after the other, with the engine's customs still
+      # publishing. Bounded, because an engine that is never going to publish
+      # has to leave this release RED and named, not hanging.
       #
-      # `inputs.motor` (solo workflow_dispatch) salta el pin y nombra otro tag:
-      # ahí no hay hash que exigir y se dice a gritos en el log. El binario se
-      # delata igual, porque lleva su build id sellado dentro.
-      - name: El motor, del release de su tag
+      # `inputs.engine` (workflow_dispatch only) skips the pin and names another
+      # tag. There is no hash to demand there and the log shouts about it, and
+      # the binary gives itself away anyway: it carries its build id sealed
+      # inside.
+      - name: Download the pinned engine
         shell: pwsh
         run: |
           $pin = @{}
           Get-Content engine.pin | Where-Object { $_ -match '^\S' -and $_ -notmatch '^#' } | ForEach-Object {
             $parts = $_ -split '\s+', 2; $pin[$parts[0]] = $parts[1].Trim()
           }
-          $tag = if ('${{ inputs.motor }}') { '${{ inputs.motor }}' } else { $pin['tag'] }
+          $tag = if ('${{ inputs.engine }}') { '${{ inputs.engine }}' } else { $pin['tag'] }
           $url = "https://github.com/alvarogabrielgomez/kanpachi-engine/releases/download/$tag/kanpachi-engine.exe"
           New-Item -ItemType Directory -Force engine | Out-Null
           $deadline = (Get-Date).AddMinutes(25)
@@ -92,24 +95,25 @@ jobs:
               Invoke-WebRequest -Uri $url -OutFile engine\kanpachi-engine.exe -MaximumRedirection 8
               break
             } catch {
-              if ((Get-Date) -gt $deadline) { throw "engine $tag no publico kanpachi-engine.exe en 25 minutos: $_" }
-              Write-Host "engine $tag aun sin assets, reintento en 30s..."
+              if ((Get-Date) -gt $deadline) { throw "engine $tag published no kanpachi-engine.exe within 25 minutes: $_" }
+              Write-Host "engine $tag has no assets yet, retrying in 30s..."
               Start-Sleep -Seconds 30
             }
           }
           $sha = (Get-FileHash engine\kanpachi-engine.exe -Algorithm SHA256).Hash.ToLower()
-          if ('${{ inputs.motor }}') {
-            Write-Host "::warning::motor $tag por inputs.motor, SIN verificar contra engine.pin. SHA256 $sha"
+          if ('${{ inputs.engine }}') {
+            Write-Host "::warning::engine $tag came from inputs.engine, NOT verified against engine.pin. SHA256 $sha"
           } elseif ($sha -ne $pin['sha256-windows'].ToLower()) {
-            throw "el kanpachi-engine.exe de $tag no es el del pin.`n  pin:      $($pin['sha256-windows'])`n  bajado:   $sha"
+            throw "the kanpachi-engine.exe from $tag is not the pinned one.`n  pin:        $($pin['sha256-windows'])`n  downloaded: $sha"
           } else {
-            Write-Host "engine $tag verificado: $sha"
+            Write-Host "engine $tag verified: $sha"
           }
           echo "ENGINE_TAG=$tag" >> $env:GITHUB_ENV
 
-      # La versión sale del EVENTO, así que se deriva acá y no en un script: es
-      # lo único de este job que no es trabajo sino contexto de Actions.
-      - name: Versión
+      # The version comes out of the EVENT, so it is derived here and not in a
+      # script: it is the only thing in this job that is context rather than
+      # work.
+      - name: Resolve the version
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -117,9 +121,9 @@ jobs:
         run: |
           # `v0.1.0` -> `0.1.0`.
           #
-          # - push por tag local: viene por GITHUB_REF_TYPE=tag
-          # - release publicada por web: viene por github.event.release.tag_name
-          # - workflow_dispatch: no hay tag, se publica como 0.0.0 para pruebas
+          # - push of a local tag: arrives through GITHUB_REF_TYPE=tag
+          # - release published from the web: github.event.release.tag_name
+          # - workflow_dispatch: no tag, it goes out as 0.0.0 for tests
           TAG=""
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             TAG="$GITHUB_REF_NAME"
@@ -133,50 +137,52 @@ jobs:
             VER="${TAG#v}"
           fi
           echo "VERSION=$VER" >> "$GITHUB_ENV"
-          # VersionInfoVersion de Inno tiene que ser numérica, así que un
-          # `0.2.0-rc1` pierde el sufijo SOLO para ese campo. El nombre de la
-          # publicación conserva el tag entero.
+          # Inno's VersionInfoVersion has to be numeric, so a `0.2.0-rc1` loses
+          # its suffix ONLY for that field. The publication's name keeps the
+          # whole tag.
           echo "VERSION_NUM=${VER%%-*}" >> "$GITHUB_ENV"
 
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
-      # Fijada por SHA y no por tag, por lo mismo que en ci.yml: corre en el
-      # mismo trabajo que el checkout, así que un tag movido ejecutaría código
-      # nuevo sobre este fuente sin que nada en el diff lo diga.
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+      # Pinned by SHA and not by tag, for the same reason as in ci.yml: it runs
+      # in the same job as the checkout, so a moved tag would execute new code
+      # over this source without anything in the diff saying so.
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: "3.44.1"
           channel: stable
           cache: true
 
-      - name: Inno Setup
+      - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
 
-      # `/third_party/` está en .gitignore por tamaño (~80 MB), así que el
-      # checkout llega SIN las DLL del motor y el empaquetado cortaría. El
-      # script las baja del release oficial, y por qué se bajan las SIETE y no
-      # las tres que se empaquetan está en su cabecera: con el directorio
-      # completo, el guardián de suministro de `internal/arch` verifica el
-      # manifiesto entero en vez de saltárselo por directorio ausente.
-      - name: Los binarios del motor
+      # `/third_party/` is in .gitignore for its size (~80 MB), so the checkout
+      # arrives WITHOUT the engine's DLLs and packaging would stop. The script
+      # downloads them from the official release, and why it downloads all SEVEN
+      # instead of the three that get packaged is in its header: with the whole
+      # directory, the supply guard in `internal/arch` verifies the entire
+      # manifest instead of skipping it over a missing directory.
+      - name: Fetch the engine's third-party binaries
         shell: pwsh
         run: .\scripts\fetch-third-party.ps1
 
-      # **Lo que se publica pasa por los tests que pasan hoy**, ni más ni menos:
-      # `core`, los guardianes de `internal/arch`, y la UI con `analyze` y
-      # `test`. Cuáles y por qué, en la cabecera del script.
-      - name: Los chequeos de esta superficie
+      # **What gets published goes through the tests that pass today**, no more
+      # and no less: `core`, the guards in `internal/arch`, and the UI with
+      # `analyze` and `test`. Which ones and why, in the script's header.
+      - name: Verify the release-windows surface
         shell: pwsh
         run: .\scripts\verify.ps1 -Surface release-windows
 
-      # Sella la versión en los recursos, arma la carga, corre Inno Setup, arma
-      # el portable y escribe SHA256SUMS-windows. Los cinco pasos y sus razones
-      # están en la cabecera del script, que es lo que permite reproducir una
-      # publicación a mano con una sola orden.
-      - name: Empaquetar el cliente de Windows
+      # Seals the version into the resources, stages the payload, runs Inno
+      # Setup, builds the portable and writes SHA256SUMS-windows. The five steps
+      # and their reasons live in the script's header, which is what makes a
+      # whole publication reproducible by hand with one command.
+      - name: Package the Windows client
         shell: pwsh
         run: |
           .\scripts\build-installer.ps1 `
@@ -186,49 +192,49 @@ jobs:
             -Repo "${{ github.repository }}" `
             -Output "$env:GITHUB_WORKSPACE\dist"
 
-      # Los dos hashes salen del manifiesto que acaba de escribir el script, y
-      # no se calculan otra vez: dos cálculos son dos oportunidades de publicar
-      # un número que no es el del fichero que se subió.
-      - name: Sumas
+      # Both hashes come out of the manifest the script just wrote, and are not
+      # computed again: two computations are two chances to publish a number
+      # that does not belong to the file that was uploaded.
+      - name: Read the checksums
         id: sums
         shell: pwsh
         run: |
-          $sumas = @{}
-          foreach ($linea in Get-Content "$env:GITHUB_WORKSPACE\dist\SHA256SUMS-windows") {
-            $partes = $linea -split '\s+', 2
-            $sumas[$partes[1].Trim()] = $partes[0]
+          $sums = @{}
+          foreach ($line in Get-Content "$env:GITHUB_WORKSPACE\dist\SHA256SUMS-windows") {
+            $parts = $line -split '\s+', 2
+            $sums[$parts[1].Trim()] = $parts[0]
           }
-          "setup_sha=$($sumas['kanpachi-setup.exe'])"       | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "portable_sha=$($sumas['kanpachi-portable.exe'])" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "setup_sha=$($sums['kanpachi-setup.exe'])"       | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "portable_sha=$($sums['kanpachi-portable.exe'])" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-      # El tramo del CHANGELOG que le toca a esta versión, para el cuerpo de la
-      # publicación. Sin entrada no hay publicación, y eso es a propósito: el
-      # motivo está en la cabecera del script.
-      - name: Notas de la versión
-        id: notas
+      # The stretch of the CHANGELOG that belongs to this version, for the
+      # publication's body. No entry means no publication, and that is on
+      # purpose: the reason is in the script's header.
+      - name: Read the release notes
+        id: notes
         shell: pwsh
         run: |
-          $texto = .\scripts\release-notes.ps1 -Version "$env:VERSION" | Out-String
-          "notas<<KANPACHI_FIN" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          $texto.TrimEnd()      | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "KANPACHI_FIN"        | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          $text = .\scripts\release-notes.ps1 -Version "$env:VERSION" | Out-String
+          "notes<<KANPACHI_END" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          $text.TrimEnd()      | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "KANPACHI_END"        | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-      - name: Publicar
+      - name: Publish to the release
         if: github.ref_type == 'tag' || github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          # Explícito porque las dos entradas nombran el tag en sitios
-          # distintos: `github.ref_name` en el push, `event.release.tag_name` en
-          # la publicación desde la web.
+          # Explicit because the two entry points name the tag in different
+          # places: `github.ref_name` on the push, `event.release.tag_name` on
+          # the publication from the web.
           tag_name: ${{ github.event.release.tag_name || github.ref_name }}
-          # Sin esto, una publicación creada desde la web perdería el texto que
-          # alguien escribió a mano: `body` REEMPLAZA. Con `append_body`, lo de
-          # abajo se suma a lo que ya había, y en el camino del tag, donde no
-          # había nada, queda igual que antes.
+          # Without this, a publication created from the web would lose the
+          # text somebody wrote by hand: `body` REPLACES. With `append_body`,
+          # what follows is added to whatever was there, and on the tag path,
+          # where there was nothing, it comes out the same as before.
           append_body: true
-          # Publicar sin el instalador es lo peor de los dos mundos: una versión
-          # anunciada que no se puede instalar, y la URL permanente de la página
-          # de descarga apuntando a una publicación vacía.
+          # Publishing without the installer is the worst of both worlds: an
+          # announced version nobody can install, and the download page's
+          # permanent URL pointing at an empty publication.
           fail_on_unmatched_files: true
           files: |
             dist/kanpachi-setup.exe
@@ -237,129 +243,91 @@ jobs:
           body: |
             ## What changed
 
-            ${{ steps.notas.outputs.notas }}
+            ${{ steps.notes.outputs.notes }}
 
-            ## Client · Windows 10 and 11, 64-bit
+            ## Windows 10 and 11, 64-bit
 
-            `kanpachi-setup.exe`
+            **`kanpachi-setup.exe`** installs with one UAC prompt, and that is
+            the only one in the life of the product. Neither booting the PC nor
+            opening the app asks again.
 
-            Installs with **one single UAC prompt**, and that is the only one in
-            the life of the product: neither booting the PC nor opening the app
-            asks again.
-
-            **Not signed yet.** Windows will show the SmartScreen warning when
-            you open it; press "More info" and "Run anyway". Signing arrives
-            with the SignPath certificate.
+            Windows shows the SmartScreen warning, because this is not signed
+            yet: press "More info", then "Run anyway".
 
             ```
             SHA256  ${{ steps.sums.outputs.setup_sha }}
             ```
 
-            ### Or run it without installing
-
-            `kanpachi-portable.exe`
-
-            The same product in a single file: double click, accept one UAC
-            prompt, and Kanpachi opens. **It installs nothing** — no service, no
-            autostart entry, no shortcuts, no ProgramData. The only thing it
-            leaves behind is its log, beside the executable, which is what to
-            send when something goes wrong.
-
-            What it costs, said plainly: one UAC prompt per run instead of one
-            per lifetime, it does not start with Windows, and it forgets its
-            identity between runs, so "back to the last room" does not carry
-            over. Use it to try Kanpachi out or to help somebody debug; install
-            it to play regularly.
+            **`kanpachi-portable.exe`** is the same product in one file, and it
+            installs nothing: no service, no autostart, no ProgramData. It costs
+            a UAC prompt per run, it does not start with Windows, and it forgets
+            its identity between runs. Use it to try Kanpachi out; install it to
+            play regularly.
 
             ```
             SHA256  ${{ steps.sums.outputs.portable_sha }}
             ```
 
-            Engine `${{ env.ENGINE_TAG }}`, downloaded from its own release and
-            verified against `engine.pin` — the binary that passed the engine's
-            customs is the binary inside this installer.
+            Engine `${{ env.ENGINE_TAG }}`, verified against `engine.pin`: the
+            binary that passed the engine's customs is the one inside.
 
-            ## Client · Linux, amd64
-
-            `kanpachi-amd64.deb`
+            ## Linux, amd64
 
             ```
             curl -fsSLO https://github.com/${{ github.repository }}/releases/latest/download/kanpachi-amd64.deb
             sudo apt install ./kanpachi-amd64.deb
             ```
 
-            Headless: no window, and the client is the `kanpachi` command, with
-            a wizard when you run it with no arguments. Built on Ubuntu 22.04 so
-            it also runs on 24.04.
+            No window. The client is the `kanpachi` command, with a wizard when
+            you run it with no arguments. Built on Ubuntu 22.04, so it also runs
+            on 24.04.
 
-            It installs two systemd units. `kanpachid` is the daemon.
-            `kanpachi-quarantine` is the one that matters and the one nobody
-            sees: it loads before the network comes up and it is what keeps the
-            game ports closed from the internet **with Kanpachi switched off**.
+            It installs two systemd units: `kanpachid`, the daemon, and
+            `kanpachi-quarantine`, which loads before the network comes up and
+            keeps the game ports closed from the internet **with Kanpachi
+            switched off**.
 
             `sudo kanpachi doctor` checks the machine and writes nothing;
-            `--fix` repairs what belongs to Kanpachi, and the one foreign thing
-            it touches — a ufw or firewalld about to swallow the room — it
-            opens only for Kanpachi's two adapters, says so, writes it down,
-            and undoes it when the room closes. Docker and everything else
-            stay untouched. `sudo kanpachi upgrade` brings the next version.
+            `--fix` repairs what belongs to Kanpachi. `sudo kanpachi upgrade`
+            brings the next version. Checksums in `SHA256SUMS-linux`.
 
-            The SHA256 is in `SHA256SUMS-linux`, which is built in its own job:
+            ## Container, amd64
 
-            ```
-            sha256sum -c SHA256SUMS-linux --ignore-missing
-            ```
+            `ghcr.io/${{ github.repository }}:${{ env.VERSION }}` and `:latest`.
+            Partial tags are not published, so pin the whole number or follow
+            `latest`.
 
-            ## Client · container, amd64
+            Copy a compose file from
+            [`docker/templates/`](https://github.com/${{ github.repository }}/tree/main/docker/templates)
+            and `docker compose up -d`. The invite code is printed on every
+            start, so `docker logs` answers "what is the code". Rebuild the
+            container and the same code comes back, because the room lives in a
+            volume: lose that volume and the code is gone for good.
 
-            `ghcr.io/${{ github.repository }}:${{ env.VERSION }}`, and
-            `:latest`. Partial tags are not published, so pin the whole number
-            or follow `latest`.
-
-            For a game server on a machine that already runs Docker. Copy a
-            compose file from
-            [`docker/templates/`](https://github.com/${{ github.repository }}/tree/main/docker/templates),
-            change the registry, and `docker compose up -d`. The invite code and
-            link are printed on every start, so `docker logs` answers "what is
-            the code" without anybody opening a shell.
-
-            Destroy the container and rebuild it and the same code comes back:
-            the room lives in a volume. Losing that volume loses the code for
-            good, and the guide says so in the place you would look.
-
-            The image needs `cap_add: [NET_ADMIN]` and `/dev/net/tun`, which a
-            container cannot grant itself. Kanpachi Protection's promise does
-            not reach in here, because what makes it a promise is a systemd unit
-            loading at boot, and a container has no boot of its own.
+            It needs `cap_add: [NET_ADMIN]` and `/dev/net/tun`, which a
+            container cannot grant itself. Kanpachi Protection does not reach in
+            here, because what makes it a promise is a systemd unit loading at
+            boot.
 
             [Run a game server with Docker](https://github.com/${{ github.repository }}/blob/main/docs/public/run-a-game-server-docker.md)
 
-            ## Rendezvous node · Linux
+            ## Rendezvous node, Linux
 
-            `kanpseed-linux-amd64`, `kanpseed-linux-arm64`, `index.html`
-
-            Comes out of the same tag as the client, so both halves of the
-            product carry the same number. To install or upgrade:
+            `kanpseed-linux-amd64`, `kanpseed-linux-arm64` and `index.html` come
+            out of the same tag as the client, so both halves carry the same
+            number.
 
             ```
             curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/seed/install.sh | sudo sh
             ```
 
-            On a seed that is already installed, also:
+            On a seed that is already installed, `sudo kanpseed upgrade`.
+            Checksums in `SHA256SUMS-seed-linux`.
 
-            ```
-            sudo kanpseed upgrade --check
-            sudo kanpseed upgrade
-            ```
-
-            Each payload ships its own manifest: `SHA256SUMS-windows`,
-            `SHA256SUMS-linux` for the Linux client, and `SHA256SUMS-seed-linux`
-            for the seed.
-
-      # Sin publicar, la corrida manual deja el instalador como artefacto. Es lo
-      # que permite probar este workflow entero sin crear un tag ni una
-      # publicación que después haya que borrar.
-      - name: Guardar el instalador
+      # With nothing to publish to, the manual run leaves the installer as an
+      # artifact. That is what makes it possible to test this whole workflow
+      # without creating a tag or a publication somebody has to delete later.
+      - name: Keep the installer as an artifact
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
@@ -394,18 +362,20 @@ jobs:
   # where the release is published with some payloads missing, it closes by
   # itself, and the alternative was twenty minutes of Windows delaying a Linux
   # payload that was ready.
-  paquete-linux:
+  linux-package:
     name: kanpachi-amd64.deb
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Versión
+      - name: Resolve the version
         id: version
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -424,13 +394,13 @@ jobs:
           echo "VERSION=${TAG:-0.0.0}" >> "$GITHUB_ENV"
           echo "release_target=$TAG" >> "$GITHUB_OUTPUT"
 
-      # La mitad Linux de la misma descarga del job de Windows: el binario que
-      # publicó la aduana del motor, verificado contra `engine.pin`. El motivo
-      # entero está en el paso homólogo de arriba. La espera acotada es la
-      # misma: 25 minutos y rojo con nombre, jamás colgado.
-      - name: El motor, del release de su tag
+      # The Linux half of the same download the Windows job does: the binary
+      # the engine's customs published, verified against `engine.pin`. The whole
+      # reason is in the matching step above. The bounded wait is the same: 25
+      # minutes, then red and named, never hanging.
+      - name: Download the pinned engine
         run: |
-          tag="${{ inputs.motor }}"
+          tag="${{ inputs.engine }}"
           if [ -z "$tag" ]; then
             tag=$(awk '$1 == "tag" { print $2 }' engine.pin)
           fi
@@ -439,30 +409,30 @@ jobs:
           deadline=$(( $(date +%s) + 25*60 ))
           until curl -fsSL -o engine/kanpachi-engine "$url"; do
             if [ "$(date +%s)" -gt "$deadline" ]; then
-              echo "engine $tag no publicó kanpachi-engine en 25 minutos" >&2
+              echo "engine $tag published no kanpachi-engine within 25 minutes" >&2
               exit 1
             fi
-            echo "engine $tag aún sin assets, reintento en 30s..."
+            echo "engine $tag has no assets yet, retrying in 30s..."
             sleep 30
           done
           chmod +x engine/kanpachi-engine
           sha=$(sha256sum engine/kanpachi-engine | awk '{print $1}')
-          if [ -n "${{ inputs.motor }}" ]; then
-            echo "::warning::motor $tag por inputs.motor, SIN verificar contra engine.pin. SHA256 $sha"
+          if [ -n "${{ inputs.engine }}" ]; then
+            echo "::warning::engine $tag came from inputs.engine, NOT verified against engine.pin. SHA256 $sha"
           else
             want=$(awk '$1 == "sha256-linux" { print $2 }' engine.pin)
             if [ "$sha" != "$want" ]; then
-              echo "el kanpachi-engine de $tag no es el del pin." >&2
-              echo "  pin:    $want" >&2
-              echo "  bajado: $sha" >&2
+              echo "the kanpachi-engine from $tag is not the pinned one." >&2
+              echo "  pin:        $want" >&2
+              echo "  downloaded: $sha" >&2
               exit 1
             fi
-            echo "engine $tag verificado: $sha"
+            echo "engine $tag verified: $sha"
           fi
 
       # The same tests the Windows job runs before packaging, and for the same
       # reason: what gets published passes the tests that pass today.
-      - name: Los chequeos de esta superficie
+      - name: Verify the release-linux surface
         shell: pwsh
         run: ./scripts/verify.ps1 -Surface release-linux
 
@@ -472,7 +442,7 @@ jobs:
       # release, so a shared name means the last one to upload overwrites the
       # others and leaves `kanpachi upgrade` verifying a package that is not
       # listed.
-      - name: Armar el paquete
+      - name: Build the .deb
         run: |
           scripts/build-deb.sh \
             --strict \
@@ -480,7 +450,7 @@ jobs:
             --engine engine/kanpachi-engine \
             --out dist
 
-      - name: Publicar
+      - name: Publish to the release
         if: steps.version.outputs.release_target != ''
         uses: softprops/action-gh-release@v2
         with:
@@ -493,7 +463,7 @@ jobs:
             dist/kanpachi-amd64.deb
             dist/SHA256SUMS-linux
 
-      - name: Guardar el paquete
+      - name: Keep the .deb as an artifact
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
@@ -503,40 +473,43 @@ jobs:
             dist/SHA256SUMS-linux
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # El cuarto publicador, y va SIN `needs:` como los otros tres.
+  # The fourth publisher, and it goes WITHOUT `needs:` like the other three.
   #
-  # La independencia es la decisión de siempre, escrita en `release-seed.yml`: si
-  # uno falla, el release queda sin esa pieza hasta que alguien lo relance, y eso
-  # se acepta porque encadenarlos costaría justo lo que hace que existan aparte.
+  # Independence is the standing decision, written down in `release-seed.yml`: if
+  # one fails, the release stays without that piece until somebody relaunches it,
+  # and that is accepted because chaining them would cost exactly what makes them
+  # separate.
   #
-  # La consecuencia acá es concreta y define cómo se arma: **no se puede bajar el
-  # `.deb` del release**, porque en el momento en que esto corre puede no estar
-  # todavía. Bajarlo hornearía la versión ANTERIOR dentro de una imagen etiquetada
-  # con la nueva, y pasaría en verde. Así que este job baja el motor y arma su
-  # propio paquete, igual que el de al lado.
-  imagen:
+  # The consequence here is concrete and it shapes how the image is built: **the
+  # `.deb` cannot be downloaded from the release**, because by the time this runs
+  # it may not be there yet. Downloading it would bake the PREVIOUS version into
+  # an image tagged with the new one, and it would pass green. So this job
+  # downloads the engine and builds its own package, the same as its neighbour.
+  image:
     name: ghcr.io/kanpachi
     runs-on: ubuntu-22.04
     permissions:
-      # A nivel de JOB y no del workflow: los otros tres no publican paquetes y
-      # no tienen por qué poder hacerlo.
+      # At JOB level and not at workflow level: the other three publish no
+      # packages and have no business being able to.
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Versión
+      - name: Resolve the version
         id: version
         env:
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          # Las mismas tres puertas de entrada que los otros jobs.
+          # The same three entry points as the other jobs.
           TAG=""
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             TAG="$GITHUB_REF_NAME"
@@ -545,17 +518,18 @@ jobs:
           fi
           echo "VERSION=${TAG:-0.0.0}" >> "$GITHUB_ENV"
           echo "release_target=$TAG" >> "$GITHUB_OUTPUT"
-          # Sin la `v` de delante, que es como se escribe una etiqueta de
-          # imagen. El defecto se aplica ANTES de quitarla: sin tag, `${TAG#v}`
-          # da la cadena vacía y `docker build --tag nombre:` no es una etiqueta.
-          bruto="${TAG:-0.0.0}"
-          echo "IMAGE_TAG=${bruto#v}" >> "$GITHUB_ENV"
+          # Without the leading `v`, which is how an image tag is written. The
+          # default is applied BEFORE stripping it: with no tag, `${TAG#v}` gives
+          # the empty string and `docker build --tag name:` is not a tag.
+          raw="${TAG:-0.0.0}"
+          echo "IMAGE_TAG=${raw#v}" >> "$GITHUB_ENV"
 
-      # Idéntico al del paquete: el binario que publicó la aduana del motor,
-      # verificado contra `engine.pin`, con 25 minutos de espera acotada.
-      - name: El motor, del release de su tag
+      # Identical to the package job's: the binary the engine's customs
+      # published, verified against `engine.pin`, with the same 25-minute
+      # bounded wait.
+      - name: Download the pinned engine
         run: |
-          tag="${{ inputs.motor }}"
+          tag="${{ inputs.engine }}"
           if [ -z "$tag" ]; then
             tag=$(awk '$1 == "tag" { print $2 }' engine.pin)
           fi
@@ -564,46 +538,47 @@ jobs:
           deadline=$(( $(date +%s) + 25*60 ))
           until curl -fsSL -o engine/kanpachi-engine "$url"; do
             if [ "$(date +%s)" -gt "$deadline" ]; then
-              echo "engine $tag no publicó kanpachi-engine en 25 minutos" >&2
+              echo "engine $tag published no kanpachi-engine within 25 minutes" >&2
               exit 1
             fi
-            echo "engine $tag aún sin assets, reintento en 30s..."
+            echo "engine $tag has no assets yet, retrying in 30s..."
             sleep 30
           done
           chmod +x engine/kanpachi-engine
           sha=$(sha256sum engine/kanpachi-engine | awk '{print $1}')
-          if [ -n "${{ inputs.motor }}" ]; then
-            echo "::warning::motor $tag por inputs.motor, SIN verificar contra engine.pin. SHA256 $sha"
+          if [ -n "${{ inputs.engine }}" ]; then
+            echo "::warning::engine $tag came from inputs.engine, NOT verified against engine.pin. SHA256 $sha"
           else
             want=$(awk '$1 == "sha256-linux" { print $2 }' engine.pin)
             if [ "$sha" != "$want" ]; then
-              echo "el kanpachi-engine de $tag no es el del pin." >&2
-              echo "  pin:    $want" >&2
-              echo "  bajado: $sha" >&2
+              echo "the kanpachi-engine from $tag is not the pinned one." >&2
+              echo "  pin:        $want" >&2
+              echo "  downloaded: $sha" >&2
               exit 1
             fi
-            echo "engine $tag verificado: $sha"
+            echo "engine $tag verified: $sha"
           fi
 
-      - name: Los chequeos de esta superficie
+      - name: Verify the release-linux surface
         shell: pwsh
         run: ./scripts/verify.ps1 -Surface release-linux
 
-      - name: El nombre de la imagen
-        id: imagen
+      - name: Resolve the image name
+        id: image
         run: |
-          # En minúsculas porque un nombre de imagen no admite mayúsculas y el
-          # dueño de un repositorio sí puede tenerlas.
+          # Lowercased, because an image name admits no capitals and a
+          # repository owner can have them.
           repo=$(printf '%s' "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           echo "name=ghcr.io/$repo" >> "$GITHUB_OUTPUT"
 
-      # El script arma el paquete, lo deja al lado del Dockerfile, construye y
-      # comprueba qué versión quedó dentro preguntándole al CLI de la imagen.
-      - name: Armar la imagen
+      # The script builds the package, leaves it beside the Dockerfile, builds
+      # the image, and checks which version ended up inside by asking the CLI in
+      # the image.
+      - name: Build the image
         run: |
-          tags="--tag ${{ steps.imagen.outputs.name }}:$IMAGE_TAG"
+          tags="--tag ${{ steps.image.outputs.name }}:$IMAGE_TAG"
           if [ -n "${{ steps.version.outputs.release_target }}" ]; then
-            tags="$tags --tag ${{ steps.imagen.outputs.name }}:latest"
+            tags="$tags --tag ${{ steps.image.outputs.name }}:latest"
           fi
           # shellcheck disable=SC2086
           scripts/build-image.sh \
@@ -611,9 +586,9 @@ jobs:
             --engine engine/kanpachi-engine \
             $tags
 
-      # El login va DESPUÉS de construir a propósito: una construcción rota no
-      # tiene por qué haber pedido credenciales.
-      - name: Entrar en ghcr
+      # The login goes AFTER the build on purpose: a broken build has no
+      # business having asked for credentials.
+      - name: Log in to ghcr
         if: steps.version.outputs.release_target != ''
         uses: docker/login-action@v3
         with:
@@ -621,8 +596,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publicar la imagen
+      - name: Push the image
         if: steps.version.outputs.release_target != ''
         run: |
-          docker push "${{ steps.imagen.outputs.name }}:$IMAGE_TAG"
-          docker push "${{ steps.imagen.outputs.name }}:latest"
+          docker push "${{ steps.image.outputs.name }}:$IMAGE_TAG"
+          docker push "${{ steps.image.outputs.name }}:latest"

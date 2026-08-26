@@ -1,24 +1,25 @@
-# Los chequeos completos, A MANO.
+# The full checks, BY HAND.
 #
-# **No corren en cada push ni en cada pull request, y es deliberado.** Lo que se
-# publica sale de un tag, y cada workflow de publicacion corre los tests que
-# gobiernan lo que publica: `release.yml` los de `core` y los guardianes de
-# `internal/arch`, `release-seed.yml` los de `core` y `registry`. Un job por push
-# repetiria eso mismo sobre commits que nadie va a publicar.
+# **They do not run on every push or every pull request, and that is
+# deliberate.** What gets published comes from a tag, and each publishing
+# workflow runs the tests that govern what it publishes: `release.yml` runs
+# `core` and the guards in `internal/arch`, `release-seed.yml` runs `core` and
+# `registry`. A job per push would repeat that same work over commits nobody is
+# going to publish.
 #
-# Esto se lanza a mano desde la pestana Actions, o lo llama otro workflow.
+# This is launched by hand from the Actions tab, or called by another workflow.
 #
-# **La receta no esta aca: esta en `scripts/verify.ps1`.** Cada job la llama con
-# su `-Surface`, y esa es la unica copia. Cuando la lista de paquetes vivia
-# dentro de este fichero Y dentro del script, las dos derivaron: comprobar algo
-# antes de empujar significaba teclear a mano una lista de dieciseis entradas, y
-# lo que se teclea distinto se comprueba distinto. Que paquete entra a cada
-# comprobacion se decide en el script y en ningun otro sitio.
+# **The recipe is not here: it is in `scripts/verify.ps1`.** Each job calls it
+# with its own `-Surface`, and that is the only copy. Back when the package list
+# lived inside this file AND inside the script, the two drifted: checking
+# something before pushing meant typing a sixteen-entry list by hand, and what
+# gets typed differently gets checked differently. Which package enters which
+# check is decided in the script and nowhere else.
 #
-# La interfaz se prueba contra el repositorio REAL del pipe sobre un transporte
-# de bytes en memoria. No hay repositorio alternativo ni estado plantado en el
-# cubit: saludo, codec, metodos y mapeo de respuestas cruzan la misma frontera
-# que en produccion, sin necesitar Windows ni un daemon levantado.
+# The interface is tested against the REAL pipe repository over an in-memory
+# byte transport. There is no alternative repository and no state planted in the
+# cubit: handshake, codec, methods and response mapping cross the same boundary
+# they cross in production, without needing Windows or a running daemon.
 name: CI
 
 on:
@@ -29,92 +30,100 @@ permissions:
   contents: read
 
 jobs:
-  # Corre en Linux a propósito, y no es una economía de minutos.
-  # docs/CLAUDE.md define la métrica de la arquitectura así: "los tests de core
-  # corren sin admin, sin red y sin Windows". Ejecutarlos en Ubuntu es lo que
-  # convierte esa frase en algo comprobable. Si un día core deja de compilar
-  # acá, la arquitectura se rompió y este job es quien lo dice.
+  # Runs on Linux on purpose, and not to save minutes.
+  # docs/CLAUDE.md defines the architecture's metric like this: "core's tests run
+  # without admin, without network and without Windows". Running them on Ubuntu
+  # is what turns that sentence into something checkable. The day core stops
+  # compiling here, the architecture broke and this job is what says so.
   #
-  # `pwsh` viene preinstalado en los runners de Ubuntu, así que el mismo script
-  # corre en los tres sistemas. Hay que pedirlo explícito: el shell por omisión
-  # en Linux es bash, y un `.ps1` no arranca solo.
+  # `pwsh` ships preinstalled on the Ubuntu runners, so the same script runs on
+  # all three systems. It has to be asked for explicitly: the default shell on
+  # Linux is bash, and a `.ps1` does not start on its own.
   core:
-    name: core en Linux, sin privilegios
+    name: core on Linux, unprivileged
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
-      # Compila TODO en Linux, corre vet, los guardianes de arquitectura, core,
-      # lo portable de daemon, el registro y gofmt. Qué entra en cada paso, y
-      # por qué la lista es explícita en vez de `./...`, está en la cabecera del
-      # script.
-      - name: Los chequeos de esta superficie
+      # Builds EVERYTHING on Linux, runs vet, the architecture guards, core, the
+      # portable half of daemon, the registry and gofmt. What enters each step,
+      # and why the list is explicit instead of `./...`, is in the script's
+      # header.
+      - name: Verify the ci-linux surface
         shell: pwsh
         run: ./scripts/verify.ps1 -Surface ci-linux
 
-  # El daemon se compila donde va a correr, y desde que hay dos sistemas eso son
-  # dos jobs: este y el de `core`, que ya compila y prueba en Linux.
+  # The daemon is compiled where it is going to run, and since there are two
+  # systems that means two jobs: this one and `core`, which already builds and
+  # tests on Linux.
   #
-  # Este además EJECUTA los tests, que es nuevo. El comentario de antes decía que
-  # no se ejecutaban "porque el paquete no existe", y hace tiempo que existe. Lo
-  # que lo vuelve obligatorio es que el canal local se partió por sistema: las
-  # invariantes del descriptor de seguridad y del prefijo protegido son
-  # constantes de Windows, así que su guardián solo dice algo donde compilan.
+  # This one also RUNS the tests, which is new. The comment that used to be here
+  # said they were not run "because the package does not exist", and it has
+  # existed for a while. What makes it mandatory is that the local channel split
+  # per system: the invariants of the security descriptor and of the protected
+  # prefix are Windows constants, so their guard only says something where they
+  # compile.
   daemon:
-    name: daemon en Windows
+    name: daemon on Windows
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
-      # Sin -ldflags="-s -w" y sin -race, las dos por su razón, escritas en el
-      # script: la primera son los falsos positivos de Defender sobre binarios
-      # Go, la segunda es que -race en Windows exige una cadena de C y el mismo
-      # código ya corre con -race en el job de arriba.
-      - name: Los chequeos de esta superficie
+      # Without -ldflags="-s -w" and without -race, each for its own reason,
+      # both written down in the script: the first one is Defender's false
+      # positives on Go binaries, the second is that -race on Windows demands a
+      # C toolchain and the same code already runs with -race in the job above.
+      - name: Verify the ci-windows surface
         shell: pwsh
         run: .\scripts\verify.ps1 -Surface ci-windows
 
-  # La UI corre en UBUNTU, con el cliente siendo solo de Windows, y no es un
-  # descuido.
+  # The UI runs on UBUNTU, with the client being Windows-only, and that is not
+  # an oversight.
   #
-  # `flutter test` corre sobre la VM de Dart, y los guardianes que de verdad
-  # importan acá leen fuente de GO del disco para comprobar que los dos lados del
-  # cable dicen lo mismo. Ninguna de las dos cosas depende del sistema operativo.
-  # Compilar el bundle de Windows es otro trabajo y no es el que falta hoy: lo
-  # que falta es que `message_lockstep_test.dart` deje de correr solo cuando
-  # alguien se acuerda. El día que un enum del daemon crezca sin su caso en Dart,
-  # esto es lo que lo dice.
+  # `flutter test` runs on the Dart VM, and the guards that actually matter here
+  # read GO source off the disk to check that both sides of the wire say the
+  # same thing. Neither of those depends on the operating system. Building the
+  # Windows bundle is another job and not the one missing today: what is missing
+  # is that `message_lockstep_test.dart` stops running only when somebody
+  # remembers. The day an enum in the daemon grows without its case in Dart,
+  # this is what says so.
   ui:
-    name: la UI de Flutter
+    name: the Flutter UI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out
+        uses: actions/checkout@v4
 
-      # Fijada por SHA y no por tag. Corre en el mismo trabajo que el checkout,
-      # así que un tag movido ejecutaría código nuevo sobre el fuente de este
-      # repo sin que nada en el diff lo diga. El comentario lleva la versión
-      # legible porque un SHA suelto no se puede leer.
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+      # Pinned by SHA and not by tag. It runs in the same job as the checkout,
+      # so a moved tag would execute new code over this repository's source
+      # without anything in the diff saying so. The comment carries the readable
+      # version because a bare SHA cannot be read.
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          # A dedo y no con flutter-version-file: `ui/pubspec.yaml` declara el
-          # SDK de Dart (`sdk: ^3.12.1`) y NO tiene clave `flutter:`, así que no
-          # hay nada que ese fichero pueda leer.
+          # By hand and not with flutter-version-file: `ui/pubspec.yaml`
+          # declares the Dart SDK (`sdk: ^3.12.1`) and has NO `flutter:` key, so
+          # there is nothing for that file to read.
           flutter-version: '3.44.1'
           channel: stable
           cache: true
 
-      # Sin `working-directory`: el script entra a `ui/` por su cuenta, que es
-      # lo que le permite correrse igual desde la raíz en una máquina cualquiera.
-      - name: Los chequeos de esta superficie
+      # No `working-directory`: the script enters `ui/` on its own, which is
+      # what lets it run the same way from the root on any machine.
+      - name: Verify the ci-ui surface
         shell: pwsh
         run: ./scripts/verify.ps1 -Surface ci-ui
