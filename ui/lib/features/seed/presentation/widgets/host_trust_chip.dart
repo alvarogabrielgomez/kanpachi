@@ -17,9 +17,13 @@ import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart
 /// # Tres capas, y cada una cuesta lo que da
 ///
 /// La etiqueta contesta el sí o el no, que es lo único que hace falta para
-/// decidir si entras. El ratón encima cuenta el resto en una frase, la cuenta
-/// de salas incluida. Pulsarla abre las huellas, que es lo que se compara
-/// carácter a carácter con quien te pasó el código.
+/// decidir si entras. El ratón encima lo dice en una frase. Pulsarla abre las
+/// huellas, que es lo que se compara carácter a carácter con quien te pasó el
+/// código.
+///
+/// **En ninguna de las tres sale la cuenta de salas.** Estuvo en la caja y
+/// estuvo un rato en el tooltip, y en los dos sitios sobraba: con una vez que
+/// hayas jugado con esa llave ya sabes lo que la etiqueta dice.
 ///
 /// Hasta el 2026-08-26 las tres capas salían a la vez, en una caja de cuatro
 /// líneas debajo del servidor: un titular con una cuenta que nadie pidió, «La
@@ -62,18 +66,18 @@ class _HostTrustChipState extends State<HostTrustChip> {
     HostVerdict.unverified => '',
   };
 
-  /// Lo que el ratón revela. La cuenta de salas vive acá porque a nadie le
-  /// hace falta para decidir, y a quien la busca le contesta.
+  /// Lo que el ratón revela.
+  ///
+  /// **Sin cuenta de salas, y ni siquiera acá.** «Van 126» no cambia
+  /// ninguna decisión: con una vez que hayas jugado con esa llave ya sabes
+  /// lo que la etiqueta te está diciendo, y el número solo pide sitio.
   String get _detalle => switch (widget.invite.verdict) {
     HostVerdict.llaveCambiada =>
       'Ese nombre llegaba antes con otra llave. Pulsa para comparar las dos '
           'huellas con quien te pasó el código.',
     HostVerdict.conocida =>
-      widget.invite.knownRooms > 1
-          ? 'Ya entraste a una sala firmada con esta llave. Van '
-                '${widget.invite.knownRooms}. Pulsa para ver la huella.'
-          : 'Ya entraste a una sala firmada con esta llave. Pulsa para ver la '
-                'huella.',
+      'Ya entraste a una sala firmada con esta llave. Pulsa para ver la '
+          'huella.',
     HostVerdict.renombrada =>
       'Ya entraste a una sala firmada con esta llave. El nombre cambió. Pulsa '
           'para ver la huella.',

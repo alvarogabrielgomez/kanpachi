@@ -101,6 +101,13 @@ class _TrustSeedDialogState extends State<TrustSeedDialog> {
 
     return AppModal(
       onDismiss: abandonar,
+      // Más ancho que los otros diálogos, y por el dato que enseña: el
+      // nombre del servidor es lo que alguien COMPARA carácter a carácter
+      // contra lo que le mandó su amigo, y con la etiqueta del host al lado
+      // en 430 px cortaba en «kanpachi.accentio.d…». Un diálogo que pide
+      // confiar en un servidor y no deja leer su nombre entero no pregunta
+      // nada. Cabe en la ventana mínima de 720, que deja 660 libres.
+      width: 520,
       footer: AppModalActions(
         stretch: true,
         // Con la huella cambiada el botón dice lo que hace de verdad y deja

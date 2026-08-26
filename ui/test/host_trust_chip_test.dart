@@ -52,11 +52,16 @@ void main() {
     await pinta(tester, conVeredicto(HostVerdict.conocida, salas: 126));
 
     expect(find.text('Host conocido'), findsOneWidget);
-    // La cuenta se va del sitio donde estorbaba y se queda donde se busca.
+    // La cuenta de salas no sale en NINGUNA de las tres capas. No cambia
+    // ninguna decisión y solo pide sitio.
     expect(find.textContaining('126'), findsNothing);
     expect(
       tester.widget<Tooltip>(find.byType(Tooltip)).message,
-      contains('126'),
+      isNot(contains('126')),
+    );
+    expect(
+      tester.widget<Tooltip>(find.byType(Tooltip)).message,
+      contains('Ya entraste'),
     );
   });
 
