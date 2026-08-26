@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.7.4] - 2026-08-26
+
 ### Fixed
 
 - Reach a game listening on loopback inside a container, which is the place the last release aimed at and missed. Enabling the kernel's loopback routing was done by writing to `/proc/sys`, and in a container `/proc/sys` is read-only: the daemon said "no se pudo desviar hacia donde escucha el juego ... read-only file system" and the room stayed unreachable. The same knob is reachable over netlink, which asks only for the capability the daemon already holds to create its adapter. Measured on a dummy interface: the value goes from 0 to 1 with nothing written to `/proc` ([35841ea](https://github.com/alvarogabrielgomez/kanpachi/commit/35841ea))
@@ -506,6 +508,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.7.4]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.4
 [0.7.3]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.3
 [0.7.2]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.2
 [0.7.1]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.1
