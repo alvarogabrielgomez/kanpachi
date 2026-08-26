@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.7.1] - 2026-08-26
+
 ### Fixed
 
 - Wait for the daemon to ANSWER before the container asks it anything. The startup script looked for the socket FILE, and that file lives on a volume that outlives the container, so every restart found yesterday's socket with nobody behind it, ran the first command 40 ms into a boot that had not bound anything yet, and died with "connection refused". The dead file stayed for the next start to trip over: 27 restarts in two hours on a real cluster, with the game server beside it running fine ([51bfd8c](https://github.com/alvarogabrielgomez/kanpachi/commit/51bfd8c))
@@ -479,6 +481,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.7.1]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.1
 [0.7.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.0
 [0.6.8]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.8
 [0.6.7]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.7
