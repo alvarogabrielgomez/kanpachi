@@ -8,6 +8,12 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.7.2] - 2026-08-26
+
+### Fixed
+
+- Let the container start a room again. Two defects sat on top of each other. The startup script asked the daemon to reopen the saved room without saying `--yes`, and reopening crosses the gate that asks before entering a room costs something else, which REFUSES with no terminal to answer in: what was in the way was the room the daemon had already reopened by itself, so the container refused over its own success. Then the code that explains such a refusal died before printing it, because a variable in it was named with an accent and `dash` reads that as a command, not an assignment. Every error path in that script ended there, so none of its explanations had ever been printed. Measured on a real cluster: seven restarts, and the only line the operator got named neither the room nor the reason ([98a916f](https://github.com/alvarogabrielgomez/kanpachi/commit/98a916f))
+
 ### Changed
 
 - Cut the release notes down to what somebody deciding which file to download needs. The body repeated the whole product's story on every publication, so the two lines that change between versions sat under a page and a half that never does ([686b4fe](https://github.com/alvarogabrielgomez/kanpachi/commit/686b4fe))
@@ -485,6 +491,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.7.2]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.2
 [0.7.1]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.1
 [0.7.0]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.0
 [0.6.8]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.6.8
