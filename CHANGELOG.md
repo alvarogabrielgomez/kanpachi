@@ -8,6 +8,11 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Changed
+
+- Say whether you have played with this host's key before in a label beside the seed, instead of a four-line box under it. The box led with a count nobody asked for, "the same key as always, already in 126 rooms", and it printed a twenty-digit fingerprint with nothing to compare it against, which is how somebody learns to skim past a fingerprint. Hovering the label says the rest, the count included ([2bb4cde](https://github.com/alvarogabrielgomez/kanpachi/commit/2bb4cde))
+- Keep the full box, with both fingerprints one above the other, for the one case that asks you to compare them: a name you know arriving with a different key ([2bb4cde](https://github.com/alvarogabrielgomez/kanpachi/commit/2bb4cde))
+
 ## [0.7.0] - 2026-08-26
 
 ### Fixed

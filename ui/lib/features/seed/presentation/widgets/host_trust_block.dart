@@ -4,14 +4,23 @@ import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 
-/// Quién hospeda, según lo que esta máquina recuerda.
+/// Las dos huellas, cuando un nombre conocido llega con otra llave.
+///
+/// # Por qué solo ese caso
+///
+/// Porque es el único que pide comparar algo. Hasta el 2026-08-26 esta caja
+/// salía también con la llave de siempre y con una llave nueva, y entonces
+/// enseñaba una huella suelta: veinte dígitos que no se contrastan contra
+/// nada, encabezados por «La misma llave de siempre, ya en 126 salas». Eso
+/// enseña a pasar de largo por una huella, que es justo lo que no puede pasar
+/// acá. Los otros tres veredictos caben en la etiqueta que va pegada al
+/// servidor, ver [HostTrustChip].
 ///
 /// # Qué dice, y qué NO dice
 ///
-/// Dice que la llave que firmó esta sala es la misma con la que jugaste antes,
-/// o que no lo es. **No dice de quién es esa llave.** La primera vez no hay con
-/// qué comparar, igual que en Signal, y eso se escribe en vez de disimularse:
-/// «es la primera vez» es una frase, no una advertencia.
+/// Dice que la llave que firmó esta sala no es la misma con la que jugaste
+/// antes. **No dice de quién es ninguna de las dos.** Comparar los dígitos con
+/// quien te pasó el código es lo único que las ata a una persona.
 ///
 /// # Por qué el aviso no bloquea
 ///
@@ -92,6 +101,11 @@ class _Titular extends StatelessWidget {
       'Ojo: esta sala viene firmada con otra llave. Puede ser un Windows '
           'reinstalado, y puede no ser la misma persona. Compara las dos '
           'huellas con quien te pasó el código.',
+    // Los otros cuatro no llegan acá: la caja sale solo con la llave
+    // cambiada, y lo que dicen lo dice [HostTrustChip]. Se contestan igual
+    // porque un switch sin rama es un fallo de compilación, y porque quien
+    // vuelva a montar esta caja en otro sitio se merece una frase y no un
+    // hueco.
     HostVerdict.conocida =>
       invite.knownRooms > 1
           ? 'La misma llave de siempre, ya en ${invite.knownRooms} salas.'

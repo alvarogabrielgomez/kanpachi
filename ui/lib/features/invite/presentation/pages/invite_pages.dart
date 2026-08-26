@@ -10,6 +10,7 @@ import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/seed/presentation/widgets/seed_trust_block.dart';
 import 'package:kanpachi_ui/features/seed/presentation/widgets/host_trust_block.dart';
+import 'package:kanpachi_ui/features/seed/presentation/widgets/host_trust_chip.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
 import 'package:kanpachi_ui/features/shell/presentation/ask_trust.dart';
@@ -93,7 +94,16 @@ class InviteScreen extends StatelessWidget {
                   Divider(color: colors.border, height: 1),
                   _InviteRow(label: 'Código', value: invite.code, mono: true),
                   Divider(color: colors.border, height: 1),
-                  _InviteRow(label: 'Servidor', value: invite.seed, mono: true),
+                  _InviteRow(
+                    label: 'Servidor',
+                    value: invite.seed,
+                    mono: true,
+                    // La misma etiqueta y en el mismo sitio que en el diálogo,
+                    // pegada al servidor. Ver [HostTrustChip].
+                    trailing: invite.hasHostTrust
+                        ? HostTrustChip(invite: invite)
+                        : null,
+                  ),
                 ],
               ),
             ),
@@ -112,8 +122,11 @@ class InviteScreen extends StatelessWidget {
             else ...<Widget>[
               // Quién hospeda, cuando hay algo comprobado que decir, y ANTES
               // del aviso del servidor: es la otra mitad de la misma decisión,
-              // y el orden es el mismo que en el diálogo. Ver [HostTrustBlock].
-              if (invite.hasHostTrust) ...<Widget>[
+              // y el orden es el mismo que en el diálogo. Acá la caja entera
+              // queda para el caso que pide comparar dos huellas; el resto lo
+              // dice la etiqueta que va pegada al servidor, arriba. Ver
+              // [HostTrustChip].
+              if (invite.verdict == HostVerdict.llaveCambiada) ...<Widget>[
                 HostTrustBlock(invite: invite),
                 const SizedBox(height: AppSpacing.lg),
               ],
@@ -202,11 +215,16 @@ class _InviteRow extends StatelessWidget {
     required this.label,
     required this.value,
     this.mono = false,
+    this.trailing,
   });
 
   final String label;
   final String value;
   final bool mono;
+
+  /// Lo que va después del valor, cuando la fila tiene algo que decir sobre
+  /// él. Null es el caso normal.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -228,6 +246,10 @@ class _InviteRow extends StatelessWidget {
               color: colors.text,
             ),
           ),
+          if (trailing != null) ...<Widget>[
+            const SizedBox(width: AppSpacing.lg),
+            trailing!,
+          ],
         ],
       ),
     );

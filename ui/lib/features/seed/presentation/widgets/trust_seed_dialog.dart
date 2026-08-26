@@ -7,6 +7,7 @@ import 'package:kanpachi_ui/core/design_system/molecules/app_editable_name.dart'
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/spacing_tokens.dart';
 import 'package:kanpachi_ui/features/seed/presentation/widgets/host_trust_block.dart';
+import 'package:kanpachi_ui/features/seed/presentation/widgets/host_trust_chip.dart';
 import 'package:kanpachi_ui/features/seed/presentation/widgets/seed_trust_block.dart';
 import 'package:kanpachi_ui/features/session/domain/entities/pending_invite.dart';
 import 'package:kanpachi_ui/features/session/presentation/cubit/session_cubit.dart';
@@ -149,12 +150,13 @@ class _TrustSeedDialogState extends State<TrustSeedDialog> {
             style: context.type.titleSm.copyWith(color: colors.text),
           ),
           const SizedBox(height: AppSpacing.xl),
-          _FilaDelSeed(seed: widget.request.seed),
-          // Quién hospeda va DEBAJO del servidor y encima del aviso, que es el
-          // orden en que se decide: a qué máquina le hablas, con quién juegas,
-          // y qué puede hacer una máquina así. Solo aparece cuando hay algo
-          // comprobado que decir. Ver [HostTrustBlock].
-          if (_confianzaDelHost != null) ...<Widget>[
+          // Quién hospeda viaja DENTRO de la fila del servidor, porque es lo
+          // que califica: a esa máquina le hablas, y esa llave firmó la sala.
+          // Debajo se leía como una propiedad del servidor. Ver [HostTrustChip].
+          _FilaDelSeed(seed: widget.request.seed, host: _confianzaDelHost),
+          // La caja entera queda para el único caso que pide comparar dos
+          // huellas. Ver [HostTrustBlock].
+          if (_huellaCambiada) ...<Widget>[
             const SizedBox(height: AppSpacing.lg),
             HostTrustBlock(invite: _confianzaDelHost!),
           ],
@@ -176,9 +178,13 @@ class _TrustSeedDialogState extends State<TrustSeedDialog> {
 /// que le mandó su amigo, carácter a carácter, y una proporcional hace que `rn`
 /// y `m` se parezcan justo donde no pueden parecerse.
 class _FilaDelSeed extends StatelessWidget {
-  const _FilaDelSeed({required this.seed});
+  const _FilaDelSeed({required this.seed, this.host});
 
   final String seed;
+
+  /// Lo que esta máquina recuerda de la llave que firmó la sala, o null
+  /// cuando no hay nada comprobado que decir. Ver [HostTrustChip].
+  final PendingInvite? host;
 
   @override
   Widget build(BuildContext context) {
@@ -215,6 +221,10 @@ class _FilaDelSeed extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            if (host != null) ...<Widget>[
+              const SizedBox(width: AppSpacing.lg),
+              HostTrustChip(invite: host!),
+            ],
           ],
         ),
       ),
