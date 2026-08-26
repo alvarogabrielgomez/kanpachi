@@ -10,8 +10,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ### Changed
 
-- Repaint the status dots so the three states are three states. The green is brighter in the dark window, the amber leans to red and lights up, and the grey of an off dot drops away from both instead of sitting between them. What it fixes is not taste: simulating deuteranopia over the old dark palette, the green and the grey were 6.8 apart in Lab, which is the same dot, so a member who was connected and one who was away painted the same thing. They are 17 apart now, and a test simulates both kinds of red-green blindness on every build (PENDING-A)
-- Draw the game's dot hollow when the server is up somewhere the room cannot reach. The colour was the only thing that said so, and colour is the one channel some people do not have. Every dot in the app now comes from the same widget, including the one beside a new version, which was the last one drawn by hand (PENDING-B)
+- Repaint the status dots so the three states are three states. The green is brighter in the dark window, the amber leans to red and lights up, and the grey of an off dot drops away from both instead of sitting between them. What it fixes is not taste: simulating deuteranopia over the old dark palette, the green and the grey were 6.8 apart in Lab, which is the same dot, so a member who was connected and one who was away painted the same thing. They are 17 apart now, and a test simulates both kinds of red-green blindness on every build ([f43605c](https://github.com/alvarogabrielgomez/kanpachi/commit/f43605c))
+- Draw the game's dot hollow when the server is up somewhere the room cannot reach. The colour was the only thing that said so, and colour is the one channel some people do not have. Every dot in the app now comes from the same widget, including the one beside a new version, which was the last one drawn by hand ([f43605c](https://github.com/alvarogabrielgomez/kanpachi/commit/f43605c))
 
 ### Fixed
 
