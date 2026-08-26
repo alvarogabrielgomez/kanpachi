@@ -1002,15 +1002,15 @@ class _MemberRow extends StatelessWidget {
     // está. Apagado y no rojo: no se fue ni falló nada, su silla sigue puesta.
     // Lo que lleva fuera lo dice la línea de debajo, donde iría la latencia.
     final Color dot = member.isAway
-        ? colors.textMuted
+        ? colors.idle
         : switch (member.path) {
-            PeerPath.self => colors.textMuted,
+            PeerPath.self => colors.idle,
             PeerPath.relay => colors.warn,
             PeerPath.direct => colors.ok,
             // Apagado y no ámbar: ámbar es relay, o sea "la red va lenta", y de
             // este miembro lo que no se sabe es por dónde llega, no que llegue
             // mal.
-            PeerPath.unconfirmed => colors.textMuted,
+            PeerPath.unconfirmed => colors.idle,
           };
     return Row(
       children: <Widget>[
@@ -1102,7 +1102,14 @@ class _GameHealthDot extends StatelessWidget {
       // depende del color. El latido además dice lo que hay que decir, que el
       // servidor está vivo; el ámbar quieto se lee como parado, que es lo que
       // es.
-      child: AppStatusDot(color: viva ? colors.ok : colors.warn, pulse: viva),
+      // Hueco cuando no llega, lleno cuando sí. El color es el primer canal
+      // y la forma el segundo: quien no separa el ámbar del verde ve igual que
+      // ese punto está sin rellenar. Ver [AppStatusDot.filled].
+      child: AppStatusDot(
+        color: viva ? colors.ok : colors.warn,
+        pulse: viva,
+        filled: viva,
+      ),
     );
   }
 

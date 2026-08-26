@@ -14,6 +14,7 @@ class AppStatusDot extends StatefulWidget {
     this.pulse = false,
     this.pulseDuration = AppMotion.pulseSlow,
     this.square = false,
+    this.filled = true,
     super.key,
   });
 
@@ -30,6 +31,21 @@ class AppStatusDot extends StatefulWidget {
   /// Un cuadrado en vez de un círculo, para lo que ya dejó de latir: el aviso
   /// de que el host se fue de la sala.
   final bool square;
+
+  /// Relleno, o solo el contorno.
+  ///
+  /// # Qué dice el hueco
+  ///
+  /// Que eso que se mide EXISTE y todavía no está donde tiene que estar. El
+  /// punto lleno es un estado terminado —está, no está, se fue— y el contorno
+  /// es uno a medias, que es el del servidor del juego levantado en una
+  /// dirección que la sala no alcanza: no es un fallo, y tampoco es que
+  /// funcione.
+  ///
+  /// Y es el segundo canal que el color no puede dar. Quien no distingue el
+  /// ámbar del verde ve igual que uno de los dos puntos está hueco, sin
+  /// depender de que su pantalla, su tema o sus ojos separen dos tonos.
+  final bool filled;
 
   @override
   State<AppStatusDot> createState() => _AppStatusDotState();
@@ -118,6 +134,7 @@ class _AppStatusDotState extends State<AppStatusDot>
       color: widget.color,
       size: widget.size,
       square: widget.square,
+      filled: widget.filled,
     );
     final Animation<double>? opacidad = _opacidad;
     if (!widget.pulse || opacidad == null) return dot;
@@ -126,11 +143,26 @@ class _AppStatusDotState extends State<AppStatusDot>
 }
 
 class _Dot extends StatelessWidget {
-  const _Dot({required this.color, required this.size, required this.square});
+  const _Dot({
+    required this.color,
+    required this.size,
+    required this.square,
+    required this.filled,
+  });
 
   final Color color;
   final double size;
   final bool square;
+  final bool filled;
+
+  /// El grosor del contorno, en proporción al punto.
+  ///
+  /// Proporcional y no fijo: el mismo punto se pinta a 6, 7 y 9 px según dónde
+  /// vaya, y un borde de un píxel a los tres tamaños hace que el chico se lea
+  /// como un anillo y el grande como una rosquilla. Con dos píxeles a tamaño 7,
+  /// que es el de la lista de miembros, el hueco sigue siendo hueco de un
+  /// vistazo.
+  static const double _grosor = 2 / 7;
 
   @override
   Widget build(BuildContext context) {
@@ -138,7 +170,8 @@ class _Dot extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: color,
+        color: filled ? color : Colors.transparent,
+        border: filled ? null : Border.all(color: color, width: size * _grosor),
         shape: square ? BoxShape.rectangle : BoxShape.circle,
         borderRadius: square ? BorderRadius.circular(2) : null,
       ),

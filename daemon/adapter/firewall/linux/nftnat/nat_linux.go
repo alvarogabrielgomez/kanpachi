@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
@@ -48,6 +49,12 @@ func (r *Redirect) Apply(ctx context.Context, spec domain.RedirectSpec) error {
 		// La sala direcciona en IPv4 dentro de 100.64.0.0/10, así que un desvío
 		// IPv6 sería una traducción de algo que la sala no encamina.
 		return fmt.Errorf("el desvío es de IPv4: sala %v, destino %v", spec.RoomIP, spec.To)
+	}
+
+	if spec.To.IsLoopback() {
+		if err := permitirLoopback(spec.Adapter); err != nil {
+			return err
+		}
 	}
 
 	idx, err := ifaceIndex(spec.Adapter)
@@ -254,4 +261,42 @@ func ifaceIndex(name string) (int, error) {
 		return 0, fmt.Errorf("buscando el adaptador %q para el desvío: %w", name, err)
 	}
 	return dev.Index, nil
+}
+
+// permitirLoopback deja que un paquete que entra por el adaptador de la sala
+// llegue a un destino en `127.0.0.0/8`.
+//
+// # Por qué hace falta, medido
+//
+// Sin esto el núcleo lo tira como marciano ANTES de entregarlo, y la regla de
+// nat ni se entera: casa, traduce, y el datagrama muere. Reproducido en un
+// netns limpio, con un oyente UDP en `127.0.1.1` y esta misma forma de regla:
+//
+//	route_localnet=0  bytes entregados: 0
+//	route_localnet=1  bytes entregados: 4
+//
+// # Qué abre exactamente, y qué NO
+//
+// Es por interfaz, y la interfaz es la de Kanpachi. No toca `all`, no toca
+// `default`, y no toca ninguna otra tarjeta de la máquina: lo que entre por
+// eth0 con destino a loopback se sigue tirando igual que siempre.
+//
+// Lo que llega por el adaptador de la sala ya pasa por la compuerta, que
+// descarta por omisión y solo deja los puertos del juego hacia los miembros.
+// Y el conjunto deseado se reescribe con la dirección traducida dentro, por
+// [domain.RuleSet.MirrorLocal], así que el permiso nombra ese `127.x` y esos
+// puertos y nada más. Sin esa parte, esto abriría el enrutado y la compuerta
+// seguiría tirando el paquete.
+//
+// # Por qué no se devuelve a cero al quitar el desvío
+//
+// Porque el adaptador es de Kanpachi y muere con la sala: cuando se va, se
+// lleva su entrada de `/proc/sys` con él. Restaurarlo a mano solo importaría
+// si la interfaz sobreviviera al desvío, y no lo hace.
+func permitirLoopback(adaptador string) error {
+	ruta := filepath.Join("/proc/sys/net/ipv4/conf", adaptador, "route_localnet")
+	if err := os.WriteFile(ruta, []byte("1"), 0o644); err != nil {
+		return fmt.Errorf("habilitando el enrutado a loopback en %s: %w", adaptador, err)
+	}
+	return nil
 }
