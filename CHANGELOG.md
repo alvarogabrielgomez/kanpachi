@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Fixed
+
+- Send the room's traffic to a game listening on loopback, which in a container is where it often ends up. The redirect refused that destination because the kernel drops such a packet as martian, and it does, unless `route_localnet` is set on the interface it arrived through. Kanpachi now sets it, on its own adapter and on no other, so the whole thing stays automatic: measured in a clean netns, the same rule delivered 0 bytes with the sysctl off and every byte with it on. A pod with hostNetwork makes `hostname -i` answer the node's loopback, so the game server binds there ([4215185](https://github.com/alvarogabrielgomez/kanpachi/commit/4215185))
+
 ## [0.7.2] - 2026-08-26
 
 ### Fixed
