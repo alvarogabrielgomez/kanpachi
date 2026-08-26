@@ -78,7 +78,7 @@ class AppNotice extends StatelessWidget {
     final colors = context.colors;
     final (Color background, Color dot) = switch (tone) {
       AppNoticeTone.warn => (colors.warnSurface, colors.warn),
-      AppNoticeTone.neutral => (colors.chip, colors.textMuted),
+      AppNoticeTone.neutral => (colors.chip, colors.idle),
       AppNoticeTone.done => (colors.chip, colors.ok),
       AppNoticeTone.error => (colors.dangerSurface, colors.danger),
     };

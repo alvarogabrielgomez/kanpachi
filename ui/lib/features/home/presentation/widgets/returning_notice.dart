@@ -185,7 +185,7 @@ class _ReturningMark extends StatelessWidget {
         child: spinning
             ? const AppSpinner(size: 20, stroke: 2)
             : AppStatusDot(
-                color: context.colors.textMuted,
+                color: context.colors.idle,
                 pulse: true,
                 pulseDuration: AppMotion.pulseFast,
               ),
