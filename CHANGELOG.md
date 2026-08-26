@@ -34,6 +34,8 @@ This file is in English, like commit messages and release notes, because a relea
 - Survive a transient accept error instead of leaving the listener dead for good. One exhausted file descriptor or one aborted connection left the host accepting nothing for the rest of the room's life, with everything green on the outside ([552a88b](https://github.com/alvarogabrielgomez/kanpachi/commit/552a88b))
 - Report a gate bound to a dead interface as absent. A slot counted as applied as soon as a rule carrying its comment turned up, and none of that rule's expressions were ever read, so a gate whose adapter index had changed reported everything applied with every block matching nothing ([dbce998](https://github.com/alvarogabrielgomez/kanpachi/commit/dbce998))
 - Carry the round trip the engine already sends. It arrived on every peers response and was thrown away, so the latency column was always blank and a diagnostic concluded "no round trip measured yet" from a field nobody ever wrote ([30504bc](https://github.com/alvarogabrielgomez/kanpachi/commit/30504bc))
+- Emit a peer change only once the new member's route carries an address, in the engine. The bus fires the moment a connection comes up and the peer list drops every route with no address yet, so the daemon's re-read returned a list without the member who had just arrived; the routes converged seconds later and produced no further event ([8823a5d](https://github.com/alvarogabrielgomez/kanpachi-engine/commit/8823a5d))
+- Keep the member book on disk, so a host that restarts can still kick somebody who was already inside and can hand them back the same address. That link lived only in memory and was written down as a price paid knowingly. It brings nobody back into the room: the engine's credentials die with the engine ([2b47a31](https://github.com/alvarogabrielgomez/kanpachi/commit/2b47a31))
 
 ### Added
 
@@ -43,6 +45,10 @@ This file is in English, like commit messages and release notes, because a relea
 - Say when the room changes state, and say it where a container looks. Sixteen places moved the room between states carrying the reason as an argument and none of them logged it. In a container the daemon now writes to standard output as well as to its file, because `docker logs` and `kubectl logs` read nothing else: a host spent thirty-three hours unable to admit anybody and `kubectl logs` showed not one line ([b43b3b2](https://github.com/alvarogabrielgomez/kanpachi/commit/b43b3b2))
 - Name who is at that address before kicking them. Addresses get recycled, so the one that was somebody else yesterday belongs to somebody else today, and kicking cannot be undone. `--yes` skips the question ([d83d814](https://github.com/alvarogabrielgomez/kanpachi/commit/d83d814))
 - A guide for running a game server on Kubernetes, with the three things a cluster does differently that cost a whole evening each ([7fe4eb8](https://github.com/alvarogabrielgomez/kanpachi/commit/7fe4eb8))
+
+### Changed
+
+- One record per member instead of five stores keyed by the same address. The credential book, the kick veto, the stale-notice backoff, the last mesh sighting and the merged peer list were all swept in the same places and read by the same functions, and nothing reconciled them. Presence now carries a timestamp per source, because the engine, the control socket and the book each know something the other two cannot ([2ebf54c](https://github.com/alvarogabrielgomez/kanpachi/commit/2ebf54c))
 
 ## [0.6.8] - 2026-08-20
 
