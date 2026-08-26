@@ -1766,7 +1766,9 @@ El retardo creciente es global y no por cuenta, porque no hay cuentas: bloquear 
 
 **Lo que NO se hace, y por qué.** No se cuenta como miembro a quien tiene credencial y todavía no abrió el canal. Ese caso ya está resuelto donde corresponde: su dirección se preautoriza en el canal de control en cuanto se emite la credencial, que es justo lo que le permite llegar a abrirlo. Contarlo como presente reservaría su dirección para siempre y renovaría la credencial de alguien que quizá nunca llegó.
 
-**Lo que queda sin explicar.** Por qué la tabla del motor no reporta al invitado en el host. La asimetría es del motor y no está medida. Esta decisión no la explica: la rodea con una fuente que el host ya tenía y no estaba mirando.
+**Lo que quedaba sin explicar, explicado el 2026-08-25.** Por qué la tabla del motor no reporta al invitado en el host. El motor emite `peers_changed` con `PeerConnAdded`, y su `peers()` descarta toda ruta que todavía no lleve dirección. Cuando salta el evento la ruta OSPF no resolvió `ipv4_addr`, así que la relectura que el daemon dispara al instante devuelve una lista sin el que acaba de entrar. Las rutas convergen segundos después y eso no produce ningún evento más. Lo cierra el vigía de malla, que mira la tabla ya convergida una vez por segundo y avisa al supervisor. Ver la decisión 43.
+
+**Lo que esta lista dejó de decidir.** Quién puede marcar el puerto de control y a quién se le abren los puertos del juego. Eso lo contesta el libro de credenciales desde la decisión 43, y esta lista contesta ahora una pregunta distinta: quién ESTÁ. Las dos fuentes de acá siguen valiendo enteras para eso.
 
 ## 36. El firewall ajeno que bloquea se abre con consentimiento, y queda anotado
 
@@ -1885,3 +1887,63 @@ No hay ámbito de persona. Ni el nombre, ni el registro, ni la cuarentena, ni el
 
 **Y el estado por persona costaba dinero aparte del conceptual.** El desinstalador tiene que recorrer todos los perfiles del registro para limpiar restos, porque es un instalador por máquina y quien autoriza el UAC puede no ser quien ejecutó la ventana. `%LOCALAPPDATA%\Kanpachi` no lo limpiaba nadie: quedó tirado en cada perfil desde el 2026-08-09.
 
+## 43. La compuerta se calcula de la MEMBRESÍA, no de la señal de vida
+
+**El fallo, medido el 2026-08-25 contra un host real en Kubernetes.** Durante treinta y tres horas ningún invitado entró y el host no dijo nada. Kubernetes lo reportó `Running` y `2/2 Ready` todo el tiempo. El SYN del invitado a `100.93.137.1:57623` lo descartaba la compuerta del propio host:
+
+```
+iif "kanpachi0" ip daddr 100.93.137.1 tcp dport 57623 ip saddr { 100.93.137.2, 100.93.137.5 } accept
+...
+meta nfproto ipv4 iif "kanpachi0" drop
+```
+
+El invitado era `.3` y no estaba en el conjunto. Y el paquete sí llegaba: durante un intento, `kanpachi0` del host sumó 75 paquetes contados por diferencia en `/proc/net/dev`. La malla funcionaba. Lo que fallaba era la lista con la que el host calculaba su compuerta.
+
+**La causa.** Quién puede marcar el puerto de control se calculaba desde la tabla de la malla, que es una señal de VIDA. Llega tarde, llega antes de que la ruta lleve dirección, se pierde en un búfer lleno, y no tiene ningún evento para quien cierra la tapa del portátil. La membresía es otra clase de hecho: la tiene esta máquina entera, cambia despacio, y vive en el libro de credenciales.
+
+| | Dueño | Ritmo | Qué decide |
+|---|---|---|---|
+| Membresía | el libro del host | lento | la compuerta, el alcance del oyente, la dirección que te toca |
+| Vida | el transporte | rápido | online contra AFK, degradado contra directo, a quién sondea el canario |
+
+**La decisión: la compuerta lee el libro.** Vencida no autoriza, revocada no autoriza, expulsado no autoriza, y nada más acota la lista. El plazo de seguridad ya existía: el latido deja de renovar a quien no está, así que la ficha de un ausente muere a las veinticuatro horas de su última renovación y su silla se libera sola.
+
+**La lista es la UNIÓN del libro y la malla, y la malla no sobra todavía.** El libro vive en memoria, y un host que reinicia el daemon y retoma la sala se queda sin él con la gente aún dentro de la red. Con el libro como única fuente, ese host no le abriría un puerto a nadie hasta que cada uno volviera a entrar, que es cambiar treinta y tres horas de sala muerta por un reinicio que expulsa a todo el mundo en silencio. La malla se queda hasta que el libro sepa sobrevivir a un reinicio.
+
+**Y los puertos del juego se atan al mismo sitio.** Abrirlos hacia un miembro desconectado no cuesta nada, porque del otro lado no hay quien conecte. Cerrárselos a quien sí está sí cuesta, y es lo que pasaba el 2026-08-13.
+
+**La ventana de diez minutos que esto reemplaza, releída.** El 2026-08-16 se recortó la pre-autorización porque el oyente que corre como SYSTEM quedaba abierto hacia 73 direcciones. El mensaje de aquel commit dice de dónde salieron: *one guest caught in the rejoin loop*. Un invitado, quemando una dirección por vuelta. La llave de miembro, que arregla esa quema, entró cinco minutos antes ese mismo día, y el freno de reingreso entró en el mismo commit que la ventana. La ventana se puso sobre un número que los dos arreglos anteriores ya habían vuelto imposible, y nadie volvió a medir.
+
+**Expulsar tuvo que aprender a resolver del libro.** Un ausente conserva su silla hasta que su ficha venza, así que el host tiene que poder quitársela antes. Resolviendo al expulsado solo contra la tabla del motor, expulsar contestaba que esa dirección no es de ningún miembro justo con quien más falta hacía. Conservar una silla que no se puede retirar es peor que no conservarla.
+
+### Una exposición conocida y acotada: el bloqueo por rango atrapa el loopback
+
+**Medido el 2026-08-25 en un `netns` limpio.** Con `100.93.137.1/24` sobre `lo` y un oyente en el 57623, un proceso local alcanza el puerto sin compuerta y no lo alcanza con `ip daddr 100.93.137.0/24 drop`, que es lo que emite la ranura `SlotRoomNet`. Las ranuras acotadas por adaptador no lo atrapan nunca, porque `iif lo` no casa con ellas.
+
+**No se arregla en 0.6.9, y por dos razones.** No se encontró un solo consumidor que marque hoy la dirección de la sala desde la propia máquina: el invitado marca al host, el host anuncia hacia los miembros, y el desvío del contenedor reescribe el destino en `prerouting` hacia donde escucha el juego, que queda fuera del rango de la sala. Y la mitad de Windows está sin medir, porque WFP no tiene el modelo de host débil que motiva el bloqueo por rango.
+
+**El bloqueo por rango no se debilita a ojo.** Su porqué está medido el 2026-08-10 y escrito en `gate/spec.go`: en Linux, un paquete que entra por la interfaz física con destino a la dirección virtual lo entrega el kernel, y el bloqueo acotado por adaptador no lo ve. La exención tendría que ser de `iif lo` y solo en las dos ranuras de rango. Queda propuesta para 0.7.0, junto con medir Windows.
+
+## 44. Quien no se fue está AFK, y su silla sigue puesta
+
+**El hecho que faltaba nombrar.** Nadie manda un aviso al cerrar la tapa del portátil. Un miembro que no hizo una salida formal no salió de la sala: está desconectado, y volverá a su misma dirección con su misma ficha, que es lo que la llave de miembro ya prometía.
+
+**La decisión: un miembro con ficha viva al que el motor no ve sale en la lista, marcado AFK.** Antes desaparecía, y desaparecer afirmaba lo único que nadie sabía. Con él viajan dos números calculados, cuánto lleva fuera y cuánto le queda a su ficha, con la misma forma que el contador del host ausente: la cara que los pinta no comparte reloj con el daemon, y restar contra dos relojes da números que mienten.
+
+**Se pinta donde va el ping**, igual en el CLI, en el asistente y en la ventana: `42 ms` cuando está, `AFK 3m` cuando no. En la ventana el punto de estado se apaga, porque el valor por omisión del camino en el cable es `direct` y la sala pintaba en verde a alguien que no estaba.
+
+**Tres consumidores le preguntaban cosas a quien no escuchaba.** El canario armaba sus objetivos desde la lista entera y fallaba contra cada ausente una vez por minuto con «no hay canal abierto», que es el ruido bajo el que quedó sepultado el fallo de treinta y tres horas. El latido renovaba fichas de ausentes, y ese vencimiento es el único plazo que libera una silla. Y el aviso de credencial vieja gastaba sus diez reintentos contra alguien sin canal por el que oírlo.
+
+**Sin ventana anti-parpadeo, a propósito.** La tabla del motor ya pinta el camino de cada miembro con la misma cadencia y el mismo temblor. Un plazo acá sería un número sin medición detrás, y se puede añadir el día que alguien vea el parpadeo.
+
+## 45. En un contenedor sin `hostNetwork`, la sala va por relay siempre
+
+**Lo que la CNI añade.** Un pod sin `hostNetwork` sale por la red del nodo con una traducción de direcciones de por medio, y el resultado desde fuera es NAT simétrico. El motor lo detecta y encamina por relay, que funciona y es más lento. Nada del clúster está roto y no hay nada que arreglar dentro del pod: quien quiera camino directo pone `hostNetwork: true` y acepta lo que eso trae.
+
+**Lo que sí hay que hacer, y no es obvio.** El CIDR de la CNI tiene que quedar fuera de `100.64.0.0/10`. Ese es el espacio del que Kanpachi saca la subred de cada sala, y con un solapamiento `resume` se niega para siempre y de forma irrecuperable, porque entrar dejaría a la máquina sin la red por la que entró.
+
+**La cuarentena se apaga en un pod.** Escribe en `/etc`, que es efímero, y su alcance es todo el espacio de red del pod y no el adaptador. Ver la decisión 42.
+
+**Y si el manifiesto pisa el `command` del contenedor, se pierde `KANPACHI_CONTAINER`.** Con eso muere el desvío al juego, en silencio, y la sala se ve perfecta mientras nadie alcanza el servidor. Ver la decisión 40.
+
+**Falta una sonda de vida.** El 2026-08-25 Kubernetes reportó el sidecar listo durante las treinta y tres horas en que no admitió a nadie. Lo que ahora sí se puede leer desde fuera es el log: en contenedor el daemon escribe también por la salida estándar, que es lo único que `kubectl logs` lee.

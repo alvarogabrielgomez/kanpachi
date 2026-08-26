@@ -149,7 +149,7 @@ entry points.
 | What you want | Where it is |
 |---|---|
 | **Start here** | [Your first room](docs/public/tutorial-first-room.md), from installing to playing with a friend |
-| **How to** | [Windows](docs/public/install-windows.md) · [Linux](docs/public/install-linux.md) · [Host a seed](docs/public/host-a-seed.md) · [Run a 24/7 game server](docs/public/run-a-game-server.md) · [Build and test from source](docs/public/build-from-source.md) · [Fork it](docs/public/fork-the-branding.md) |
+| **How to** | [Windows](docs/public/install-windows.md) · [Linux](docs/public/install-linux.md) · [Host a seed](docs/public/host-a-seed.md) · [Run a 24/7 game server](docs/public/run-a-game-server.md) · [With Docker](docs/public/run-a-game-server-docker.md) · [On Kubernetes](docs/public/run-a-game-server-kubernetes.md) · [Build and test from source](docs/public/build-from-source.md) · [Fork it](docs/public/fork-the-branding.md) |
 | **Reference** | [Every command of the Linux CLI](docs/public/reference-cli.md), `kanpachi` and `kanpseed` · [What gets installed, and where](docs/public/reference-files.md) · [The seed's HTTP API](registry/API.md) · [What changed in each release](CHANGELOG.md) |
 | **Understand** | [Kanpachi Protection](kanpachi-protection.md), the promise and its limits · [The seed](kanpachi-seed.md), what it sees and stores · [Architecture](docs/public/architecture.md), the three repositories and why they are three |
 
