@@ -299,10 +299,12 @@ func (g *Gate) Measure(ctx context.Context, want []gate.Spec) (gate.Measurement,
 		return out, fmt.Errorf("leyendo la cadena: %w", err)
 	}
 
-	puestas := map[int]bool{}
+	// Se guarda la regla ENTERA y no un booleano, porque preguntar solo si
+	// existe una con ese comentario no mide nada. Ver el bucle de abajo.
+	puestas := map[int]*nftables.Rule{}
 	for _, r := range reglas {
-		if slot, ok := slotOf(r.UserData); ok {
-			puestas[slot] = true
+		if slot, ok := slotOf(r.UserData); ok && puestas[slot] == nil {
+			puestas[slot] = r
 		}
 	}
 
@@ -314,12 +316,35 @@ func (g *Gate) Measure(ctx context.Context, want []gate.Spec) (gate.Measurement,
 	// no es un fallo, el invitado lo suelta al entrar. Y al revés, pedido y
 	// ausente, contestar que está puesta sería pintar de verde media compuerta
 	// justo en el adaptador donde llega gente que todavía no es miembro.
+	// # La regla tiene que DECIR lo que se pidió, y no solo estar
+	//
+	// Hasta el 2026-08-25 esto daba por puesta una ranura con solo encontrar una
+	// regla que llevara su comentario, sin mirar ni una de sus expresiones. Con
+	// eso, una compuerta atada a un índice de interfaz que ya no existe —el
+	// motor recrea el adaptador y el índice cambia— informa todo `[applied]` con
+	// todos los bloqueos inertes: la regla está, no casa con nada, y no bloquea
+	// nada. Un bloqueo que no casa con nada no falla ruidosamente: deja la sala
+	// descubierta en silencio.
+	//
+	// Se compara el acotado por interfaz, que es la condición que se mueve sola.
+	// Las direcciones y los puertos vienen del perfil y cambian solo cuando algo
+	// los cambia a propósito; el índice del adaptador cambia sin que nadie toque
+	// nada.
 	out.Gate = domain.GatePresent
 	for _, s := range want {
 		if s.Action != gate.Block {
 			continue
 		}
-		if !puestas[s.Slot] {
+		r := puestas[s.Slot]
+		if r == nil {
+			out.Gate = domain.GateAbsent
+			break
+		}
+		if s.Conditions.Iface == 0 {
+			continue
+		}
+		vivo, acotada := ifaceOf(r.Exprs)
+		if !acotada || vivo != uint32(s.Conditions.Iface) {
 			out.Gate = domain.GateAbsent
 			break
 		}
@@ -353,7 +378,7 @@ func (g *Gate) Measure(ctx context.Context, want []gate.Spec) (gate.Measurement,
 			out.Rules = append(out.Rules, domain.AppliedRule{
 				Name:    s.Rule,
 				Layer:   capa,
-				Enabled: puestas[s.Slot],
+				Enabled: puestas[s.Slot] != nil,
 			})
 		}
 	}
