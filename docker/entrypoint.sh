@@ -129,12 +129,24 @@ trap forward_term TERM INT
 NOTIFY_SOCKET=/nonexistent KANPACHI_CONTAINER=1 "$DAEMON" &
 daemon_pid=$!
 
+# The wait asks the daemon a QUESTION, and does not look for its socket file.
+#
+# $SOCKET lives on a volume that outlives the container, so a restart finds
+# yesterday's socket file sitting there with nobody behind it. Testing for the
+# file passed on the first pass, the CLI two lines below got ECONNREFUSED,
+# `set -e` ended the script, the container died, and the dead file stayed for
+# the next start to trip over. Measured on 2026-08-26 in Kubernetes: 27
+# restarts in two hours, each one a boot that got 40 ms before the daemon had
+# bound anything.
+#
+# `status` is the cheapest question the daemon answers, and answering it is
+# proof of the only thing this loop cares about.
 waited=0
-while [ ! -S "$SOCKET" ]; do
+until kanpachi --json status >/dev/null 2>&1; do
 	kill -0 "$daemon_pid" 2>/dev/null \
 		|| die "the daemon died before opening its control channel. What it said is above."
 	waited=$(( waited + 1 ))
-	[ "$waited" -lt 60 ] || die "the daemon never opened $SOCKET"
+	[ "$waited" -lt 60 ] || die "the daemon never answered on $SOCKET"
 	sleep 1
 done
 

@@ -8,6 +8,10 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Fixed
+
+- Wait for the daemon to ANSWER before the container asks it anything. The startup script looked for the socket FILE, and that file lives on a volume that outlives the container, so every restart found yesterday's socket with nobody behind it, ran the first command 40 ms into a boot that had not bound anything yet, and died with "connection refused". The dead file stayed for the next start to trip over: 27 restarts in two hours on a real cluster, with the game server beside it running fine (PENDING)
+
 ### Changed
 
 - Say whether you have played with this host's key before in a label beside the seed, instead of a four-line box under it. The box led with a count nobody asked for, "the same key as always, already in 126 rooms", and it printed a twenty-digit fingerprint with nothing to compare it against, which is how somebody learns to skim past a fingerprint. The count is gone from every layer: once you have played with a key, the number changes no decision ([e9322c1](https://github.com/alvarogabrielgomez/kanpachi/commit/e9322c1))
