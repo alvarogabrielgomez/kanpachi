@@ -298,14 +298,6 @@ type Session struct {
 	// de renovar. Un ID que el registro nunca emitió no tiene tarjeta suya que
 	// restaurar, y republicarla sería pedirle que reabra una sala que no conoce.
 	sealedCard []byte
-	// kicked son los expulsados de hace poco, con cuándo.
-	//
-	// Existe porque revocar tarda alrededor de un segundo y el motor sigue
-	// reportando al expulsado durante esa ventana. Sin la lista, el primer
-	// evento de cambio de miembros lo devuelve a los presentes y le reabre el
-	// puerto, deshaciendo justo la mitad de la expulsión que era inmediata.
-	kicked map[netip.Addr]time.Time
-
 	// appliedRules es la firma del último conjunto que se aplicó CON ÉXITO.
 	//
 	// Nació para no repetir la misma línea de log y hoy hace dos cosas: esa, y
@@ -318,19 +310,30 @@ type Session struct {
 	// a otro adaptador, ver [Session.bindRoomLocked].
 	appliedRules string
 
-	// issued son las credenciales que emitió esta sala, por la dirección que se
-	// le asignó a cada una.
+	// members es TODO lo que este host sabe de la gente de su sala.
 	//
-	// **Es el único sitio donde existe ese lazo.** La dirección la elige el host
-	// en [Session.IssueCredentialFor] y no baja al motor, así que
-	// `Engine.ListCredentials` devuelve id y vencimiento con la IP en cero.
-	// De este mapa dependen las dos cosas que necesitan traducir una dirección a
-	// una credencial: pre-autorizar el canal de control de quien acaba de
-	// recibirla, y encontrar qué revocar al expulsar.
+	// # Un registro, y antes eran cinco mapas
+	//
+	// Por la misma dirección, bajo el mismo candado, barridos en los mismos
+	// sitios y leídos por las mismas funciones: las credenciales emitidas, el
+	// veto de expulsión, el enfriamiento del aviso de credencial vieja, la
+	// última vez visto en la malla, y la lista fundida de `state.Peers`. Nada
+	// los reconciliaba, y la única función del árbol que detectaba el desacuerdo
+	// se alcanzaba solo por un evento que llega antes de tiempo.
+	//
+	// Lo escribe UNA ruta, [Session.refreshMembersLocked], y `state.Peers` se
+	// deriva de acá. Ver [domain.MemberTable].
+	//
+	// # El lazo dirección-credencial sigue viviendo solo aquí
+	//
+	// La dirección la elige el host en [Session.IssueCredentialFor] y no baja al
+	// motor, así que `Engine.ListCredentials` devuelve id y vencimiento con la
+	// IP en cero. De este lazo dependen pre-autorizar el canal de quien acaba de
+	// recibir credencial, y encontrar qué revocar al expulsar.
 	//
 	// Se vacía al salir de la sala, en [Session.leaveLocked]. Vive solo en
 	// memoria: ver el precio en [Session.credentialFor].
-	issued map[netip.Addr]domain.Credential
+	members domain.MemberTable
 
 	// verificables son los juegos que SÍ se pueden marcar como verificados, con
 	// la fecha en que se salió de la sala donde estuvieron activos.
@@ -403,28 +406,6 @@ type Session struct {
 	// dos primeros y faltaba éste, así que una sala que durase más de
 	// [timing.CredentialTTL] echaba a sus miembros uno por uno.
 	lastRenew time.Time
-
-	// staleProxAviso es, por miembro, DESDE CUÁNDO se le puede volver a decir
-	// que este host no tiene su credencial.
-	//
-	// Guarda el próximo intento y no el último, y esa elección es lo que arregla
-	// el fallo medido el 2026-08-11: guardando el último, un aviso que no salió
-	// quemaba igual el enfriamiento entero. Ver
-	// [Session.tellStaleMembersLocked], que pone plazos distintos según haya
-	// salido o no.
-	staleProxAviso map[netip.Addr]avisoStale
-
-	// vistoEnLaMalla es, por miembro, la última vez que el motor lo reportó.
-	//
-	// Es la mitad que le falta al libro para contestar «cuánto lleva fuera».
-	// El libro sabe QUIÉN es miembro y no sabe nada de presencia; la tabla del
-	// motor sabe quién está AHORA y no recuerda nada. Ver [domain.Peer.Away].
-	//
-	// Solo del host, porque solo el host tiene libro. En memoria, y perderlo al
-	// reiniciar no rompe nada: un miembro sin marca cuenta como visto por
-	// primera vez cuando se le mira, que es lo honesto para un daemon que
-	// acaba de arrancar.
-	vistoEnLaMalla map[netip.Addr]time.Time
 
 	// lastRejoin y rejoinWait son el reloj del reingreso del INVITADO.
 	//
@@ -604,7 +585,7 @@ func NewSession(ctx context.Context, d Deps) (*Session, error) {
 	s := &Session{
 		deps:      d,
 		canaryDue: make(chan struct{}, 1),
-		issued:    make(map[netip.Addr]domain.Credential),
+		members:   domain.MemberTable{},
 	}
 
 	// La cuarentena de base dejó de aplicarse a ciegas: es la DECISIÓN del
@@ -732,9 +713,11 @@ func (s *Session) Status() domain.RoomState {
 func (s *Session) IssuedAddresses() []netip.Addr {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]netip.Addr, 0, len(s.issued))
-	for ip := range s.issued {
-		out = append(out, ip)
+	out := make([]netip.Addr, 0, len(s.members))
+	for ip, m := range s.members {
+		if m.Cred != nil {
+			out = append(out, ip)
+		}
 	}
 	slices.SortFunc(out, func(a, b netip.Addr) int { return a.Compare(b) })
 	return out

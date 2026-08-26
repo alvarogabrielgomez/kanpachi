@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -94,11 +93,10 @@ func (s *Session) KickMember(ctx context.Context, ip netip.Addr) (domain.RoomSta
 	// cualquier evento de cambio de miembros en esa ventana lo reconstruiría
 	// desde una realidad que todavía no se enteró, deshaciendo el recorte y
 	// reabriéndole el puerto.
-	if s.kicked == nil {
-		s.kicked = make(map[netip.Addr]time.Time)
-	}
 	now := s.deps.Clock.Now()
-	s.kicked[ip] = now
+	m := s.members.At(ip)
+	m.Presence.Kicked = true
+	m.Presence.KickedAt = now
 	s.dropPeerLocked(ip)
 
 	// La entrada del libro se marca REVOCADA con el vencimiento FIJADO a la
@@ -124,10 +122,9 @@ func (s *Session) KickMember(ctx context.Context, ip netip.Addr) (domain.RoomSta
 	// Extenderla no concede nada: una entrada revocada no autoriza, no se
 	// renueva y no se le devuelve a nadie. Lo único que hace es retener la
 	// dirección, que es para lo que está.
-	if c, ok := s.issued[ip]; ok {
+	if c := m.Cred; c != nil {
 		c.Revoked = true
 		c.ExpiresAt = now.Add(timing.ArrivalGrace)
-		s.issued[ip] = c
 	}
 
 	// El canal de control se recorta ANTES que el firewall, y el orden importa:
@@ -191,11 +188,11 @@ func (s *Session) memberAtLocked(ip netip.Addr) (domain.Peer, bool) {
 	if p, ok := s.virtualIPOf(ip); ok {
 		return p, true
 	}
-	c, ok := s.issued[ip]
-	if !ok || c.Revoked || c.Expired(s.deps.Clock.Now()) {
+	m, ok := s.members[ip]
+	if !ok || m.Cred == nil || m.Cred.Revoked || m.Cred.Expired(s.deps.Clock.Now()) {
 		return domain.Peer{}, false
 	}
-	return domain.Peer{VirtualIP: ip, Name: c.Name}, true
+	return domain.Peer{VirtualIP: ip, Name: m.Cred.Name}, true
 }
 
 // dropPeerLocked saca a alguien de la lista de miembros. Asume el candado.
@@ -207,15 +204,6 @@ func (s *Session) dropPeerLocked(ip netip.Addr) {
 		}
 	}
 	s.state.Peers = kept
-}
-
-// forgetOldKicks limpia la lista de expulsados recientes. Asume el candado.
-func (s *Session) forgetOldKicks(now time.Time) {
-	for ip, t := range s.kicked {
-		if now.Sub(t) >= timing.KickGrace {
-			delete(s.kicked, ip)
-		}
-	}
 }
 
 // credentialFor busca la credencial emitida a una IP virtual.
@@ -231,15 +219,15 @@ func (s *Session) forgetOldKicks(now time.Time) {
 // pre-autorización del canal de control no abría el puerto a nadie. Ver
 // [Session.authorizedControlIPsLocked].
 //
-// El precio es que el mapa vive en memoria: un host que reinicia el daemon y
+// El precio es que la tabla vive en memoria: un host que reinicia el daemon y
 // retoma la sala pierde el lazo IP↔credencial de quien ya estaba dentro, y no
 // puede expulsarlo hasta que vuelva a entrar. Se paga a sabiendas, porque la
 // alternativa era un lazo que no existía.
 //
 // Asume el candado tomado.
 func (s *Session) credentialFor(ip netip.Addr) (domain.Credential, error) {
-	if c, ok := s.issued[ip]; ok {
-		return c, nil
+	if m, ok := s.members[ip]; ok && m.Cred != nil {
+		return *m.Cred, nil
 	}
 	return domain.Credential{}, fmt.Errorf("%w: no hay credencial emitida para %s", ErrNotAMember, ip)
 }
@@ -298,35 +286,7 @@ func (s *Session) authorizedControlIPsLocked() []netip.Addr {
 	if !s.state.IsHost() {
 		return domain.MemberIPs(s.state.Peers)
 	}
-
-	now := s.deps.Clock.Now()
-	s.forgetOldKicks(now)
-
-	seen := make(map[netip.Addr]bool, len(s.issued)+len(s.state.Peers))
-	out := make([]netip.Addr, 0, len(s.issued)+len(s.state.Peers))
-	add := func(ip netip.Addr) {
-		if seen[ip] {
-			return
-		}
-		if _, kicked := s.kicked[ip]; kicked {
-			return
-		}
-		seen[ip] = true
-		out = append(out, ip)
-	}
-
-	for ip, c := range s.issued {
-		if c.Expired(now) || c.Revoked {
-			continue
-		}
-		add(ip)
-	}
-	for _, ip := range domain.MemberIPs(s.state.Peers) {
-		add(ip)
-	}
-
-	slices.SortFunc(out, netip.Addr.Compare)
-	return out
+	return s.members.MemberIPsOf(s.deps.Clock.Now(), s.state.LocalIP)
 }
 
 // arrivalGraceOpen dice si una credencial emitida sigue dentro de su ventana
@@ -405,10 +365,10 @@ func (s *Session) onPeersChangedLocked(ctx context.Context) (domain.RoomState, e
 	// a quien el host acaba de echar. Sin este filtro, el evento de cambio de
 	// miembros deshace el recorte inmediato de KickMember y le vuelve a abrir
 	// el puerto durante el segundo que tarda la revocación.
-	now := s.deps.Clock.Now()
-	s.forgetOldKicks(now)
-	for ip := range s.kicked {
-		s.dropPeerLocked(ip)
+	for ip, m := range s.members {
+		if m.Presence.Kicked {
+			s.dropPeerLocked(ip)
+		}
 	}
 	// El ÚNICO sitio que se salta la aplicación cuando nada cambió, y el único
 	// que la necesita: el motor emite este evento en ráfagas, y el conjunto
@@ -466,7 +426,9 @@ func (s *Session) OnMemberChannelUp(ctx context.Context, ip netip.Addr) domain.R
 	if !s.state.IsHost() || !s.state.Conn.InRoom() {
 		return s.snapshot()
 	}
-	delete(s.staleProxAviso, ip)
+	if m, ok := s.members[ip]; ok {
+		m.StaleNext, m.StaleTries = time.Time{}, 0
+	}
 
 	// Releer la malla ACÁ es lo que hace que el invitado pueda jugar, y no un
 	// refinamiento.
@@ -480,10 +442,10 @@ func (s *Session) OnMemberChannelUp(ctx context.Context, ip netip.Addr) domain.R
 	// así, sin una línea más en el log.
 	//
 	// La causa es que [Session.onPeersChangedLocked] solo lo llamaba el evento
-	// `peers_changed` del motor. Y [Session.withAdmittedLocked], que existe
+	// `peers_changed` del motor. Y la fusión con el canal de control, que existe
 	// justamente para el caso en que el motor cuenta de menos, vive DENTRO de
-	// [Session.refreshPeersLocked], o sea que la red de seguridad no tenía quién
-	// la disparara.
+	// [Session.refreshMembersLocked], o sea que la red de seguridad no tenía
+	// quién la disparara.
 	//
 	// # Una frase de acá que era falsa, corregida el 2026-08-25
 	//
@@ -529,17 +491,6 @@ func (s *Session) OnMemberChannelUp(ctx context.Context, ip netip.Addr) domain.R
 // dos segundos para siempre.
 const StaleNoticeTries = 10
 
-// avisoStale es cuándo se le puede volver a hablar a un miembro sin credencial,
-// y cuántos intentos rápidos seguidos lleva fallados.
-//
-// Los intentos se cuentan porque el plazo solo no distingue los dos casos que
-// hay que tratar distinto: el otro lado todavía no redialó, que se resuelve en
-// segundos, y no hay por dónde hablarle, que no se resuelve.
-type avisoStale struct {
-	prox     time.Time
-	intentos int
-}
-
 // tellStaleMembersLocked le avisa a quien está en la sala y no tiene credencial
 // de este host.
 //
@@ -583,16 +534,14 @@ func (s *Session) tellStaleMembersLocked(ctx context.Context) {
 		if p.Away {
 			continue
 		}
-		if c, hay := s.issued[p.VirtualIP]; hay && !c.Expired(ahora) {
+		m := s.members.At(p.VirtualIP)
+		if m.Cred != nil && !m.Cred.Expired(ahora) {
 			continue
 		}
-		estado := s.staleProxAviso[p.VirtualIP]
-		if !estado.prox.IsZero() && ahora.Before(estado.prox) {
+		if !m.StaleNext.IsZero() && ahora.Before(m.StaleNext) {
 			continue
 		}
-		if s.staleProxAviso == nil {
-			s.staleProxAviso = make(map[netip.Addr]avisoStale)
-		}
+		intentos := m.StaleTries
 
 		err := s.deps.Control.Notify(ctx, p.VirtualIP, domain.RoomNotice{
 			Kind:   domain.NoticeStale,
@@ -602,30 +551,28 @@ func (s *Session) tellStaleMembersLocked(ctx context.Context) {
 		case err == nil:
 			s.deps.Log.Info("se le avisó a un miembro de que este host no tiene su credencial",
 				"nombre", p.Name.String(), "ip", p.VirtualIP.String())
-			s.staleProxAviso[p.VirtualIP] = avisoStale{prox: ahora.Add(timing.StaleNoticeCooldown)}
-		case estado.intentos+1 < StaleNoticeTries:
+			m.StaleNext, m.StaleTries = ahora.Add(timing.StaleNoticeCooldown), 0
+		case intentos+1 < StaleNoticeTries:
 			s.deps.Log.Warn("no se le pudo avisar a un miembro sin credencial, se reintenta",
 				"ip", p.VirtualIP.String(), "error", err, "en", timing.StaleNoticeRetry)
-			s.staleProxAviso[p.VirtualIP] = avisoStale{
-				prox: ahora.Add(timing.StaleNoticeRetry), intentos: estado.intentos + 1,
-			}
+			m.StaleNext, m.StaleTries = ahora.Add(timing.StaleNoticeRetry), intentos+1
 		default:
 			// Se agotaron los intentos rápidos. Esto ya no es "todavía no
 			// redialó", es un miembro al que no hay por dónde hablarle, y para
 			// ése el aviso no es el camino: su propio reingreso lo es. Se pasa al
 			// plazo largo para no llenar el log con lo mismo.
 			s.deps.Log.Warn("no se le pudo avisar a un miembro sin credencial, se deja de insistir",
-				"ip", p.VirtualIP.String(), "error", err, "intentos", estado.intentos+1)
-			s.staleProxAviso[p.VirtualIP] = avisoStale{prox: ahora.Add(timing.StaleNoticeCooldown)}
+				"ip", p.VirtualIP.String(), "error", err, "intentos", intentos+1)
+			m.StaleNext, m.StaleTries = ahora.Add(timing.StaleNoticeCooldown), 0
 		}
 	}
-	// Y se olvida lo que ya no frena nada, para que el mapa no crezca con la
-	// sala. Borrar un plazo cumplido es además lo que devuelve los intentos
-	// rápidos: quien siga sin credencial dentro de un rato vuelve a tener su
-	// ráfaga corta en vez de quedar condenado al plazo largo para siempre.
-	for ip, e := range s.staleProxAviso {
-		if ahora.After(e.prox) {
-			delete(s.staleProxAviso, ip)
+	// Y se olvida el plazo que ya se cumplió, que es lo que devuelve los
+	// intentos rápidos: quien siga sin credencial dentro de un rato vuelve a
+	// tener su ráfaga corta en vez de quedar condenado al plazo largo para
+	// siempre. La entrada entera la suelta [domain.MemberTable.Forget].
+	for _, m := range s.members {
+		if !m.StaleNext.IsZero() && ahora.After(m.StaleNext) {
+			m.StaleNext, m.StaleTries = time.Time{}, 0
 		}
 	}
 }
@@ -711,19 +658,19 @@ func (s *Session) logMemberDiffLocked(antes []domain.Peer) {
 //
 // Asume el candado tomado.
 func (s *Session) logInvitadosQueNoLleganLocked(presentes map[netip.Addr]bool) {
-	if !s.state.IsHost() || len(s.issued) == 0 {
+	if !s.state.IsHost() || len(s.members) == 0 {
 		return
 	}
 	ahora := s.deps.Clock.Now()
 
-	faltan := make([]string, 0, len(s.issued))
-	for ip, c := range s.issued {
+	faltan := make([]string, 0, len(s.members))
+	for ip, m := range s.members {
 		// Una credencial vencida ya no autoriza a nadie, así que su ausencia no
 		// es noticia: quien la tenía se fue hace rato y esto no es un fallo.
-		if c.Expired(ahora) || presentes[ip] {
+		if m.Cred == nil || m.Cred.Expired(ahora) || presentes[ip] {
 			continue
 		}
-		faltan = append(faltan, c.Name.String()+" "+ip.String())
+		faltan = append(faltan, m.Cred.Name.String()+" "+ip.String())
 	}
 	if len(faltan) == 0 {
 		return

@@ -250,16 +250,16 @@ func (s *Session) leaveLocked(
 	s.cardKey = [domain.CardKeyLen]byte{}
 	s.sealedCard = nil
 	s.nick = domain.Nickname{}
-	s.kicked = nil
-	// Las credenciales mueren con la sala que las emitió, y esto NO es higiene.
+	// La tabla de miembros muere con la sala que la llenó, y esto NO es higiene.
 	//
 	// Sus direcciones son válidas, así que sobrevivir a la sala significa que la
 	// siguiente arrancaría abriéndole el canal de control a las IP de la
-	// anterior: [Session.authorizedControlIPsLocked] las agrega sin poder saber
+	// anterior: [Session.authorizedControlIPsLocked] las cuenta sin poder saber
 	// que son de otra sala, y [domain.ControlRules] solo descarta las
-	// inválidas. Se vacía en vez de anularse porque emitir escribe en el mapa
-	// sin comprobar, y un mapa nil ahí es un pánico.
-	clear(s.issued)
+	// inválidas. Con ella se va también el veto de expulsión, que no tiene
+	// sentido fuera de la sala que lo puso. Se vacía en vez de anularse porque
+	// emitir escribe sin comprobar, y un mapa nil ahí es un pánico.
+	clear(s.members)
 	// Y la firma del último conjunto de reglas, para que la primera aplicación
 	// de la sala siguiente se anote aunque por casualidad pida lo mismo.
 	s.appliedRules = ""

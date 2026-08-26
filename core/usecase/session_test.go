@@ -2280,10 +2280,11 @@ func TestElVetoDeLaExpulsiónNuncaDuraMásQueLaReservaDeSuDirección(t *testing.
 
 	// Se le deja a la ficha menos vida que la ventana del veto, que es el caso
 	// que el recorte no cubría: solo acortaba, así que acá no hacía nada.
-	cred, ok := b.session.issued[invitado]
-	if !ok {
+	m, ok := b.session.members[invitado]
+	if !ok || m.Cred == nil {
 		t.Fatal("la sala de prueba no dejó credencial para el invitado")
 	}
+	cred := *m.Cred
 	b.clock.avanza(cred.ExpiresAt.Sub(b.deps.Clock.Now()) - 5*time.Second)
 
 	if _, err := b.session.KickMember(ctx(), invitado); err != nil {
@@ -2392,7 +2393,7 @@ func TestSalirDeLaSalaDiceTambiénPorQué(t *testing.T) {
 // el único plazo que libera la silla.
 func TestUnMiembroSinMallaSaleComoAFKYNadieLoInterroga(t *testing.T) {
 	b, invitado := salaConDosYJuego(t)
-	cred := b.session.issued[invitado]
+	cred := *b.session.members[invitado].Cred
 
 	// Se le cae el WiFi. El motor deja de verlo y no manda nada.
 	b.motor.peers = []domain.Peer{{VirtualIP: b.session.Status().LocalIP, Name: nick(t, "alvaro")}}
@@ -2480,5 +2481,68 @@ func TestUnaSalaSoloConAusentesNoGrita(t *testing.T) {
 	st := b.session.RefreshAlerts(ctx())
 	if tieneAlerta(st, domain.AlertNoMemberChannels) {
 		t.Fatal("una sala con todos AFK se reportó como rota")
+	}
+}
+
+// TestLosHechosDeUnMiembroNoSePisanEntreEllos.
+//
+// Es lo que compra el registro único. Antes eran cinco mapas por la misma
+// dirección y nada los reconciliaba: la ficha, el veto de expulsión, el
+// enfriamiento del aviso, la última vez visto en la malla y la lista fundida.
+// Un parpadeo del motor podía dejar a dos de ellos diciendo cosas distintas de
+// la misma persona, y la única función del árbol que detectaba el desacuerdo se
+// alcanzaba solo por un evento que llega antes de tiempo.
+func TestLosHechosDeUnMiembroNoSePisanEntreEllos(t *testing.T) {
+	b, invitado := salaConDosYJuego(t)
+	self := b.session.Status().LocalIP
+
+	m := b.session.members[invitado]
+	if m == nil || m.Cred == nil {
+		t.Fatalf("la sala de prueba no dejó registro del invitado: %+v", b.session.members)
+	}
+	fichaAntes := m.Cred.ID
+
+	// El motor parpadea: deja de verlo y lo vuelve a ver.
+	b.motor.peers = []domain.Peer{{VirtualIP: self, Name: nick(t, "alvaro")}}
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
+		t.Fatal(err)
+	}
+	if m.Presence.InMesh {
+		t.Fatal("el motor dejó de verlo y siguió marcado presente")
+	}
+	if m.Cred == nil || m.Cred.ID != fichaAntes {
+		t.Fatal("salir de la malla le borró la ficha: son dos hechos distintos")
+	}
+	if m.Presence.MeshAt.IsZero() {
+		t.Fatal("perdió cuándo se le vio, que es lo que dice cuánto lleva fuera")
+	}
+
+	b.motor.peers = []domain.Peer{
+		{VirtualIP: self, Name: nick(t, "alvaro")},
+		{VirtualIP: invitado, Name: nick(t, "humberto"), Path: domain.PathDirect},
+	}
+	if _, err := b.session.OnPeersChanged(ctx()); err != nil {
+		t.Fatal(err)
+	}
+	if !m.Presence.InMesh || m.Path != domain.PathDirect {
+		t.Fatal("volvió a la malla y no se anotó")
+	}
+	if m.Cred == nil || m.Cred.ID != fichaAntes {
+		t.Fatal("volver le cambió la ficha")
+	}
+
+	// Expulsarlo escribe el veto y revoca la ficha en el MISMO registro, así que
+	// no puede existir uno sin el otro.
+	if _, err := b.session.KickMember(ctx(), invitado); err != nil {
+		t.Fatal(err)
+	}
+	if !m.Presence.Kicked {
+		t.Fatal("se expulsó sin dejar veto")
+	}
+	if m.Cred == nil || !m.Cred.Revoked {
+		t.Fatal("se puso el veto y no se revocó la ficha: eran dos mapas y ahora son uno")
+	}
+	if slices.Contains(b.session.authorizedControlIPsLocked(), invitado) {
+		t.Fatal("un expulsado conservó la puerta abierta")
 	}
 }

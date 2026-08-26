@@ -587,7 +587,7 @@ type mockControl struct {
 	alcance   []netip.Addr
 	marcados  []netip.Addr
 	// conectados son las direcciones con el canal de la sala abierto, que es lo
-	// que el host suma a la tabla del motor. Ver [Session.withAdmittedLocked].
+	// que el host funde con la tabla del motor. Ver [Session.refreshMembersLocked].
 	conectados []netip.Addr
 	// fallarDesde hace fallar Dial a partir de la n-ésima llamada, 1-indexada.
 	fallarDesde int

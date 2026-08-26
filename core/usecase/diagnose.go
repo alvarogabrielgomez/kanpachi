@@ -392,8 +392,8 @@ func (s *Session) roomHealthAlertsLocked() []domain.Alert {
 		if p.Self || p.Away || !p.VirtualIP.IsValid() {
 			continue
 		}
-		c, hay := s.issued[p.VirtualIP]
-		if !hay || arrivalGraceOpen(c, ahora) {
+		m, hay := s.members[p.VirtualIP]
+		if !hay || m.Cred == nil || arrivalGraceOpen(*m.Cred, ahora) {
 			continue
 		}
 		presentes++

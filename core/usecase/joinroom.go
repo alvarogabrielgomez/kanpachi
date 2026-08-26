@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"net/netip"
 	"slices"
-	"time"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // JoinRoom entra a una sala ajena.
@@ -591,13 +591,24 @@ func (s *Session) checkSubnetAgainstLocal(ctx context.Context, subnet netip.Pref
 }
 
 // refreshPeersLocked relee la lista de miembros. Asume el candado tomado.
+//
+// Es la ÚNICA ruta que escribe [Session.members], y de esa tabla se deriva
+// `state.Peers`. Antes eran cinco almacenes por dirección que nadie
+// reconciliaba, y la única función del árbol que detectaba el desacuerdo se
+// alcanzaba solo por un evento que llega antes de tiempo.
+//
+// El orden de los tres pasos importa. La malla primero, porque trae el nombre
+// que reporta cada máquina y el camino. El canal después, que es evidencia de
+// primera mano y llega ANTES que el motor, medido con dos máquinas el
+// 2026-08-13. Y los papeles al final, sobre la tabla YA fundida: marcarlos
+// antes dejaba fuera a los miembros que no venían del motor.
 func (s *Session) refreshPeersLocked(ctx context.Context) error {
 	peers, err := s.deps.Engine.Peers(ctx)
 	if err != nil {
 		return fmt.Errorf("consultando los miembros de la sala: %w", err)
 	}
-	s.state.Peers = s.withAwayMembersLocked(s.withAdmittedLocked(
-		markRoles(peers, s.state.LocalIP, s.state.Role, s.state.Subnet)))
+	s.refreshMembersLocked(peers)
+	s.state.Peers = s.peersFromMembersLocked()
 	// La calidad de la conexión sale de esta tabla y de nada más. Va ANTES de
 	// deducir la presencia del host, que exige un estado concreto para no
 	// dispararse a mitad de un ingreso.
@@ -606,77 +617,106 @@ func (s *Session) refreshPeersLocked(ctx context.Context) error {
 	return nil
 }
 
-// withAwayMembersLocked suma a la lista los miembros que tienen ficha viva y
-// que el motor no ve, marcados AFK, y anota cuándo se vio a cada uno.
+// refreshMembersLocked funde lo que dice el motor con lo que dice el canal.
 //
-// # Por qué están en la lista y no fuera
-//
-// Porque no se fueron. Quien no hizo una salida formal sigue siendo miembro:
-// su silla está puesta y volverá a ella con su misma ficha y su misma
-// dirección. Sacarlo de la lista era afirmar que se fue, que es justo lo que
-// nadie sabe, y dejaba a la persona que mira la pantalla sin la diferencia
-// entre «se fue» y «se le cayó el WiFi».
-//
-// # Lo que se gana además de la pantalla
-//
-// Tres consumidores preguntaban cosas a gente que no estaba escuchando, y los
-// tres se apoyan ahora en [domain.Peer.Away]: el canario fallaba contra cada
-// ausente una vez por minuto, que es el ruido bajo el que quedó sepultado el
-// fallo de treinta y tres horas; el latido renovaba fichas de ausentes, y su
-// vencimiento es el único plazo que libera una silla; y el aviso de credencial
-// vieja reintentaba diez veces contra quien no puede oírlo.
-//
-// # Sin ventana anti-parpadeo, a propósito
-//
-// Salir de la tabla marca AFK en el acto. La tabla del motor ya es la que
-// pinta el camino de cada miembro, con la misma cadencia y el mismo temblor, y
-// esa insignia lleva meses sin que a nadie le moleste. Meter un plazo acá sería
-// inventar un número sin una medición que lo respalde, y se puede añadir el día
-// que el parpadeo se vea.
-//
-// Solo el host, que es quien tiene libro. Asume el candado tomado.
-func (s *Session) withAwayMembersLocked(peers []domain.Peer) []domain.Peer {
+// Asume el candado tomado.
+func (s *Session) refreshMembersLocked(peers []domain.Peer) {
 	ahora := s.deps.Clock.Now()
-	if s.vistoEnLaMalla == nil {
-		s.vistoEnLaMalla = make(map[netip.Addr]time.Time)
+	if s.members == nil {
+		s.members = domain.MemberTable{}
 	}
-	presente := make(map[netip.Addr]bool, len(peers))
+
+	// 1. La malla. Trae el camino, el RTT y el nombre que la otra máquina
+	//    reporta de sí misma.
+	enLaMalla := make(map[netip.Addr]bool, len(peers))
 	for _, p := range peers {
 		if !p.VirtualIP.IsValid() {
 			continue
 		}
-		presente[p.VirtualIP] = true
-		s.vistoEnLaMalla[p.VirtualIP] = ahora
+		enLaMalla[p.VirtualIP] = true
+		m := s.members.At(p.VirtualIP)
+		m.NoteMesh(ahora, p.Path, p.RTT)
+		if !p.Name.IsZero() {
+			m.Name = p.Name
+		}
 	}
-	if !s.state.IsHost() {
-		return peers
+	for ip, m := range s.members {
+		if !enLaMalla[ip] {
+			m.NoteOutOfMesh()
+		}
 	}
 
-	for ip, c := range s.issued {
-		if presente[ip] || c.Revoked || c.Expired(ahora) {
-			continue
+	// 2. El canal de control, solo en el host: un invitado no tiene oyente.
+	//
+	//    Es la fuente que arregló el fallo del 2026-08-13, cuando la tabla del
+	//    motor contaba de menos en el host y un invitado ya dentro tenía canal
+	//    abierto y ninguna regla de juego. Para el host es conocimiento de
+	//    primera mano: él asignó esa dirección al emitir la credencial, su
+	//    oyente solo acepta las autorizadas, y lo que se comprueba es que hay un
+	//    socket, no un mensaje que alguien pueda escribir.
+	if s.state.IsHost() {
+		conectados := s.deps.Control.ConnectedMembers()
+		abierto := make(map[netip.Addr]bool, len(conectados))
+		for _, ip := range conectados {
+			abierto[ip] = true
+			s.members.At(ip).NoteChannel(ahora)
 		}
-		if _, kicked := s.kicked[ip]; kicked {
-			continue
+		for ip, m := range s.members {
+			if !abierto[ip] {
+				m.NoteNoChannel()
+			}
 		}
-		desde, visto := s.vistoEnLaMalla[ip]
-		if !visto {
-			// Nunca llegó a aparecer. Lleva fuera desde que se le dio la ficha,
-			// que es lo único que este host sabe de él.
-			desde = c.IssuedAt
-		}
-		peers = append(peers, domain.Peer{
-			VirtualIP:   ip,
-			Name:        c.Name,
-			Away:        true,
-			AwayFor:     ahora.Sub(desde),
-			SeatFreesIn: c.ExpiresAt.Sub(ahora),
-		})
 	}
-	// El mismo orden que el resto: la lista se lee a ojo y se dicta por
-	// teléfono, y un mapa recorrido da un orden distinto en cada pasada.
-	slices.SortFunc(peers, func(a, b domain.Peer) int { return a.VirtualIP.Compare(b.VirtualIP) })
-	return peers
+
+	// 3. Soltar lo que ya no dice nada de nadie, y con ello caducar los vetos
+	//    de expulsión cumplidos.
+	s.members.Forget(ahora, timing.KickGrace)
+}
+
+// peersFromMembersLocked deriva la lista que ve el resto del producto.
+//
+// # Por qué los ausentes están en la lista
+//
+// Porque no se fueron. Quien no hizo una salida formal sigue siendo miembro: su
+// silla está puesta y volverá a ella con su misma ficha y su misma dirección.
+// Sacarlo era afirmar lo único que nadie sabe, y dejaba a quien mira la pantalla
+// sin la diferencia entre «se fue» y «se le cayó el WiFi». Ver la decisión 44.
+//
+// Los papeles se marcan acá, sobre la tabla fundida, y no sobre lo que devolvió
+// el motor: así los pasa TODO el mundo, incluidos los que el motor no ve.
+//
+// Asume el candado tomado.
+func (s *Session) peersFromMembersLocked() []domain.Peer {
+	ahora := s.deps.Clock.Now()
+	out := make([]domain.Peer, 0, len(s.members))
+	for _, m := range s.members {
+		if !m.IP.IsValid() || !m.IsMember(ahora) {
+			continue
+		}
+		p := domain.Peer{VirtualIP: m.IP, Name: m.Name, Path: m.Path, RTT: m.RTT}
+		if m.Presence.InMesh {
+			out = append(out, p)
+			continue
+		}
+		if m.Presence.HasChannel {
+			// Un socket prueba que alguien está y no dice por dónde llega.
+			// Marcarlo directo pintaría la sala de verde sobre una medición que
+			// nadie hizo, y relay la acusaría de lenta sin motivo.
+			p.Path = domain.PathUnconfirmed
+			out = append(out, p)
+			continue
+		}
+		p.Away = true
+		p.AwayFor = m.AwayFor(ahora)
+		p.SeatFreesIn = m.SeatFreesIn(ahora)
+		out = append(out, p)
+	}
+	out = markRoles(out, s.state.LocalIP, s.state.Role, s.state.Subnet)
+	// En orden: la lista se lee a ojo y se dicta por teléfono, y un mapa
+	// recorrido da un orden distinto en cada pasada, con él una firma de reglas
+	// distinta en cada pasada.
+	slices.SortFunc(out, func(a, b domain.Peer) int { return a.VirtualIP.Compare(b.VirtualIP) })
+	return out
 }
 
 // inferHostPresenceLocked deduce la presencia del host de la tabla de peers.
