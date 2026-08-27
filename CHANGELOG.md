@@ -8,6 +8,8 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+## [0.7.5] - 2026-08-26
+
 ### Fixed
 
 - Show a member's round trip only when something measured it. The engine reported the route's path cost instead of a round trip, and every hop of that cost that its peer center had not heard about yet counted as a flat 500. With a single hop the path cost IS the hop cost, so somebody on a direct tunnel read as `500 ms` for the first minute of a room and then read as the truth: a number credible enough that whoever saw it blamed their own connection. A direct member now shows what this machine's connection to them measured. A relayed one shows the two measured hops added together, the local one from those same stats and the far one from the figure the seed published, and shows nothing at all until both halves have arrived ([1e0876f](https://github.com/alvarogabrielgomez/kanpachi/commit/1e0876f))
@@ -516,6 +518,7 @@ First published version.
 - Remember your name and the window size ([01fb7e5](https://github.com/alvarogabrielgomez/kanpachi/commit/01fb7e5), [68a543a](https://github.com/alvarogabrielgomez/kanpachi/commit/68a543a))
 - Publish the installer from a single tag ([e4fd252](https://github.com/alvarogabrielgomez/kanpachi/commit/e4fd252))
 
+[0.7.5]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.5
 [0.7.4]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.4
 [0.7.3]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.3
 [0.7.2]: https://github.com/alvarogabrielgomez/kanpachi/releases/tag/v0.7.2
