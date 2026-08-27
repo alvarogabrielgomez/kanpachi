@@ -123,6 +123,18 @@ type Deps struct {
 	Control ControlSource
 	System  port.SystemEvents
 	Log     port.Logger
+
+	// Malla es el vigía de la malla, y es OPCIONAL: sin él el supervisor
+	// funciona igual, solo que pierde la red de seguridad de [tagMeshChanged].
+	// No entra en validate por eso, y porque `roomprobe` arma supervisores sin
+	// vigía.
+	Malla MeshWatcher
+}
+
+// MeshWatcher es lo poco que el supervisor necesita del vigía: que le diga
+// cuándo volver a mirar.
+type MeshWatcher interface {
+	Cambios() <-chan struct{}
 }
 
 func (d Deps) validate() error {
@@ -177,6 +189,21 @@ const (
 
 	// tagMemberUp es un miembro abriendo su canal con este host.
 	tagMemberUp tag = "canal-de-miembro"
+
+	// tagMeshChanged es el vigía diciendo que la tabla del motor cambió.
+	//
+	// Es la red de seguridad del evento `peers_changed`, y no su reemplazo: el
+	// evento llega ANTES, y este llega SEGURO. El motor emite con
+	// `PeerConnAdded`, cuando la ruta todavía no resolvió su dirección, así que
+	// la relectura que sigue devuelve una lista sin el miembro que acaba de
+	// entrar; las rutas convergen segundos después y eso no produce ningún
+	// evento más. El vigía mira la tabla YA CONVERGIDA, una vez por segundo.
+	//
+	// Medido el 2026-08-25 contra un host real: el invitado apareció en la malla
+	// 4,3 segundos después de que el host aplicara sus reglas, nadie releyó, y
+	// la compuerta descartó cada SYN durante treinta y tres horas mientras el
+	// pod se reportaba listo.
+	tagMeshChanged tag = "malla-cambió"
 
 	// tagCanaryDue es "se aplicó la protección, toca comprobarla".
 	tagCanaryDue tag = "canario-tras-aplicar"
@@ -422,6 +449,11 @@ func (s *Supervisor) manejar(ctx context.Context, it item) {
 	case tagMemberUp:
 		ip, _ := it.value.(netip.Addr)
 		s.deps.Room.OnMemberChannelUp(ctx, ip)
+
+	case tagMeshChanged:
+		if _, err := s.deps.Room.OnPeersChanged(ctx); err != nil {
+			s.deps.Log.Warn("no se pudo releer la malla tras un cambio", "error", err)
+		}
 
 	case tagNetID:
 		// Windows acaba de identificar una red, o sea que acaba de revertir la
@@ -804,6 +836,9 @@ func (s *Supervisor) resuscribir(ctx context.Context) {
 	drenarSi(s, ctx, tagNetID, s.deps.System.NetworkIdentified())
 	drenarSi(s, ctx, tagResume, s.deps.System.Resumed())
 	drenarSi(s, ctx, tagNetChg, s.deps.System.NetworkChanged())
+	if s.deps.Malla != nil {
+		drenarSi(s, ctx, tagMeshChanged, s.deps.Malla.Cambios())
+	}
 }
 
 // drenarSi arranca el drenaje de un canal si es uno que no se estaba drenando.

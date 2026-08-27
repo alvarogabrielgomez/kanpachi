@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AlecAivazis/survey/v2"
+
 	"github.com/accentiostudios/kanpachi/core/timing"
 	"github.com/accentiostudios/kanpachi/daemon/transport/client"
 	"github.com/accentiostudios/kanpachi/daemon/transport/protocol"
@@ -187,11 +189,16 @@ func init() {
   members share is refused instead of guessed: write the address so you do
   not kick the wrong one.
 
+  By address it says who that is and asks first, because addresses get
+  recycled: the one that was somebody else yesterday is somebody else's
+  today. ` + "`--yes`" + ` skips the question.
+
   Kicking does not stop them coming back with the same code.
   ` + "`kanpachi rotate`" + ` is what does that.
 
     kanpachi kick alvaro
-    kanpachi kick 100.71.3.4`,
+    kanpachi kick 100.71.3.4
+    kanpachi kick 100.71.3.4 --yes`,
 			run: cmdKick},
 
 		"games": {brief: "the game catalog, and which ones are installed",
@@ -776,6 +783,7 @@ func cmdMembers(_ context.Context, op options, _ []string) error {
 // here lets whoever types use what they see on screen, and **it refuses when the
 // name appears twice** instead of picking one.
 func cmdKick(_ context.Context, op options, args []string) error {
+	args, yes := takeYes(args)
 	if len(args) == 0 {
 		return badUsage("kick needs who: their name in the room or their virtual IP")
 	}
@@ -789,14 +797,19 @@ func cmdKick(_ context.Context, op options, args []string) error {
 	if err != nil {
 		return err
 	}
-	ip, err := resolveMember(st, args[0])
+	target, confirmar, err := kickTarget(st, args[0])
 	if err != nil {
 		return err
+	}
+	if confirmar {
+		if err := confirmKick(target, yes); err != nil {
+			return err
+		}
 	}
 
 	v, done, err := request[protocol.RoomView](c, op, protocol.MethodKickMember, struct {
 		IP string `json:"ip"`
-	}{ip})
+	}{target.IP})
 	if done {
 		return err
 	}
@@ -808,31 +821,83 @@ func cmdKick(_ context.Context, op options, args []string) error {
 	return err
 }
 
-// resolveMember translates what a person typed into a virtual IP.
-func resolveMember(st protocol.RoomView, who string) (string, error) {
+// kickTarget translates what a person typed into the member it names, and says
+// whether they should be told who that is before anything happens.
+//
+// # Why an address needs confirming and a name does not
+//
+// Because an address is not a stable identity for a person, and the only guard
+// that existed assumed the opposite. A repeated NAME is refused and the person
+// is sent to write the IP instead, which treats the IP as the unambiguous half.
+// It is not: the allocator recycles the address of whoever leaves, so in the
+// real room `pericoman` and `jorungador` shared 100.93.137.2 over five days.
+//
+// `kanpachi kick 100.93.137.5` matched that address against the live list and
+// kicked whoever held it at that moment, in silence, wearing the face of a
+// success. Kicking cannot be undone.
+//
+// A name is different: it is what the person read on the screen a second
+// earlier, so repeating it back to them buys nothing.
+func kickTarget(st protocol.RoomView, who string) (protocol.PeerView, bool, error) {
 	var found []protocol.PeerView
+	byIP := false
 	for _, p := range st.Peers {
-		if p.IP == who || strings.EqualFold(p.Name, who) {
+		switch {
+		case p.IP == who:
+			byIP = true
+			found = append(found, p)
+		case strings.EqualFold(p.Name, who):
 			found = append(found, p)
 		}
 	}
 	switch len(found) {
 	case 0:
-		return "", badUsage("there is no %q in the room.\n  `kanpachi members` says who is", who)
+		return protocol.PeerView{}, false, badUsage("there is no %q in the room.\n  `kanpachi members` says who is", who)
 	case 1:
 		if found[0].Self {
-			return "", badUsage("that is you. To leave the room it is `kanpachi leave`")
+			return protocol.PeerView{}, false, badUsage("that is you. To leave the room it is `kanpachi leave`")
 		}
-		return found[0].IP, nil
+		return found[0], byIP, nil
 	default:
 		var ips []string
 		for _, p := range found {
 			ips = append(ips, p.IP)
 		}
-		return "", badUsage("there are %d members called %q: %s.\n"+
+		return protocol.PeerView{}, false, badUsage("there are %d members called %q: %s.\n"+
 			"  Write the IP so you do not kick the wrong one",
 			len(found), who, strings.Join(ips, ", "))
 	}
+}
+
+// confirmKick says out loud who is about to be kicked, and waits.
+//
+// The three ways out are the ones the rest of the CLI already uses, and the
+// middle one is the one that gets overlooked: with no terminal and no `--yes`
+// it REFUSES, because inside a script there is nobody to answer and reading
+// that silence as a yes would remove the confirmation exactly where nobody is
+// watching. See [confirmDisplacement].
+func confirmKick(p protocol.PeerView, yes bool) error {
+	quién := fmt.Sprintf("%s (%s)", p.Name, p.IP)
+	if yes {
+		return nil
+	}
+	if !hasTerminal() {
+		return refuse("%s is the member at that address right now.\n"+
+			"  There is no terminal to confirm that in.\n"+
+			"  If that is what you want, say so on purpose:  --yes", quién)
+	}
+
+	var ok bool
+	if err := ask(&survey.Confirm{
+		Message: "Kick " + quién + "?",
+		Default: false,
+	}, &ok); err != nil {
+		return err
+	}
+	if !ok {
+		return refuse("nothing was done.")
+	}
+	return nil
 }
 
 // ─── The game ────────────────────────────────────────────────────────────────

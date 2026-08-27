@@ -142,6 +142,32 @@ abstract final class AppMessages {
           'redes, y ahí Kanpachi no está mirando.',
       hint: 'Se enciende en Configuración.',
     ),
+    // Dice el síntoma que la persona SÍ puede comprobar, que es que nadie
+    // entra, en vez de hablar de sockets. Y nombra al firewall de esta máquina
+    // porque es donde estuvo el fallo medido: la sala se veía sana por dentro
+    // y por fuera durante treinta y tres horas.
+    AlertKind.noMemberChannels => const AppMessage(
+      severity: MessageSeverity.warn,
+      title: 'Nadie logra hablar con tu sala',
+      body:
+          'Hay gente conectada a la red de la sala y ninguno consigue '
+          'abrir su canal contigo. Con esto, quien entre no va a poder '
+          'jugar aunque la pantalla diga que está dentro.',
+      hint:
+          'Casi siempre es el firewall de esta PC. Revisa el diagnóstico '
+          'y, si hace falta, sal de la sala y vuelve a abrirla.',
+    ),
+    // El aviso llega ANTES de que se acabe, y el texto lo dice: cuando se
+    // acaben, el error lo ve quien se queda fuera y esta pantalla no se entera.
+    AlertKind.roomAlmostFull => const AppMessage(
+      severity: MessageSeverity.warn,
+      title: 'A tu sala le quedan pocas direcciones',
+      body:
+          'Cada persona que entra ocupa una, y se liberan solas un día '
+          'después de la última vez que entró. Cuando se acaben, quien '
+          'intente entrar va a ver un error y desde acá no se vería nada.',
+      hint: 'Expulsar a quien ya no juega libera la suya en unos minutos.',
+    ),
   };
 
   /// Lo que se le cuenta al usuario sobre una regla de firewall que Kanpachi no

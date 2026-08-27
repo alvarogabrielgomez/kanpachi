@@ -30,6 +30,7 @@ class ColorTokens extends ThemeExtension<ColorTokens>
     required this.border,
     required this.shadowMenu,
     required this.ok,
+    required this.idle,
     required this.okInk,
     required this.warn,
     required this.danger,
@@ -104,6 +105,23 @@ class ColorTokens extends ThemeExtension<ColorTokens>
   @override
   final Color ok;
 
+  /// El gris de un punto APAGADO: nadie por ese camino, un miembro offline,
+  /// uno mismo en la lista.
+  ///
+  /// # Por qué no es [textMuted], que es de donde salía
+  ///
+  /// Porque son dos trabajos con dos exigencias opuestas. `textMuted` tiene que
+  /// LEERSE, así que vive cerca del texto; un punto apagado tiene que
+  /// distinguirse del verde de al lado, y para eso tiene que alejarse. Medido
+  /// el 2026-08-26 simulando deuteranopia sobre la paleta oscura de entonces:
+  /// entre el verde y `textMuted` había una distancia de 6,8 en Lab, o sea el
+  /// mismo punto para quien no distingue rojo de verde. Con este gris son 17.
+  ///
+  /// El punto no es texto, así que su contraste se mide contra el fondo con el
+  /// umbral de lo no textual, y lo pasa en los dos temas.
+  @override
+  final Color idle;
+
   /// La tinta que va ENCIMA del verde: la etiqueta INSTALADO.
   ///
   /// Blanca en los dos temas, y por eso tiene token propio en vez de reciclar
@@ -115,6 +133,12 @@ class ColorTokens extends ThemeExtension<ColorTokens>
   /// Ámbar de "mira esto": nunca rojo. Kanpachi avisa de cosas que el usuario
   /// puede arreglar, no de errores fatales, y el rojo pide una urgencia que
   /// estos avisos no tienen.
+  ///
+  /// **Tirado hacia el rojo y subido de luminosidad el 2026-08-26**, sin llegar
+  /// a rojo. El dorado de antes se confundía con el verde para quien no
+  /// distingue rojo de verde, y en la ventana oscura ninguno de los dos
+  /// destacaba sobre el fondo. Lo vigila `test/dot_contrast_test.dart`, que
+  /// simula protanopia y deuteranopia y exige distancia entre los tres.
   @override
   final Color warn;
 
@@ -192,9 +216,10 @@ abstract final class AppPalette {
     accentShadow: Color(0xFF6D2810),
     border: Color(0xFFD8D2C8),
     ok: Color(0xFF3D7A2A),
+    idle: Color(0xFF7C746A),
     okInk: Color(0xFFFFFFFF),
     shadowMenu: Color(0x47000000),
-    warn: Color(0xFF8A6112),
+    warn: Color(0xFFA85312),
     warnSurface: Color(0xFFF7E9C9),
     shapeOne: Color(0xFFF3B98A),
     shapeTwo: Color(0xFFF2D9A8),
@@ -221,10 +246,11 @@ abstract final class AppPalette {
     accentInk: Color(0xFF201E1B),
     accentShadow: Color(0xFFA94B26),
     border: Color(0xFF35322D),
-    ok: Color(0xFF7FAE6B),
+    ok: Color(0xFF89D268),
+    idle: Color(0xFF746D64),
     okInk: Color(0xFFFFFFFF),
     shadowMenu: Color(0x47000000),
-    warn: Color(0xFFD9A441),
+    warn: Color(0xFFF2913C),
     warnSurface: Color(0xFF2C2418),
     shapeOne: Color(0xFFE0703F),
     shapeTwo: Color(0xFFF0C58A),

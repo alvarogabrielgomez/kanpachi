@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kanpachi_ui/core/brand.dart';
+import 'package:kanpachi_ui/core/design_system/atoms/app_status_dot.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/context_ext.dart';
 import 'package:kanpachi_ui/core/design_system/tokens/motion_tokens.dart';
@@ -72,14 +73,11 @@ class _UpdateNoticeState extends State<UpdateNotice> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: colors.accent,
-                    shape: BoxShape.circle,
-                  ),
-                ),
+                // El MISMO punto que el resto de la app, y no un círculo
+                // dibujado acá: era el último que se pintaba a mano, y por eso
+                // era el único que no podía latir, ni quedar hueco, ni
+                // enterarse de un cambio de paleta. Ver [AppStatusDot].
+                AppStatusDot(color: colors.accent, size: 6),
                 const SizedBox(width: AppSpacing.sm),
                 AnimatedDefaultTextStyle(
                   duration: AppMotion.hover,

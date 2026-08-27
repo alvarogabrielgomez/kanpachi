@@ -319,7 +319,7 @@ func roomMenu(ctx context.Context, op options, st protocol.RoomView) error {
 			if p.Self {
 				continue
 			}
-			label := fmt.Sprintf("Kick %s (%s)", p.Name, p.IP)
+			label := kickLabel(p)
 			kicks[label] = p.IP
 			choices = append(choices, label)
 		}
@@ -571,4 +571,19 @@ func waitForEnter() {
 	fmt.Println("\n  Press Enter to continue...")
 	var nothing string
 	_, _ = fmt.Scanln(&nothing)
+}
+
+// kickLabel is one line of the kick menu.
+//
+// It says whether that member is there. This is the only screen in the wizard
+// where somebody is picked out by name, so it is where knowing costs the most
+// to not know: kicking somebody "because they are not responding" is kicking
+// somebody who went to get coffee. Their chair is theirs until their credential
+// dies, and the badge says how long that has been running.
+func kickLabel(p protocol.PeerView) string {
+	label := fmt.Sprintf("Kick %s (%s)", p.Name, p.IP)
+	if p.Away {
+		label += " [" + peerLatency(p) + "]"
+	}
+	return label
 }

@@ -13,6 +13,6 @@
 # A developer machine never reads this file: local builds keep coming from
 # `Resolve-KanpachiEngine` (newest of C:\kt\release and friends), which is
 # what makes iterating on the engine not require a release per attempt.
-tag v0.1.0
-sha256-windows ae3dede08d7d74dada92b7dc9f4fe6af5321e337d2610f1ca192f6623e0a29f4
-sha256-linux a073f878331e1d479d7d80acb4df18da7219f925318eb03e0568d80cfc07c4b7
+tag v0.1.2
+sha256-windows 30708dd86d343d3c526f743ae135cec2f6aac36b80bc7e9ed1f3fdf442f59f3c
+sha256-linux d82631ea3c59fb9bafafed5ec4e4802079f1ec7623cbce7092f78056f6c5812b

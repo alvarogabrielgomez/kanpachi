@@ -366,3 +366,28 @@ func slotOf(ud []byte) (int, bool) {
 	}
 	return slot, true
 }
+
+// ifaceOf lee de una regla VIVA a qué índice de interfaz está acotada.
+//
+// Es la vuelta de lo que arma [ruleExprs]: busca el par
+// `Meta{MetaKeyIIF} + Cmp{Eq}` y devuelve el u32 que compara. Falso es que esa
+// regla no acota por interfaz, que es un hecho y no un error.
+//
+// Se lee en orden de MÁQUINA, igual que se escribe. Leerlo en orden de red
+// daría otro número y la comparación fallaría siempre, que es la forma de
+// arreglo que rompe más de lo que arregla: la medida diría que la compuerta no
+// está puesta con la compuerta puesta.
+func ifaceOf(exprs []expr.Any) (uint32, bool) {
+	for i := 0; i+1 < len(exprs); i++ {
+		m, ok := exprs[i].(*expr.Meta)
+		if !ok || m.Key != expr.MetaKeyIIF {
+			continue
+		}
+		c, ok := exprs[i+1].(*expr.Cmp)
+		if !ok || c.Op != expr.CmpOpEq || c.Register != m.Register || len(c.Data) != 4 {
+			continue
+		}
+		return binaryutil.NativeEndian.Uint32(c.Data), true
+	}
+	return 0, false
+}

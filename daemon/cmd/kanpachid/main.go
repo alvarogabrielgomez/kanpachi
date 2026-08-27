@@ -405,6 +405,13 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 	if !consola {
 		archivo := nuevoLogArchivo(carpetaLog)
 		log = archivo
+		// En un contenedor van los DOS. El fichero por lo de siempre, y stdout
+		// porque `docker logs` y `kubectl logs` no leen otra cosa: sin él, un
+		// host que lleva horas sin poder recibir a nadie se ve desde fuera como
+		// un contenedor sano y mudo. Ver [logDoble].
+		if enContenedor() {
+			log = logDoble{a: logConsola{}, b: archivo}
+		}
 		// La salida de errores del proceso va al mismo archivo, y con ella la
 		// traza de un pánico. Sin esto el daemon puede morirse sin dejar una
 		// línea: ya pasó, y lo único que quedó fue el "terminated unexpectedly"
@@ -564,7 +571,7 @@ func arrancar(ctx context.Context, datos, carpetaLog, nombre string, consola, mo
 		// destinos, así que tiene que poder leerse en un diff. La pone el
 		// entrypoint de la imagen, que es quien sabe para qué existe ese
 		// contenedor. Ver [domain.RedirectSpec].
-		Container: os.Getenv("KANPACHI_CONTAINER") == "1",
+		Container: enContenedor(),
 		Watchers:  watch,
 		Log:       log,
 	})

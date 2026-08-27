@@ -508,16 +508,29 @@ type CatalogStore interface {
 //   hosted-room.json  SOLO EN EL HOST. Dice que hay una sala que reponer, y
 //                     nada más: apagarse limpio lo conserva, y lo único que lo
 //                     borra es cerrar la sala
+//   members.json      SOLO EN EL HOST. El libro de credenciales, sellado. Va
+//                     aparte porque el de arriba lleva identidad y referencias
+//                     y jamás política, y una lista de miembros con sus plazos
+//                     es lo contrario
 //   last-room.json    SOLO EN INVITADOS. Código, seed, nombre y nick. Jamás la
 //                     credencial ni la identidad de la red real
 type StateStore interface {
     LoadRoom() ([]byte, error)
     SaveRoom([]byte) error
     ClearRoom() error
+    LoadMembers() ([]byte, error)
+    SaveMembers([]byte) error
+    ClearMembers() error
     LoadLast() ([]byte, error)
     SaveLast([]byte) error
     ClearLast() error
 }
+
+**`members.json` compra dos cosas y hay que decir cuál no.** No devuelve a nadie a la sala: el motor es un hijo que muere con el daemon y su lista de credenciales muere con él, así que renovar un id anterior al reinicio es error duro por contrato. Compra la dirección estable al volver, y poder expulsar a quien ya estaba dentro, que estaba escrito como precio asumido y ahora se paga.
+
+**No guarda el token**, que es el único secreto de la ficha y además es inútil tras reiniciar. Sí guarda la llave de miembro, que es pública pero estable y enlazable, así que deja en disco un registro durable de quién jugó en esta sala. Se acepta porque vive en el directorio de datos con su ACL y muere con la sala: cerrarla lo borra.
+
+**Contra la reversión hay un contador, no una firma.** El sello es AES-256-GCM: ya cifra y ya autentica, y una firma encima no compraría nada porque quien pueda falsificarla ya puede leer `identity.key`. Lo que el sello no cubre es que una copia más vieja de la misma máquina abre perfecto, y restaurar un libro anterior a una expulsión le devolvería al expulsado su dirección y su ranura pre-autorizada en el oyente que corre como SYSTEM. El contador sube en cada escritura y `hosted-room.json` guarda el último, así que un libro atrasado se rechaza. Quien pueda escribir los dos ficheros ya tiene la identidad de red de la sala en el segundo.
 
 // SystemEvents son las cosas que le pasan a la MÁQUINA y que invalidan lo que
 // Kanpachi dejó puesto. Tres canales y no un enum, a diferencia de
@@ -1139,7 +1152,24 @@ Sostenido treinta segundos muestreando cada cinco: no era retraso.
 
 **Lo que esto arregla de rebote.** El latido que empuja el vencimiento de las credenciales solo renueva a los presentes, a propósito, para que la dirección de un ausente se libere sola. Con el host contando de menos, un miembro invisible dejaba de renovarse y se caía a las 24 h.
 
-**Lo que queda abierto.** Por qué la tabla del motor no reporta al invitado en el host no está medido: la asimetría es del motor, no del daemon. Este arreglo no la explica, la rodea con una fuente que el host ya tenía.
+**Lo que quedaba abierto, cerrado el 2026-08-25.** Por qué la tabla del motor no reporta al invitado en el host. El motor emite `peers_changed` con `PeerConnAdded`, y su `peers()` descarta toda ruta que todavía no lleve dirección: cuando salta el evento la ruta OSPF no resolvió `ipv4_addr`, así que la relectura inmediata devuelve una lista sin el que acaba de entrar, y la convergencia posterior no produce ningún evento más. Lo cierra el vigía de malla, que mira la tabla ya convergida una vez por segundo y avisa al supervisor por su canal de trabajo. Ver `09-relojes.md`.
+
+#### La membresía y la presencia son dos listas, y deciden cosas distintas
+
+Desde el 2026-08-25, quién puede marcar el puerto de control y a quién se le abren los puertos del juego lo contesta el **libro de credenciales** del host, unido a la tabla del motor. Las dos fuentes de arriba siguen enteras y contestan otra pregunta: quién ESTÁ.
+
+| Lista | De dónde sale | Qué decide |
+|---|---|---|
+| Membresía | `Session.issued` (el libro) unido a la tabla del motor, menos vencidos, revocados y expulsados | la compuerta, el alcance del oyente, la dirección que te toca |
+| Presencia | la tabla del motor más quién tiene canal abierto | online contra offline, degradado contra directo, a quién sondea el canario, a quién renueva el latido |
+
+El porqué del corte está en la decisión 43: una decisión de conectividad atada a una señal de vida deja fuera a quien la señal todavía no reporta, y la señal no tiene ningún evento para quien cierra la tapa del portátil.
+
+**Un miembro con ficha viva al que el motor no ve sale en la lista marcado `Away`**, con dos duraciones calculadas: cuánto lleva fuera y cuánto le queda a su ficha. Viajan en `PeerView` como `away`, `away_for_ms` y `seat_frees_in_ms`, calculadas y no como marcas de tiempo, por lo mismo que `host_gone_for_ms`. Ver la decisión 44.
+
+**El `rtt_ms` del cable llega al `Peer` desde el 2026-08-25**, y antes se tiraba en `toPeers`. Con el campo siempre en cero, la columna de latencia salía en blanco, cada línea de malla decía `0s`, y el diagnóstico de fallo de marcado afirmaba que no había medición de ida y vuelta pasara lo que pasara.
+
+**Y lo que llegaba tampoco era una medición hasta el 2026-08-26.** Era `path_latency`, el coste del camino, con un 500 fijo por cada tramo que el peer-center de EasyTier todavía no conocía, así que un miembro directo se leía como `500 ms` durante el primer minuto de una sala. Desde entonces el motor manda lo que midió una conexión, o no manda el campo: llega como `*int32`, y `nil` se traduce a un `RTT` en cero, que es lo que el resto del árbol ya trata como «nadie lo midió». En `PeerView` sale con `omitempty`, así que `kanpachi --json status` omite `rtt_ms` en vez de escribir un cero. Ver la decisión 46.
 
 ### transport/pipe, implementa la entrada
 
@@ -2688,6 +2718,7 @@ Todo lo que sigue está leído del código que se compila. La única parte que h
 | Clave de la tarjeta | AES-256 aleatoria, una por sala | En el fragmento del enlace, que el navegador no transmite al servidor | Vive con el código |
 | Secreto de encuentro | 32 bytes derivados por Argon2id del invite ID, salt `kanpachi/v1/secret` | En ningún sitio. Se deriva en las dos puntas | Mientras el código valga |
 | Secreto de la red REAL | 32 bytes aleatorios que genera el host, y que no derivan de ningún string que alguien pueda escribir | `hosted-room.json`, sellado | Mientras la sala viva |
+| Llave de miembro de cada invitado | Ed25519 PÚBLICA, por sala. No abre nada: hace que al pasar por la puerta te reconozcan | `members.json`, sellado. **El token de la credencial NO se guarda** | Mientras la sala viva. Cerrarla borra el fichero |
 | Par del canal de control | X25519 efímero de `nacl/box` | Solo en memoria | La sesión |
 | `signing` del seed | 32 bytes que ACUÑAN tokens. Vale tanto como el password y no caduca | `auth.json` del seed, 0600 | Hasta que se cambie el password |
 | Verificador del password | Argon2id sobre la prueba que manda el cliente, con su sal | `auth.json` | Ídem |

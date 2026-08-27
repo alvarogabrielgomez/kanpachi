@@ -62,6 +62,31 @@ type Peer struct {
 	// Host marca a quien declaró hospedar. Sale del canje de credencial, no de
 	// que el peer lo diga: un miembro que se declare host no cambia nada.
 	Host bool
+
+	// Away es que tiene ficha viva y el motor no lo ve.
+	//
+	// NO se fue: su silla sigue puesta, y volverá a ella con su misma ficha y
+	// su misma dirección. En lenguaje de producto, está offline.
+	//
+	// Se llamaba AFK hasta el 2026-08-26, y AFK afirma algo que este host NO
+	// mide: que la persona se levantó de la silla. Lo único medido es que el
+	// motor dejó de verla, y eso es igual de compatible con un WiFi caído, una
+	// tapa de portátil cerrada o un corte del proveedor. El campo se sigue
+	// llamando Away porque el AFK vivía solo en la etiqueta impresa.
+	//
+	// Es una señal de VIDA y no de membresía, y de ahí sale todo lo que decide:
+	// a quién sondea el canario, a quién renueva el latido, a quién se le
+	// intenta avisar algo. Ninguna de esas tres cosas tiene sentido contra
+	// alguien que no está escuchando, y las tres lo hacían. Quién es miembro lo
+	// contesta el libro, y eso no cambia por estar offline. Ver
+	// [usecase.Session.authorizedControlIPsLocked].
+	Away bool
+	// AwayFor es cuánto lleva sin aparecer en la malla. Cero es que está.
+	AwayFor time.Duration
+	// SeatFreesIn es cuánto le queda a su ficha antes de vencer y soltar su
+	// dirección. Solo lo sabe el host, que es quien tiene el libro. Cero es que
+	// no aplica.
+	SeatFreesIn time.Duration
 }
 
 // NetCheck es el diagnóstico de red, y no es adorno: convierte "no conecta" en

@@ -14,7 +14,7 @@ Tres relojes en dos goroutines. Los dos primeros comparten el despachador de un 
 |---|---|---|---|---|---|
 | `SupervisorBeat` | `Supervisor`, despachador | 15 s | El reloj y el estado de la sala. Con sala de host, la tabla de sockets de la máquina | Plazos vencidos, salud del juego, presencia del host. Cada 8 latidos, los ajustes del adaptador | Sí, dentro de `Session.Tick` |
 | `SupervisorSweep` | `Supervisor`, el mismo despachador | 60 s | El firewall, la cuarentena, el IGD del router, el `/healthz` del registro | `state.Alerts`, `SeedDown`, `state.Quarantine` | Sí, y solo al publicar. Las consultas corren sin candado |
-| `MeshBeat` | `VigiaDeMalla`, goroutine propia | 1 s | `Engine.Peers` | El log, y nada más | **No.** Ahí está su razón de existir |
+| `MeshBeat` | `VigiaDeMalla`, goroutine propia | 1 s | `Engine.Peers` | El log, y una señal al canal de trabajo del supervisor | **No.** Ahí sigue estando su razón de existir |
 
 Detalles que la tabla no cabe:
 
@@ -22,6 +22,8 @@ Detalles que la tabla no cabe:
 - **`AdapterReapplyEvery` no es un reloj, es un contador.** Ocho latidos, o sea dos minutos, contados en latidos para que sigan al latido si alguien lo cambia.
 - **El barrido va aparte del latido a propósito.** Hace siempre tres llamadas al sistema, una al IGD del router, que en la mayoría de los routers termina en timeout. Compartiendo reloj, el corte automático latiría al ritmo del router más lento de la casa. Lo defiende `TestElBarridoVaAparteDelLatido`.
 - **El vigía anota el cambio, no el tick.** Sin cambios en la malla no escribe una línea. Su firma excluye el RTT, que se mueve solo.
+- **El vigía además AVISA, desde el 2026-08-25, y por eso la fila de arriba dice dos cosas donde antes decía una.** Sigue sin pedir el candado, y ahí sigue estando su razón de existir: lo que manda es una señal por el canal de trabajo del supervisor, amortiguada a uno y sin bloquear nunca, igual que cualquier otro drenaje de adaptador. Un envío bloqueante convertiría al testigo en otra víctima del candado que existe para esquivar.
+- **Por qué avisar hace falta.** El evento `peers_changed` del motor sale con `PeerConnAdded`, antes de que la ruta OSPF lleve dirección, así que la relectura que dispara devuelve una lista sin el miembro que acaba de entrar. Las rutas convergen segundos después y eso no produce ningún evento más. El vigía mira la tabla YA CONVERGIDA, así que es inmune a esa carrera, al descarte por búfer lleno y a cualquier evento que se pierda. Medido contra un host real en Kubernetes: el invitado apareció en la malla 4,3 segundos después de que el host aplicara su compuerta, nadie releyó, y la compuerta descartó cada SYN durante treinta y tres horas.
 
 ## La ventana
 

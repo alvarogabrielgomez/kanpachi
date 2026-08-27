@@ -4,6 +4,7 @@ package nftnat
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
+	"github.com/mdlayher/netlink"
 	"golang.org/x/sys/unix"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
@@ -25,6 +27,16 @@ const (
 	offsetDstPort   = 2
 	lenPort         = 2
 	reg1            = 1
+)
+
+// Lo que hace falta para tocar el devconf de IPv4 de una interfaz por
+// netlink. Los tres salen de los headers del kernel y no de una librería,
+// porque la que hay en el árbol no los expone. Ver [permitirLoopback].
+const (
+	iflaAFSpec           = 26 // IFLA_AF_SPEC
+	iflaInetConf         = 1  // IFLA_INET_CONF
+	devconfRouteLocalnet = 26 // IPV4_DEVCONF_ROUTE_LOCALNET, la lista empieza en 1
+	tamañoIfinfomsg      = 16
 )
 
 // Apply deja puesto EXACTAMENTE el desvío que se le pide.
@@ -48,6 +60,12 @@ func (r *Redirect) Apply(ctx context.Context, spec domain.RedirectSpec) error {
 		// La sala direcciona en IPv4 dentro de 100.64.0.0/10, así que un desvío
 		// IPv6 sería una traducción de algo que la sala no encamina.
 		return fmt.Errorf("el desvío es de IPv4: sala %v, destino %v", spec.RoomIP, spec.To)
+	}
+
+	if spec.To.IsLoopback() {
+		if err := permitirLoopback(spec.Adapter); err != nil {
+			return err
+		}
 	}
 
 	idx, err := ifaceIndex(spec.Adapter)
@@ -254,4 +272,101 @@ func ifaceIndex(name string) (int, error) {
 		return 0, fmt.Errorf("buscando el adaptador %q para el desvío: %w", name, err)
 	}
 	return dev.Index, nil
+}
+
+// permitirLoopback deja que un paquete que entra por el adaptador de la sala
+// llegue a un destino en `127.0.0.0/8`.
+//
+// # Por qué hace falta, medido
+//
+// Sin esto el núcleo lo tira como marciano ANTES de entregarlo, y la regla de
+// nat ni se entera: casa, traduce, y el datagrama muere. Reproducido en un
+// netns limpio, con un oyente UDP en `127.0.1.1` y esta misma forma de regla:
+//
+//	route_localnet=0  bytes entregados: 0
+//	route_localnet=1  bytes entregados: 4
+//
+// # Por qué por netlink y no escribiendo en /proc/sys
+//
+// Porque en un contenedor `/proc/sys` está montado de solo lectura, y subir a
+// `CAP_SYS_ADMIN` para remontarlo sería pedir el permiso que da la máquina
+// entera por tocar un bit. Medido el 2026-08-26 contra el pod real:
+//
+//	no se pudo desviar hacia donde escucha el juego [hacia 127.0.1.1
+//	error ... open /proc/sys/net/ipv4/conf/kanpachi0/route_localnet:
+//	read-only file system]
+//
+// El kernel expone el mismo ajuste por `RTM_NEWLINK`, dentro de
+// `IFLA_AF_SPEC`, y eso solo pide `CAP_NET_ADMIN`, que es lo que el daemon ya
+// tiene para crear el adaptador. Comprobado en WSL sobre una interfaz dummy:
+// `/proc` pasa de 0 a 1 sin que nadie escriba en `/proc`.
+//
+// **`IFLA_INET_CONF` es NESTED y cada hijo lleva el id del ajuste por TIPO.**
+// Mandado como array plano de u32, que es la forma que tiene en memoria, el
+// kernel contesta ACK y no aplica nada: el primer intento salió "bien" y dejó
+// el bit en cero.
+//
+// # Qué abre exactamente, y qué NO
+//
+// Es por interfaz, y la interfaz es la de Kanpachi. No toca `all`, no toca
+// `default`, y no toca ninguna otra tarjeta de la máquina: lo que entre por
+// eth0 con destino a loopback se sigue tirando igual que siempre.
+//
+// Lo que llega por el adaptador de la sala ya pasa por la compuerta, que
+// descarta por omisión y solo deja los puertos del juego hacia los miembros.
+// Y el conjunto deseado se reescribe con la dirección traducida dentro, por
+// [domain.RuleSet.MirrorLocal], así que el permiso nombra ese `127.x` y esos
+// puertos y nada más. Sin esa parte, esto abriría el enrutado y la compuerta
+// seguiría tirando el paquete.
+//
+// # Por qué no se devuelve a cero al quitar el desvío
+//
+// Porque el adaptador es de Kanpachi y muere con la sala: cuando se va, se
+// lleva su devconf con él. Restaurarlo a mano solo importaría si la interfaz
+// sobreviviera al desvío, y no lo hace.
+func permitirLoopback(adaptador string) error {
+	ifi, err := net.InterfaceByName(adaptador)
+	if err != nil {
+		return fmt.Errorf("buscando %s para habilitar el enrutado a loopback: %w", adaptador, err)
+	}
+
+	ae := netlink.NewAttributeEncoder()
+	ae.Nested(iflaAFSpec, func(af *netlink.AttributeEncoder) error {
+		af.Nested(unix.AF_INET, func(inet *netlink.AttributeEncoder) error {
+			inet.Nested(iflaInetConf, func(conf *netlink.AttributeEncoder) error {
+				conf.Uint32(devconfRouteLocalnet, 1)
+				return nil
+			})
+			return nil
+		})
+		return nil
+	})
+	atributos, err := ae.Encode()
+	if err != nil {
+		return fmt.Errorf("armando el mensaje de netlink para %s: %w", adaptador, err)
+	}
+
+	// struct ifinfomsg: family, pad, type, index, flags, change. El índice va
+	// en el offset 4, y ponerlo en el 8 es lo que el kernel contesta como
+	// "no such device" aunque la interfaz exista.
+	cabecera := make([]byte, tamañoIfinfomsg)
+	cabecera[0] = unix.AF_UNSPEC
+	binary.NativeEndian.PutUint32(cabecera[4:8], uint32(ifi.Index))
+
+	c, err := netlink.Dial(unix.NETLINK_ROUTE, nil)
+	if err != nil {
+		return fmt.Errorf("abriendo netlink para el enrutado a loopback: %w", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	if _, err := c.Execute(netlink.Message{
+		Header: netlink.Header{
+			Type:  unix.RTM_NEWLINK,
+			Flags: netlink.Request | netlink.Acknowledge,
+		},
+		Data: append(cabecera, atributos...),
+	}); err != nil {
+		return fmt.Errorf("habilitando el enrutado a loopback en %s: %w", adaptador, err)
+	}
+	return nil
 }

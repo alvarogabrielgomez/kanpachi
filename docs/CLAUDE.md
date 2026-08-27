@@ -35,7 +35,7 @@ El reparto es por lo que está haciendo quien abre el documento, no por el tema:
 | Tipo | Documentos |
 |---|---|
 | Tutorial | `tutorial-first-room.md`, y los dos que abre: `tutorial-first-room-windows.md` y `tutorial-first-room-linux.md` |
-| Guías | `install-windows.md`, `install-linux.md`, `run-a-game-server.md`, `host-a-seed.md`, `build-from-source.md`, `fork-the-branding.md` |
+| Guías | `install-windows.md`, `install-linux.md`, `run-a-game-server.md`, `run-a-game-server-docker.md`, `run-a-game-server-kubernetes.md`, `host-a-seed.md`, `build-from-source.md`, `fork-the-branding.md` |
 | Referencia | `reference-cli.md`, `reference-files.md`, y `registry/API.md`, que vive junto al código |
 | Explicación | `architecture.md`, y `kanpachi-protection.md` y `kanpachi-seed.md`, que viven en la raíz |
 

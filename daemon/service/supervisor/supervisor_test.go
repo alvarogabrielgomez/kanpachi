@@ -533,3 +533,24 @@ func TestSiElReinicioFallaNoSeReacota(t *testing.T) {
 		t.Errorf("se reacotó %d vez/veces con el motor sin volver", n)
 	}
 }
+
+// TestUnCambioDeMallaReleeLosMiembros.
+//
+// El fallo que cierra, medido el 2026-08-25 contra un host real en Kubernetes:
+// el invitado entró a la malla, el vigía lo vio CON dirección 4,3 segundos
+// después de que el host aplicara su compuerta, y nadie releyó. La regla de
+// nftables se quedó sin él y su SYN murió en el `drop` durante treinta y tres
+// horas.
+//
+// El evento del motor no lo cubre y por eso hace falta este camino: el motor
+// emite con `PeerConnAdded`, cuando la ruta todavía no lleva dirección, así que
+// la relectura que dispara devuelve una lista sin el que acaba de entrar.
+func TestUnCambioDeMallaReleeLosMiembros(t *testing.T) {
+	b, _ := corriendo(t)
+
+	b.malla.cambios <- struct{}{}
+
+	esperaA(t, "un cambio de malla releyó los miembros", func() bool {
+		return b.sala.veces("miembros") >= 1
+	})
+}

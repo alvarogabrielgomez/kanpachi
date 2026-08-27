@@ -26,6 +26,13 @@ import (
 const (
 	HostedRoomFile = "hosted-room.json"
 	LastRoomFile   = "last-room.json"
+	// MembersFile es el libro de credenciales del host.
+	//
+	// Fichero PROPIO y no un campo más de `hosted-room.json`, y no es
+	// organización: aquel tiene escrita la invariante de llevar identidad y
+	// referencias y jamás política, y una lista de miembros con sus plazos es
+	// justo lo que no puede expresar. Ver [domain.CredentialBook].
+	MembersFile = "members.json"
 
 	// SeedFile es el registro en el que ESTA máquina abre sus salas.
 	//
@@ -117,6 +124,12 @@ func NewSealed(dir string, clave [32]byte) *Store {
 func (s *Store) LoadRoom() ([]byte, error) { return s.load(HostedRoomFile) }
 func (s *Store) SaveRoom(raw []byte) error { return s.save(HostedRoomFile, raw) }
 func (s *Store) ClearRoom() error          { return s.clear(HostedRoomFile) }
+
+// El libro de credenciales, sellado como la sala y por lo mismo: lleva la llave
+// de miembro de cada persona que entró, que es estable y enlazable.
+func (s *Store) LoadMembers() ([]byte, error) { return s.load(MembersFile) }
+func (s *Store) SaveMembers(raw []byte) error { return s.save(MembersFile, raw) }
+func (s *Store) ClearMembers() error          { return s.clear(MembersFile) }
 
 // LoadSeed y SaveSeed son el registro propio, y son el ÚNICO par que NO sella.
 //

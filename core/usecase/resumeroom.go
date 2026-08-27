@@ -47,6 +47,11 @@ func (s *Session) DiscardSavedRoom(_ context.Context) error {
 	if err := s.deps.State.ClearRoom(); err != nil {
 		return fmt.Errorf("borrando la sala del arranque anterior: %w", err)
 	}
+	// Y su libro, que sin sala no autoriza nada y solo conserva quién jugó.
+	if err := s.deps.State.ClearMembers(); err != nil {
+		s.deps.Log.Warn("no se pudo borrar el libro de la sala descartada", "error", err)
+	}
+	s.membersGen = 0
 	s.saved = domain.HostedRoom{}
 	s.hasSaved = false
 	s.deps.Log.Info("la sala del arranque anterior se descartó")
@@ -100,14 +105,14 @@ func (s *Session) ResumeRoom(ctx context.Context, replace bool) (domain.RoomStat
 		return domain.RoomState{}, err
 	}
 
-	if err := s.state.Transition(domain.StateResolving, "el usuario reabrió la sala anterior"); err != nil {
+	if err := s.transitionLocked(domain.StateResolving, "el usuario reabrió la sala anterior"); err != nil {
 		return domain.RoomState{}, err
 	}
 	ok := false
 	defer func() {
 		if !ok {
 			s.teardown(ctx)
-			_ = s.state.TransitionWithExit(domain.StateIdle, "falló reabrir la sala anterior", domain.ExitFailed)
+			_ = s.transitionWithExitLocked(domain.StateIdle, "falló reabrir la sala anterior", domain.ExitFailed)
 			s.snapshot()
 		}
 	}()
@@ -133,7 +138,7 @@ func (s *Session) ResumeRoom(ctx context.Context, replace bool) (domain.RoomStat
 		Seeds:         seedsFor(saved.Room),
 	}
 
-	if err := s.state.Transition(domain.StateConnecting, "levantando la red de la sala anterior"); err != nil {
+	if err := s.transitionLocked(domain.StateConnecting, "levantando la red de la sala anterior"); err != nil {
 		return domain.RoomState{}, err
 	}
 	if err := s.deps.Engine.HostNetwork(ctx, spec); err != nil {
@@ -176,7 +181,7 @@ func (s *Session) ResumeRoom(ctx context.Context, replace bool) (domain.RoomStat
 	if err := s.deps.Control.Serve(ctx, s.controlScope()); err != nil {
 		return domain.RoomState{}, fmt.Errorf("abriendo el canal de la sala: %w", err)
 	}
-	if err := s.state.Transition(domain.StateConnected, "la sala anterior está levantada"); err != nil {
+	if err := s.transitionLocked(domain.StateConnected, "la sala anterior está levantada"); err != nil {
 		return domain.RoomState{}, err
 	}
 
@@ -195,6 +200,10 @@ func (s *Session) ResumeRoom(ctx context.Context, replace bool) (domain.RoomStat
 
 	s.republishCardLocked(ctx)
 
+	// El libro vuelve ANTES de guardar, para que la generación que se escribe
+	// sea la que se acaba de leer y no un cero que rechazaría el libro en el
+	// arranque siguiente.
+	s.loadMembersLocked(saved)
 	s.saveRoomLocked()
 	s.saved = domain.HostedRoom{}
 	s.hasSaved = false

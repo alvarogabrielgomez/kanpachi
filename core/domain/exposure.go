@@ -396,6 +396,37 @@ const (
 	// Solo con sala abierta, igual que el firewall ajeno: en reposo enseñaría
 	// a ignorar la pantalla, y en reposo el estado ya lo cuenta el interruptor.
 	AlertQuarantineOff
+
+	// AlertNoMemberChannels es que hay miembros PRESENTES y ninguno tiene canal
+	// de control con este host.
+	//
+	// Es la única de esta lista que no habla de exposición de más: habla de una
+	// sala que parece viva y no lo está. El host tiene las dos mitades del
+	// diagnóstico, a quién ve y con quién habla, y hasta el 2026-08-25 no las
+	// comparaba nunca. Ese día un host pasó treinta y tres horas con miembros
+	// listados, cero sockets, y todo verde para fuera, incluido Kubernetes, que
+	// lo daba por listo.
+	//
+	// Exige que estén presentes y no solo que sean miembros. «Tres miembros y
+	// ningún canal» es ambiguo; «tres miembros online y ningún canal» es un
+	// fallo, y «tres miembros offline» es una tarde normal. Ver [Peer.Away].
+	//
+	// Y exige que haya pasado la ventana de ingreso desde que se les emitió la
+	// ficha: sin eso saltaría en cada ingreso legítimo, que es exactamente
+	// cuando todavía no hay canal.
+	AlertNoMemberChannels
+
+	// AlertRoomAlmostFull es que al /24 de la sala le quedan pocas direcciones.
+	//
+	// Existe porque agotarlo era INVISIBLE para el host: el error lo veía el
+	// invitado, del otro lado del vestíbulo, y de este lado no había línea, ni
+	// alerta, ni pantalla. El dueño de la sala se enteraba solo si alguien se lo
+	// contaba. Ver [usecase.ErrNoFreeAddress].
+	//
+	// Avisa ANTES de agotarse y no al agotarse, porque al agotarse ya no se
+	// puede hacer nada desde dentro: quien esté fuera no entra, y el aviso
+	// llegaría a la persona que no puede arreglarlo.
+	AlertRoomAlmostFull
 )
 
 // AllAlertKinds son todos los valores del enum, que NO es lo mismo que las que
@@ -429,6 +460,8 @@ func AllAlertKinds() []AlertKind {
 		AlertGateLeaking,
 		AlertGameLost,
 		AlertQuarantineOff,
+		AlertNoMemberChannels,
+		AlertRoomAlmostFull,
 	}
 }
 

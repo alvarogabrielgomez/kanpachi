@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"slices"
 
 	"github.com/accentiostudios/kanpachi/core/domain"
 	"github.com/accentiostudios/kanpachi/core/port"
+	"github.com/accentiostudios/kanpachi/core/timing"
 )
 
 // JoinRoom entra a una sala ajena.
@@ -68,7 +70,7 @@ func (s *Session) JoinRoom(
 	s.deps.Progress.Begin("entrar a la sala")
 	s.deps.Progress.Stepf(domain.ScopeDaemon, "código válido: %s, servido por %s", room.InviteID, room.Seed)
 
-	if err := s.state.Transition(domain.StateResolving, "el usuario pegó un código"); err != nil {
+	if err := s.transitionLocked(domain.StateResolving, "el usuario pegó un código"); err != nil {
 		return domain.RoomState{}, err
 	}
 	ok := false
@@ -83,7 +85,7 @@ func (s *Session) JoinRoom(
 			limpio, fin := cleanupContext(ctx)
 			s.teardown(limpio)
 			fin()
-			_ = s.state.TransitionWithExit(domain.StateIdle, "falló el ingreso a la sala", domain.ExitFailed)
+			_ = s.transitionWithExitLocked(domain.StateIdle, "falló el ingreso a la sala", domain.ExitFailed)
 			// Republicar no es opcional. Quien llama recibe un error y descarta
 			// el estado, así que sin esto la copia que lee Status se quedaría
 			// con la de antes del fallo y la pantalla de inicio no diría nunca
@@ -112,7 +114,7 @@ func (s *Session) JoinRoom(
 	}
 	hostKey := lookup.HostKey
 
-	if err := s.state.Transition(domain.StateConnecting, "buscando al host"); err != nil {
+	if err := s.transitionLocked(domain.StateConnecting, "buscando al host"); err != nil {
 		return domain.RoomState{}, err
 	}
 	if err := s.ensureMemberKeyLocked(room); err != nil {
@@ -190,7 +192,7 @@ func (s *Session) JoinRoom(
 	if err := s.refreshPeersLocked(ctx); err != nil {
 		return domain.RoomState{}, err
 	}
-	if err := s.state.Transition(domain.StateConnected, "dentro de la sala"); err != nil {
+	if err := s.transitionLocked(domain.StateConnected, "dentro de la sala"); err != nil {
 		return domain.RoomState{}, err
 	}
 
@@ -530,6 +532,13 @@ func (s *Session) logMeshOnDialFailureLocked(ctx context.Context, host netip.Add
 		return
 	}
 
+	// Los roles se marcan ANTES de registrar. El motor no puede saber qué
+	// miembro es el host, así que la salida cruda del adaptador trae `Host` en
+	// falso para todo el mundo, y esta línea afirmaba `host false` incluso del
+	// host que se acababa de intentar marcar. Acá sí hay con qué resolverlo: el
+	// rol, la dirección propia y la subred de la sala.
+	peers = markRoles(peers, s.state.LocalIP, s.state.Role, s.state.Subnet)
+
 	var hostPeer *domain.Peer
 	for _, p := range peers {
 		if p.Self {
@@ -547,10 +556,34 @@ func (s *Session) logMeshOnDialFailureLocked(ctx context.Context, host netip.Add
 		s.deps.Log.Warn("el motor conoce una ruta al host, pero el canal no levantó: "+
 			"la ruta no prueba que el plano de datos haya entregado el SYN; revisar la sesión relay, el listener y el firewall",
 			"host", host.String(), "camino", hostPeer.Path.String(), "rtt", hostPeer.RTT.String())
+		// Un RTT en cero significa dos cosas MUY distintas según el camino, y
+		// hasta el 2026-08-26 esta rama las decía las dos con la misma frase.
+		//
+		// La historia importa para no volver a leer mal esta línea. Hasta el
+		// 2026-08-25 el adaptador tiraba el `rtt_ms` del cable, así que el campo
+		// valía cero SIEMPRE y el aviso salía en todo fallo de marcado, dijera
+		// lo que dijera el motor: se leyó como evidencia durante una caída real.
+		// Desde el 2026-08-26 el motor manda una medición o no manda nada, y el
+		// cero pasó a querer decir «nadie lo midió».
+		//
+		// En un camino DIRECTO eso sí es evidencia, y de la fuerte: el motor
+		// dice que hay un salto y no hay ni una conexión con estadísticas contra
+		// esa máquina, o sea que la ruta existe en la tabla y el túnel no está
+		// levantado. Es exactamente el síntoma que se está diagnosticando.
+		//
+		// Por RELAY no dice nada del fallo. El salto lejano lo mide el seed y lo
+		// reparte el peer-center, que tarda hasta un cuarto de minuto en llegar,
+		// así que en el primer minuto de una sala la ausencia es lo normal.
 		if hostPeer.RTT <= 0 {
-			s.deps.Log.Warn("el rtt del host es 0: todavía no hay una medición de ida y vuelta; "+
-				"la ruta OSPF puede existir mientras el handshake del relay sigue sin completar",
-				"host", host.String())
+			if hostPeer.Path == domain.PathDirect {
+				s.deps.Log.Warn("el motor da una ruta DIRECTA al host y no hay ninguna conexión medida "+
+					"contra él: la ruta está en la tabla y el túnel no llegó a levantarse",
+					"host", host.String())
+			} else {
+				s.deps.Log.Info("  el host llega por relay y todavía no hay latencia medida, "+
+					"que en el primer minuto de una sala es lo normal y no dice nada del fallo",
+					"host", host.String())
+			}
 		}
 		return
 	}
@@ -578,19 +611,132 @@ func (s *Session) checkSubnetAgainstLocal(ctx context.Context, subnet netip.Pref
 }
 
 // refreshPeersLocked relee la lista de miembros. Asume el candado tomado.
+//
+// Es la ÚNICA ruta que escribe [Session.members], y de esa tabla se deriva
+// `state.Peers`. Antes eran cinco almacenes por dirección que nadie
+// reconciliaba, y la única función del árbol que detectaba el desacuerdo se
+// alcanzaba solo por un evento que llega antes de tiempo.
+//
+// El orden de los tres pasos importa. La malla primero, porque trae el nombre
+// que reporta cada máquina y el camino. El canal después, que es evidencia de
+// primera mano y llega ANTES que el motor, medido con dos máquinas el
+// 2026-08-13. Y los papeles al final, sobre la tabla YA fundida: marcarlos
+// antes dejaba fuera a los miembros que no venían del motor.
 func (s *Session) refreshPeersLocked(ctx context.Context) error {
 	peers, err := s.deps.Engine.Peers(ctx)
 	if err != nil {
 		return fmt.Errorf("consultando los miembros de la sala: %w", err)
 	}
-	s.state.Peers = s.withAdmittedLocked(
-		markRoles(peers, s.state.LocalIP, s.state.Role, s.state.Subnet))
+	s.refreshMembersLocked(peers)
+	s.state.Peers = s.peersFromMembersLocked()
 	// La calidad de la conexión sale de esta tabla y de nada más. Va ANTES de
 	// deducir la presencia del host, que exige un estado concreto para no
 	// dispararse a mitad de un ingreso.
 	s.rederiveConnLocked()
 	s.inferHostPresenceLocked()
 	return nil
+}
+
+// refreshMembersLocked funde lo que dice el motor con lo que dice el canal.
+//
+// Asume el candado tomado.
+func (s *Session) refreshMembersLocked(peers []domain.Peer) {
+	ahora := s.deps.Clock.Now()
+	if s.members == nil {
+		s.members = domain.MemberTable{}
+	}
+
+	// 1. La malla. Trae el camino, el RTT y el nombre que la otra máquina
+	//    reporta de sí misma.
+	enLaMalla := make(map[netip.Addr]bool, len(peers))
+	for _, p := range peers {
+		if !p.VirtualIP.IsValid() {
+			continue
+		}
+		enLaMalla[p.VirtualIP] = true
+		m := s.members.At(p.VirtualIP)
+		m.NoteMesh(ahora, p.Path, p.RTT)
+		if !p.Name.IsZero() {
+			m.Name = p.Name
+		}
+	}
+	for ip, m := range s.members {
+		if !enLaMalla[ip] {
+			m.NoteOutOfMesh()
+		}
+	}
+
+	// 2. El canal de control, solo en el host: un invitado no tiene oyente.
+	//
+	//    Es la fuente que arregló el fallo del 2026-08-13, cuando la tabla del
+	//    motor contaba de menos en el host y un invitado ya dentro tenía canal
+	//    abierto y ninguna regla de juego. Para el host es conocimiento de
+	//    primera mano: él asignó esa dirección al emitir la credencial, su
+	//    oyente solo acepta las autorizadas, y lo que se comprueba es que hay un
+	//    socket, no un mensaje que alguien pueda escribir.
+	if s.state.IsHost() {
+		conectados := s.deps.Control.ConnectedMembers()
+		abierto := make(map[netip.Addr]bool, len(conectados))
+		for _, ip := range conectados {
+			abierto[ip] = true
+			s.members.At(ip).NoteChannel(ahora)
+		}
+		for ip, m := range s.members {
+			if !abierto[ip] {
+				m.NoteNoChannel()
+			}
+		}
+	}
+
+	// 3. Soltar lo que ya no dice nada de nadie, y con ello caducar los vetos
+	//    de expulsión cumplidos.
+	s.members.Forget(ahora, timing.KickGrace)
+}
+
+// peersFromMembersLocked deriva la lista que ve el resto del producto.
+//
+// # Por qué los ausentes están en la lista
+//
+// Porque no se fueron. Quien no hizo una salida formal sigue siendo miembro: su
+// silla está puesta y volverá a ella con su misma ficha y su misma dirección.
+// Sacarlo era afirmar lo único que nadie sabe, y dejaba a quien mira la pantalla
+// sin la diferencia entre «se fue» y «se le cayó el WiFi». Ver la decisión 44.
+//
+// Los papeles se marcan acá, sobre la tabla fundida, y no sobre lo que devolvió
+// el motor: así los pasa TODO el mundo, incluidos los que el motor no ve.
+//
+// Asume el candado tomado.
+func (s *Session) peersFromMembersLocked() []domain.Peer {
+	ahora := s.deps.Clock.Now()
+	out := make([]domain.Peer, 0, len(s.members))
+	for _, m := range s.members {
+		if !m.IP.IsValid() || !m.IsMember(ahora) {
+			continue
+		}
+		p := domain.Peer{VirtualIP: m.IP, Name: m.Name, Path: m.Path, RTT: m.RTT}
+		if m.Presence.InMesh {
+			out = append(out, p)
+			continue
+		}
+		if m.Presence.HasChannel {
+			// Un socket prueba que alguien está y no dice por dónde llega.
+			// Marcarlo directo pintaría la sala de verde sobre una medición que
+			// nadie hizo, y relay la acusaría de lenta sin motivo.
+			p.Path = domain.PathUnconfirmed
+			out = append(out, p)
+			continue
+		}
+		p.Away = true
+		p.AwayFor = m.AwayFor(ahora)
+		p.SeatFreesIn = m.SeatFreesIn(ahora)
+		out = append(out, p)
+	}
+	out = markRoles(out, s.state.LocalIP, s.state.Role, s.state.Subnet)
+	// En orden: la lista se lee a ojo y se dicta por teléfono, y un mapa
+	// recorrido da un orden distinto en cada pasada, con él una firma de reglas
+	// distinta en cada pasada.
+	slices.SortFunc(out, func(a, b domain.Peer) int { return a.VirtualIP.Compare(b.VirtualIP) })
+	return out
 }
 
 // inferHostPresenceLocked deduce la presencia del host de la tabla de peers.

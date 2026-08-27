@@ -45,6 +45,14 @@ func (c *Channel) Serve(ctx context.Context, scope domain.ControlScope) error {
 }
 
 // server es el lado del host.
+// acceptRetryMin y acceptRetryMax acotan la espera tras un error pasajero de
+// `Accept`. Los mismos números que el servidor HTTP de la biblioteca estándar,
+// que resuelve exactamente este problema y lleva más ojos encima.
+const (
+	acceptRetryMin = 5 * time.Millisecond
+	acceptRetryMax = time.Second
+)
+
 type server struct {
 	ch     *Channel
 	issuer Issuer
@@ -173,12 +181,46 @@ func puerto(a netip.Addr) netip.AddrPort {
 }
 
 // accept atiende un oyente hasta que se cierre.
+//
+// # Por qué un error NO termina el bucle
+//
+// Porque salía con cualquiera, y [server.relisten] solo recrea un oyente cuya
+// DIRECCIÓN cambió. O sea que un error pasajero —descriptores agotados, una
+// conexión abortada entre el SYN y el accept— dejaba al host sin aceptar nada
+// para siempre, con la sala en pie, todo verde hacia fuera y ni una línea que
+// lo dijera. Es la misma forma del fallo de treinta y tres horas del
+// 2026-08-25: algo se apaga y el resto sigue afirmando que está bien.
+//
+// Terminar sigue siendo lo correcto para el oyente que se cerró a propósito,
+// que es la forma normal de acabar acá, y para el contexto cancelado.
+//
+// **La espera es obligatoria y no decoración.** Un error permanente sin espera
+// convierte esto en un bucle cerrado que quema un núcleo. La escalera arranca
+// corta para no perder conexiones por un tropiezo y se dobla hasta un tope, que
+// es lo mismo que hace el servidor HTTP de la biblioteca estándar ante esto.
 func (s *server) accept(ln net.Listener, esPuerta bool) {
+	espera := acceptRetryMin
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			return // el oyente se cerró, que es la forma normal de terminar
+			if errors.Is(err, net.ErrClosed) || s.ctx.Err() != nil {
+				return // se cerró a propósito, que es la forma normal de terminar
+			}
+			s.ch.log().Warn("el oyente del canal falló al aceptar, se reintenta",
+				"puerta", esPuerta, "espera", espera.String(), "error", err)
+			t := time.NewTimer(espera)
+			select {
+			case <-t.C:
+			case <-s.ctx.Done():
+				t.Stop()
+				return
+			}
+			if espera *= 2; espera > acceptRetryMax {
+				espera = acceptRetryMax
+			}
+			continue
 		}
+		espera = acceptRetryMin
 		if s.ctx.Err() != nil {
 			_ = conn.Close()
 			return

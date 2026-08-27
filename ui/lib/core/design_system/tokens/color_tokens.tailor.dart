@@ -23,6 +23,7 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
   Color get border;
   Color get shadowMenu;
   Color get ok;
+  Color get idle;
   Color get okInk;
   Color get warn;
   Color get warnSurface;
@@ -53,6 +54,7 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
     Color? border,
     Color? shadowMenu,
     Color? ok,
+    Color? idle,
     Color? okInk,
     Color? warn,
     Color? warnSurface,
@@ -82,6 +84,7 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
       border: border ?? this.border,
       shadowMenu: shadowMenu ?? this.shadowMenu,
       ok: ok ?? this.ok,
+      idle: idle ?? this.idle,
       okInk: okInk ?? this.okInk,
       warn: warn ?? this.warn,
       warnSurface: warnSurface ?? this.warnSurface,
@@ -116,6 +119,7 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
       border: Color.lerp(border, other.border, t)!,
       shadowMenu: Color.lerp(shadowMenu, other.shadowMenu, t)!,
       ok: Color.lerp(ok, other.ok, t)!,
+      idle: Color.lerp(idle, other.idle, t)!,
       okInk: Color.lerp(okInk, other.okInk, t)!,
       warn: Color.lerp(warn, other.warn, t)!,
       warnSurface: Color.lerp(warnSurface, other.warnSurface, t)!,
@@ -166,6 +170,7 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
               other.shadowMenu,
             ) &&
             const DeepCollectionEquality().equals(ok, other.ok) &&
+            const DeepCollectionEquality().equals(idle, other.idle) &&
             const DeepCollectionEquality().equals(okInk, other.okInk) &&
             const DeepCollectionEquality().equals(warn, other.warn) &&
             const DeepCollectionEquality().equals(
@@ -211,6 +216,7 @@ mixin _$ColorTokensTailorMixin on ThemeExtension<ColorTokens> {
       const DeepCollectionEquality().hash(border),
       const DeepCollectionEquality().hash(shadowMenu),
       const DeepCollectionEquality().hash(ok),
+      const DeepCollectionEquality().hash(idle),
       const DeepCollectionEquality().hash(okInk),
       const DeepCollectionEquality().hash(warn),
       const DeepCollectionEquality().hash(warnSurface),
@@ -275,6 +281,22 @@ extension ColorTokensBuildContextProps on BuildContext {
   /// Verde de "esto está bien": el punto del servicio activo, un peer directo.
   Color get ok => colorTokens.ok;
 
+  /// El gris de un punto APAGADO: nadie por ese camino, un miembro offline,
+  /// uno mismo en la lista.
+  ///
+  /// # Por qué no es [textMuted], que es de donde salía
+  ///
+  /// Porque son dos trabajos con dos exigencias opuestas. `textMuted` tiene que
+  /// LEERSE, así que vive cerca del texto; un punto apagado tiene que
+  /// distinguirse del verde de al lado, y para eso tiene que alejarse. Medido
+  /// el 2026-08-26 simulando deuteranopia sobre la paleta oscura de entonces:
+  /// entre el verde y `textMuted` había una distancia de 6,8 en Lab, o sea el
+  /// mismo punto para quien no distingue rojo de verde. Con este gris son 17.
+  ///
+  /// El punto no es texto, así que su contraste se mide contra el fondo con el
+  /// umbral de lo no textual, y lo pasa en los dos temas.
+  Color get idle => colorTokens.idle;
+
   /// La tinta que va ENCIMA del verde: la etiqueta INSTALADO.
   ///
   /// Blanca en los dos temas, y por eso tiene token propio en vez de reciclar
@@ -285,6 +307,12 @@ extension ColorTokensBuildContextProps on BuildContext {
   /// Ámbar de "mira esto": nunca rojo. Kanpachi avisa de cosas que el usuario
   /// puede arreglar, no de errores fatales, y el rojo pide una urgencia que
   /// estos avisos no tienen.
+  ///
+  /// **Tirado hacia el rojo y subido de luminosidad el 2026-08-26**, sin llegar
+  /// a rojo. El dorado de antes se confundía con el verde para quien no
+  /// distingue rojo de verde, y en la ventana oscura ninguno de los dos
+  /// destacaba sobre el fondo. Lo vigila `test/dot_contrast_test.dart`, que
+  /// simula protanopia y deuteranopia y exige distancia entre los tres.
   Color get warn => colorTokens.warn;
   Color get warnSurface => colorTokens.warnSurface;
 

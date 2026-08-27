@@ -389,6 +389,23 @@ func normalizeMembers(local netip.Addr, members []netip.Addr) []netip.Addr {
 	return out
 }
 
+// CountPresent cuenta a los que ESTÁN, sin contarse a uno mismo.
+//
+// Existe desde que la lista de miembros incluye a los que tienen silla y no
+// están ([Peer.Away]). Tres sitios contaban `len(peers)` para preguntar «¿hay
+// alguien más ahí?», y con los ausentes dentro esa cuenta pasó a contestar otra
+// pregunta. Cuentan lo mismo que contaban.
+func CountPresent(peers []Peer) int {
+	n := 0
+	for _, p := range peers {
+		if p.Self || p.Away || !p.VirtualIP.IsValid() {
+			continue
+		}
+		n++
+	}
+	return n
+}
+
 // MemberIPs saca las IPs virtuales de una lista de peers, descartando la
 // propia. Es lo que se le pasa a [BuildRuleSet] tras cada cambio de miembros.
 func MemberIPs(peers []Peer) []netip.Addr {

@@ -465,6 +465,18 @@ func (c *client) perdió(conn net.Conn, err error) {
 }
 
 // redial vuelve a marcar con la escalera, hasta lograrlo o hasta que se cierre.
+//
+// # Cada intento lleva su propio plazo, y hasta el 2026-08-25 no lo llevaba
+//
+// El marcado inicial sí lo tiene ([dialWithRetry]), y la asimetría era cara
+// contra un `drop`. Sin plazo propio, cada intento se come el presupuesto de
+// SYN entero del núcleo, que en Linux son alrededor de 130 segundos, así que la
+// escalera anunciada de 1/2/5/10/20/30 degeneraba en un intento cada dos
+// minutos: quien esperaba volver a la sala esperaba veinte veces más de lo que
+// dice el diseño, y ninguna línea de log lo delataba.
+//
+// El plazo es el MISMO constante que usa el marcado inicial, para que los dos
+// caminos no puedan separarse.
 func (c *client) redial() {
 	for intento := 0; ; intento++ {
 		espera := reconnect[min(intento, len(reconnect)-1)]
@@ -474,7 +486,9 @@ func (c *client) redial() {
 			return
 		}
 
-		conn, err := c.ch.dial(c.ctx, c.at)
+		intentoCtx, cancelar := context.WithTimeout(c.ctx, timing.InitialRoomDialWait)
+		conn, err := c.ch.dial(intentoCtx, c.at)
+		cancelar()
 		if err != nil {
 			continue
 		}

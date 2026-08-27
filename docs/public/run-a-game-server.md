@@ -140,6 +140,8 @@ MTU.
 - [The same thing with Docker](run-a-game-server-docker.md), if the machine
   already runs its game server that way. One compose file, and the code survives
   the container being rebuilt.
+- [The same thing on Kubernetes](run-a-game-server-kubernetes.md), as a sidecar
+  beside the game.
 - [Every command](reference-cli.md), including the flags this page skipped.
 - [Host your own seed](host-a-seed.md), so the meeting point is yours too.
 - [Kanpachi Protection](../../kanpachi-protection.md): what stays closed on that

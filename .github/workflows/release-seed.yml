@@ -1,49 +1,50 @@
-# Publica la carga de Linux del seed: los binarios, la página y sus checksums.
+# Publishes the seed's Linux payload: the binaries, the page and their checksums.
 #
-# **Mismo disparador que `release.yml`, y no es casualidad.** Un tag `v*` corta
-# la versión del PRODUCTO, no la del cliente de Windows: el instalador y el seed
-# salen numerados igual, del mismo tag, aunque uno de los dos no haya cambiado
-# nada. Ese release "de más" es barato y compra algo que no se puede comprar
-# después: mirar un droplet, ver `v0.1.0`, y saber contra qué cliente está
-# corriendo sin cruzar dos numeraciones.
+# **Same trigger as `release.yml`, and that is no accident.** A `v*` tag cuts the
+# PRODUCT's version, not the Windows client's: the installer and the seed come
+# out numbered the same, from the same tag, even when one of the two changed
+# nothing. That "extra" release is cheap and buys something that cannot be
+# bought later: looking at a droplet, seeing `v0.1.0`, and knowing which client
+# it is running against without crossing two numbering schemes.
 #
-# Antes esto disparaba con `seed-v*`, y ese tag ya no existe. Tenerlo sería
-# poder publicar un release SIN `kanpachi-setup.exe`, que se llevaría el
-# `latest` y dejaría la URL permanente de la página de descarga apuntando a una
-# publicación sin instalador.
+# This used to trigger on `seed-v*`, and that tag no longer exists. Having it
+# would mean being able to publish a release WITHOUT `kanpachi-setup.exe`, which
+# would take `latest` with it and leave the download page's permanent URL
+# pointing at a publication with no installer.
 #
-# Los dos workflows escriben en el MISMO release y ninguno espera al otro. El
-# de acá tarda un minuto y el de Windows veinte, así que entre medias existe un
-# release publicado al que todavía le falta el instalador. Se acepta a
-# conciencia: se cierra solo, y la alternativa era un único workflow donde
-# veinte minutos de Windows retrasan una carga de Linux que ya estaba lista.
+# Both workflows write into the SAME release and neither waits for the other.
+# This one takes a minute and the Windows one takes twenty, so in between there
+# is a published release still missing its installer. That is accepted
+# knowingly: it closes by itself, and the alternative was a single workflow
+# where twenty minutes of Windows delay a Linux payload that was already ready.
 #
-# Y si uno de los tres FALLA, el hueco deja de ser transitorio: el release
-# queda publicado sin esa pieza hasta que alguien relance el workflow. También
-# se acepta, y por lo mismo: la corrida queda roja y con nombre, que es donde
-# se mira, y encadenar los tres para cubrirlo costaría la independencia que es
-# el motivo entero de tenerlos separados.
+# And if one of the three FAILS, the gap stops being temporary: the release
+# stays published without that piece until somebody relaunches the workflow.
+# That is accepted too, and for the same reason: the run stays red and named,
+# which is where people look, and chaining the three to cover it would cost the
+# independence that is the whole point of keeping them apart.
 #
-# **El trabajo lo hacen los scripts.** Acá quedan el evento, el checkout, el
-# toolchain, la versión derivada del tag y la publicación. Compilar y probar
-# viven en `scripts/`, así que republicar el seed a mano es una orden y no una
-# lectura de este fichero.
-name: Release del seed
+# **The scripts do the work.** What stays here is the event, the checkout, the
+# toolchain, the version derived from the tag, and the publishing. Building and
+# testing live in `scripts/`, so republishing the seed by hand is a command and
+# not a reading of this file.
+name: Seed release
 
 on:
   push:
     tags: ["v*"]
   release:
     types: [published]
-  # La corrida a mano se queda, y es la vía para recompilar el seed por su
-  # cuenta sin tocar el cliente de Windows: sin `tag` deja la carga como
-  # artefacto, y con `tag` la sube al release que se le diga. Es lo que permite
-  # arreglar algo del seed y republicarlo sin veinte minutos de Windows en
-  # medio, y sin cortar una versión nueva del producto entero.
+  # The manual run stays, and it is the way to rebuild the seed on its own
+  # without touching the Windows client: with no `tag` it leaves the payload as
+  # an artifact, and with `tag` it uploads it to whichever release it is told.
+  # That is what makes it possible to fix something in the seed and republish it
+  # without twenty minutes of Windows in the middle, and without cutting a new
+  # version of the whole product.
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release al que subir la carga. Vacío = solo artefacto, no publica"
+        description: "Release to upload the payload to. Empty = artifact only, publishes nothing"
         default: ""
 
 concurrency:
@@ -54,35 +55,38 @@ permissions:
   contents: write
 
 jobs:
-  publicar:
-    name: kanpseed para Linux
+  publish:
+    name: kanpseed for Linux
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Versión
+      - name: Resolve the version
         id: version
         env:
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           INPUT_TAG: ${{ inputs.tag }}
         run: |
-          # El tag ENTERO, con su `v`. Es lo que devuelve la API de GitHub en
-          # `tag_name`, y `kanpseed upgrade` compara su propia versión contra
-          # eso: quitarle la `v` acá obligaría a normalizar en el otro extremo.
+          # The WHOLE tag, with its `v`. It is what GitHub's API returns in
+          # `tag_name`, and `kanpseed upgrade` compares its own version against
+          # that: stripping the `v` here would force normalising at the other
+          # end.
           #
-          # - push por tag local: GITHUB_REF_TYPE=tag
-          # - release publicada por web: github.event.release.tag_name
-          # - a mano CON tag: se recompila el seed y se sube a ese release, con
-          #   su número de verdad. Es una republicación, no una prueba.
-          # - a mano SIN tag: queda "dev" A PROPÓSITO. Un binario de prueba que
-          #   se anunciara como versión de verdad haría que un droplet se
-          #   declarara al día con algo que nadie publicó.
+          # - push of a local tag: GITHUB_REF_TYPE=tag
+          # - release published from the web: github.event.release.tag_name
+          # - by hand WITH a tag: the seed is rebuilt and uploaded to that
+          #   release, with its real number. That is a republication, not a test.
+          # - by hand WITHOUT a tag: it stays "dev" ON PURPOSE. A test binary
+          #   announcing itself as a real version would make a droplet declare
+          #   itself up to date with something nobody published.
           TAG=""
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             TAG="$GITHUB_REF_NAME"
@@ -94,34 +98,35 @@ jobs:
           echo "VERSION=${TAG:-dev}" >> "$GITHUB_ENV"
           echo "release_target=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Los chequeos de esta superficie
-        # Publicar un binario que no pasa sus tests es peor que no publicar.
+      - name: Verify the release-seed surface
+        # Publishing a binary that does not pass its tests is worse than not
+        # publishing.
         #
-        # `internal/arch` entra porque este workflow publica TAMBIEN la pagina:
-        # ahi viven los guardianes que atan su alfabeto de invite ID, su seed
-        # por defecto y sus invariantes al dominio de Go. Sin ellos se podria
-        # publicar una pagina que acepta codigos que la app rechaza.
+        # `internal/arch` is in because this workflow ALSO publishes the page:
+        # that is where the guards live that tie its invite ID alphabet, its
+        # default seed and its invariants to Go's domain. Without them it would
+        # be possible to publish a page that accepts codes the app rejects.
         shell: pwsh
         run: ./scripts/verify.ps1 -Surface release-seed
 
-      # Los dos binarios, la página y su manifiesto. Por qué son dos
-      # arquitecturas, por qué van sin `-s -w`, por qué la versión viaja con su
-      # `v` y por qué el manifiesto se llama `-seed-linux`: todo en la cabecera
-      # del script, que es donde puede leerlo quien lo corra a mano.
-      - name: Armar la carga del seed
+      # The two binaries, the page and its manifest. Why there are two
+      # architectures, why they go without `-s -w`, why the version travels with
+      # its `v` and why the manifest is called `-seed-linux`: all of it in the
+      # script's header, which is where whoever runs it by hand can read it.
+      - name: Build the seed payload
         run: scripts/build-seed.sh --version "$VERSION" --out dist
 
-      # Se publica cuando hay un release al que subir, y ese dato lo decidió el
-      # paso de la versión. Preguntarlo otra vez acá, con otra expresión, es
-      # como los dos sitios se separan.
-      - name: Publicar
+      # It publishes when there is a release to upload to, and the version step
+      # decided that. Asking it again here, with a different expression, is how
+      # the two places drift apart.
+      - name: Publish to the release
         if: steps.version.outputs.release_target != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.release_target }}
-          # Sin cuerpo: el texto del release lo escribe `release.yml`, que es el
-          # que conoce el SHA del instalador. Dos workflows escribiendo el mismo
-          # cuerpo daría un orden distinto en cada publicación.
+          # No body: the release's text is written by `release.yml`, which is
+          # the one that knows the installer's SHA. Two workflows writing the
+          # same body would give a different order on every publication.
           fail_on_unmatched_files: true
           files: |
             dist/kanpseed-linux-amd64
@@ -129,9 +134,9 @@ jobs:
             dist/index.html
             dist/SHA256SUMS-seed-linux
 
-      # Sin publicar, la corrida manual deja la carga como artefacto, para poder
-      # probar este workflow entero sin cortar una versión.
-      - name: Guardar la carga
+      # With nothing to publish to, the manual run leaves the payload as an
+      # artifact, so this whole workflow can be tested without cutting a version.
+      - name: Keep the payload as an artifact
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:

@@ -60,7 +60,7 @@ func (s *Session) CreateRoom(
 	s.deps.Progress.Begin("crear la sala")
 	s.deps.Progress.Step(domain.ScopeDaemon, "recibida la orden de crear una sala")
 
-	if err := s.state.Transition(domain.StateResolving, "el usuario creó una sala"); err != nil {
+	if err := s.transitionLocked(domain.StateResolving, "el usuario creó una sala"); err != nil {
 		return domain.RoomState{}, err
 	}
 	// Cualquier salida por error a partir de acá deshace lo que se alcanzó a
@@ -90,7 +90,7 @@ func (s *Session) CreateRoom(
 			limpio, fin := cleanupContext(ctx)
 			s.teardown(limpio)
 			fin()
-			_ = s.state.TransitionWithExit(domain.StateIdle, "falló la creación de la sala", domain.ExitFailed)
+			_ = s.transitionWithExitLocked(domain.StateIdle, "falló la creación de la sala", domain.ExitFailed)
 			// Se republica por lo mismo que en JoinRoom: quien llama descarta
 			// el estado al recibir un error, así que si no se publica acá la
 			// copia que lee Status se queda con la de antes del fallo.
@@ -128,7 +128,7 @@ func (s *Session) CreateRoom(
 	spec.Rendezvous = domain.DeriveRendezvous(room.InviteID)
 	spec.Seeds = seedsFor(room)
 
-	if err := s.state.Transition(domain.StateConnecting, "levantando la red"); err != nil {
+	if err := s.transitionLocked(domain.StateConnecting, "levantando la red"); err != nil {
 		return domain.RoomState{}, err
 	}
 	s.deps.Progress.Step(domain.ScopeEngine, "levantando la red cifrada de la sala")
@@ -202,7 +202,7 @@ func (s *Session) CreateRoom(
 	}
 	s.deps.Progress.Step(domain.ScopeDaemon, "la sala está abierta")
 
-	if err := s.state.Transition(domain.StateConnected, "la sala está levantada"); err != nil {
+	if err := s.transitionLocked(domain.StateConnected, "la sala está levantada"); err != nil {
 		return domain.RoomState{}, err
 	}
 

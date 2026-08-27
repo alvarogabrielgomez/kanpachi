@@ -147,6 +147,14 @@ func (s *Session) canaryPlanLocked(ctx context.Context, afterApply bool) (canary
 		if p.Self || !p.VirtualIP.IsValid() {
 			continue
 		}
+		// A quien no está no se le pregunta. Hasta el 2026-08-25 esto armaba
+		// sus objetivos desde la lista entera, y fallaba contra cada ausente
+		// UNA VEZ POR MINUTO con «no hay canal abierto». Ese es el ruido bajo
+		// el que quedó sepultado un fallo de treinta y tres horas: la línea que
+		// dice que algo va mal no significaba nada porque salía siempre.
+		if p.Away {
+			continue
+		}
 		asked = append(asked, domain.CanaryAsked{At: p.VirtualIP, Name: p.Name})
 	}
 	if len(asked) == 0 {

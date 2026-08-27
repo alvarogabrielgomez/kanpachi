@@ -996,14 +996,23 @@ class _MemberRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final Color dot = switch (member.path) {
-      PeerPath.self => colors.textMuted,
-      PeerPath.relay => colors.warn,
-      PeerPath.direct => colors.ok,
-      // Apagado y no ámbar: ámbar es relay, o sea "la red va lenta", y de este
-      // miembro lo que no se sabe es por dónde llega, no que llegue mal.
-      PeerPath.unconfirmed => colors.textMuted,
-    };
+    // El offline manda sobre el camino, y tiene que mandar: a quien el motor no
+    // ve no le queda camino que pintar, y el valor por omisión del cable es
+    // `direct`, o sea que sin esto la sala pintaba en verde a alguien que no
+    // está. Apagado y no rojo: no se fue ni falló nada, su silla sigue puesta.
+    // Lo que lleva fuera lo dice la línea de debajo, donde iría la latencia, que
+    // desde el 2026-08-26 tampoco repite el camino.
+    final Color dot = member.isAway
+        ? colors.idle
+        : switch (member.path) {
+            PeerPath.self => colors.idle,
+            PeerPath.relay => colors.warn,
+            PeerPath.direct => colors.ok,
+            // Apagado y no ámbar: ámbar es relay, o sea "la red va lenta", y de
+            // este miembro lo que no se sabe es por dónde llega, no que llegue
+            // mal.
+            PeerPath.unconfirmed => colors.idle,
+          };
     return Row(
       children: <Widget>[
         AppStatusDot(color: dot),
@@ -1094,7 +1103,14 @@ class _GameHealthDot extends StatelessWidget {
       // depende del color. El latido además dice lo que hay que decir, que el
       // servidor está vivo; el ámbar quieto se lee como parado, que es lo que
       // es.
-      child: AppStatusDot(color: viva ? colors.ok : colors.warn, pulse: viva),
+      // Hueco cuando no llega, lleno cuando sí. El color es el primer canal
+      // y la forma el segundo: quien no separa el ámbar del verde ve igual que
+      // ese punto está sin rellenar. Ver [AppStatusDot.filled].
+      child: AppStatusDot(
+        color: viva ? colors.ok : colors.warn,
+        pulse: viva,
+        filled: viva,
+      ),
     );
   }
 

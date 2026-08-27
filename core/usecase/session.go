@@ -97,6 +97,15 @@ var (
 	// ErrRulesFailed es que las reglas no se recalcularon. Ya salió de la red,
 	// porque su credencial sí se revocó.
 	ErrRulesFailed = errors.New("las reglas del firewall no se recalcularon")
+
+	// ErrNoFreeAddress es que el /24 de la sala está lleno.
+	//
+	// Tipado porque sin centinela ningún llamador podía separarlo de «la sala no
+	// tiene subred», que es un fallo de otra clase y se arregla de otra forma.
+	// Y porque quien lo ve es el INVITADO: el host no se enteraba, así que la
+	// única vía de diagnóstico era que alguien le contara qué error le salió.
+	// Ese es el mismo silencio que costó treinta y tres horas el 2026-08-25.
+	ErrNoFreeAddress = errors.New("la sala se quedó sin direcciones libres")
 )
 
 // Deps son los puertos que la sesión necesita.
@@ -289,14 +298,6 @@ type Session struct {
 	// de renovar. Un ID que el registro nunca emitió no tiene tarjeta suya que
 	// restaurar, y republicarla sería pedirle que reabra una sala que no conoce.
 	sealedCard []byte
-	// kicked son los expulsados de hace poco, con cuándo.
-	//
-	// Existe porque revocar tarda alrededor de un segundo y el motor sigue
-	// reportando al expulsado durante esa ventana. Sin la lista, el primer
-	// evento de cambio de miembros lo devuelve a los presentes y le reabre el
-	// puerto, deshaciendo justo la mitad de la expulsión que era inmediata.
-	kicked map[netip.Addr]time.Time
-
 	// appliedRules es la firma del último conjunto que se aplicó CON ÉXITO.
 	//
 	// Nació para no repetir la misma línea de log y hoy hace dos cosas: esa, y
@@ -309,19 +310,37 @@ type Session struct {
 	// a otro adaptador, ver [Session.bindRoomLocked].
 	appliedRules string
 
-	// issued son las credenciales que emitió esta sala, por la dirección que se
-	// le asignó a cada una.
+	// members es TODO lo que este host sabe de la gente de su sala.
 	//
-	// **Es el único sitio donde existe ese lazo.** La dirección la elige el host
-	// en [Session.IssueCredentialFor] y no baja al motor, así que
-	// `Engine.ListCredentials` devuelve id y vencimiento con la IP en cero.
-	// De este mapa dependen las dos cosas que necesitan traducir una dirección a
-	// una credencial: pre-autorizar el canal de control de quien acaba de
-	// recibirla, y encontrar qué revocar al expulsar.
+	// # Un registro, y antes eran cinco mapas
+	//
+	// Por la misma dirección, bajo el mismo candado, barridos en los mismos
+	// sitios y leídos por las mismas funciones: las credenciales emitidas, el
+	// veto de expulsión, el enfriamiento del aviso de credencial vieja, la
+	// última vez visto en la malla, y la lista fundida de `state.Peers`. Nada
+	// los reconciliaba, y la única función del árbol que detectaba el desacuerdo
+	// se alcanzaba solo por un evento que llega antes de tiempo.
+	//
+	// Lo escribe UNA ruta, [Session.refreshMembersLocked], y `state.Peers` se
+	// deriva de acá. Ver [domain.MemberTable].
+	//
+	// # El lazo dirección-credencial sigue viviendo solo aquí
+	//
+	// La dirección la elige el host en [Session.IssueCredentialFor] y no baja al
+	// motor, así que `Engine.ListCredentials` devuelve id y vencimiento con la
+	// IP en cero. De este lazo dependen pre-autorizar el canal de quien acaba de
+	// recibir credencial, y encontrar qué revocar al expulsar.
 	//
 	// Se vacía al salir de la sala, en [Session.leaveLocked]. Vive solo en
 	// memoria: ver el precio en [Session.credentialFor].
-	issued map[netip.Addr]domain.Credential
+	members domain.MemberTable
+
+	// membersGen es la generación del libro de credenciales que hay en disco.
+	//
+	// Sube en cada escritura y jamás baja. Es lo único que detecta una copia
+	// RESTAURADA del libro, que el sello no puede: una copia más vieja de esta
+	// misma máquina autentica perfecto. Ver [domain.CredentialBook].
+	membersGen uint64
 
 	// verificables son los juegos que SÍ se pueden marcar como verificados, con
 	// la fecha en que se salió de la sala donde estuvieron activos.
@@ -394,16 +413,6 @@ type Session struct {
 	// dos primeros y faltaba éste, así que una sala que durase más de
 	// [timing.CredentialTTL] echaba a sus miembros uno por uno.
 	lastRenew time.Time
-
-	// staleProxAviso es, por miembro, DESDE CUÁNDO se le puede volver a decir
-	// que este host no tiene su credencial.
-	//
-	// Guarda el próximo intento y no el último, y esa elección es lo que arregla
-	// el fallo medido el 2026-08-11: guardando el último, un aviso que no salió
-	// quemaba igual el enfriamiento entero. Ver
-	// [Session.tellStaleMembersLocked], que pone plazos distintos según haya
-	// salido o no.
-	staleProxAviso map[netip.Addr]avisoStale
 
 	// lastRejoin y rejoinWait son el reloj del reingreso del INVITADO.
 	//
@@ -583,7 +592,7 @@ func NewSession(ctx context.Context, d Deps) (*Session, error) {
 	s := &Session{
 		deps:      d,
 		canaryDue: make(chan struct{}, 1),
-		issued:    make(map[netip.Addr]domain.Credential),
+		members:   domain.MemberTable{},
 	}
 
 	// La cuarentena de base dejó de aplicarse a ciegas: es la DECISIÓN del
@@ -711,12 +720,51 @@ func (s *Session) Status() domain.RoomState {
 func (s *Session) IssuedAddresses() []netip.Addr {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]netip.Addr, 0, len(s.issued))
-	for ip := range s.issued {
-		out = append(out, ip)
+	out := make([]netip.Addr, 0, len(s.members))
+	for ip, m := range s.members {
+		if m.Cred != nil {
+			out = append(out, ip)
+		}
 	}
 	slices.SortFunc(out, func(a, b netip.Addr) int { return a.Compare(b) })
 	return out
+}
+
+// transitionLocked mueve el estado de la sala y lo DICE.
+//
+// Existe porque los doce sitios que cambiaban el estado ya llevaban el motivo
+// escrito en la llamada y ninguno lo registraba. El 2026-08-25 un host pasó
+// treinta y tres horas sin poder recibir a nadie y su log no tiene una sola
+// línea de estado en toda la ventana: había que deducir en qué estado estaba
+// por lo que hacía y no por lo que decía.
+//
+// La línea sale con los dos extremos y el motivo. Con el estado de llegada solo
+// no se puede reconstruir una secuencia, que es lo que se lee cuando algo se
+// quedó a medias.
+//
+// Asume el candado tomado.
+func (s *Session) transitionLocked(next domain.ConnState, reason string) error {
+	return s.transitionWithExitLocked(next, reason, domain.ExitNone)
+}
+
+// transitionWithExitLocked es lo mismo diciendo por qué se sale.
+//
+// Salir lleva su propia línea y no se cuela en la de arriba: es el único caso
+// en que hay un motivo de SALIDA además del motivo del cambio, y perderlo deja
+// sin explicar la mitad de las veces que una sala se cierra sola.
+//
+// Asume el candado tomado.
+func (s *Session) transitionWithExitLocked(next domain.ConnState, reason string, exit domain.ExitReason) error {
+	antes := s.state.Conn
+	if err := s.state.TransitionWithExit(next, reason, exit); err != nil {
+		return err
+	}
+	kv := []any{"de", antes.String(), "a", next.String(), "motivo", reason}
+	if exit != domain.ExitNone {
+		kv = append(kv, "salida", exit.String())
+	}
+	s.deps.Log.Info("la sala cambió de estado", kv...)
+	return nil
 }
 
 // snapshot copia lo que se puede mutar desde fuera y publica el resultado para
@@ -1002,18 +1050,22 @@ func ruleSignature(rs domain.RuleSet) string { return fmt.Sprintf("%v", rs.Rules
 // es lo que hace que la comprobación de la decisión 19 mida lo que de verdad se
 // pidió, en vez de una segunda versión del cálculo que puede separarse.
 //
-// # Las dos listas de miembros que hay acá, y por qué siguen siendo dos
+// # Una sola lista de miembros, desde el 2026-08-25
 //
-// Los puertos del juego se abren hacia `MemberIPs(s.state.Peers)`, o sea hacia
-// quien ESTÁ. El canal de control se abre además hacia quien acaba de recibir
-// credencial y todavía no entró, que es lo que evita que su primer intento de
-// conexión rebote contra el firewall. Ver [Session.authorizedControlIPsLocked].
+// Los puertos del juego y el canal de control se abren hacia LO MISMO: los
+// miembros de la sala, que en el host los da el libro de credenciales. Ver
+// [Session.authorizedControlIPsLocked].
 //
-// La diferencia es deliberada y ahora es la única que queda. Hasta el
-// 2026-08-13 había otra, sin querer: la tabla del motor contaba de menos en el
-// host, así que un invitado ya dentro tenía canal de control y no tenía puertos
-// de juego. Eso lo cierra [Session.withAdmittedLocked], que le suma a la lista
-// de miembros a quien tiene el canal de la sala abierto.
+// Fueron dos listas y las dos estaban atadas a la tabla del motor, que es una
+// señal de vida y no una membresía. De ahí salieron dos fallos medidos. El
+// 2026-08-13, un invitado ya dentro con canal de control abierto y sin una sola
+// regla de juego, porque la tabla del motor contaba de menos en el host. Y el
+// 2026-08-25, la sala entera fuera durante treinta y tres horas, porque la
+// tabla convergía después de que la compuerta se aplicara y nadie releía.
+//
+// Abrir los puertos del juego hacia un miembro desconectado no cuesta nada: del
+// otro lado no hay quien conecte. Cerrárselos a quien SÍ está sí cuesta, y es
+// lo que pasaba.
 //
 // Asume el candado tomado.
 func (s *Session) desiredRuleSetLocked() (domain.RuleSet, error) {
@@ -1021,7 +1073,7 @@ func (s *Session) desiredRuleSetLocked() (domain.RuleSet, error) {
 		s.state.Game,
 		s.state.Role,
 		s.state.LocalIP,
-		domain.MemberIPs(s.state.Peers),
+		s.authorizedControlIPsLocked(),
 	)
 	if err != nil {
 		return domain.RuleSet{}, err
