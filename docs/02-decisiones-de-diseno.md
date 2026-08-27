@@ -1904,7 +1904,7 @@ El invitado era `.3` y no estaba en el conjunto. Y el paquete sí llegaba: duran
 | | Dueño | Ritmo | Qué decide |
 |---|---|---|---|
 | Membresía | el libro del host | lento | la compuerta, el alcance del oyente, la dirección que te toca |
-| Vida | el transporte | rápido | online contra AFK, degradado contra directo, a quién sondea el canario |
+| Vida | el transporte | rápido | online contra offline, degradado contra directo, a quién sondea el canario |
 
 **La decisión: la compuerta lee el libro.** Vencida no autoriza, revocada no autoriza, expulsado no autoriza, y nada más acota la lista. El plazo de seguridad ya existía: el latido deja de renovar a quien no está, así que la ficha de un ausente muere a las veinticuatro horas de su última renovación y su silla se libera sola.
 
@@ -1924,13 +1924,17 @@ El invitado era `.3` y no estaba en el conjunto. Y el paquete sí llegaba: duran
 
 **El bloqueo por rango no se debilita a ojo.** Su porqué está medido el 2026-08-10 y escrito en `gate/spec.go`: en Linux, un paquete que entra por la interfaz física con destino a la dirección virtual lo entrega el kernel, y el bloqueo acotado por adaptador no lo ve. La exención tendría que ser de `iif lo` y solo en las dos ranuras de rango. Queda propuesta para 0.7.0, junto con medir Windows.
 
-## 44. Quien no se fue está AFK, y su silla sigue puesta
+## 44. Quien no se fue está offline, y su silla sigue puesta
 
 **El hecho que faltaba nombrar.** Nadie manda un aviso al cerrar la tapa del portátil. Un miembro que no hizo una salida formal no salió de la sala: está desconectado, y volverá a su misma dirección con su misma ficha, que es lo que la llave de miembro ya prometía.
 
-**La decisión: un miembro con ficha viva al que el motor no ve sale en la lista, marcado AFK.** Antes desaparecía, y desaparecer afirmaba lo único que nadie sabía. Con él viajan dos números calculados, cuánto lleva fuera y cuánto le queda a su ficha, con la misma forma que el contador del host ausente: la cara que los pinta no comparte reloj con el daemon, y restar contra dos relojes da números que mienten.
+**La decisión: un miembro con ficha viva al que el motor no ve sale en la lista, marcado offline.** Antes desaparecía, y desaparecer afirmaba lo único que nadie sabía. Con él viajan dos números calculados, cuánto lleva fuera y cuánto le queda a su ficha, con la misma forma que el contador del host ausente: la cara que los pinta no comparte reloj con el daemon, y restar contra dos relojes da números que mienten.
 
-**Se pinta donde va el ping**, igual en el CLI, en el asistente y en la ventana: `42 ms` cuando está, `AFK 3m` cuando no. En la ventana el punto de estado se apaga, porque el valor por omisión del camino en el cable es `direct` y la sala pintaba en verde a alguien que no estaba.
+**Se pinta donde va el ping**, igual en el CLI, en el asistente y en la ventana: `42 ms` cuando está, `offline 3m` cuando no. En la ventana el punto de estado se apaga, porque el valor por omisión del camino en el cable es `direct` y la sala pintaba en verde a alguien que no estaba.
+
+**La insignia decía `AFK` hasta el 2026-08-26, y se cambió sin cambiar la decisión.** `AFK` afirma que la persona se levantó de la silla, y lo único que este host mide es que el motor dejó de verla, que encaja igual con un WiFi caído, una tapa cerrada o un corte del proveedor. `offline` dice lo medido y no inventa el motivo. Cambia la palabra que se lee y no el nombre del campo: `Peer.Away` y el cable `away_for_ms` se quedan, porque el `AFK` vivía solo en la etiqueta impresa y el cable lo cruzan un daemon y una ventana que se publican por separado.
+
+**Y la línea del ausente perdió el camino ese mismo día.** Decía `100.93.137.4 · directo · offline 3m`, y ese `directo` es el valor por omisión del cable, no una medición. El camino de alguien a quien el motor no ve ya no existe, que es el mismo motivo por el que el daemon suelta su latencia al salir de la malla. El punto de estado ya lo sabía y se apagaba; el texto de al lado no.
 
 **Tres consumidores le preguntaban cosas a quien no escuchaba.** El canario armaba sus objetivos desde la lista entera y fallaba contra cada ausente una vez por minuto con «no hay canal abierto», que es el ruido bajo el que quedó sepultado el fallo de treinta y tres horas. El latido renovaba fichas de ausentes, y ese vencimiento es el único plazo que libera una silla. Y el aviso de credencial vieja gastaba sus diez reintentos contra alguien sin canal por el que oírlo.
 
@@ -1947,3 +1951,29 @@ El invitado era `.3` y no estaba en el conjunto. Y el paquete sí llegaba: duran
 **Y si el manifiesto pisa el `command` del contenedor, se pierde `KANPACHI_CONTAINER`.** Con eso muere el desvío al juego, en silencio, y la sala se ve perfecta mientras nadie alcanza el servidor. Ver la decisión 40.
 
 **Falta una sonda de vida.** El 2026-08-25 Kubernetes reportó el sidecar listo durante las treinta y tres horas en que no admitió a nadie. Lo que ahora sí se puede leer desde fuera es el log: en contenedor el daemon escribe también por la salida estándar, que es lo único que `kubectl logs` lee.
+
+## 46. El ping de un miembro es una medición, y cuando no hay se calla
+
+**Lo que se veía.** Un miembro directo salía como `directo · 500 ms`, y un par de minutos después el mismo miembro decía `161 ms`. Nadie había tocado nada.
+
+**Los 500 no eran milisegundos, eran un centinela.** El motor reportaba `path_latency`, que es el coste del camino que suma Dijkstra. El peso de cada tramo lo da el calculador de EasyTier, y un enlace que su peer-center todavía no conoce vale `unwrap_or(500)`. Con un solo salto el coste del camino ES el del tramo, así que un túnel directo se imprimía como `500 ms` hasta que el mapa convergía. Peor que un hueco: 500 ms es un número creíble para alguien lejano, y quien lo lee culpa a su red.
+
+**La decisión: se reporta lo que midió una conexión, o no se reporta nada.**
+
+| Coste de la ruta | Qué viaja |
+|---|---|
+| 1, directo | la medición de la conexión que esta máquina tiene con ese miembro |
+| 2, por el seed | esta máquina al seed, más el seed al miembro |
+| 3 o más | nada |
+
+**El relay se suma con dos mediciones y ninguna constante.** El primer tramo lo mide esta máquina en sus propias estadísticas de conexión. El segundo lo mide el seed en las suyas y lo publica, y llega en el mapa global del peer-center, que cada nodo refresca a memoria cada quince segundos y sirve por la misma superficie que el motor ya consume. Sumarlos aproxima el ida y vuelta punta a punta, porque el paquete cruza los dos tramos en los dos sentidos. **Y cuando falta un tramo se sabe que falta**, que es justo lo que el 500 tapaba.
+
+**Tres saltos o más se callan.** Recorrer esa cadena pide la tabla de rutas de cada nodo del medio y esta máquina solo tiene la suya. Una sala de Kanpachi tiene un solo relay, el seed público, así que no es un caso que el producto produzca hoy.
+
+**Estar en relay es del par y no de la persona.** El coste sale de la tabla de rutas de una máquina hacia un miembro, así que el mismo miembro puede aparecer directo para uno y por relay para otro, en la misma sala y al mismo tiempo. Cada máquina calcula su columna con sus números y ninguna es la autoritativa.
+
+**El campo viaja ausente y no en cero**, porque cero es un número. El cero queda libre para significar una sola cosa, «nadie lo midió», que es lo que las tres caras ya pintan como hueco vacío. Y se redondea con **suelo en un milisegundo**: un túnel directo en la misma LAN física mide por debajo de eso y redondearía justo al valor que significa que no hay medición. EasyTier pone el mismo suelo al construir su mapa.
+
+**El hueco vacío y la insignia de la decisión 44 no se pisan.** Un miembro fuera de la malla no tiene latencia que enseñar, y uno dentro de la malla no está offline, así que solo una de las dos puede ser cierta. El caso nuevo es el tercero: dentro de la malla y todavía sin medición, que es lo que se ve durante los primeros segundos de un camino por relay.
+
+**Lo que esto le devuelve al diagnóstico.** Un camino directo sin medición pasa a ser evidencia fuerte, porque el motor da un salto y no hay ni una conexión con estadísticas: la ruta está en la tabla y el túnel no se levantó. Por relay la misma ausencia no dice nada del fallo, y es lo normal en el primer minuto de una sala. El aviso de fallo de marcado separa los dos casos desde el 2026-08-26; antes decía la misma frase para los dos.
