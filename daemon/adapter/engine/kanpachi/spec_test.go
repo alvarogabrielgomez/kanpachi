@@ -278,17 +278,36 @@ func nick(t *testing.T, s string) domain.Nickname {
 // de ida y vuelta» pasara lo que pasara. Ese día se leyó como evidencia
 // durante una caída real y solo se descartó por casualidad, comparando contra
 // un ingreso que SÍ funcionó y que también decía cero.
+//
+// Desde el 2026-08-26 el campo puede llegar AUSENTE, que es lo que dice el
+// motor cuando nadie midió ese camino, y esa ausencia tiene que llegar como
+// cero y no como un número. Antes no podía faltar, porque lo que viajaba era
+// el coste de la ruta y el coste siempre tiene un valor.
 func TestElRTTDelCableLlegaAlPeer(t *testing.T) {
-	peers, err := toPeers([]peerOut{{
-		VirtualIP: "100.93.137.2", Hostname: "jorungador", Path: "relay", RTTMs: 42,
-	}})
-	if err != nil {
-		t.Fatal(err)
+	casos := map[string]struct {
+		ms     *int32
+		quiero time.Duration
+	}{
+		"medido":  {ms: ptr(int32(42)), quiero: 42 * time.Millisecond},
+		"ausente": {ms: nil, quiero: 0},
 	}
-	if len(peers) != 1 {
-		t.Fatalf("miembros = %d", len(peers))
-	}
-	if peers[0].RTT != 42*time.Millisecond {
-		t.Fatalf("RTT = %v, se esperaba 42ms", peers[0].RTT)
+
+	for nombre, c := range casos {
+		t.Run(nombre, func(t *testing.T) {
+			peers, err := toPeers([]peerOut{{
+				VirtualIP: "100.93.137.2", Hostname: "jorungador", Path: "relay", RTTMs: c.ms,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(peers) != 1 {
+				t.Fatalf("miembros = %d", len(peers))
+			}
+			if peers[0].RTT != c.quiero {
+				t.Fatalf("RTT = %v, se esperaba %v", peers[0].RTT, c.quiero)
+			}
+		})
 	}
 }
+
+func ptr[T any](v T) *T { return &v }

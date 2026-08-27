@@ -1161,13 +1161,15 @@ Desde el 2026-08-25, quién puede marcar el puerto de control y a quién se le a
 | Lista | De dónde sale | Qué decide |
 |---|---|---|
 | Membresía | `Session.issued` (el libro) unido a la tabla del motor, menos vencidos, revocados y expulsados | la compuerta, el alcance del oyente, la dirección que te toca |
-| Presencia | la tabla del motor más quién tiene canal abierto | online contra AFK, degradado contra directo, a quién sondea el canario, a quién renueva el latido |
+| Presencia | la tabla del motor más quién tiene canal abierto | online contra offline, degradado contra directo, a quién sondea el canario, a quién renueva el latido |
 
 El porqué del corte está en la decisión 43: una decisión de conectividad atada a una señal de vida deja fuera a quien la señal todavía no reporta, y la señal no tiene ningún evento para quien cierra la tapa del portátil.
 
 **Un miembro con ficha viva al que el motor no ve sale en la lista marcado `Away`**, con dos duraciones calculadas: cuánto lleva fuera y cuánto le queda a su ficha. Viajan en `PeerView` como `away`, `away_for_ms` y `seat_frees_in_ms`, calculadas y no como marcas de tiempo, por lo mismo que `host_gone_for_ms`. Ver la decisión 44.
 
 **El `rtt_ms` del cable llega al `Peer` desde el 2026-08-25**, y antes se tiraba en `toPeers`. Con el campo siempre en cero, la columna de latencia salía en blanco, cada línea de malla decía `0s`, y el diagnóstico de fallo de marcado afirmaba que no había medición de ida y vuelta pasara lo que pasara.
+
+**Y lo que llegaba tampoco era una medición hasta el 2026-08-26.** Era `path_latency`, el coste del camino, con un 500 fijo por cada tramo que el peer-center de EasyTier todavía no conocía, así que un miembro directo se leía como `500 ms` durante el primer minuto de una sala. Desde entonces el motor manda lo que midió una conexión, o no manda el campo: llega como `*int32`, y `nil` se traduce a un `RTT` en cero, que es lo que el resto del árbol ya trata como «nadie lo midió». En `PeerView` sale con `omitempty`, así que `kanpachi --json status` omite `rtt_ms` en vez de escribir un cero. Ver la decisión 46.
 
 ### transport/pipe, implementa la entrada
 

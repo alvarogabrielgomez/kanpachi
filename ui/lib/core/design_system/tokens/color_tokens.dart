@@ -105,8 +105,8 @@ class ColorTokens extends ThemeExtension<ColorTokens>
   @override
   final Color ok;
 
-  /// El gris de un punto APAGADO: nadie por ese camino, un miembro AFK, uno
-  /// mismo en la lista.
+  /// El gris de un punto APAGADO: nadie por ese camino, un miembro offline,
+  /// uno mismo en la lista.
   ///
   /// # Por qué no es [textMuted], que es de donde salía
   ///

@@ -257,12 +257,20 @@ func displacesView(d domain.Displacement) *DisplacesView {
 }
 
 type PeerView struct {
-	IP    string `json:"ip"`
-	Name  string `json:"name"`
-	Path  string `json:"path"`
-	RTTMS int64  `json:"rtt_ms"`
-	Self  bool   `json:"self"`
-	Host  bool   `json:"host"`
+	IP   string `json:"ip"`
+	Name string `json:"name"`
+	Path string `json:"path"`
+	// RTTMS es el ida y vuelta MEDIDO, en milisegundos. Ausente cuando nadie lo
+	// midió, que es lo mismo que dice el motor un escalón más abajo.
+	//
+	// Se omite en vez de viajar en cero porque este JSON lo leen el asistente y
+	// quien depura con `--json`, y un cero ahí se lee como cero milisegundos.
+	// Hasta el 2026-08-26 lo que llegaba no era una medición sino el coste de la
+	// ruta, con un 500 fijo por cada salto que el peer-center todavía no
+	// conocía. Ver [domain.Peer.RTT].
+	RTTMS int64 `json:"rtt_ms,omitempty"`
+	Self  bool  `json:"self"`
+	Host  bool  `json:"host"`
 
 	// Away es que tiene silla y el motor no lo ve. Ver [domain.Peer.Away].
 	Away bool `json:"away,omitempty"`

@@ -83,7 +83,7 @@ class Member {
       // product invented.
       //
       // Somebody the engine cannot see has no round trip at all, so the slot is
-      // empty on purpose and the AFK badge takes it. Leaving a latency there
+      // empty on purpose and the offline badge takes it. Leaving a latency there
       // from the last time they were seen would be showing a measurement of a
       // path that no longer exists.
       latencyMs: away || rtt <= 0 ? null : rtt,
@@ -108,8 +108,12 @@ class Member {
   /// Tiene silla en esta sala y el motor no lo ve.
   ///
   /// **No se fue.** Quien no hizo una salida formal sigue siendo miembro:
-  /// volverá a su misma dirección con su misma credencial. En lenguaje de juego,
-  /// está AFK.
+  /// volverá a su misma dirección con su misma credencial. En lenguaje de
+  /// producto, está offline.
+  ///
+  /// Se llamaba AFK hasta el 2026-08-26, y AFK afirma algo que nadie mide: que
+  /// la persona se levantó de la silla. Lo medido es que el motor dejó de
+  /// verla, y eso es igual de compatible con un WiFi caído.
   final bool isAway;
 
   /// Cuánto lleva sin aparecer, en milisegundos. Cero es que está.
@@ -129,23 +133,30 @@ class Member {
   /// cero, que es como se dice en voz alta.
   String get awayLabel {
     if (!isAway) return '';
-    if (awayForMs <= 0) return 'AFK';
+    if (awayForMs <= 0) return 'offline';
     final Duration d = Duration(milliseconds: awayForMs);
-    if (d.inHours >= 1) return 'AFK ${d.inHours}h';
-    if (d.inMinutes >= 1) return 'AFK ${d.inMinutes}m';
-    return 'AFK ${d.inSeconds}s';
+    if (d.inHours >= 1) return 'offline ${d.inHours}h';
+    if (d.inMinutes >= 1) return 'offline ${d.inMinutes}m';
+    return 'offline ${d.inSeconds}s';
   }
 
   /// La línea de debajo del nombre: `100.87.3.2 · directo · 45 ms`.
   ///
-  /// El AFK toma el sitio de la latencia y no se suma a ella: son dos respuestas
-  /// a la misma pregunta, «¿esta persona está?», y solo una puede ser cierta.
+  /// La insignia de ausencia toma el sitio de la latencia y no se suma a ella:
+  /// son dos respuestas a la misma pregunta, «¿esta persona está?», y solo una
+  /// puede ser cierta.
+  ///
+  /// **Y quien está offline tampoco lleva camino**, que es lo que decía hasta
+  /// el 2026-08-26: `directo` es el valor por omisión del cable, no una
+  /// medición, y el camino de alguien que el motor no ve ya no existe. Es el
+  /// mismo motivo por el que el daemon suelta el RTT al salir de la malla. El
+  /// punto de estado ya lo sabía y se apagaba en vez de pintarse verde; el
+  /// texto de al lado no.
   String get meta {
     if (isSelf) return address;
+    if (isAway) return '$address · $awayLabel';
     final List<String> parts = <String>[address, path.label];
-    if (isAway) {
-      parts.add(awayLabel);
-    } else if (latencyMs != null) {
+    if (latencyMs != null) {
       parts.add('$latencyMs ms');
     }
     return parts.where((String p) => p.isNotEmpty).join(' · ');

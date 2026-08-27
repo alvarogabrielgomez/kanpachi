@@ -161,7 +161,18 @@ type peerOut struct {
 	VirtualIP string `json:"virtual_ip"`
 	Hostname  string `json:"hostname"`
 	Path      string `json:"path"`
-	RTTMs     int32  `json:"rtt_ms"`
+	// RTTMs is nil when nobody measured it, and that is not the same as zero.
+	//
+	// The engine used to send the route's path cost in this field, with a flat
+	// 500 standing in for any hop its peer center had not heard about yet, so a
+	// member on a direct tunnel arrived as 500 ms and settled on the truth a
+	// minute later. It now sends what a connection measured, and sends nothing
+	// when nothing measured it.
+	//
+	// A pointer is what lets the absence survive the wire. `omitempty` on a
+	// value would decode a real zero and a missing field into the same thing,
+	// and this is the one place where telling them apart is the whole point.
+	RTTMs *int32 `json:"rtt_ms"`
 }
 
 type diagnosticsOut struct {
@@ -436,21 +447,33 @@ func toPeers(raw []peerOut) ([]domain.Peer, error) {
 			Name:      name,
 			Path:      kind,
 			Self:      kind == domain.PathSelf,
-			// Milisegundos en el cable, Duration acá. Se tiraba, y con él se
-			// caía la columna de latencia de `kanpachi members`, el `rtt` de
-			// toda línea MALLA, y un diagnóstico que concluía «todavía no hay
-			// una medición de ida y vuelta» de un campo que nadie escribía.
-			// Medido el 2026-08-25: el ingreso que SÍ funcionó también decía
-			// cero, así que el diagnóstico era un falso positivo garantizado en
-			// todo fallo de marcado.
+			// Milisegundos en el cable, Duration acá, y CERO cuando nadie lo
+			// midió, que es lo que ya significa un RTT en cero en el resto del
+			// árbol: ver [domain.Member.NoteOutOfMesh], que lo suelta a cero al
+			// salir de la malla porque sería la medida de un camino que ya no
+			// existe.
+			//
+			// Este campo se tiraba hasta el 2026-08-25, y hasta el 2026-08-26 lo
+			// que llegaba no era una medición sino el coste de la ruta, con un
+			// 500 fijo por cada salto que el peer-center todavía no conocía. Un
+			// miembro directo se leía como `500 ms` durante el primer minuto.
 			//
 			// `Host` NO se pone acá, y no es un olvido: el motor no puede saber
 			// qué miembro es el host. Lo marca [usecase.markRoles], que tiene el
 			// rol y la subred de la sala.
-			RTT: time.Duration(p.RTTMs) * time.Millisecond,
+			RTT: rttOf(p.RTTMs),
 		})
 	}
 	return out, nil
+}
+
+// rttOf convierte el ida y vuelta opcional del motor en una Duration, con cero
+// para la ausencia. Ver [peerOut.RTTMs].
+func rttOf(ms *int32) time.Duration {
+	if ms == nil || *ms <= 0 {
+		return 0
+	}
+	return time.Duration(*ms) * time.Millisecond
 }
 
 // toEventKind traduce un evento del motor.

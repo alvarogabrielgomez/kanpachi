@@ -8,6 +8,14 @@ This file is in English, like commit messages and release notes, because a relea
 
 ## Unreleased
 
+### Fixed
+
+- Show a member's round trip only when something measured it. The engine reported the route's path cost instead of a round trip, and every hop of that cost that its peer center had not heard about yet counted as a flat 500. With a single hop the path cost IS the hop cost, so somebody on a direct tunnel read as `500 ms` for the first minute of a room and then read as the truth: a number credible enough that whoever saw it blamed their own connection. A direct member now shows what this machine's connection to them measured. A relayed one shows the two measured hops added together, the local one from those same stats and the far one from the figure the seed published, and shows nothing at all until both halves have arrived ([1e0876f](https://github.com/alvarogabrielgomez/kanpachi/commit/1e0876f))
+
+### Changed
+
+- Call a member the room cannot see `offline` instead of `AFK`. AFK says the person got up from their chair, and the only thing measured is that the engine stopped seeing them, which fits a dropped WiFi or a closed laptop lid just as well. The line under their name also stops repeating the path: it said `direct` there, which is what the wire sends when nobody measured anything, and the path of somebody the engine cannot see no longer exists ([a4a4374](https://github.com/alvarogabrielgomez/kanpachi/commit/a4a4374))
+
 ## [0.7.4] - 2026-08-26
 
 ### Fixed

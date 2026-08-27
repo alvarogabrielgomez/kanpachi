@@ -996,11 +996,12 @@ class _MemberRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    // El AFK manda sobre el camino, y tiene que mandar: a quien el motor no ve
-    // no le queda camino que pintar, y el valor por omisión del cable es
+    // El offline manda sobre el camino, y tiene que mandar: a quien el motor no
+    // ve no le queda camino que pintar, y el valor por omisión del cable es
     // `direct`, o sea que sin esto la sala pintaba en verde a alguien que no
     // está. Apagado y no rojo: no se fue ni falló nada, su silla sigue puesta.
-    // Lo que lleva fuera lo dice la línea de debajo, donde iría la latencia.
+    // Lo que lleva fuera lo dice la línea de debajo, donde iría la latencia, que
+    // desde el 2026-08-26 tampoco repite el camino.
     final Color dot = member.isAway
         ? colors.idle
         : switch (member.path) {
