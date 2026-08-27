@@ -556,14 +556,34 @@ func (s *Session) logMeshOnDialFailureLocked(ctx context.Context, host netip.Add
 		s.deps.Log.Warn("el motor conoce una ruta al host, pero el canal no levantó: "+
 			"la ruta no prueba que el plano de datos haya entregado el SYN; revisar la sesión relay, el listener y el firewall",
 			"host", host.String(), "camino", hostPeer.Path.String(), "rtt", hostPeer.RTT.String())
-		// Esta rama dejó de ser un falso positivo el 2026-08-25. Hasta ese día
-		// el adaptador tiraba el `rtt_ms` del cable, así que el campo valía cero
-		// SIEMPRE y esta línea salía en todo fallo de marcado, dijera lo que
-		// dijera el motor. Se leyó como evidencia durante una caída real.
+		// Un RTT en cero significa dos cosas MUY distintas según el camino, y
+		// hasta el 2026-08-26 esta rama las decía las dos con la misma frase.
+		//
+		// La historia importa para no volver a leer mal esta línea. Hasta el
+		// 2026-08-25 el adaptador tiraba el `rtt_ms` del cable, así que el campo
+		// valía cero SIEMPRE y el aviso salía en todo fallo de marcado, dijera
+		// lo que dijera el motor: se leyó como evidencia durante una caída real.
+		// Desde el 2026-08-26 el motor manda una medición o no manda nada, y el
+		// cero pasó a querer decir «nadie lo midió».
+		//
+		// En un camino DIRECTO eso sí es evidencia, y de la fuerte: el motor
+		// dice que hay un salto y no hay ni una conexión con estadísticas contra
+		// esa máquina, o sea que la ruta existe en la tabla y el túnel no está
+		// levantado. Es exactamente el síntoma que se está diagnosticando.
+		//
+		// Por RELAY no dice nada del fallo. El salto lejano lo mide el seed y lo
+		// reparte el peer-center, que tarda hasta un cuarto de minuto en llegar,
+		// así que en el primer minuto de una sala la ausencia es lo normal.
 		if hostPeer.RTT <= 0 {
-			s.deps.Log.Warn("el rtt del host es 0: todavía no hay una medición de ida y vuelta; "+
-				"la ruta OSPF puede existir mientras el handshake del relay sigue sin completar",
-				"host", host.String())
+			if hostPeer.Path == domain.PathDirect {
+				s.deps.Log.Warn("el motor da una ruta DIRECTA al host y no hay ninguna conexión medida "+
+					"contra él: la ruta está en la tabla y el túnel no llegó a levantarse",
+					"host", host.String())
+			} else {
+				s.deps.Log.Info("  el host llega por relay y todavía no hay latencia medida, "+
+					"que en el primer minuto de una sala es lo normal y no dice nada del fallo",
+					"host", host.String())
+			}
 		}
 		return
 	}
