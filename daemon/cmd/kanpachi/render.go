@@ -275,17 +275,23 @@ func printMembers(w io.Writer, st protocol.RoomView) {
 
 // peerLatency is the column that answers "is this member here?".
 //
-// The round trip and the AFK badge share it because they are two answers to
-// that one question, and only one of them can be true at a time. A member the
-// engine cannot see has no latency to show, and a bare dash there reads as "not
-// measured yet", which is what the host said for thirty-three hours while
+// The round trip and the offline badge share it because they are two answers
+// to that one question, and only one of them can be true at a time. A member
+// the engine cannot see has no latency to show, and a bare dash there reads as
+// "not measured yet", which is what the host said for thirty-three hours while
 // nobody could get in.
+//
+// It said AFK until 2026-08-26, and AFK claims something this host never
+// measured: that the person got up from their chair. All that was measured is
+// that the engine stopped seeing them, which fits a dropped WiFi or a closed
+// laptop lid just as well. Lower case, so the column keeps reading like the
+// ones next to it and not like a shout.
 func peerLatency(p protocol.PeerView) string {
 	if p.Away {
 		if p.AwayForMS <= 0 {
-			return "AFK"
+			return "offline"
 		}
-		return "AFK " + shortSpan(time.Duration(p.AwayForMS)*time.Millisecond)
+		return "offline " + shortSpan(time.Duration(p.AwayForMS)*time.Millisecond)
 	}
 	if p.RTTMS > 0 {
 		return fmt.Sprintf("%d ms", p.RTTMS)

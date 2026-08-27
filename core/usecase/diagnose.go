@@ -384,7 +384,7 @@ func (s *Session) roomHealthAlertsLocked() []domain.Alert {
 	// # Miembros presentes y ningún canal
 	//
 	// Se cuentan los que ESTÁN y ya pasaron su ventana de ingreso. Sin lo
-	// primero, una sala con todo el mundo AFK gritaría cada noche; sin lo
+	// primero, una sala con todo el mundo offline gritaría cada noche; sin lo
 	// segundo, gritaría en cada ingreso legítimo, que es justo el momento en
 	// que todavía no hay canal.
 	presentes := 0

@@ -68,12 +68,16 @@ func TestExpulsarPorIPDiceAQuiénEstásEchando(t *testing.T) {
 	})
 }
 
-// TestElHuecoDelPingLoOcupaElAFK.
+// TestElHuecoDelPingLoOcupaElOffline.
 //
 // La columna donde va la latencia es la que contesta «¿este miembro está?». Si
 // no hay medición porque no está, el hueco tiene que decirlo en vez de dejar un
 // guion que se lee como «todavía no se midió».
-func TestElHuecoDelPingLoOcupaElAFK(t *testing.T) {
+//
+// Decía `AFK` hasta el 2026-08-26, y `AFK` afirma algo que este host no midió:
+// que la persona se levantó de la silla. Lo medido es que el motor dejó de
+// verla, que es igual de compatible con un WiFi caído.
+func TestElHuecoDelPingLoOcupaElOffline(t *testing.T) {
 	casos := []struct {
 		nombre string
 		p      protocol.PeerView
@@ -81,10 +85,10 @@ func TestElHuecoDelPingLoOcupaElAFK(t *testing.T) {
 	}{
 		{"presente con medición", protocol.PeerView{RTTMS: 42}, "42 ms"},
 		{"presente sin medición todavía", protocol.PeerView{}, "-"},
-		{"ausente hace minutos", protocol.PeerView{Away: true, AwayForMS: 3 * 60 * 1000}, "AFK 3m"},
-		{"ausente hace segundos", protocol.PeerView{Away: true, AwayForMS: 42 * 1000}, "AFK 42s"},
-		{"ausente hace horas", protocol.PeerView{Away: true, AwayForMS: 5 * 3600 * 1000}, "AFK 5h"},
-		{"ausente sin saber desde cuándo", protocol.PeerView{Away: true}, "AFK"},
+		{"ausente hace minutos", protocol.PeerView{Away: true, AwayForMS: 3 * 60 * 1000}, "offline 3m"},
+		{"ausente hace segundos", protocol.PeerView{Away: true, AwayForMS: 42 * 1000}, "offline 42s"},
+		{"ausente hace horas", protocol.PeerView{Away: true, AwayForMS: 5 * 3600 * 1000}, "offline 5h"},
+		{"ausente sin saber desde cuándo", protocol.PeerView{Away: true}, "offline"},
 	}
 	for _, c := range casos {
 		t.Run(c.nombre, func(t *testing.T) {
@@ -107,8 +111,8 @@ func TestElAsistenteDiceQuiénNoEstá(t *testing.T) {
 		t.Fatalf("kickLabel = %q, se esperaba %q", got, quiero)
 	}
 
-	afk := protocol.PeerView{Name: "wololo", IP: "100.93.137.4", Away: true, AwayForMS: 3 * 60 * 1000}
-	if got, quiero := kickLabel(afk), "Kick wololo (100.93.137.4) [AFK 3m]"; got != quiero {
+	ausente := protocol.PeerView{Name: "wololo", IP: "100.93.137.4", Away: true, AwayForMS: 3 * 60 * 1000}
+	if got, quiero := kickLabel(ausente), "Kick wololo (100.93.137.4) [offline 3m]"; got != quiero {
 		t.Fatalf("kickLabel = %q, se esperaba %q", got, quiero)
 	}
 }

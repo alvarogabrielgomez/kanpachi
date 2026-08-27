@@ -2380,7 +2380,7 @@ func TestSalirDeLaSalaDiceTambiénPorQué(t *testing.T) {
 	}
 }
 
-// TestUnMiembroSinMallaSaleComoAFKYNadieLoInterroga.
+// TestUnMiembroSinMallaSaleComoOfflineYNadieLoInterroga.
 //
 // Su silla sigue puesta, así que sigue en la lista. Lo que cambia es que se
 // SABE que no está: se dice cuánto lleva fuera y cuánto le queda a su ficha.
@@ -2391,7 +2391,7 @@ func TestSalirDeLaSalaDiceTambiénPorQué(t *testing.T) {
 // literalmente el ruido bajo el que quedó sepultado el fallo de treinta y tres
 // horas. El latido tampoco puede renovarle la ficha, porque su vencimiento es
 // el único plazo que libera la silla.
-func TestUnMiembroSinMallaSaleComoAFKYNadieLoInterroga(t *testing.T) {
+func TestUnMiembroSinMallaSaleComoOfflineYNadieLoInterroga(t *testing.T) {
 	b, invitado := salaConDosYJuego(t)
 	cred := *b.session.members[invitado].Cred
 
@@ -2417,7 +2417,7 @@ func TestUnMiembroSinMallaSaleComoAFKYNadieLoInterroga(t *testing.T) {
 		t.Fatalf("el ausente desapareció de la lista teniendo ficha viva: %+v", st.Peers)
 	}
 	if !afk.Away {
-		t.Fatal("está fuera de la malla y no salió marcado como AFK")
+		t.Fatal("está fuera de la malla y no salió marcado como offline")
 	}
 	if afk.AwayFor < fuera {
 		t.Fatalf("no dijo cuánto lleva fuera: %v", afk.AwayFor)
@@ -2453,7 +2453,7 @@ func TestUnMiembroSinMallaSaleComoAFKYNadieLoInterroga(t *testing.T) {
 // comparó ni una vez.
 //
 // Exige que estén PRESENTES. «Tres miembros y ningún canal» es ambiguo; «tres
-// miembros online y ningún canal» es un fallo, y «tres miembros AFK» es una
+// miembros online y ningún canal» es un fallo, y «tres miembros offline» es una
 // tarde normal. Sin esa distinción la alerta gritaría en falso cada noche.
 func TestUnaSalaConMiembrosPresentesYSinCanalesLevantaAlerta(t *testing.T) {
 	b, _ := salaConDosYJuego(t)
@@ -2480,7 +2480,7 @@ func TestUnaSalaSoloConAusentesNoGrita(t *testing.T) {
 
 	st := b.session.RefreshAlerts(ctx())
 	if tieneAlerta(st, domain.AlertNoMemberChannels) {
-		t.Fatal("una sala con todos AFK se reportó como rota")
+		t.Fatal("una sala con todos offline se reportó como rota")
 	}
 }
 

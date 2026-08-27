@@ -281,8 +281,8 @@ extension ColorTokensBuildContextProps on BuildContext {
   /// Verde de "esto está bien": el punto del servicio activo, un peer directo.
   Color get ok => colorTokens.ok;
 
-  /// El gris de un punto APAGADO: nadie por ese camino, un miembro AFK, uno
-  /// mismo en la lista.
+  /// El gris de un punto APAGADO: nadie por ese camino, un miembro offline,
+  /// uno mismo en la lista.
   ///
   /// # Por qué no es [textMuted], que es de donde salía
   ///

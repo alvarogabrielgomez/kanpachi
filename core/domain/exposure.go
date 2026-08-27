@@ -409,7 +409,7 @@ const (
 	//
 	// Exige que estén presentes y no solo que sean miembros. «Tres miembros y
 	// ningún canal» es ambiguo; «tres miembros online y ningún canal» es un
-	// fallo, y «tres miembros AFK» es una tarde normal. Ver [Peer.Away].
+	// fallo, y «tres miembros offline» es una tarde normal. Ver [Peer.Away].
 	//
 	// Y exige que haya pasado la ventana de ingreso desde que se les emitió la
 	// ficha: sin eso saltaría en cada ingreso legítimo, que es exactamente
